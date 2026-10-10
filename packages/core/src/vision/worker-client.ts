@@ -7,12 +7,15 @@
 // ownership of their PixelImage data.
 
 import { assertValidImage, type PixelImage } from "./analyze.js";
+import { STRAIGHTEN_MAX_ANGLE } from "./straighten.js";
 import {
   createGrayscaleRequest,
   createPingRequest,
+  createStraightenRequest,
   isVisionWorkerResponse,
   type GrayscaleResponse,
   type PongResponse,
+  type StraightenResponse,
   type VisionRequestId,
   type VisionWorkerRequest,
   type VisionWorkerResponse,
@@ -52,6 +55,13 @@ export interface GrayscaleResult {
   width: number;
   height: number;
   data: Uint8ClampedArray;
+}
+
+export interface StraightenResult {
+  /** Suggested EditState.straighten value in degrees, within [-15, 15]. */
+  angle: number;
+  /** Confidence in the suggestion, 0..1. */
+  confidence: number;
 }
 
 interface PendingCall {
@@ -120,6 +130,26 @@ export class VisionWorkerClient {
     this.nextId += 1;
     const response = (await this.send(createGrayscaleRequest(id, image))) as GrayscaleResponse;
     return { width: response.width, height: response.height, data: response.data };
+  }
+
+  /**
+   * Detect the dominant horizon tilt off the main thread. The returned angle
+   * is a suggested EditState.straighten value; callers apply it only on
+   * explicit user accept, never silently.
+   */
+  async straighten(image: PixelImage): Promise<StraightenResult> {
+    assertValidImage(image);
+    if (this.statusValue === "failed") {
+      throw new VisionWorkerError("Vision worker failed; call ensureReady() to retry.");
+    }
+    await this.ensureReady();
+    const id = this.nextId;
+    this.nextId += 1;
+    const response = (await this.send(createStraightenRequest(id, image))) as StraightenResponse;
+    return {
+      angle: Math.min(STRAIGHTEN_MAX_ANGLE, Math.max(-STRAIGHTEN_MAX_ANGLE, response.angle)),
+      confidence: response.confidence,
+    };
   }
 
   /** Stop the worker, reject pending calls, return to idle for a later restart. */

@@ -33,7 +33,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 - A live RGB histogram derived from the rendered image.
 - Per-photo undo/redo with up to fifty history entries. Consecutive slider changes are grouped into a single edit.
 - Draggable before/after comparison and hold-to-preview-original behavior.
-- Centered aspect-ratio cropping, rotation, flips, and straightening, with a rule-of-thirds overlay.
+- Centered aspect-ratio cropping, rotation, flips, and straightening with automatic horizon detection, plus a rule-of-thirds overlay.
 - Browser-based repair brushes and clone stamping. Click to choose a clone source; Alt-click to choose another.
 - Photo import using a file picker or drag and drop.
 - JPEG, PNG, and WebP export, configurable size and quality, plus JSON adjustment export.

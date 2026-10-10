@@ -7,15 +7,28 @@
 // so there is no separate .wasm asset to serve.
 
 import {
+  STRAIGHTEN_CANNY_HIGH,
+  STRAIGHTEN_CANNY_LOW,
+  STRAIGHTEN_HOUGH_MAX_LINE_GAP,
+  STRAIGHTEN_HOUGH_MIN_LINE_LENGTH,
+  STRAIGHTEN_HOUGH_THRESHOLD,
+  STRAIGHTEN_WORKING_WIDTH,
   isVisionWorkerRequest,
+  voteStraightenAngle,
   type GrayscaleRequest,
+  type LineSegment,
+  type StraightenRequest,
   type VisionWorkerRequest,
   type VisionWorkerResponse,
 } from "@photomator/core";
 
-/** Minimal structural view of the OpenCV.js runtime used by Phase 3. */
+/** Minimal structural view of the OpenCV.js runtime used by the worker. */
 interface OpenCvMat {
+  readonly rows: number;
+  readonly cols: number;
   readonly data: Uint8Array;
+  /** Int32 view over the same buffer; HoughLinesP reports CV_32SC4 rows. */
+  readonly data32S: Int32Array;
   delete(): void;
 }
 
@@ -24,11 +37,41 @@ interface OpenCvMatConstructor {
   new (rows: number, cols: number, type: number): OpenCvMat;
 }
 
+interface OpenCvSize {
+  readonly width: number;
+  readonly height: number;
+}
+
+interface OpenCvSizeConstructor {
+  new (width: number, height: number): OpenCvSize;
+}
+
 interface OpenCvApi {
   readonly CV_8UC4: number;
   readonly COLOR_RGBA2GRAY: number;
+  readonly INTER_AREA: number;
   readonly Mat: OpenCvMatConstructor;
+  readonly Size: OpenCvSizeConstructor;
   cvtColor(src: OpenCvMat, dst: OpenCvMat, code: number): void;
+  GaussianBlur(src: OpenCvMat, dst: OpenCvMat, ksize: OpenCvSize, sigmaX: number): void;
+  Canny(image: OpenCvMat, edges: OpenCvMat, threshold1: number, threshold2: number): void;
+  HoughLinesP(
+    image: OpenCvMat,
+    lines: OpenCvMat,
+    rho: number,
+    theta: number,
+    threshold: number,
+    minLineLength?: number,
+    maxLineGap?: number,
+  ): void;
+  resize(
+    src: OpenCvMat,
+    dst: OpenCvMat,
+    dsize: OpenCvSize,
+    fx?: number,
+    fy?: number,
+    interpolation?: number,
+  ): void;
   getBuildInformation(): string;
 }
 
@@ -86,10 +129,67 @@ function grayscale(cv: OpenCvApi, request: GrayscaleRequest): VisionWorkerRespon
   }
 }
 
+function straighten(cv: OpenCvApi, request: StraightenRequest): VisionWorkerResponse {
+  // Downscale (never upscale) so detection cost is bounded and Hough
+  // parameters tuned for STRAIGHTEN_WORKING_WIDTH apply to every photo.
+  const scale = Math.min(1, STRAIGHTEN_WORKING_WIDTH / request.width);
+  const workWidth = Math.max(1, Math.round(request.width * scale));
+  const workHeight = Math.max(1, Math.round(request.height * scale));
+  const mats: OpenCvMat[] = [];
+  try {
+    const src = new cv.Mat(request.height, request.width, cv.CV_8UC4);
+    mats.push(src);
+    src.data.set(request.data);
+    const small = new cv.Mat();
+    mats.push(small);
+    cv.resize(src, small, new cv.Size(workWidth, workHeight), 0, 0, cv.INTER_AREA);
+    const gray = new cv.Mat();
+    mats.push(gray);
+    cv.cvtColor(small, gray, cv.COLOR_RGBA2GRAY);
+    const blurred = new cv.Mat();
+    mats.push(blurred);
+    cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+    const edges = new cv.Mat();
+    mats.push(edges);
+    cv.Canny(blurred, edges, STRAIGHTEN_CANNY_LOW, STRAIGHTEN_CANNY_HIGH);
+    const lines = new cv.Mat();
+    mats.push(lines);
+    cv.HoughLinesP(
+      edges,
+      lines,
+      1,
+      Math.PI / 180,
+      STRAIGHTEN_HOUGH_THRESHOLD,
+      STRAIGHTEN_HOUGH_MIN_LINE_LENGTH,
+      STRAIGHTEN_HOUGH_MAX_LINE_GAP,
+    );
+    // HoughLinesP outputs one CV_32SC4 element per segment: x1, y1, x2, y2.
+    // The JS binding lays them out as a 1xN row (not Nx1), so count from the
+    // buffer length rather than rows/cols to stay shape-agnostic.
+    const segments: LineSegment[] = [];
+    const raw = lines.data32S;
+    const count = Math.floor(raw.length / 4);
+    for (let i = 0; i < count; i += 1) {
+      const x1 = raw[i * 4] ?? 0;
+      const y1 = raw[i * 4 + 1] ?? 0;
+      const x2 = raw[i * 4 + 2] ?? 0;
+      const y2 = raw[i * 4 + 3] ?? 0;
+      segments.push({ x1, y1, x2, y2 });
+    }
+    const vote = voteStraightenAngle(segments);
+    return { id: request.id, kind: "straighten", angle: vote.angle, confidence: vote.confidence };
+  } finally {
+    for (const mat of mats.reverse()) mat.delete();
+  }
+}
+
 async function handle(request: VisionWorkerRequest): Promise<VisionWorkerResponse> {
   const cv = await loadOpenCv();
   if (request.kind === "ping") {
     return { id: request.id, kind: "pong", version: openCvVersion(cv) };
+  }
+  if (request.kind === "straighten") {
+    return straighten(cv, request);
   }
   return grayscale(cv, request);
 }

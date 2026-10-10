@@ -3,7 +3,7 @@
 // The worker itself lives in apps/web (Vite bundles it); this module is the
 // shared, framework-free contract. Messages are plain data plus
 // Uint8ClampedArray buffers, so they survive structured-clone transport
-// unchanged. Heavier ops (straighten, inpaint) extend these unions later.
+// unchanged. Heavier ops (inpaint next) extend these unions later.
 
 import { assertValidImage, type PixelImage } from "./analyze.js";
 
@@ -23,7 +23,16 @@ export interface GrayscaleRequest {
   data: Uint8ClampedArray;
 }
 
-export type VisionWorkerRequest = PingRequest | GrayscaleRequest;
+export interface StraightenRequest {
+  id: VisionRequestId;
+  kind: "straighten";
+  width: number;
+  height: number;
+  /** Row-major RGBA, width * height * 4 bytes. */
+  data: Uint8ClampedArray;
+}
+
+export type VisionWorkerRequest = PingRequest | GrayscaleRequest | StraightenRequest;
 
 export interface PongResponse {
   id: VisionRequestId;
@@ -41,13 +50,22 @@ export interface GrayscaleResponse {
   data: Uint8ClampedArray;
 }
 
+export interface StraightenResponse {
+  id: VisionRequestId;
+  kind: "straighten";
+  /** Suggested EditState.straighten value in degrees, within [-15, 15]. */
+  angle: number;
+  /** Confidence in the suggestion, 0..1. */
+  confidence: number;
+}
+
 export interface VisionErrorResponse {
   id: VisionRequestId;
   kind: "error";
   message: string;
 }
 
-export type VisionWorkerResponse = PongResponse | GrayscaleResponse | VisionErrorResponse;
+export type VisionWorkerResponse = PongResponse | GrayscaleResponse | StraightenResponse | VisionErrorResponse;
 
 export function createPingRequest(id: VisionRequestId): PingRequest {
   return { id, kind: "ping" };
@@ -56,6 +74,11 @@ export function createPingRequest(id: VisionRequestId): PingRequest {
 export function createGrayscaleRequest(id: VisionRequestId, image: PixelImage): GrayscaleRequest {
   assertValidImage(image);
   return { id, kind: "grayscale", width: image.width, height: image.height, data: image.data };
+}
+
+export function createStraightenRequest(id: VisionRequestId, image: PixelImage): StraightenRequest {
+  assertValidImage(image);
+  return { id, kind: "straighten", width: image.width, height: image.height, data: image.data };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -74,16 +97,18 @@ function isPixelBuffer(value: unknown, length: number): value is Uint8ClampedArr
   return value instanceof Uint8ClampedArray && value.length === length;
 }
 
+function isImageRequest(value: Record<string, unknown>): boolean {
+  return (
+    isPositiveInt(value.width) &&
+    isPositiveInt(value.height) &&
+    isPixelBuffer(value.data, (value.width as number) * (value.height as number) * 4)
+  );
+}
+
 export function isVisionWorkerRequest(value: unknown): value is VisionWorkerRequest {
   if (!isRecord(value) || !isId(value.id)) return false;
   if (value.kind === "ping") return true;
-  if (value.kind === "grayscale") {
-    return (
-      isPositiveInt(value.width) &&
-      isPositiveInt(value.height) &&
-      isPixelBuffer(value.data, (value.width as number) * (value.height as number) * 4)
-    );
-  }
+  if (value.kind === "grayscale" || value.kind === "straighten") return isImageRequest(value);
   return false;
 }
 
@@ -95,6 +120,16 @@ export function isVisionWorkerResponse(value: unknown): value is VisionWorkerRes
       isPositiveInt(value.width) &&
       isPositiveInt(value.height) &&
       isPixelBuffer(value.data, (value.width as number) * (value.height as number))
+    );
+  }
+  if (value.kind === "straighten") {
+    return (
+      typeof value.angle === "number" &&
+      Number.isFinite(value.angle) &&
+      typeof value.confidence === "number" &&
+      Number.isFinite(value.confidence) &&
+      (value.confidence as number) >= 0 &&
+      (value.confidence as number) <= 1
     );
   }
   if (value.kind === "error") return typeof value.message === "string";

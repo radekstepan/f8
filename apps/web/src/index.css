@@ -330,6 +330,18 @@ img { display: block; }
 .transform-buttons > button { display: flex; flex: 1; align-items: center; flex-direction: column; gap: 7px; font-size: 8px; color: #ababba; padding: 9px 2px; border: 1px solid #46464e; border-radius: 4px; }
 .transform-buttons > button:hover, .transform-buttons > button.is-active { color: var(--accent); background: #453c2b; border-color: #82704c; }
 .reset-crop { margin-top: 18px; }
+.straighten-auto-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.straighten-auto { height: 27px; font-size: 9.5px; }
+.straighten-auto:disabled { opacity: .6; cursor: wait; }
+.straighten-status { font-size: 9px; color: #8e8e9b; }
+.straighten-status.is-error { color: #df9a94; line-height: 1.5; }
+.straighten-suggestion { margin-top: 12px; padding: 12px; border: 1px solid #4a4a50; border-radius: 5px; background: #232326; }
+.suggestion-text { display: flex; align-items: baseline; justify-content: space-between; font-size: 10px; color: #d6d6de; }
+.suggestion-text strong { color: var(--accent); font-weight: 600; }
+.suggestion-confidence { font-size: 9px; color: #8e8e9b; }
+.straighten-suggestion .inspector-note { margin: 8px 0 0; }
+.suggestion-actions { display: flex; gap: 8px; margin-top: 10px; }
+.suggestion-actions > button { flex: 1; height: 27px; font-size: 9.5px; }
 .inspector-note { font-size: 9px; color: #8e8e9b; line-height: 1.8; margin: 18px 0 9px; }
 .segmented-control { display: flex; padding: 3px; background: #1b1b1f; border-radius: 5px; border: 1px solid #38383e; margin-bottom: 26px; }
 .segmented-control > button { flex: 1; border-radius: 3px; height: 25px; font-size: 10px; color: #93939f; }

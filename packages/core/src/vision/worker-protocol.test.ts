@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createGrayscaleRequest,
   createPingRequest,
+  createStraightenRequest,
   grayscaleReference,
   isVisionWorkerRequest,
   isVisionWorkerResponse,
@@ -33,6 +34,25 @@ describe("createGrayscaleRequest", () => {
   });
 });
 
+describe("createStraightenRequest", () => {
+  it("carries dimensions and pixels", () => {
+    const image = solidColor(8, 6, 10, 20, 30);
+    expect(createStraightenRequest(5, image)).toEqual({
+      id: 5,
+      kind: "straighten",
+      width: 8,
+      height: 6,
+      data: image.data,
+    });
+  });
+
+  it("rejects images with mismatched buffers", () => {
+    expect(() =>
+      createStraightenRequest(1, { width: 8, height: 6, data: new Uint8ClampedArray(8) }),
+    ).toThrow(RangeError);
+  });
+});
+
 describe("isVisionWorkerRequest", () => {
   it("accepts a ping", () => {
     expect(isVisionWorkerRequest({ id: 1, kind: "ping" })).toBe(true);
@@ -50,12 +70,24 @@ describe("isVisionWorkerRequest", () => {
     ).toBe(true);
   });
 
+  it("accepts a straighten request with an exact RGBA buffer", () => {
+    expect(
+      isVisionWorkerRequest({
+        id: 3,
+        kind: "straighten",
+        width: 8,
+        height: 6,
+        data: new Uint8ClampedArray(8 * 6 * 4),
+      }),
+    ).toBe(true);
+  });
+
   it.each([
     ["null", null],
     ["string", "ping"],
     ["array", []],
     ["missing kind", { id: 1 }],
-    ["unknown kind", { id: 1, kind: "straighten" }],
+    ["unknown kind", { id: 1, kind: "inpaint" }],
     ["missing id", { kind: "ping" }],
     ["non-integer id", { id: 1.5, kind: "ping" }],
     ["zero width", { id: 1, kind: "grayscale", width: 0, height: 4, data: new Uint8ClampedArray(0) }],
@@ -71,12 +103,13 @@ describe("isVisionWorkerRequest", () => {
 });
 
 describe("isVisionWorkerResponse", () => {
-  it("accepts pong, grayscale, and error responses", () => {
+  it("accepts pong, grayscale, straighten, and error responses", () => {
     expect(isVisionWorkerResponse({ id: 1, kind: "pong", version: "5.0.0" })).toBe(true);
     expect(
       isVisionWorkerResponse({ id: 2, kind: "grayscale", width: 4, height: 4, data: new Uint8ClampedArray(16) }),
     ).toBe(true);
-    expect(isVisionWorkerResponse({ id: 3, kind: "error", message: "boom" })).toBe(true);
+    expect(isVisionWorkerResponse({ id: 3, kind: "straighten", angle: -2.5, confidence: 0.8 })).toBe(true);
+    expect(isVisionWorkerResponse({ id: 4, kind: "error", message: "boom" })).toBe(true);
   });
 
   it.each([
@@ -87,6 +120,11 @@ describe("isVisionWorkerResponse", () => {
     ["missing message", { id: 1, kind: "error" }],
     ["short gray buffer", { id: 1, kind: "grayscale", width: 4, height: 4, data: new Uint8ClampedArray(15) }],
     ["RGBA-sized gray buffer", { id: 1, kind: "grayscale", width: 4, height: 4, data: new Uint8ClampedArray(64) }],
+    ["straighten without angle", { id: 1, kind: "straighten", confidence: 0.8 }],
+    ["straighten with NaN angle", { id: 1, kind: "straighten", angle: NaN, confidence: 0.8 }],
+    ["straighten without confidence", { id: 1, kind: "straighten", angle: 1 }],
+    ["straighten with negative confidence", { id: 1, kind: "straighten", angle: 1, confidence: -0.1 }],
+    ["straighten with oversized confidence", { id: 1, kind: "straighten", angle: 1, confidence: 1.5 }],
   ])("rejects %s", (_label, value) => {
     expect(isVisionWorkerResponse(value)).toBe(false);
   });

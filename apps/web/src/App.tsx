@@ -11,6 +11,7 @@ import { Filmstrip, PhotoBrowser, PresetStrip } from '@photomator/ui';
 import { Inspector } from '@photomator/ui';
 import { EditorDialogs } from '@photomator/ui';
 import { useVisionWorker } from './vision/useVisionWorker';
+import { useStraighten } from './vision/useStraighten';
 
 function readSaved<T>(key: string, fallback: T): T {
   try {
@@ -52,6 +53,7 @@ export default function App() {
   const photo = photos.find((item) => item.id === selectedId) || photos[0]!;
   const editor = useEditor(photo.id);
   const vision = useVisionWorker();
+  const straighten = useStraighten(photo.id);
   const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
 
@@ -287,6 +289,7 @@ export default function App() {
       {inspectorOpen && <Inspector
         photo={photo} edit={editor.edit} tool={tool} histogram={histogram}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
+        straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss }}
         onChange={editor.change} onTool={selectTool} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}

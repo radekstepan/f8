@@ -118,6 +118,26 @@ describe("VisionWorkerClient", () => {
     expect(Array.from(result.data)).toEqual(new Array(16).fill(18));
   });
 
+  it("round-trips straighten and clamps the angle to the slider range", async () => {
+    const { client, ports } = setup();
+    const ready = client.ensureReady();
+    ports[0]?.emit({ id: 1, kind: "pong", version: "5.0.0" });
+    await ready;
+    const pending = client.straighten(solidColor(8, 6, 10, 20, 30));
+    await tick();
+    expect(ports[0]?.sent[1]).toMatchObject({ id: 2, kind: "straighten", width: 8, height: 6 });
+    ports[0]?.emit({ id: 2, kind: "straighten", angle: -45, confidence: 0.9 });
+    await expect(pending).resolves.toEqual({ angle: -15, confidence: 0.9 });
+  });
+
+  it("rejects malformed straighten images before touching the worker", async () => {
+    const { client, ports } = setup();
+    await expect(
+      client.straighten({ width: 8, height: 6, data: new Uint8ClampedArray(8) }),
+    ).rejects.toThrow(RangeError);
+    expect(ports).toHaveLength(0);
+  });
+
   it("fails when the worker answers ping with an error", async () => {
     const { client, ports, statuses } = setup();
     const ready = client.ensureReady();
