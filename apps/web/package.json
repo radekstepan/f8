@@ -14,6 +14,7 @@
   "dependencies": {
     "@photomator/core": "workspace:*",
     "@photomator/ui": "workspace:*",
+    "@techstark/opencv-js": "^5.0.0-release.1",
     "lucide-react": "^1.55.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"

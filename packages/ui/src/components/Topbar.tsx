@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ArrowLeft, Bandage, Check, ChevronDown, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Sparkles, Stamp, Undo2 } from 'lucide-react';
-import type { DialogType, Tool } from '@photomator/core';
+import type { DialogType, Tool, VisionWorkerStatus } from '@photomator/core';
 import { BrandMark, IconButton, MenuItem } from './EditorUI.js';
 
 export type MenuAction = 'import' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'rotate' | 'favorite' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'fit' | 'fullscreen' | 'shortcuts' | 'about';
@@ -155,6 +155,28 @@ export function Toolbar({ collectionName, count, tool, enhanced, compare, canUnd
   );
 }
 
-export function AppStatus({ count, edited }: { count: number; edited: boolean }) {
-  return <footer className="app-status"><span>{count} photos in your library</span><span className="status-center">Non-destructive editing<span className="status-divider" />Your originals stay original.</span><span className="saved-status"><Check size={11} />{edited ? 'Edits saved locally' : 'All changes saved'}</span></footer>;
+export interface VisionIndicator {
+  status: VisionWorkerStatus;
+  version: string | null;
+  selfTest: boolean | null;
+  onActivate: () => void;
+}
+
+function renderVision(vision: VisionIndicator) {
+  switch (vision.status) {
+    case 'idle':
+      return <button type="button" className="vision-activate" onClick={vision.onActivate} title="Start the vision engine (lazy OpenCV download)">Vision engine: idle</button>;
+    case 'loading':
+      return <span role="status">Vision engine: downloading…</span>;
+    case 'ready':
+      return vision.selfTest === false
+        ? <span role="status" title="OpenCV loaded but the grayscale self-test failed">Vision engine: self-test failed</span>
+        : <span>Vision engine ready{vision.version ? ` (OpenCV ${vision.version})` : ''}</span>;
+    case 'failed':
+      return <button type="button" className="vision-activate" onClick={vision.onActivate} title="The vision engine failed to load. Retry the download.">Vision engine unavailable — retry</button>;
+  }
+}
+
+export function AppStatus({ count, edited, vision }: { count: number; edited: boolean; vision?: VisionIndicator }) {
+  return <footer className="app-status"><span>{count} photos in your library</span><span className="status-center">Non-destructive editing<span className="status-divider" />Your originals stay original.{vision && <><span className="status-divider" />{renderVision(vision)}</>}</span><span className="saved-status"><Check size={11} />{edited ? 'Edits saved locally' : 'All changes saved'}</span></footer>;
 }

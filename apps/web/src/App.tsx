@@ -10,6 +10,7 @@ import { PhotoCanvas, type HistogramData } from '@photomator/ui';
 import { Filmstrip, PhotoBrowser, PresetStrip } from '@photomator/ui';
 import { Inspector } from '@photomator/ui';
 import { EditorDialogs } from '@photomator/ui';
+import { useVisionWorker } from './vision/useVisionWorker';
 
 function readSaved<T>(key: string, fallback: T): T {
   try {
@@ -50,6 +51,7 @@ export default function App() {
   const objectUrls = useRef<string[]>([]);
   const photo = photos.find((item) => item.id === selectedId) || photos[0]!;
   const editor = useEditor(photo.id);
+  const vision = useVisionWorker();
   const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
 
@@ -292,7 +294,16 @@ export default function App() {
         onClose={() => setInspectorOpen(false)}
       />}
     </div>
-    <AppStatus count={photos.length} edited={editor.edit.preset !== 'Original'} />
+    <AppStatus
+      count={photos.length}
+      edited={editor.edit.preset !== 'Original'}
+      vision={{
+        status: vision.status,
+        version: vision.version,
+        selfTest: vision.selfTest,
+        onActivate: () => void vision.ensureReady(),
+      }}
+    />
     <input className="hidden" ref={fileInput} type="file" multiple accept="image/*" aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
     <EditorDialogs dialog={dialog} photo={photo} edit={editor.edit} onClose={() => setDialog(null)} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} />
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}

@@ -15,6 +15,15 @@ This is a Yarn workspaces + Turborepo monorepo. Use the Node version in `.nvmrc`
 - `yarn typecheck` typechecks every workspace package.
 - `yarn workspace @photomator/web preview` serves the production build.
 
+## Build Notes
+
+The production build keeps the single-file main bundle but emits the vision worker separately. `vite-plugin-singlefile` runs with `useRecommendedBuildConfig: false` because its `inlineDynamicImports` cannot carry module workers; `apps/web/vite.config.ts` replicates that recommended config minus inlining, so `dist/index.html` still embeds the app JS/CSS while the worker ships alongside it:
+
+- `dist/vision.worker-*.js` (~1KB): the worker shell, spawned only when a vision feature starts it.
+- `dist/opencv-*.js` (~15MB): OpenCV, fetched lazily by the worker on first use — never in the initial page load.
+
+The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64), so there is no separate `.wasm` asset to serve. Heavy vision entry points must keep this shape: construct the worker via `new Worker(new URL(..., import.meta.url))`, import OpenCV only inside the worker, and never import it from main-thread code. A networked `yarn install` fetches the package from the npm registry.
+
 ## Included Interactions
 
 - Twelve sample photographs, three albums, favorites, star ratings, search, smart collections, and a resizable photo grid.

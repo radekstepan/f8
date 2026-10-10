@@ -344,6 +344,8 @@ img { display: block; }
 .status-divider { height: 8px; width: 1px; background: #48484d; }
 .saved-status { display: flex; align-items: center; gap: 5px; font-size: 8px; }
 .saved-status > svg { color: #9caf91; }
+.vision-activate { padding: 0; }
+.vision-activate:hover { color: #b5b5bd; text-decoration: underline; text-underline-offset: 2px; }
 
 .photo-browser { flex: 1; min-height: 0; overflow-y: auto; padding: 31px 29px; animation: section-in 230ms ease-out; background: #19191c; }
 .browser-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; }
