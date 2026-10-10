@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { Check, ImagePlus, X } from 'lucide-react';
 import { SAMPLE_ALBUMS, SAMPLE_PHOTOS, PRESETS } from '@photomator/core';
 import { decodeImportSize } from '@photomator/core';
+import { RAW_ACCEPT, decodeRawImport, isRawFilename, resolveImportSelection } from '@photomator/core';
 import { useEditor } from '@photomator/ui';
 import type { Album, DialogType, EditState, Photo, Preset, Tool, ViewMode } from '@photomator/core';
 import { Sidebar } from '@photomator/ui';
@@ -129,32 +130,67 @@ export default function App() {
   };
 
   const importFiles = async (files: FileList | File[]) => {
-    const images = Array.from(files).filter((file) => file.type.startsWith('image/'));
-    if (!images.length) { notify('Choose a JPEG, PNG, WebP, or another browser-supported image.'); return; }
+    const { files: selected, suppressedSidecars } = resolveImportSelection(Array.from(files));
+    if (!selected.length) { notify('Choose a JPEG, PNG, WebP, RAW, or another browser-supported image.'); return; }
     const albumId = albums.some((album) => album.id === collection) ? collection : 'imports';
-    const imported = await Promise.all(images.slice(0, 30).map(async (file, index) => {
-      const src = URL.createObjectURL(file);
+    let rawFailed = 0;
+    const imported = await Promise.all(selected.slice(0, 30).map(async (file, index) => {
+      const raw = isRawFilename(file.name);
+      let pixels: Blob = file;
+      let camera = 'Imported image';
+      let lens = 'No camera metadata';
+      let iso = 0;
+      let aperture = '-';
+      let shutter = '-';
+      let focalLength = '-';
+      let date = new Date(file.lastModified).toISOString();
+      if (raw) {
+        // Browsers cannot decode RAW sensor data: import renders the embedded
+        // JPEG preview and keeps the original RAW filename.
+        try {
+          const decoded = await decodeRawImport(file);
+          pixels = decoded.preview;
+          camera = decoded.metadata.camera;
+          lens = decoded.metadata.lens;
+          iso = decoded.metadata.iso;
+          aperture = decoded.metadata.aperture;
+          shutter = decoded.metadata.shutter;
+          focalLength = decoded.metadata.focalLength;
+          date = decoded.metadata.date ?? date;
+        } catch { rawFailed += 1; return null; }
+      }
+      const src = URL.createObjectURL(pixels);
       objectUrls.current.push(src);
       try {
         // EXIF-aware decode: the browser pre-rotates pixels so the recorded
         // size is the upright (orientation 1) size, never sideways.
-        const { width, height } = await decodeImportSize(file, src);
+        const { width, height } = await decodeImportSize(pixels, src);
         return {
           id: `import-${Date.now()}-${index}`, name: file.name, title: file.name.replace(/\.[^.]+$/, ''), src, thumbnail: src,
-          albumId, location: 'Imported from this device', date: new Date(file.lastModified).toISOString(),
-          width, height, camera: 'Imported image', lens: 'No camera metadata',
-          iso: 0, aperture: '-', shutter: '-', focalLength: '-', raw: false, favorite: false, rating: 0,
+          albumId, location: 'Imported from this device', date,
+          width, height, camera, lens,
+          iso, aperture, shutter, focalLength, raw, favorite: false, rating: 0,
         } satisfies Photo;
       } catch { URL.revokeObjectURL(src); return null; }
     }));
     const valid = imported.filter((item): item is NonNullable<typeof item> => Boolean(item));
     const first = valid[0];
-    if (!first) { notify('These files could not be decoded. Try JPEG, PNG, or WebP.'); return; }
+    if (!first) {
+      notify(rawFailed
+        ? 'These RAW files have no embedded preview this browser can read. Try JPEG, PNG, or WebP.'
+        : 'These files could not be decoded. Try JPEG, PNG, or WebP.');
+      return;
+    }
     setPhotos((current) => [...current, ...valid]);
     setCollection(albumId);
     setSearch('');
     selectPhoto(first.id);
-    notify(`${valid.length} ${valid.length === 1 ? 'photo' : 'photos'} imported. Imported originals stay in this session.`);
+    const notes = [
+      `${valid.length} ${valid.length === 1 ? 'photo' : 'photos'} imported. Imported originals stay in this session.`,
+      suppressedSidecars ? `${suppressedSidecars} JPEG sidecar${suppressedSidecars === 1 ? ' was' : 's were'} skipped: the RAW original was kept.` : '',
+      rawFailed ? `${rawFailed} RAW file${rawFailed === 1 ? '' : 's'} had no readable preview and ${rawFailed === 1 ? 'was' : 'were'} skipped.` : '',
+    ];
+    notify(notes.filter(Boolean).join(' '));
   };
 
   const handleAction = (action: MenuAction) => {
@@ -311,9 +347,9 @@ export default function App() {
         onActivate: () => void vision.ensureReady(),
       }}
     />
-    <input className="hidden" ref={fileInput} type="file" multiple accept="image/*" aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
+    <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
     <EditorDialogs dialog={dialog} photo={photo} edit={editor.edit} inpaintRepair={inpaintRepair} onClose={() => setDialog(null)} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} />
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
-    {dragging && <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos anywhere to start creating.</p><span>JPEG, PNG, WebP and more</span></div></div>}
+    {dragging && <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos anywhere to start creating.</p><span>JPEG, PNG, WebP, RAW and more</span></div></div>}
   </div>;
 }

@@ -35,7 +35,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 - Draggable before/after comparison and hold-to-preview-original behavior.
 - Centered aspect-ratio cropping, rotation, flips, and straightening with automatic horizon detection, plus a rule-of-thirds overlay.
 - Browser-based repair brushes (OpenCV inpainting with a blur fallback) and clone stamping. Click to choose a clone source; Alt-click to choose another.
-- Photo import using a file picker or drag and drop.
+- Photo import using a file picker or drag and drop, including camera RAW files (rendered from the embedded JPEG preview via `exifr`). When a RAW file and a JPEG share a filename, only the RAW is imported.
 - JPEG, PNG, and WebP export, configurable size and quality, plus JSON adjustment export.
 - Copy/paste adjustments between photographs, with each photograph's crop and retouching preserved.
 - Functional application menus, keyboard shortcuts, photo information, album creation, preset creation, and help dialogs.
@@ -107,7 +107,7 @@ Clear the `photomator-demo-` local-storage entries to restore the original sampl
 - Repair reconstructs masked regions with OpenCV inpainting (Telea or Navier-Stokes) in a worker, falling back to a local blur when the vision engine is unavailable. Clone copies pixels from a source region.
 - Crop supports centered ratios rather than a freely movable crop rectangle. The corner marks are framing guides.
 - Zoom percentages are relative to the fitted preview, not a one-to-one source-pixel scale.
-- Sample camera details are illustrative; importing a file does not parse EXIF data. Export does not embed the sample metadata.
+- Sample camera details are illustrative; importing a regular image does not parse EXIF data (RAW imports do read camera details from EXIF). Export does not embed the sample metadata.
 - Export never upscales beyond the available source resolution.
 - There is no backend, cloud synchronization, account system, or Photos-library integration.
 
