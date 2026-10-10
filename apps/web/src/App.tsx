@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, ImagePlus, X } from 'lucide-react';
 import { SAMPLE_ALBUMS, SAMPLE_PHOTOS, PRESETS } from '@photomator/core';
-import { loadImage } from '@photomator/core';
+import { decodeImportSize } from '@photomator/core';
 import { useEditor } from '@photomator/ui';
 import type { Album, DialogType, EditState, Photo, Preset, Tool, ViewMode } from '@photomator/core';
 import { Sidebar } from '@photomator/ui';
@@ -130,11 +130,13 @@ export default function App() {
       const src = URL.createObjectURL(file);
       objectUrls.current.push(src);
       try {
-        const image = await loadImage(src);
+        // EXIF-aware decode: the browser pre-rotates pixels so the recorded
+        // size is the upright (orientation 1) size, never sideways.
+        const { width, height } = await decodeImportSize(file, src);
         return {
           id: `import-${Date.now()}-${index}`, name: file.name, title: file.name.replace(/\.[^.]+$/, ''), src, thumbnail: src,
           albumId, location: 'Imported from this device', date: new Date(file.lastModified).toISOString(),
-          width: image.naturalWidth, height: image.naturalHeight, camera: 'Imported image', lens: 'No camera metadata',
+          width, height, camera: 'Imported image', lens: 'No camera metadata',
           iso: 0, aperture: '-', shutter: '-', focalLength: '-', raw: false, favorite: false, rating: 0,
         } satisfies Photo;
       } catch { URL.revokeObjectURL(src); return null; }

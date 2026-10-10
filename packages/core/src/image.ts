@@ -17,6 +17,30 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
   return imageCache.get(src)!;
 }
 
+export interface ImportSize {
+  width: number;
+  height: number;
+}
+
+// Decode an imported file with the browser's own EXIF handling so portrait
+// phone photos report upright dimensions. The returned size is orientation 1;
+// every later decode of the same blob URL (<img> auto-orients for display)
+// sees the same upright pixels, so the rest of this pipeline must not rotate
+// for EXIF again. Falls back to <img> when createImageBitmap is unavailable
+// or rejects the options argument (older decoders).
+export async function decodeImportSize(file: Blob, fallbackSrc: string): Promise<ImportSize> {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const size = { width: bitmap.width, height: bitmap.height };
+      bitmap.close();
+      return size;
+    } catch { /* Fall through to the <img> decode below. */ }
+  }
+  const image = await loadImage(fallbackSrc);
+  return { width: image.naturalWidth, height: image.naturalHeight };
+}
+
 // Decode to a small pixel buffer for analysis (histograms, auto-enhance).
 // Throws if the image cannot be decoded or its pixels are unreadable
 // (e.g. a canvas tainted by missing CORS headers); callers must catch
@@ -48,6 +72,10 @@ export function getPhotoFilter(edit: EditState): string {
   return `brightness(${brightness}) contrast(${Math.max(0.05, contrast + detailContrast)}) saturate(${saturation}) sepia(${Math.max(0, warmth)}) hue-rotate(${hue + Math.min(0, warmth) * 50}deg) grayscale(${edit.blackAndWhite ? 1 : 0})`;
 }
 
+// The input image is already upright (orientation 1): imports are decoded
+// with imageOrientation: "from-image" and <img> auto-orients EXIF for
+// display. Only user edits (rotation/flips/straighten) transform here;
+// applying EXIF orientation again would double-rotate portrait photos.
 export function geometryCanvas(image: HTMLImageElement, edit: EditState, maxSize = 1800): HTMLCanvasElement {
   const rotated = Math.abs(edit.rotation % 180) === 90;
   const sourceWidth = image.naturalWidth;
