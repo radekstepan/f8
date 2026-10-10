@@ -1,20 +1,22 @@
 import { useState } from 'react';
 import { Camera, Check, Download, FolderPlus, Info, Keyboard, MapPin, Save, Share } from 'lucide-react';
 import { downloadBlob, exportPhoto, getPhotoFilter } from '@photomator/core';
-import type { DialogType, EditState, Photo } from '@photomator/core';
+import type { DialogType, EditState, Photo, RepairInpaintBinding } from '@photomator/core';
 import { BrandMark, Modal, RangeControl, SelectField } from './EditorUI.js';
 
 interface EditorDialogsProps {
   dialog: DialogType;
   photo: Photo;
   edit: EditState;
+  /** Worker inpainting for repair strokes at export; absent means blur repair. */
+  inpaintRepair?: RepairInpaintBinding | null;
   onClose: () => void;
   onToast: (message: string) => void;
   onCreateAlbum: (name: string, includePhoto: boolean) => void;
   onSavePreset: (name: string) => void;
 }
 
-function ExportDialog({ photo, edit, onClose, onToast }: Pick<EditorDialogsProps, 'photo' | 'edit' | 'onClose' | 'onToast'>) {
+function ExportDialog({ photo, edit, inpaintRepair, onClose, onToast }: Pick<EditorDialogsProps, 'photo' | 'edit' | 'inpaintRepair' | 'onClose' | 'onToast'>) {
   const [format, setFormat] = useState('jpeg');
   const [quality, setQuality] = useState(90);
   const [size, setSize] = useState('1200');
@@ -26,7 +28,7 @@ function ExportDialog({ photo, edit, onClose, onToast }: Pick<EditorDialogsProps
     setExporting(true);
     setError('');
     try {
-      const blob = await exportPhoto(photo.src, edit, format, quality, Number(size));
+      const blob = await exportPhoto(photo.src, edit, format, quality, Number(size), inpaintRepair ? { method: inpaintRepair.method, runInpaint: inpaintRepair.run } : undefined);
       downloadBlob(blob, `${filename.trim().replace(/[\\/:*?"<>|]/g, '-')}.${format === 'jpeg' ? 'jpg' : format}`);
       onToast(`Your photo was exported as ${format.toUpperCase()}.`);
       onClose();

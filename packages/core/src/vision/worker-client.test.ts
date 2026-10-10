@@ -138,6 +138,36 @@ describe("VisionWorkerClient", () => {
     expect(ports).toHaveLength(0);
   });
 
+  it("round-trips inpaint with mask, radius, and method", async () => {
+    const { client, ports } = setup();
+    const ready = client.ensureReady();
+    ports[0]?.emit({ id: 1, kind: "pong", version: "5.0.0" });
+    await ready;
+    const image = solidColor(8, 6, 10, 20, 30);
+    const mask = { width: 8, height: 6, data: new Uint8ClampedArray(8 * 6) };
+    const pending = client.inpaint(image, mask, 5, "ns");
+    await tick();
+    expect(ports[0]?.sent[1]).toMatchObject({ id: 2, kind: "inpaint", width: 8, height: 6, radius: 5, method: "ns" });
+    expect((ports[0]?.sent[1] as { mask?: unknown }).mask).toBe(mask.data);
+    ports[0]?.emit({ id: 2, kind: "inpaint", width: 8, height: 6, data: new Uint8ClampedArray(8 * 6 * 4).fill(7) });
+    const result = await pending;
+    expect(result.width).toBe(8);
+    expect(result.height).toBe(6);
+    expect(Array.from(result.data)).toEqual(new Array(8 * 6 * 4).fill(7));
+  });
+
+  it("rejects malformed inpaint input before touching the worker", async () => {
+    const { client, ports } = setup();
+    const image = solidColor(4, 4, 0, 0, 0);
+    const mask = { width: 4, height: 4, data: new Uint8ClampedArray(16) };
+    await expect(client.inpaint(image, { width: 2, height: 2, data: new Uint8ClampedArray(4) }, 3, "telea")).rejects.toThrow(
+      RangeError,
+    );
+    await expect(client.inpaint(image, mask, 0, "telea")).rejects.toThrow(RangeError);
+    await expect(client.inpaint(image, mask, 3, "patchmatch" as never)).rejects.toThrow(RangeError);
+    expect(ports).toHaveLength(0);
+  });
+
   it("fails when the worker answers ping with an error", async () => {
     const { client, ports, statuses } = setup();
     const ready = client.ensureReady();

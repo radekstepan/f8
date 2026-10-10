@@ -13,9 +13,11 @@ import {
   STRAIGHTEN_HOUGH_MIN_LINE_LENGTH,
   STRAIGHTEN_HOUGH_THRESHOLD,
   STRAIGHTEN_WORKING_WIDTH,
+  inpaintWithCv,
   isVisionWorkerRequest,
   voteStraightenAngle,
   type GrayscaleRequest,
+  type InpaintRequest,
   type LineSegment,
   type StraightenRequest,
   type VisionWorkerRequest,
@@ -48,13 +50,25 @@ interface OpenCvSizeConstructor {
 
 interface OpenCvApi {
   readonly CV_8UC4: number;
+  readonly CV_8UC1: number;
   readonly COLOR_RGBA2GRAY: number;
+  readonly COLOR_RGBA2RGB: number;
+  readonly COLOR_RGB2RGBA: number;
+  readonly INPAINT_TELEA: number;
+  readonly INPAINT_NS: number;
   readonly INTER_AREA: number;
   readonly Mat: OpenCvMatConstructor;
   readonly Size: OpenCvSizeConstructor;
   cvtColor(src: OpenCvMat, dst: OpenCvMat, code: number): void;
   GaussianBlur(src: OpenCvMat, dst: OpenCvMat, ksize: OpenCvSize, sigmaX: number): void;
   Canny(image: OpenCvMat, edges: OpenCvMat, threshold1: number, threshold2: number): void;
+  inpaint(
+    src: OpenCvMat,
+    inpaintMask: OpenCvMat,
+    dst: OpenCvMat,
+    inpaintRadius: number,
+    flags: number,
+  ): void;
   HoughLinesP(
     image: OpenCvMat,
     lines: OpenCvMat,
@@ -183,6 +197,26 @@ function straighten(cv: OpenCvApi, request: StraightenRequest): VisionWorkerResp
   }
 }
 
+function inpaint(cv: OpenCvApi, request: InpaintRequest): VisionWorkerResponse {
+  // Full caller resolution (preview or export): no downscaling, the mask
+  // already matches the pixels. Mat wrangling is shared with the Node
+  // golden tests through inpaintWithCv.
+  const result = inpaintWithCv(
+    cv,
+    { width: request.width, height: request.height, data: request.data },
+    { width: request.width, height: request.height, data: request.mask },
+    request.radius,
+    request.method,
+  );
+  return {
+    id: request.id,
+    kind: "inpaint",
+    width: result.width,
+    height: result.height,
+    data: result.data,
+  };
+}
+
 async function handle(request: VisionWorkerRequest): Promise<VisionWorkerResponse> {
   const cv = await loadOpenCv();
   if (request.kind === "ping") {
@@ -190,6 +224,9 @@ async function handle(request: VisionWorkerRequest): Promise<VisionWorkerRespons
   }
   if (request.kind === "straighten") {
     return straighten(cv, request);
+  }
+  if (request.kind === "inpaint") {
+    return inpaint(cv, request);
   }
   return grayscale(cv, request);
 }

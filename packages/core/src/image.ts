@@ -1,6 +1,9 @@
 import { CROP_RATIOS } from './data.js';
-import type { EditState } from './types.js';
+import type { EditState, RetouchPoint } from './types.js';
 import type { PixelImage } from './vision/analyze.js';
+import { blendInpainted, hasRepairStrokes, inpaintRadiusForStrokes, rasterizeRepairMask } from './vision/inpaint.js';
+import type { InpaintMethod, RepairMask } from './vision/inpaint.js';
+import type { VisionWorkerStatus } from './vision/worker-client.js';
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
@@ -161,9 +164,88 @@ export function drawEffects(ctx: CanvasRenderingContext2D, width: number, height
   }
 }
 
-export async function exportPhoto(src: string, edit: EditState, format: string, quality: number, maxSize: number): Promise<Blob> {
+/**
+ * Worker transport for repair inpainting, injected by the app (core never
+ * touches the worker directly). Resolves to the reconstructed RGBA image.
+ */
+export type RunInpaint = (
+  image: PixelImage,
+  mask: RepairMask,
+  radius: number,
+  method: InpaintMethod,
+) => Promise<PixelImage>;
+
+/** UI-facing repair binding: the chosen algorithm, worker transport, and engine readiness. */
+export interface RepairInpaintBinding {
+  method: InpaintMethod;
+  status: VisionWorkerStatus;
+  run: RunInpaint;
+}
+
+/**
+ * Reconstruct the canvas's repair strokes with neighbourhood inpainting
+ * instead of the blur fallback in geometryCanvas. Reads the canvas pixels,
+ * rasterizes the repair mask at canvas resolution, runs the injected worker
+ * call, and composites the result back honoring per-stroke strength.
+ * Clone strokes are ignored (the caller renders them via geometryCanvas).
+ * Returns false when there is nothing to inpaint; transport errors propagate
+ * so the caller can fall back to the blur repair.
+ */
+export async function applyInpaintRepair(
+  canvas: HTMLCanvasElement,
+  points: RetouchPoint[],
+  method: InpaintMethod,
+  runInpaint: RunInpaint,
+): Promise<boolean> {
+  if (!hasRepairStrokes(points)) return false;
+  const width = canvas.width;
+  const height = canvas.height;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return false;
+  const mask = rasterizeRepairMask(points, width, height);
+  if (!mask.data.some((value) => value > 0)) return false;
+  const ctx = canvas.getContext('2d')!;
+  const pixels = ctx.getImageData(0, 0, width, height);
+  const source: PixelImage = { width, height, data: pixels.data };
+  const filled = await runInpaint(source, mask, inpaintRadiusForStrokes(points, width), method);
+  const blended = blendInpainted(source, filled, mask);
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(blended.data), width, height), 0, 0);
+  return true;
+}
+
+export interface ExportRepairOptions {
+  /** Inpaint algorithm; defaults to Telea. */
+  method?: InpaintMethod;
+  /** Worker transport; when absent, repairs render with the blur fallback. */
+  runInpaint?: RunInpaint;
+}
+
+// Resolve the geometry canvas, preferring worker inpainting for repair
+// strokes and falling back to the blur repair when the worker is unavailable,
+// fails, or times out: export must never fail because of the vision engine.
+async function geometryForExport(
+  image: HTMLImageElement,
+  edit: EditState,
+  maxSize: number,
+  repair?: ExportRepairOptions,
+): Promise<HTMLCanvasElement> {
+  const repairs = edit.retouches.filter((point) => point.kind === 'repair');
+  if (!repairs.length || !repair?.runInpaint) return geometryCanvas(image, edit, maxSize);
+  const clean = geometryCanvas(
+    image,
+    { ...edit, retouches: edit.retouches.filter((point) => point.kind === 'clone') },
+    maxSize,
+  );
+  try {
+    const applied = await applyInpaintRepair(clean, repairs, repair.method ?? 'telea', repair.runInpaint);
+    return applied ? clean : geometryCanvas(image, edit, maxSize);
+  } catch {
+    return geometryCanvas(image, edit, maxSize);
+  }
+}
+
+export async function exportPhoto(src: string, edit: EditState, format: string, quality: number, maxSize: number, repair?: ExportRepairOptions): Promise<Blob> {
   const image = await loadImage(src);
-  const base = geometryCanvas(image, edit, maxSize);
+  const base = await geometryForExport(image, edit, maxSize, repair);
   const output = document.createElement('canvas');
   output.width = base.width;
   output.height = base.height;

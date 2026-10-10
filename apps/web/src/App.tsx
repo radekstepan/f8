@@ -12,6 +12,7 @@ import { Inspector } from '@photomator/ui';
 import { EditorDialogs } from '@photomator/ui';
 import { useVisionWorker } from './vision/useVisionWorker';
 import { useStraighten } from './vision/useStraighten';
+import { useInpaintRepair } from './vision/useInpaintRepair';
 
 function readSaved<T>(key: string, fallback: T): T {
   try {
@@ -54,6 +55,7 @@ export default function App() {
   const editor = useEditor(photo.id);
   const vision = useVisionWorker();
   const straighten = useStraighten(photo.id);
+  const inpaintRepair = useInpaintRepair();
   const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
 
@@ -269,6 +271,7 @@ export default function App() {
               photo={photo} edit={editor.edit} tool={tool} zoom={zoom}
               compare={compare} showOriginal={showOriginal}
               brushSize={brushSize} brushStrength={brushStrength}
+              inpaintRepair={inpaintRepair}
               onZoom={setZoom} onCompare={() => setCompare(!compare)}
               onFavorite={() => toggleFavorite()} onRating={setRating}
               onInfo={() => setDialog('info')} onChange={editor.change} onHistogram={setHistogram}
@@ -290,6 +293,7 @@ export default function App() {
         photo={photo} edit={editor.edit} tool={tool} histogram={histogram}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss }}
+        repairAssist={{ method: inpaintRepair.method, status: inpaintRepair.status, onMethodChange: inpaintRepair.setMethod }}
         onChange={editor.change} onTool={selectTool} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
@@ -308,7 +312,7 @@ export default function App() {
       }}
     />
     <input className="hidden" ref={fileInput} type="file" multiple accept="image/*" aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
-    <EditorDialogs dialog={dialog} photo={photo} edit={editor.edit} onClose={() => setDialog(null)} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} />
+    <EditorDialogs dialog={dialog} photo={photo} edit={editor.edit} inpaintRepair={inpaintRepair} onClose={() => setDialog(null)} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} />
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
     {dragging && <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos anywhere to start creating.</p><span>JPEG, PNG, WebP and more</span></div></div>}
   </div>;

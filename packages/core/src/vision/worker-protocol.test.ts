@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createGrayscaleRequest,
+  createInpaintRequest,
   createPingRequest,
   createStraightenRequest,
   grayscaleReference,
@@ -8,6 +9,11 @@ import {
   isVisionWorkerResponse,
 } from "./worker-protocol.js";
 import { solidColor } from "./fixtures.js";
+import type { RepairMask } from "./inpaint.js";
+
+function testMask(width: number, height: number): RepairMask {
+  return { width, height, data: new Uint8ClampedArray(width * height) };
+}
 
 describe("createPingRequest", () => {
   it("builds a ping with the given id", () => {
@@ -53,6 +59,43 @@ describe("createStraightenRequest", () => {
   });
 });
 
+describe("createInpaintRequest", () => {
+  it("carries dimensions, pixels, mask, radius, and method", () => {
+    const image = solidColor(8, 6, 10, 20, 30);
+    const mask = testMask(8, 6);
+    expect(createInpaintRequest(9, image, mask, 5, "ns")).toEqual({
+      id: 9,
+      kind: "inpaint",
+      width: 8,
+      height: 6,
+      data: image.data,
+      mask: mask.data,
+      radius: 5,
+      method: "ns",
+    });
+  });
+
+  it("rejects mismatched image and mask dimensions", () => {
+    expect(() =>
+      createInpaintRequest(1, solidColor(8, 6, 0, 0, 0), testMask(4, 6), 3, "telea"),
+    ).toThrow(RangeError);
+  });
+
+  it("rejects non-positive and non-finite radii", () => {
+    const image = solidColor(4, 4, 0, 0, 0);
+    const mask = testMask(4, 4);
+    expect(() => createInpaintRequest(1, image, mask, 0, "telea")).toThrow(RangeError);
+    expect(() => createInpaintRequest(1, image, mask, -2, "telea")).toThrow(RangeError);
+    expect(() => createInpaintRequest(1, image, mask, NaN, "telea")).toThrow(RangeError);
+  });
+
+  it("rejects unknown methods", () => {
+    expect(() =>
+      createInpaintRequest(1, solidColor(4, 4, 0, 0, 0), testMask(4, 4), 3, "patchmatch" as never),
+    ).toThrow(RangeError);
+  });
+});
+
 describe("isVisionWorkerRequest", () => {
   it("accepts a ping", () => {
     expect(isVisionWorkerRequest({ id: 1, kind: "ping" })).toBe(true);
@@ -82,12 +125,27 @@ describe("isVisionWorkerRequest", () => {
     ).toBe(true);
   });
 
+  it("accepts an inpaint request with exact RGBA and mask buffers", () => {
+    expect(
+      isVisionWorkerRequest({
+        id: 4,
+        kind: "inpaint",
+        width: 8,
+        height: 6,
+        data: new Uint8ClampedArray(8 * 6 * 4),
+        mask: new Uint8ClampedArray(8 * 6),
+        radius: 3,
+        method: "telea",
+      }),
+    ).toBe(true);
+  });
+
   it.each([
     ["null", null],
     ["string", "ping"],
     ["array", []],
     ["missing kind", { id: 1 }],
-    ["unknown kind", { id: 1, kind: "inpaint" }],
+    ["unknown kind", { id: 1, kind: "sharpen" }],
     ["missing id", { kind: "ping" }],
     ["non-integer id", { id: 1.5, kind: "ping" }],
     ["zero width", { id: 1, kind: "grayscale", width: 0, height: 4, data: new Uint8ClampedArray(0) }],
@@ -97,19 +155,30 @@ describe("isVisionWorkerRequest", () => {
     ["Uint8Array pixels", { id: 1, kind: "grayscale", width: 1, height: 1, data: new Uint8Array(4) }],
     ["short buffer", { id: 1, kind: "grayscale", width: 4, height: 4, data: new Uint8ClampedArray(63) }],
     ["long buffer", { id: 1, kind: "grayscale", width: 4, height: 4, data: new Uint8ClampedArray(65) }],
+    ["inpaint without mask", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64), radius: 3, method: "telea" }],
+    ["inpaint with RGBA-sized mask", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64), mask: new Uint8ClampedArray(64), radius: 3, method: "telea" }],
+    ["inpaint with plain-array mask", { id: 1, kind: "inpaint", width: 1, height: 1, data: new Uint8ClampedArray(4), mask: [255], radius: 3, method: "telea" }],
+    ["inpaint without radius", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64), mask: new Uint8ClampedArray(16), method: "telea" }],
+    ["inpaint with zero radius", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64), mask: new Uint8ClampedArray(16), radius: 0, method: "telea" }],
+    ["inpaint with NaN radius", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64), mask: new Uint8ClampedArray(16), radius: NaN, method: "telea" }],
+    ["inpaint without method", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64), mask: new Uint8ClampedArray(16), radius: 3 }],
+    ["inpaint with unknown method", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64), mask: new Uint8ClampedArray(16), radius: 3, method: "patchmatch" }],
   ])("rejects %s", (_label, value) => {
     expect(isVisionWorkerRequest(value)).toBe(false);
   });
 });
 
 describe("isVisionWorkerResponse", () => {
-  it("accepts pong, grayscale, straighten, and error responses", () => {
+  it("accepts pong, grayscale, straighten, inpaint, and error responses", () => {
     expect(isVisionWorkerResponse({ id: 1, kind: "pong", version: "5.0.0" })).toBe(true);
     expect(
       isVisionWorkerResponse({ id: 2, kind: "grayscale", width: 4, height: 4, data: new Uint8ClampedArray(16) }),
     ).toBe(true);
     expect(isVisionWorkerResponse({ id: 3, kind: "straighten", angle: -2.5, confidence: 0.8 })).toBe(true);
-    expect(isVisionWorkerResponse({ id: 4, kind: "error", message: "boom" })).toBe(true);
+    expect(
+      isVisionWorkerResponse({ id: 4, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64) }),
+    ).toBe(true);
+    expect(isVisionWorkerResponse({ id: 5, kind: "error", message: "boom" })).toBe(true);
   });
 
   it.each([
@@ -125,6 +194,8 @@ describe("isVisionWorkerResponse", () => {
     ["straighten without confidence", { id: 1, kind: "straighten", angle: 1 }],
     ["straighten with negative confidence", { id: 1, kind: "straighten", angle: 1, confidence: -0.1 }],
     ["straighten with oversized confidence", { id: 1, kind: "straighten", angle: 1, confidence: 1.5 }],
+    ["short inpaint buffer", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(63) }],
+    ["single-channel inpaint buffer", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(16) }],
   ])("rejects %s", (_label, value) => {
     expect(isVisionWorkerResponse(value)).toBe(false);
   });

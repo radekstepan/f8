@@ -7,13 +7,16 @@
 // ownership of their PixelImage data.
 
 import { assertValidImage, type PixelImage } from "./analyze.js";
+import type { InpaintMethod, RepairMask } from "./inpaint.js";
 import { STRAIGHTEN_MAX_ANGLE } from "./straighten.js";
 import {
   createGrayscaleRequest,
+  createInpaintRequest,
   createPingRequest,
   createStraightenRequest,
   isVisionWorkerResponse,
   type GrayscaleResponse,
+  type InpaintResponse,
   type PongResponse,
   type StraightenResponse,
   type VisionRequestId,
@@ -62,6 +65,13 @@ export interface StraightenResult {
   angle: number;
   /** Confidence in the suggestion, 0..1. */
   confidence: number;
+}
+
+export interface InpaintResult {
+  width: number;
+  height: number;
+  /** Row-major RGBA; masked regions reconstructed, alpha restored from input. */
+  data: Uint8ClampedArray;
 }
 
 interface PendingCall {
@@ -150,6 +160,31 @@ export class VisionWorkerClient {
       angle: Math.min(STRAIGHTEN_MAX_ANGLE, Math.max(-STRAIGHTEN_MAX_ANGLE, response.angle)),
       confidence: response.confidence,
     };
+  }
+
+  /**
+   * Reconstruct masked regions with cv.inpaint off the main thread. Runs at
+   * the caller's resolution (preview or export); callers composite the result
+   * back over the source, guided by the mask, and fall back to blur repair
+   * when the worker is unavailable.
+   */
+  async inpaint(
+    image: PixelImage,
+    mask: RepairMask,
+    radius: number,
+    method: InpaintMethod,
+  ): Promise<InpaintResult> {
+    // Built (and validated) up front so malformed input throws RangeError
+    // before any worker contact, like the other ops.
+    const id = this.nextId;
+    this.nextId += 1;
+    const request = createInpaintRequest(id, image, mask, radius, method);
+    if (this.statusValue === "failed") {
+      throw new VisionWorkerError("Vision worker failed; call ensureReady() to retry.");
+    }
+    await this.ensureReady();
+    const response = (await this.send(request)) as InpaintResponse;
+    return { width: response.width, height: response.height, data: response.data };
   }
 
   /** Stop the worker, reject pending calls, return to idle for a later restart. */

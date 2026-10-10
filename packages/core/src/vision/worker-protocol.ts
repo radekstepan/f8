@@ -3,9 +3,10 @@
 // The worker itself lives in apps/web (Vite bundles it); this module is the
 // shared, framework-free contract. Messages are plain data plus
 // Uint8ClampedArray buffers, so they survive structured-clone transport
-// unchanged. Heavier ops (inpaint next) extend these unions later.
+// unchanged.
 
 import { assertValidImage, type PixelImage } from "./analyze.js";
+import { assertValidMask, type InpaintMethod, type RepairMask } from "./inpaint.js";
 
 export type VisionRequestId = number;
 
@@ -32,7 +33,21 @@ export interface StraightenRequest {
   data: Uint8ClampedArray;
 }
 
-export type VisionWorkerRequest = PingRequest | GrayscaleRequest | StraightenRequest;
+export interface InpaintRequest {
+  id: VisionRequestId;
+  kind: "inpaint";
+  width: number;
+  height: number;
+  /** Row-major RGBA, width * height * 4 bytes. */
+  data: Uint8ClampedArray;
+  /** Single-channel repair mask, width * height bytes (0 = keep). */
+  mask: Uint8ClampedArray;
+  /** cv.inpaint neighbourhood radius in pixels. */
+  radius: number;
+  method: InpaintMethod;
+}
+
+export type VisionWorkerRequest = PingRequest | GrayscaleRequest | StraightenRequest | InpaintRequest;
 
 export interface PongResponse {
   id: VisionRequestId;
@@ -59,13 +74,27 @@ export interface StraightenResponse {
   confidence: number;
 }
 
+export interface InpaintResponse {
+  id: VisionRequestId;
+  kind: "inpaint";
+  width: number;
+  height: number;
+  /** Row-major RGBA, width * height * 4 bytes; alpha restored from the input. */
+  data: Uint8ClampedArray;
+}
+
 export interface VisionErrorResponse {
   id: VisionRequestId;
   kind: "error";
   message: string;
 }
 
-export type VisionWorkerResponse = PongResponse | GrayscaleResponse | StraightenResponse | VisionErrorResponse;
+export type VisionWorkerResponse =
+  | PongResponse
+  | GrayscaleResponse
+  | StraightenResponse
+  | InpaintResponse
+  | VisionErrorResponse;
 
 export function createPingRequest(id: VisionRequestId): PingRequest {
   return { id, kind: "ping" };
@@ -81,6 +110,38 @@ export function createStraightenRequest(id: VisionRequestId, image: PixelImage):
   return { id, kind: "straighten", width: image.width, height: image.height, data: image.data };
 }
 
+export function createInpaintRequest(
+  id: VisionRequestId,
+  image: PixelImage,
+  mask: RepairMask,
+  radius: number,
+  method: InpaintMethod,
+): InpaintRequest {
+  assertValidImage(image);
+  assertValidMask(mask);
+  if (image.width !== mask.width || image.height !== mask.height) {
+    throw new RangeError(
+      `Inpaint image (${image.width}x${image.height}) and mask (${mask.width}x${mask.height}) must match.`,
+    );
+  }
+  if (!Number.isFinite(radius) || radius <= 0) {
+    throw new RangeError(`Expected a positive inpaint radius, got ${radius}.`);
+  }
+  if (method !== "telea" && method !== "ns") {
+    throw new RangeError(`Unknown inpaint method: ${String(method)}.`);
+  }
+  return {
+    id,
+    kind: "inpaint",
+    width: image.width,
+    height: image.height,
+    data: image.data,
+    mask: mask.data,
+    radius,
+    method,
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -91,6 +152,10 @@ function isId(value: unknown): value is VisionRequestId {
 
 function isPositiveInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function isPositiveNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 function isPixelBuffer(value: unknown, length: number): value is Uint8ClampedArray {
@@ -109,6 +174,14 @@ export function isVisionWorkerRequest(value: unknown): value is VisionWorkerRequ
   if (!isRecord(value) || !isId(value.id)) return false;
   if (value.kind === "ping") return true;
   if (value.kind === "grayscale" || value.kind === "straighten") return isImageRequest(value);
+  if (value.kind === "inpaint") {
+    return (
+      isImageRequest(value) &&
+      isPixelBuffer(value.mask, (value.width as number) * (value.height as number)) &&
+      isPositiveNumber(value.radius) &&
+      (value.method === "telea" || value.method === "ns")
+    );
+  }
   return false;
 }
 
@@ -130,6 +203,13 @@ export function isVisionWorkerResponse(value: unknown): value is VisionWorkerRes
       Number.isFinite(value.confidence) &&
       (value.confidence as number) >= 0 &&
       (value.confidence as number) <= 1
+    );
+  }
+  if (value.kind === "inpaint") {
+    return (
+      isPositiveInt(value.width) &&
+      isPositiveInt(value.height) &&
+      isPixelBuffer(value.data, (value.width as number) * (value.height as number) * 4)
     );
   }
   if (value.kind === "error") return typeof value.message === "string";

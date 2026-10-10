@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star } from 'lucide-react';
 import { DEFAULT_EDIT } from '@photomator/core';
-import { drawEffects, geometryCanvas, getPhotoFilter, loadImage } from '@photomator/core';
-import type { ChangeEdit, EditState, Photo, RetouchPoint, Tool } from '@photomator/core';
+import { applyInpaintRepair, drawEffects, geometryCanvas, getPhotoFilter, loadImage } from '@photomator/core';
+import type { ChangeEdit, EditState, Photo, RepairInpaintBinding, RetouchPoint, RunInpaint, Tool } from '@photomator/core';
 import { IconButton } from './EditorUI.js';
 
 export type HistogramData = { red: number[]; green: number[]; blue: number[] };
@@ -16,6 +16,8 @@ interface PhotoCanvasProps {
   showOriginal: boolean;
   brushSize: number;
   brushStrength: number;
+  /** Worker inpainting for repair strokes; absent means blur repair only. */
+  inpaintRepair?: RepairInpaintBinding | null;
   onZoom: (zoom: number) => void;
   onCompare: () => void;
   onFavorite: () => void;
@@ -25,7 +27,7 @@ interface PhotoCanvasProps {
   onHistogram: (data: HistogramData) => void;
 }
 
-export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, brushSize, brushStrength, onZoom, onCompare, onFavorite, onRating, onInfo, onChange, onHistogram }: PhotoCanvasProps) {
+export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, brushSize, brushStrength, inpaintRepair, onZoom, onCompare, onFavorite, onRating, onInfo, onChange, onHistogram }: PhotoCanvasProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -34,6 +36,9 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const points = useRef<RetouchPoint[]>([]);
   const cloneSource = useRef<{ x: number; y: number } | null>(null);
   const cloneStart = useRef<{ x: number; y: number } | null>(null);
+  const repairGeneration = useRef(0);
+  const inpaintRun = useRef<RunInpaint | null>(null);
+  inpaintRun.current = inpaintRepair?.run ?? null;
   const [stageSize, setStageSize] = useState({ width: 800, height: 520 });
   const [aspect, setAspect] = useState(1200 / 627);
   const [loading, setLoading] = useState(true);
@@ -59,43 +64,65 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
 
   useEffect(() => {
     let cancelled = false;
+    let timer: number | null = null;
     loadImage(photo.src).then((image) => {
       if (cancelled || !canvasRef.current || !originalRef.current) return;
-      const base = geometryCanvas(image, edit);
-      const canvas = canvasRef.current;
-      canvas.width = base.width;
-      canvas.height = base.height;
-      const ctx = canvas.getContext('2d')!;
-      ctx.filter = getPhotoFilter(edit);
-      ctx.drawImage(base, 0, 0);
-      ctx.filter = 'none';
-      drawEffects(ctx, base.width, base.height, edit);
+      const renderBase = (base: HTMLCanvasElement) => {
+        const canvas = canvasRef.current!;
+        canvas.width = base.width;
+        canvas.height = base.height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.filter = getPhotoFilter(edit);
+        ctx.drawImage(base, 0, 0);
+        ctx.filter = 'none';
+        drawEffects(ctx, base.width, base.height, edit);
+        setAspect(base.width / base.height);
+
+        const sampler = document.createElement('canvas');
+        sampler.width = 160;
+        sampler.height = 100;
+        const sampleCtx = sampler.getContext('2d', { willReadFrequently: true })!;
+        sampleCtx.drawImage(canvas, 0, 0, 160, 100);
+        const pixels = sampleCtx.getImageData(0, 0, 160, 100).data;
+        const histogram: HistogramData = { red: Array(64).fill(0), green: Array(64).fill(0), blue: Array(64).fill(0) };
+        for (let i = 0; i < pixels.length; i += 4) {
+          const r = (pixels[i] ?? 0) >> 2;
+          const g = (pixels[i + 1] ?? 0) >> 2;
+          const b = (pixels[i + 2] ?? 0) >> 2;
+          histogram.red[r] = (histogram.red[r] ?? 0) + 1;
+          histogram.green[g] = (histogram.green[g] ?? 0) + 1;
+          histogram.blue[b] = (histogram.blue[b] ?? 0) + 1;
+        }
+        onHistogram(histogram);
+      };
+      renderBase(geometryCanvas(image, edit));
       const original = geometryCanvas(image, { ...DEFAULT_EDIT, cropRatio: edit.cropRatio, rotation: edit.rotation, flipH: edit.flipH, flipV: edit.flipV, straighten: edit.straighten });
       originalRef.current.width = original.width;
       originalRef.current.height = original.height;
       originalRef.current.getContext('2d')!.drawImage(original, 0, 0);
-      setAspect(base.width / base.height);
       setLoading(false);
 
-      const sampler = document.createElement('canvas');
-      sampler.width = 160;
-      sampler.height = 100;
-      const sampleCtx = sampler.getContext('2d', { willReadFrequently: true })!;
-      sampleCtx.drawImage(canvas, 0, 0, 160, 100);
-      const pixels = sampleCtx.getImageData(0, 0, 160, 100).data;
-      const histogram: HistogramData = { red: Array(64).fill(0), green: Array(64).fill(0), blue: Array(64).fill(0) };
-      for (let i = 0; i < pixels.length; i += 4) {
-        const r = (pixels[i] ?? 0) >> 2;
-        const g = (pixels[i + 1] ?? 0) >> 2;
-        const b = (pixels[i + 2] ?? 0) >> 2;
-        histogram.red[r] = (histogram.red[r] ?? 0) + 1;
-        histogram.green[g] = (histogram.green[g] ?? 0) + 1;
-        histogram.blue[b] = (histogram.blue[b] ?? 0) + 1;
+      // Upgrade repair strokes from the blur fallback to worker inpainting,
+      // debounced so a painting stroke doesn't flood the worker queue while
+      // the blur shows live. Failures keep the blur already displayed.
+      const repairs = edit.retouches.filter((point) => point.kind === 'repair');
+      const run = inpaintRun.current;
+      const method = inpaintRepair?.method;
+      if (repairs.length && run && method) {
+        const generation = repairGeneration.current + 1;
+        repairGeneration.current = generation;
+        timer = window.setTimeout(() => {
+          if (cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
+          const clean = geometryCanvas(image, { ...edit, retouches: edit.retouches.filter((point) => point.kind === 'clone') });
+          void applyInpaintRepair(clean, repairs, method, run).then((applied) => {
+            if (!applied || cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
+            renderBase(clean);
+          }).catch(() => { /* Blur fallback already displayed. */ });
+        }, 300);
       }
-      onHistogram(histogram);
     }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setLoading(false); } });
-    return () => { cancelled = true; };
-  }, [photo.src, edit, onHistogram, retry]);
+    return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
+  }, [photo.src, edit, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.status]);
 
   const fitWidth = Math.max(100, Math.min(stageSize.width - 64, (stageSize.height - 48) * aspect));
   const frameWidth = fitWidth * zoom;
@@ -137,7 +164,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       {tool === 'crop' && !loading && <div className="crop-grid"><i /><i /><i /><i /><span className="crop-corner top-left" /><span className="crop-corner top-right" /><span className="crop-corner bottom-left" /><span className="crop-corner bottom-right" /></div>}
       {isBrush && cursor && !compare && <div className="brush-cursor" style={{ left: cursor.x, top: cursor.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
     </div></div>
-      {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : 'Click and drag to soften small distractions.'}</div>}
+      {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : 'Click and drag to repair small distractions.'}</div>}
     </div>
     <div className="canvas-status">
       <button className="canvas-dimensions" onClick={onInfo} title="Photo information">

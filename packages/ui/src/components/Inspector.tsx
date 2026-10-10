@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Bandage, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, FlipHorizontal2, FlipVertical2, Focus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Stamp, Sun, Thermometer, Trash2, X } from 'lucide-react';
 import { CROP_RATIOS, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD } from '@photomator/core';
-import type { ChangeEdit, EditState, NumericAdjustment, Photo, Tool } from '@photomator/core';
+import type { ChangeEdit, EditState, InpaintMethod, NumericAdjustment, Photo, Tool, VisionWorkerStatus } from '@photomator/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { IconButton, MenuItem, RangeControl, SelectField, Toggle } from './EditorUI.js';
 
@@ -73,6 +73,25 @@ function StraightenControl({ value, assist, onChange }: { value: number; assist:
   </div>;
 }
 
+/** View model for repair inpainting, driven by the app's vision hook. */
+export interface RepairAssist {
+  method: InpaintMethod;
+  status: VisionWorkerStatus;
+  onMethodChange: (method: InpaintMethod) => void;
+}
+
+function RepairMethodControl({ assist }: { assist: RepairAssist }) {
+  return <>
+    <h4>Reconstruction</h4>
+    <div className="segmented-control" role="group" aria-label="Repair reconstruction method">
+      <button className={assist.method === 'telea' ? 'is-active' : ''} title="Telea's fast marching method: quick and smooth" onClick={() => assist.onMethodChange('telea')}>Telea</button>
+      <button className={assist.method === 'ns' ? 'is-active' : ''} title="Navier-Stokes fluid dynamics: slower, sometimes crisper" onClick={() => assist.onMethodChange('ns')}>Navier–Stokes</button>
+    </div>
+    {assist.status === 'loading' && <p className="inspector-note" role="status">Loading enhanced repair…</p>}
+    {assist.status === 'failed' && <p className="inspector-note" role="alert">Enhanced repair is unavailable — using soft retouch instead.</p>}
+  </>;
+}
+
 interface InspectorProps {
   photo: Photo;
   edit: EditState;
@@ -82,6 +101,7 @@ interface InspectorProps {
   brushStrength: number;
   canPaste: boolean;
   straightenAssist?: StraightenAssist;
+  repairAssist?: RepairAssist;
   onChange: ChangeEdit;
   onTool: (tool: Tool) => void;
   onReset: () => void;
@@ -95,7 +115,7 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, onChange, onTool, onReset, onAuto, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onApplyCrop, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onChange, onTool, onReset, onAuto, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onApplyCrop, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
   const [extraSections, setExtraSections] = useState<string[]>([]);
@@ -171,7 +191,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </AdjustmentSection>
       {extraSections.includes('Black & White') && <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} enabled={edit.blackAndWhite} onToggle={() => onChange({ blackAndWhite: !edit.blackAndWhite })}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>}
       <div className="inspector-end-note"><Circle size={10} />Every change. Always reversible.</div>
-    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onChange({ rotation: (edit.rotation - 90) % 360 })}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onChange({ rotation: (edit.rotation + 90) % 360 })}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onChange={onChange} /> : range('straighten', 'Straighten', { min: -15, max: 15, step: 0.1, suffix: 'deg' })}<button className="secondary-button full-width reset-crop" onClick={() => onChange({ cropRatio: 'Original', rotation: 0, flipH: false, flipV: false, straighten: 0 })}><RotateCcw size={13} />Reset Composition</button><p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <div className="tool-inspector"><div className="tool-intro">{tool === 'repair' ? <Bandage size={30} strokeWidth={1.3} /> : <Stamp size={30} strokeWidth={1.3} />}<h3>{tool === 'repair' ? 'Less distraction. More photo.' : 'A little creative borrowing.'}</h3><p>{tool === 'repair' ? 'Gently blend small distractions with a soft retouching brush.' : 'Sample one area of your photo and paint it onto another.'}</p></div><div className="segmented-control"><button className={tool === 'repair' ? 'is-active' : ''} onClick={() => onTool('repair')}>Repair</button><button className={tool === 'clone' ? 'is-active' : ''} onClick={() => onTool('clone')}>Clone</button></div><RangeControl label="Brush Size" value={brushSize} min={5} max={160} suffix="px" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} suffix="%" onChange={onBrushStrength} /><div className="brush-preview"><span style={{ width: Math.min(brushSize, 90), height: Math.min(brushSize, 90), opacity: brushStrength / 100 }} /><small>Brush preview</small></div><p className="inspector-note">{tool === 'clone' ? 'Hold Alt and click to choose a source. Then click and drag to paint. Use Undo to step back.' : 'Click and drag over the photo to apply a local blur. This demo uses browser-based retouching, not AI object removal.'}</p><div className="retouch-status"><span>{edit.retouches.length} brush stamps</span><IconButton label="Clear all retouching" disabled={!edit.retouches.length} onClick={() => onChange({ retouches: [] })}><Trash2 size={14} /></IconButton></div></div>}</div>
+    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onChange({ rotation: (edit.rotation - 90) % 360 })}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onChange({ rotation: (edit.rotation + 90) % 360 })}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onChange={onChange} /> : range('straighten', 'Straighten', { min: -15, max: 15, step: 0.1, suffix: 'deg' })}<button className="secondary-button full-width reset-crop" onClick={() => onChange({ cropRatio: 'Original', rotation: 0, flipH: false, flipV: false, straighten: 0 })}><RotateCcw size={13} />Reset Composition</button><p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <div className="tool-inspector"><div className="tool-intro">{tool === 'repair' ? <Bandage size={30} strokeWidth={1.3} /> : <Stamp size={30} strokeWidth={1.3} />}<h3>{tool === 'repair' ? 'Less distraction. More photo.' : 'A little creative borrowing.'}</h3><p>{tool === 'repair' ? repairAssist ? 'Rebuild small distractions from the surrounding photo.' : 'Gently blend small distractions with a soft retouching brush.' : 'Sample one area of your photo and paint it onto another.'}</p></div><div className="segmented-control"><button className={tool === 'repair' ? 'is-active' : ''} onClick={() => onTool('repair')}>Repair</button><button className={tool === 'clone' ? 'is-active' : ''} onClick={() => onTool('clone')}>Clone</button></div><RangeControl label="Brush Size" value={brushSize} min={5} max={160} suffix="px" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} suffix="%" onChange={onBrushStrength} />{tool === 'repair' && repairAssist && <RepairMethodControl assist={repairAssist} />}<div className="brush-preview"><span style={{ width: Math.min(brushSize, 90), height: Math.min(brushSize, 90), opacity: brushStrength / 100 }} /><small>Brush preview</small></div><p className="inspector-note">{tool === 'clone' ? 'Hold Alt and click to choose a source. Then click and drag to paint. Use Undo to step back.' : repairAssist ? 'Click and drag over small distractions to rebuild them from surrounding detail. Computed in your browser — not AI object removal.' : 'Click and drag over the photo to apply a local blur. This demo uses browser-based retouching, not AI object removal.'}</p><div className="retouch-status"><span>{edit.retouches.length} brush stamps</span><IconButton label="Clear all retouching" disabled={!edit.retouches.length} onClick={() => onChange({ retouches: [] })}><Trash2 size={14} /></IconButton></div></div>}</div>
     <div className="inspector-footer">{tool === 'adjust' ? <><button className="add-adjustment" onClick={() => setAddMenu(!addMenu)} aria-expanded={addMenu}><Plus size={15} />Add Adjustment<ChevronDown size={12} /></button>{addMenu && <div className="dropdown-menu add-adjustment-menu" role="menu">{['Curves', 'Details', 'Effects', 'Black & White'].map((name) => <MenuItem key={name} onClick={() => addSection(name)}>{name}</MenuItem>)}<div className="menu-separator" /><MenuItem onClick={() => { onSavePreset(); setAddMenu(false); }}>Save as Preset...</MenuItem></div>}</> : <button className="primary-button full-width" onClick={tool === 'crop' ? onApplyCrop : () => onTool('adjust')}>{tool === 'crop' ? 'Apply Crop' : 'Done'}</button>}</div>
   </aside>;
 }

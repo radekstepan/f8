@@ -22,7 +22,7 @@ The production build keeps the single-file main bundle but emits the vision work
 - `dist/vision.worker-*.js` (~1KB): the worker shell, spawned only when a vision feature starts it.
 - `dist/opencv-*.js` (~15MB): OpenCV, fetched lazily by the worker on first use — never in the initial page load.
 
-The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64), so there is no separate `.wasm` asset to serve. Heavy vision entry points must keep this shape: construct the worker via `new Worker(new URL(..., import.meta.url))`, import OpenCV only inside the worker, and never import it from main-thread code. A networked `yarn install` fetches the package from the npm registry.
+The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64), so there is no separate `.wasm` asset to serve. Heavy vision entry points must keep this shape: construct the worker via `new Worker(new URL(..., import.meta.url))`, import OpenCV only inside the worker, and never import it from main-thread code. The one exception is Node-only: `@photomator/core` lists the package as a devDependency so the inpaint golden tests can run real `cv.inpaint` outside the browser; test files are never shipped in the app bundle. A networked `yarn install` fetches the package from the npm registry.
 
 ## Included Interactions
 
@@ -34,7 +34,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 - Per-photo undo/redo with up to fifty history entries. Consecutive slider changes are grouped into a single edit.
 - Draggable before/after comparison and hold-to-preview-original behavior.
 - Centered aspect-ratio cropping, rotation, flips, and straightening with automatic horizon detection, plus a rule-of-thirds overlay.
-- Browser-based repair brushes and clone stamping. Click to choose a clone source; Alt-click to choose another.
+- Browser-based repair brushes (OpenCV inpainting with a blur fallback) and clone stamping. Click to choose a clone source; Alt-click to choose another.
 - Photo import using a file picker or drag and drop.
 - JPEG, PNG, and WebP export, configurable size and quality, plus JSON adjustment export.
 - Copy/paste adjustments between photographs, with each photograph's crop and retouching preserved.
@@ -104,7 +104,7 @@ Clear the `photomator-demo-` local-storage entries to restore the original sampl
 
 - The ML-labeled Enhance control applies an illustrative preset; no machine-learning model is included.
 - Color adjustments are lightweight browser-filter approximations, not a color-managed RAW engine. Tone, clarity, and sharpness are simplified contrast mappings.
-- Repair uses a local blur, not content-aware object removal. Clone copies pixels from a source region.
+- Repair reconstructs masked regions with OpenCV inpainting (Telea or Navier-Stokes) in a worker, falling back to a local blur when the vision engine is unavailable. Clone copies pixels from a source region.
 - Crop supports centered ratios rather than a freely movable crop rectangle. The corner marks are framing guides.
 - Zoom percentages are relative to the fitted preview, not a one-to-one source-pixel scale.
 - Sample camera details are illustrative; importing a file does not parse EXIF data. Export does not embed the sample metadata.
