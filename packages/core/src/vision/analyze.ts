@@ -10,7 +10,7 @@ export interface PixelImage {
   data: Uint8ClampedArray;
 }
 
-function assertValidImage(image: PixelImage): void {
+export function assertValidImage(image: PixelImage): void {
   if (!Number.isInteger(image.width) || !Number.isInteger(image.height) || image.width <= 0 || image.height <= 0) {
     throw new RangeError(`Expected positive integer dimensions, got ${image.width}x${image.height}.`);
   }

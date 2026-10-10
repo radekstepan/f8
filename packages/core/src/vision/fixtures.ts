@@ -75,6 +75,31 @@ export function halfBlackHalfWhite(width: number, height: number): PixelImage {
 }
 
 /**
+ * Small deterministic photo-like image for golden tests: a vertical
+ * luminance gradient with a warm cast and seeded per-pixel noise.
+ * Same dimensions always produce the same bytes; no files, no network.
+ */
+export function goldenPhoto(width = 64, height = 48): PixelImage {
+  const image = createImage(width, height);
+  let seed = 0x2f6e2b1;
+  const next = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296 - 0.5;
+  };
+  for (let y = 0; y < height; y += 1) {
+    const base = 40 + (120 * y) / Math.max(1, height - 1);
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4;
+      image.data[i] = base * 1.15 + next() * 24;
+      image.data[i + 1] = base + next() * 24;
+      image.data[i + 2] = base * 0.8 + next() * 24;
+      image.data[i + 3] = 255;
+    }
+  }
+  return image;
+}
+
+/**
  * Dark background (10, 10, 10) with a single 1px white line through the image
  * center. Angle is in degrees from the positive x-axis; positive angles run
  * clockwise (toward increasing y, i.e. downward on screen), so 0 is horizontal

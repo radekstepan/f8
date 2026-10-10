@@ -159,7 +159,7 @@ export default function App() {
       case 'reset': editor.reset(); notify('Adjustments reset. Your original is unchanged.'); break;
       case 'copy': copyAdjustments(); break;
       case 'paste': pasteAdjustments(); break;
-      case 'enhance': editor.autoEnhance(); setView('editor'); break;
+      case 'enhance': editor.autoEnhance(photo.src); setView('editor'); break;
       case 'rotate': editor.change({ rotation: (editor.edit.rotation - 90) % 360 }); break;
       case 'favorite': toggleFavorite(); break;
       case 'sidebar': setSidebarOpen((current) => !current); if (window.innerWidth < 760) setInspectorOpen(false); break;
@@ -284,7 +284,7 @@ export default function App() {
         photo={photo} edit={editor.edit} tool={tool} histogram={histogram}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         onChange={editor.change} onTool={selectTool} onReset={() => handleAction('reset')}
-        onAuto={editor.autoEnhance} onCopy={copyAdjustments} onPaste={pasteAdjustments}
+        onAuto={() => editor.autoEnhance(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
         onApplyCrop={() => { setTool('adjust'); notify('Composition updated. You can change it again at any time.'); }}
         onClose={() => setInspectorOpen(false)}

@@ -1,5 +1,6 @@
 import { CROP_RATIOS } from './data.js';
 import type { EditState } from './types.js';
+import type { PixelImage } from './vision/analyze.js';
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
@@ -14,6 +15,24 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
     }));
   }
   return imageCache.get(src)!;
+}
+
+// Decode to a small pixel buffer for analysis (histograms, auto-enhance).
+// Throws if the image cannot be decoded or its pixels are unreadable
+// (e.g. a canvas tainted by missing CORS headers); callers must catch
+// and fall back instead of breaking the editor.
+export async function decodeDownsampled(src: string, maxDimension = 160): Promise<PixelImage> {
+  const image = await loadImage(src);
+  const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(image, 0, 0, width, height);
+  const pixels = ctx.getImageData(0, 0, width, height);
+  return { width, height, data: new Uint8ClampedArray(pixels.data) };
 }
 
 // The preview and exported image share the same filter mapping.

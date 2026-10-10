@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EDIT, INITIAL_EDIT } from '@photomator/core';
+import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, decodeDownsampled } from '@photomator/core';
 import type { EditState, HistoryState, Preset } from '@photomator/core';
 
 const STORAGE_KEY = 'photomator-demo-edits-v1';
@@ -84,15 +84,22 @@ export function useEditor(photoId: string) {
   }, [change, history.present]);
 
   const reset = useCallback(() => change({ ...DEFAULT_EDIT }), [change]);
-  const autoEnhance = useCallback(() => {
+  const autoEnhance = useCallback((src?: string) => {
     const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
     const geometry = { rotation, flipH, flipV, straighten, cropRatio, retouches };
     if (history.present.autoEnhanced) {
       change({ ...(enhanceSnapshots.current[photoId] || DEFAULT_EDIT), ...geometry, autoEnhanced: false });
-    } else {
-      enhanceSnapshots.current[photoId] = history.present;
-      change({ ...INITIAL_EDIT, ...geometry, exposure: 0.22, clarity: 12, autoEnhanced: true, preset: 'Auto Enhance' });
+      return;
     }
+    enhanceSnapshots.current[photoId] = history.present;
+    const fallback = () => change({ ...INITIAL_EDIT, ...geometry, exposure: 0.22, clarity: 12, autoEnhanced: true, preset: 'Auto Enhance' });
+    if (!src) { fallback(); return; }
+    void (async () => {
+      try {
+        const patch = computeAutoEnhance(await decodeDownsampled(src));
+        change({ ...INITIAL_EDIT, ...geometry, ...patch, autoEnhanced: true, preset: 'Auto Enhance' });
+      } catch { fallback(); }
+    })();
   }, [change, history.present, photoId]);
 
   return { edit: history.present, histories, change, undo, redo, reset, autoEnhance, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
