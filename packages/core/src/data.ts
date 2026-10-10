@@ -1,4 +1,4 @@
-import type { Album, EditState, Photo, Preset } from './types';
+import type { Album, EditState, Photo, Preset } from './types.js';
 
 export const DEFAULT_EDIT: EditState = {
   temperature: 5500, tint: 0, exposure: 0, brightness: 0, contrast: 0,

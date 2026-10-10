@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, ImagePlus, X } from 'lucide-react';
-import { SAMPLE_ALBUMS, SAMPLE_PHOTOS, PRESETS } from './editor/data';
-import { loadImage } from './editor/image';
-import { useEditor } from './editor/useEditor';
-import type { Album, DialogType, EditState, Photo, Preset, Tool, ViewMode } from './editor/types';
-import { Sidebar } from './components/Sidebar';
-import { AppStatus, MenuBar, Toolbar, type MenuAction } from './components/Topbar';
-import { PhotoCanvas, type HistogramData } from './components/PhotoCanvas';
-import { Filmstrip, PhotoBrowser, PresetStrip } from './components/PhotoStrips';
-import { Inspector } from './components/Inspector';
-import { EditorDialogs } from './components/EditorDialogs';
+import { SAMPLE_ALBUMS, SAMPLE_PHOTOS, PRESETS } from '@photomator/core';
+import { loadImage } from '@photomator/core';
+import { useEditor } from '@photomator/ui';
+import type { Album, DialogType, EditState, Photo, Preset, Tool, ViewMode } from '@photomator/core';
+import { Sidebar } from '@photomator/ui';
+import { AppStatus, MenuBar, Toolbar, type MenuAction } from '@photomator/ui';
+import { PhotoCanvas, type HistogramData } from '@photomator/ui';
+import { Filmstrip, PhotoBrowser, PresetStrip } from '@photomator/ui';
+import { Inspector } from '@photomator/ui';
+import { EditorDialogs } from '@photomator/ui';
 
 function readSaved<T>(key: string, fallback: T): T {
   try {
@@ -48,7 +48,7 @@ export default function App() {
   const dragCount = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const objectUrls = useRef<string[]>([]);
-  const photo = photos.find((item) => item.id === selectedId) || photos[0];
+  const photo = photos.find((item) => item.id === selectedId) || photos[0]!;
   const editor = useEditor(photo.id);
   const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
@@ -140,11 +140,12 @@ export default function App() {
       } catch { URL.revokeObjectURL(src); return null; }
     }));
     const valid = imported.filter((item): item is NonNullable<typeof item> => Boolean(item));
-    if (!valid.length) { notify('These files could not be decoded. Try JPEG, PNG, or WebP.'); return; }
+    const first = valid[0];
+    if (!first) { notify('These files could not be decoded. Try JPEG, PNG, or WebP.'); return; }
     setPhotos((current) => [...current, ...valid]);
     setCollection(albumId);
     setSearch('');
-    selectPhoto(valid[0].id);
+    selectPhoto(first.id);
     notify(`${valid.length} ${valid.length === 1 ? 'photo' : 'photos'} imported. Imported originals stay in this session.`);
   };
 

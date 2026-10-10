@@ -1,5 +1,5 @@
-import { CROP_RATIOS } from './data';
-import type { EditState } from './types';
+import { CROP_RATIOS } from './data.js';
+import type { EditState } from './types.js';
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
@@ -106,9 +106,9 @@ export function drawEffects(ctx: CanvasRenderingContext2D, width: number, height
     for (let i = 0; i < pixels.data.length; i += 4) {
       seed = (seed * 1664525 + 1013904223) >>> 0;
       const noise = ((seed / 4294967296) - 0.5) * edit.grain * 0.6;
-      pixels.data[i] += noise;
-      pixels.data[i + 1] += noise;
-      pixels.data[i + 2] += noise;
+      pixels.data[i] = (pixels.data[i] ?? 0) + noise;
+      pixels.data[i + 1] = (pixels.data[i + 1] ?? 0) + noise;
+      pixels.data[i + 2] = (pixels.data[i + 2] ?? 0) + noise;
     }
     ctx.putImageData(pixels, 0, 0);
   }

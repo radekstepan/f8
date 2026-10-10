@@ -1,6 +1,6 @@
 import { Clock3, CloudCheck, Download, Folder, Heart, Images, Import, MountainSnow, Plus, Search, SlidersHorizontal } from 'lucide-react';
-import type { Album, Photo } from '../editor/types';
-import { IconButton } from './EditorUI';
+import type { Album, Photo } from '@photomator/core';
+import { IconButton } from './EditorUI.js';
 
 interface SidebarProps {
   photos: Photo[];

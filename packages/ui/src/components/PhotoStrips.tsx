@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownWideNarrow, Check, ChevronDown, ChevronUp, Grid2X2, Heart, Plus, SlidersHorizontal } from 'lucide-react';
-import { DEFAULT_EDIT } from '../editor/data';
-import { getPhotoFilter } from '../editor/image';
-import type { Photo, Preset } from '../editor/types';
-import { IconButton } from './EditorUI';
+import { DEFAULT_EDIT } from '@photomator/core';
+import { getPhotoFilter } from '@photomator/core';
+import type { Photo, Preset } from '@photomator/core';
+import { IconButton } from './EditorUI.js';
 
 export function PresetStrip({ photo, presets, selected, onSelect, onAdd, onToggle }: { photo: Photo; presets: Preset[]; selected: string; onSelect: (preset: Preset) => void; onAdd: () => void; onToggle: () => void }) {
   const [category, setCategory] = useState('Landscape');

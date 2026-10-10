@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Camera, Check, Download, FolderPlus, Info, Keyboard, MapPin, Save, Share } from 'lucide-react';
-import { downloadBlob, exportPhoto, getPhotoFilter } from '../editor/image';
-import type { DialogType, EditState, Photo } from '../editor/types';
-import { BrandMark, Modal, RangeControl, SelectField } from './EditorUI';
+import { downloadBlob, exportPhoto, getPhotoFilter } from '@photomator/core';
+import type { DialogType, EditState, Photo } from '@photomator/core';
+import { BrandMark, Modal, RangeControl, SelectField } from './EditorUI.js';
 
 interface EditorDialogsProps {
   dialog: DialogType;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EDIT, INITIAL_EDIT } from './data';
-import type { EditState, HistoryState, Preset } from './types';
+import { DEFAULT_EDIT, INITIAL_EDIT } from '@photomator/core';
+import type { EditState, HistoryState, Preset } from '@photomator/core';
 
 const STORAGE_KEY = 'photomator-demo-edits-v1';
 
@@ -62,8 +62,9 @@ export function useEditor(photoId: string) {
     lastChange.current.key = '';
     setHistories((all) => {
       const current = all[photoId] || initialHistory(photoId);
-      if (!current.past.length) return all;
-      return { ...all, [photoId]: { past: current.past.slice(0, -1), present: current.past[current.past.length - 1], future: [current.present, ...current.future] } };
+      const previous = current.past[current.past.length - 1];
+      if (!current.past.length || !previous) return all;
+      return { ...all, [photoId]: { past: current.past.slice(0, -1), present: previous, future: [current.present, ...current.future] } };
     });
   }, [photoId]);
 
@@ -71,8 +72,9 @@ export function useEditor(photoId: string) {
     lastChange.current.key = '';
     setHistories((all) => {
       const current = all[photoId] || initialHistory(photoId);
-      if (!current.future.length) return all;
-      return { ...all, [photoId]: { past: [...current.past, current.present], present: current.future[0], future: current.future.slice(1) } };
+      const next = current.future[0];
+      if (!current.future.length || !next) return all;
+      return { ...all, [photoId]: { past: [...current.past, current.present], present: next, future: current.future.slice(1) } };
     });
   }, [photoId]);
 

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Bandage, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, FlipHorizontal2, FlipVertical2, Focus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Stamp, Sun, Thermometer, Trash2, X } from 'lucide-react';
-import { CROP_RATIOS } from '../editor/data';
-import type { ChangeEdit, EditState, NumericAdjustment, Photo, Tool } from '../editor/types';
-import type { HistogramData } from './PhotoCanvas';
-import { IconButton, MenuItem, RangeControl, SelectField, Toggle } from './EditorUI';
+import { CROP_RATIOS } from '@photomator/core';
+import type { ChangeEdit, EditState, NumericAdjustment, Photo, Tool } from '@photomator/core';
+import type { HistogramData } from './PhotoCanvas.js';
+import { IconButton, MenuItem, RangeControl, SelectField, Toggle } from './EditorUI.js';
 
 interface AdjustmentSectionProps {
   title: string;

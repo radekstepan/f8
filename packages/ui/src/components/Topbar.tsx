@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ArrowLeft, Bandage, Check, ChevronDown, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Sparkles, Stamp, Undo2 } from 'lucide-react';
-import type { DialogType, Tool } from '../editor/types';
-import { BrandMark, IconButton, MenuItem } from './EditorUI';
+import type { DialogType, Tool } from '@photomator/core';
+import { BrandMark, IconButton, MenuItem } from './EditorUI.js';
 
 export type MenuAction = 'import' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'rotate' | 'favorite' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'fit' | 'fullscreen' | 'shortcuts' | 'about';
 
@@ -58,7 +58,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, sidebar, inspect
       event.preventDefault();
       event.stopPropagation();
       const names = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('.menu-trigger') || []).filter((button) => button.offsetParent !== null).map((button) => button.textContent || '');
-      setOpen(names[(names.indexOf(open) + (event.key === 'ArrowRight' ? 1 : -1) + names.length) % names.length]);
+      setOpen(names[(names.indexOf(open) + (event.key === 'ArrowRight' ? 1 : -1) + names.length) % names.length] ?? null);
       focusFirstItem();
     } else if (event.key === 'Escape') {
       ref.current?.querySelector<HTMLButtonElement>('.menu-trigger.is-open')?.focus();

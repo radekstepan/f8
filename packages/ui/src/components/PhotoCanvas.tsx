@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star } from 'lucide-react';
-import { DEFAULT_EDIT } from '../editor/data';
-import { drawEffects, geometryCanvas, getPhotoFilter, loadImage } from '../editor/image';
-import type { ChangeEdit, EditState, Photo, RetouchPoint, Tool } from '../editor/types';
-import { IconButton } from './EditorUI';
+import { DEFAULT_EDIT } from '@photomator/core';
+import { drawEffects, geometryCanvas, getPhotoFilter, loadImage } from '@photomator/core';
+import type { ChangeEdit, EditState, Photo, RetouchPoint, Tool } from '@photomator/core';
+import { IconButton } from './EditorUI.js';
 
 export type HistogramData = { red: number[]; green: number[]; blue: number[] };
 
@@ -47,7 +47,10 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   useEffect(() => {
     const node = stageRef.current;
     if (!node) return;
-    const observer = new ResizeObserver(([entry]) => setStageSize({ width: entry.contentRect.width, height: entry.contentRect.height }));
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      setStageSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+    });
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
@@ -82,9 +85,12 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       const pixels = sampleCtx.getImageData(0, 0, 160, 100).data;
       const histogram: HistogramData = { red: Array(64).fill(0), green: Array(64).fill(0), blue: Array(64).fill(0) };
       for (let i = 0; i < pixels.length; i += 4) {
-        histogram.red[pixels[i] >> 2]++;
-        histogram.green[pixels[i + 1] >> 2]++;
-        histogram.blue[pixels[i + 2] >> 2]++;
+        const r = (pixels[i] ?? 0) >> 2;
+        const g = (pixels[i + 1] ?? 0) >> 2;
+        const b = (pixels[i + 2] ?? 0) >> 2;
+        histogram.red[r] = (histogram.red[r] ?? 0) + 1;
+        histogram.green[g] = (histogram.green[g] ?? 0) + 1;
+        histogram.blue[b] = (histogram.blue[b] ?? 0) + 1;
       }
       onHistogram(histogram);
     }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setLoading(false); } });
