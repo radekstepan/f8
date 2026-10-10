@@ -35,7 +35,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 - Draggable before/after comparison and hold-to-preview-original behavior.
 - Centered aspect-ratio cropping, rotation, flips, and straightening with automatic horizon detection, plus a rule-of-thirds overlay.
 - Browser-based repair brushes (OpenCV inpainting with a blur fallback) and clone stamping. Click to choose a clone source; Alt-click to choose another.
-- Photo import using a file picker or drag and drop, including camera RAW files (rendered from the embedded JPEG preview via `exifr`). When a RAW file and a JPEG share a filename, only the RAW is imported.
+- Photo import using a file picker or drag and drop, including camera RAW files (rendered from the largest embedded JPEG preview, with the RAW file's orientation applied). When a RAW file and a JPEG share a filename, only the RAW is imported.
 - JPEG, PNG, and WebP export, configurable size and quality, plus JSON adjustment export.
 - Copy/paste adjustments between photographs, with each photograph's crop and retouching preserved.
 - Functional application menus, keyboard shortcuts, photo information, album creation, preset creation, and help dialogs.
