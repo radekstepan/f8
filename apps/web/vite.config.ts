@@ -17,6 +17,11 @@ export default defineConfig({
   // See README "Build Notes".
   base: "./",
   plugins: [react(), tailwindcss(), viteSingleFile({ useRecommendedBuildConfig: false })],
+  server: {
+    proxy: {
+      "/api": "http://127.0.0.1:5193",
+    },
+  },
   build: {
     assetsInlineLimit: () => true,
     chunkSizeWarningLimit: 100000000,

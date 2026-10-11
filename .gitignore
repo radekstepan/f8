@@ -27,3 +27,6 @@ build/
 # test / coverage
 coverage/
 *.tsbuildinfo
+
+# local library server data (SQLite, previews, upload staging)
+apps/server/data/

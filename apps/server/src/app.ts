@@ -1,0 +1,420 @@
+import { randomUUID } from "node:crypto";
+import { createReadStream, createWriteStream, existsSync, promises as fs } from "node:fs";
+import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { Hono } from "hono";
+import type { Context } from "hono";
+import { DEFAULT_EDIT } from "@photomator/core";
+import type { EditState, LibraryPhoto } from "@photomator/core";
+import type { ServerConfig } from "./config.ts";
+import { BrowseError, browse } from "./fs-browse.ts";
+import { ImportError, importUpload, scanPaths } from "./importer.ts";
+import type { ImportOutcome } from "./importer.ts";
+import type { PhotoRow, Store, StoredEdit } from "./store.ts";
+
+export interface AppContext {
+  config: ServerConfig;
+  store: Store;
+  roots: string[];
+}
+
+const IMAGE_MIME: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
+  ".avif": "image/avif",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+  ".svg": "image/svg+xml",
+};
+
+const STATIC_MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".json": "application/json",
+  ".map": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".wasm": "application/wasm",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+};
+
+function mimeFor(absPath: string, table: Record<string, string>, fallback: string): string {
+  return table[path.extname(absPath).toLowerCase()] ?? fallback;
+}
+
+function isMissing(row: PhotoRow): boolean {
+  return row.kind === "file" && (!row.path || !existsSync(row.path));
+}
+
+function toApiPhoto(row: PhotoRow, edit: StoredEdit): LibraryPhoto {
+  const file = row.kind === "file";
+  const endpoint = `/api/photos/${row.id}/file`;
+  return {
+    id: row.id,
+    name: row.filename,
+    title: row.title,
+    src: file ? endpoint : (row.url ?? ""),
+    thumbnail: file ? endpoint : (row.thumbnail_url ?? row.url ?? ""),
+    albumId: row.album_id,
+    location: row.location,
+    date: row.date_taken,
+    width: row.width,
+    height: row.height,
+    camera: row.camera,
+    lens: row.lens,
+    iso: row.iso,
+    aperture: row.aperture,
+    shutter: row.shutter,
+    focalLength: row.focal_length,
+    raw: row.raw === 1,
+    favorite: row.favorite === 1,
+    rating: row.rating,
+    ...(row.photographer ? { photographer: row.photographer } : {}),
+    missing: isMissing(row),
+    edited: edit.edited,
+    edit: edit.present,
+    hash: row.hash,
+    path: file ? row.path : null,
+  };
+}
+
+function withEdit(store: Store, row: PhotoRow): LibraryPhoto {
+  return toApiPhoto(row, store.getEdit(row.id));
+}
+
+async function sendFile(
+  c: Context,
+  absPath: string,
+  contentType: string,
+  extra?: Record<string, string>,
+): Promise<Response> {
+  const stat = await fs.stat(absPath).catch(() => null);
+  if (!stat || !stat.isFile()) return c.json({ error: "File not found." }, 404);
+  return c.body(Readable.toWeb(createReadStream(absPath)) as ReadableStream, 200, {
+    "Content-Type": contentType,
+    "Content-Length": String(stat.size),
+    "Accept-Ranges": "bytes",
+    ...extra,
+  });
+}
+
+async function readJson(c: Context): Promise<{ ok: true; value: Record<string, unknown> } | { ok: false }> {
+  try {
+    const value = (await c.req.json()) as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false };
+    return { ok: true, value: value as Record<string, unknown> };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export function createApp(ctx: AppContext): Hono {
+  const { config, store, roots } = ctx;
+  const app = new Hono();
+
+  app.onError((error, c) => {
+    console.error(error);
+    return c.json({ error: "Something went wrong." }, 500);
+  });
+
+  const photoOr404 = (c: Context, id: string): PhotoRow | Response => {
+    const row = store.getPhoto(id);
+    return row ?? c.json({ error: "Photo not found." }, 404);
+  };
+
+  app.get("/api/health", (c) => c.json({ ok: true }));
+
+  app.get("/api/library", (c) => {
+    const photos = store.listPhotos().map((row) => withEdit(store, row));
+    return c.json({ photos, albums: store.listAlbums(), presets: store.listPresets() });
+  });
+
+  app.post("/api/imports/upload", async (c) => {
+    const rawFilename = c.req.header("x-filename");
+    if (!rawFilename) return c.json({ error: "Missing file name." }, 400);
+    let filename: string;
+    try {
+      filename = decodeURIComponent(rawFilename);
+    } catch {
+      return c.json({ error: "Invalid file name." }, 400);
+    }
+    const albumId = c.req.header("x-album-id") || undefined;
+    const body = c.req.raw.body;
+    if (!body) return c.json({ error: "Empty upload." }, 400);
+    await fs.mkdir(config.tmpDir, { recursive: true });
+    const tmpPath = path.join(config.tmpDir, `upload-${randomUUID()}`);
+    try {
+      await pipeline(Readable.fromWeb(body), createWriteStream(tmpPath));
+      const stat = await fs.stat(tmpPath).catch(() => null);
+      if (!stat || stat.size === 0) {
+        await fs.unlink(tmpPath).catch(() => undefined);
+        return c.json({ error: "Empty upload." }, 400);
+      }
+      const outcome = await importUpload(store, config, tmpPath, filename, { albumId });
+      return c.json({
+        photo: toApiPhoto(outcome.row, outcome.edit),
+        deduplicated: outcome.status !== "imported",
+      });
+    } catch (error) {
+      await fs.unlink(tmpPath).catch(() => undefined);
+      if (error instanceof ImportError) return c.json({ error: error.message }, 422);
+      throw error;
+    }
+  });
+
+  app.post("/api/imports/by-path", async (c) => {
+    const parsed = await readJson(c);
+    if (!parsed.ok) return c.json({ error: "Invalid request." }, 400);
+    const { paths, albumId } = parsed.value;
+    if (
+      !Array.isArray(paths) || !paths.length || paths.length > 100 ||
+      !paths.every((entry): entry is string => typeof entry === "string" && entry.length > 0)
+    ) {
+      return c.json({ error: "Provide up to 100 file or folder paths." }, 400);
+    }
+    if (albumId !== undefined && typeof albumId !== "string") {
+      return c.json({ error: "Invalid album." }, 400);
+    }
+    const report = await scanPaths(store, config, roots, paths, { albumId });
+    const photos = (outcomes: ImportOutcome[]): LibraryPhoto[] =>
+      outcomes.map((outcome) => toApiPhoto(outcome.row, outcome.edit));
+    return c.json({
+      imported: photos(report.outcomes.filter((outcome) => outcome.status === "imported")),
+      relinked: photos(report.outcomes.filter((outcome) => outcome.status === "relinked")),
+      duplicates: photos(report.outcomes.filter((outcome) => outcome.status === "duplicate")),
+      skipped: report.skipped,
+      suppressedSidecars: report.suppressedSidecars,
+      truncated: report.truncated,
+    });
+  });
+
+  const displayPath = (row: PhotoRow): string | null => {
+    if (row.kind !== "file" || !row.path) return null;
+    if (row.raw === 1) {
+      if (!row.hash) return null;
+      const preview = path.join(config.previewsDir, `${row.hash}.jpg`);
+      return existsSync(preview) ? preview : null;
+    }
+    return existsSync(row.path) ? row.path : null;
+  };
+
+  app.get("/api/photos/:id/file", async (c) => {
+    const found = photoOr404(c, c.req.param("id"));
+    if (found instanceof Response) return found;
+    if (found.kind === "url") {
+      if (!found.url) return c.json({ error: "Photo not found." }, 404);
+      return c.redirect(found.url, 302);
+    }
+    if (isMissing(found)) {
+      return c.json({ error: "The original file is missing. Reimport it to relink.", missing: true }, 404);
+    }
+    const file = displayPath(found);
+    if (!file) return c.json({ error: "The preview is missing." }, 404);
+    // Previews are content-addressed and immutable; referenced originals can
+    // change under us, so they always revalidate.
+    if (found.raw === 1 && found.hash) {
+      return sendFile(c, file, "image/jpeg", {
+        ETag: `"${found.hash}"`,
+        "Cache-Control": "private, max-age=31536000, immutable",
+      });
+    }
+    return sendFile(c, file, mimeFor(found.path ?? "", IMAGE_MIME, "application/octet-stream"), {
+      ETag: `"${found.mtime}-${found.file_size}"`,
+      "Cache-Control": "private, max-age=0, must-revalidate",
+    });
+  });
+
+  app.get("/api/photos/:id/original", async (c) => {
+    const found = photoOr404(c, c.req.param("id"));
+    if (found instanceof Response) return found;
+    if (found.kind === "url") {
+      if (!found.url) return c.json({ error: "Photo not found." }, 404);
+      return c.redirect(found.url, 302);
+    }
+    if (isMissing(found) || !found.path) {
+      return c.json({ error: "The original file is missing.", missing: true }, 404);
+    }
+    return sendFile(c, found.path, mimeFor(found.path, IMAGE_MIME, "application/octet-stream"), {
+      "Content-Disposition": `attachment; filename="${encodeURIComponent(found.filename)}"`,
+      "Cache-Control": "private, max-age=0, must-revalidate",
+    });
+  });
+
+  app.patch("/api/photos/:id", async (c) => {
+    const found = photoOr404(c, c.req.param("id"));
+    if (found instanceof Response) return found;
+    const parsed = await readJson(c);
+    if (!parsed.ok) return c.json({ error: "Invalid request." }, 400);
+    const { favorite, rating, title, albumId } = parsed.value;
+    if (favorite !== undefined && typeof favorite !== "boolean") {
+      return c.json({ error: "Invalid favorite." }, 400);
+    }
+    if (rating !== undefined && (!Number.isInteger(rating) || (rating as number) < 0 || (rating as number) > 5)) {
+      return c.json({ error: "Invalid rating." }, 400);
+    }
+    if (title !== undefined && (typeof title !== "string" || !title.trim() || title.length > 120)) {
+      return c.json({ error: "Invalid title." }, 400);
+    }
+    if (albumId !== undefined && typeof albumId !== "string") {
+      return c.json({ error: "Invalid album." }, 400);
+    }
+    const updated = store.updatePhotoMeta(found.id, {
+      favorite: favorite as boolean | undefined,
+      rating: rating as number | undefined,
+      title: typeof title === "string" ? title.trim() : undefined,
+      albumId: albumId as string | undefined,
+    });
+    if (!updated) return c.json({ error: "Photo not found." }, 404);
+    return c.json({ photo: withEdit(store, updated) });
+  });
+
+  app.put("/api/photos/:id/edit", async (c) => {
+    const found = photoOr404(c, c.req.param("id"));
+    if (found instanceof Response) return found;
+    const parsed = await readJson(c);
+    if (!parsed.ok) return c.json({ error: "Invalid request." }, 400);
+    const { present } = parsed.value;
+    if (!present || typeof present !== "object" || Array.isArray(present)) {
+      return c.json({ error: "Invalid edit." }, 400);
+    }
+    const edit = store.saveEdit(found.id, { ...DEFAULT_EDIT, ...(present as Partial<EditState>) });
+    const row = store.getPhoto(found.id);
+    if (!row) return c.json({ error: "Photo not found." }, 404);
+    return c.json({ photo: toApiPhoto(row, edit) });
+  });
+
+  app.delete("/api/photos/:id", async (c) => {
+    const found = photoOr404(c, c.req.param("id"));
+    if (found instanceof Response) return found;
+    // The library never deletes originals: only the record and its derived
+    // preview go away, even for files the server placed in the library.
+    if (found.hash) {
+      await fs.unlink(path.join(config.previewsDir, `${found.hash}.jpg`)).catch(() => undefined);
+    }
+    store.deletePhoto(found.id);
+    return c.json({ deleted: true });
+  });
+
+  app.get("/api/albums", (c) => c.json({ albums: store.listAlbums() }));
+
+  app.post("/api/albums", async (c) => {
+    const parsed = await readJson(c);
+    if (!parsed.ok) return c.json({ error: "Invalid request." }, 400);
+    const { name, cover } = parsed.value;
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 60) {
+      return c.json({ error: "Give the album a name up to 60 characters." }, 400);
+    }
+    if (cover !== undefined && (typeof cover !== "string" || cover.length > 2048)) {
+      return c.json({ error: "Invalid cover." }, 400);
+    }
+    if (store.listAlbums().some((album) => album.name.toLowerCase() === name.trim().toLowerCase())) {
+      return c.json({ error: "An album with that name already exists." }, 409);
+    }
+    const album = { id: randomUUID(), name: name.trim(), cover: typeof cover === "string" ? cover : "" };
+    store.insertAlbum({ ...album, sort: store.listAlbums().length });
+    return c.json({ album }, 201);
+  });
+
+  app.patch("/api/albums/:id", async (c) => {
+    const parsed = await readJson(c);
+    if (!parsed.ok) return c.json({ error: "Invalid request." }, 400);
+    const { name, cover } = parsed.value;
+    if (name !== undefined && (typeof name !== "string" || !name.trim() || name.trim().length > 60)) {
+      return c.json({ error: "Invalid name." }, 400);
+    }
+    if (cover !== undefined && (typeof cover !== "string" || cover.length > 2048)) {
+      return c.json({ error: "Invalid cover." }, 400);
+    }
+    const existing = store.getAlbum(c.req.param("id"));
+    if (!existing) return c.json({ error: "Album not found." }, 404);
+    if (
+      typeof name === "string" &&
+      store.listAlbums().some((album) => album.id !== existing.id && album.name.toLowerCase() === name.trim().toLowerCase())
+    ) {
+      return c.json({ error: "An album with that name already exists." }, 409);
+    }
+    const updated = store.updateAlbum(existing.id, {
+      name: typeof name === "string" ? name.trim() : undefined,
+      cover: cover as string | undefined,
+    });
+    return c.json({ album: updated });
+  });
+
+  app.delete("/api/albums/:id", (c) => {
+    const existing = store.getAlbum(c.req.param("id"));
+    if (!existing) return c.json({ error: "Album not found." }, 404);
+    // Photos keep their album id and stay visible in All Photos.
+    store.deleteAlbum(existing.id);
+    return c.json({ deleted: true });
+  });
+
+  app.post("/api/presets", async (c) => {
+    const parsed = await readJson(c);
+    if (!parsed.ok) return c.json({ error: "Invalid request." }, 400);
+    const { name, values } = parsed.value;
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 60) {
+      return c.json({ error: "Give the preset a name up to 60 characters." }, 400);
+    }
+    if (!values || typeof values !== "object" || Array.isArray(values)) {
+      return c.json({ error: "Invalid preset values." }, 400);
+    }
+    const trimmed = name.trim();
+    if (store.listPresets().some((preset) => preset.name.toLowerCase() === trimmed.toLowerCase())) {
+      return c.json({ error: "A preset with that name already exists." }, 409);
+    }
+    const preset = { id: randomUUID(), name: trimmed, values: values as Record<string, never> };
+    store.insertPreset({ id: preset.id, name: preset.name, values: preset.values });
+    return c.json({ preset: { ...preset, category: "My Presets" } }, 201);
+  });
+
+  app.delete("/api/presets/:id", (c) => {
+    store.deletePreset(c.req.param("id"));
+    return c.json({ deleted: true });
+  });
+
+  app.get("/api/fs/browse", async (c) => {
+    try {
+      return c.json(await browse(c.req.query("path") || undefined, roots));
+    } catch (error) {
+      if (error instanceof BrowseError) return c.json({ error: error.message }, 400);
+      throw error;
+    }
+  });
+
+  // Serve the production web build when it exists (API routes registered
+  // above take precedence; anything else falls back to index.html).
+  const indexHtml = path.join(config.webDistDir, "index.html");
+  if (existsSync(indexHtml)) {
+    app.use(async (c, next) => {
+      if (c.req.method !== "GET" || c.req.path.startsWith("/api/")) return next();
+      const target = path.normalize(path.join(config.webDistDir, c.req.path));
+      if (!target.startsWith(config.webDistDir + path.sep) && target !== config.webDistDir) return next();
+      const file = target === config.webDistDir ? indexHtml : target;
+      if (existsSync(file)) {
+        const stat = await fs.stat(file).catch(() => null);
+        if (stat?.isFile()) return sendFile(c, file, mimeFor(file, STATIC_MIME, "application/octet-stream"));
+      }
+      return next();
+    });
+    app.notFound((c) => {
+      if (c.req.path.startsWith("/api/")) return c.json({ error: "Not found." }, 404);
+      return sendFile(c, indexHtml, "text/html; charset=utf-8");
+    });
+  } else {
+    app.notFound((c) => c.json({ error: "Not found." }, 404));
+  }
+
+  return app;
+}

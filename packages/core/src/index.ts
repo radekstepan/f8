@@ -1,6 +1,7 @@
 export * from "./adjustments.js";
 export * from "./data.js";
 export * from "./image.js";
+export * from "./library.js";
 export * from "./raw.js";
 export * from "./types.js";
 export * from "./vision/index.js";

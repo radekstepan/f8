@@ -6,4 +6,5 @@ export * from "./components/PhotoStrips.js";
 export * from "./components/Sidebar.js";
 export * from "./components/Topbar.js";
 export * from "./hooks/useEditor.js";
+export * from "./hooks/useLibrary.js";
 export * from "./utils/cn.js";

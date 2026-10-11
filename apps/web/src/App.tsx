@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { Check, ImagePlus, X } from 'lucide-react';
-import { SAMPLE_ALBUMS, SAMPLE_PHOTOS, PRESETS } from '@photomator/core';
-import { decodeImportSize } from '@photomator/core';
-import { RAW_ACCEPT, decodeRawImport, isRawFilename, resolveImportSelection } from '@photomator/core';
-import { useEditor } from '@photomator/ui';
-import type { Album, DialogType, EditState, Photo, Preset, Tool, ViewMode } from '@photomator/core';
+import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
+import { PRESETS } from '@photomator/core';
+import { RAW_ACCEPT } from '@photomator/core';
+import { useEditor, useLibrary } from '@photomator/ui';
+import type { DialogType, EditState, Tool, ViewMode } from '@photomator/core';
 import { Sidebar } from '@photomator/ui';
 import { AppStatus, MenuBar, Toolbar, type MenuAction } from '@photomator/ui';
 import { PhotoCanvas, type HistogramData } from '@photomator/ui';
@@ -14,20 +13,15 @@ import { EditorDialogs } from '@photomator/ui';
 import { useVisionWorker } from './vision/useVisionWorker';
 import { useStraighten } from './vision/useStraighten';
 import { useInpaintRepair } from './vision/useInpaintRepair';
-
-function readSaved<T>(key: string, fallback: T): T {
-  try {
-    const value = JSON.parse(localStorage.getItem(key) || 'null');
-    return Array.isArray(value) && value.length ? value as T : fallback;
-  } catch { return fallback; }
-}
+import { FsBrowser } from './components/FsBrowser';
 
 const collectionTitles: Record<string, string> = { all: 'All Photos', favorites: 'Favorites', edited: 'Recently Edited', imports: 'Imports', landscapes: 'Landscapes', raw: 'RAW Photos' };
 
+type FolderDialog = { mode: 'import' } | { mode: 'locate'; photoId: string };
+
 export default function App() {
-  const [photos, setPhotos] = useState<Photo[]>(() => readSaved('photomator-demo-library-v1', SAMPLE_PHOTOS));
-  const [albums, setAlbums] = useState<Album[]>(() => readSaved('photomator-demo-albums-v1', SAMPLE_ALBUMS));
-  const [customPresets, setCustomPresets] = useState<Preset[]>(() => readSaved('photomator-demo-presets-v1', []));
+  const library = useLibrary();
+  const { photos, albums, customPresets } = library;
   const [selectedId, setSelectedId] = useState('photo-1');
   const [collection, setCollection] = useState('dolomites');
   const [search, setSearch] = useState('');
@@ -46,16 +40,16 @@ export default function App() {
   const [brushStrength, setBrushStrength] = useState(85);
   const [clipboard, setClipboard] = useState<EditState | null>(null);
   const [dialog, setDialog] = useState<DialogType>(null);
+  const [folderDialog, setFolderDialog] = useState<FolderDialog | null>(null);
   const [toast, setToast] = useState('');
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const dragCount = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const objectUrls = useRef<string[]>([]);
-  const photo = photos.find((item) => item.id === selectedId) || photos[0]!;
-  const editor = useEditor(photo.id);
+  const photo = photos.find((item) => item.id === selectedId) || photos[0];
+  const editor = useEditor(photo?.id ?? selectedId, { initial: library.editsSeed, onPersist: library.saveEdit });
   const vision = useVisionWorker();
-  const straighten = useStraighten(photo.id);
+  const straighten = useStraighten(photo?.id ?? selectedId);
   const inpaintRepair = useInpaintRepair();
   const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
@@ -65,17 +59,11 @@ export default function App() {
     setToast(message);
     toastTimer.current = setTimeout(() => setToast(''), 3600);
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('photomator-demo-library-v1', JSON.stringify(photos.filter((item) => !item.id.startsWith('import-'))));
-      localStorage.setItem('photomator-demo-albums-v1', JSON.stringify(albums.map((album) => ({ ...album, cover: album.cover.startsWith('blob:') ? '' : album.cover }))));
-      localStorage.setItem('photomator-demo-presets-v1', JSON.stringify(customPresets));
-    } catch { /* Storage is optional: the current editing session still works. */ }
-  }, [photos, albums, customPresets]);
+  const notifyError = useCallback((reason: unknown, fallback: string) => {
+    notify(reason instanceof Error ? reason.message : fallback);
+  }, [notify]);
 
   useEffect(() => () => {
-    objectUrls.current.forEach((url) => URL.revokeObjectURL(url));
     if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
 
@@ -84,8 +72,8 @@ export default function App() {
       if (search) return true;
       if (collection === 'all') return true;
       if (collection === 'favorites') return item.favorite;
-      if (collection === 'edited') return Boolean(editor.histories[item.id]);
-      if (collection === 'imports') return item.id.startsWith('import-');
+      if (collection === 'edited') return Boolean(item.edited);
+      if (collection === 'imports') return item.albumId === 'imports';
       if (collection === 'raw') return item.raw;
       if (collection === 'landscapes') return item.width > item.height;
       return item.albumId === collection;
@@ -96,7 +84,7 @@ export default function App() {
     }
     const byDate = [...items].sort((a, b) => a.date.localeCompare(b.date));
     return reversed ? byDate.reverse() : byDate;
-  }, [photos, collection, search, reversed, editor.histories]);
+  }, [photos, collection, search, reversed]);
 
   const selectPhoto = useCallback((id: string) => {
     setSelectedId(id);
@@ -112,8 +100,16 @@ export default function App() {
     if (window.innerWidth < 760) setSidebarOpen(false);
   };
 
-  const toggleFavorite = useCallback((id = photo.id) => setPhotos((current) => current.map((item) => item.id === id ? { ...item, favorite: !item.favorite } : item)), [photo.id]);
-  const setRating = (rating: number) => setPhotos((current) => current.map((item) => item.id === photo.id ? { ...item, rating } : item));
+  const toggleFavorite = useCallback((id?: string) => {
+    const target = id ?? photo?.id;
+    if (!target) return;
+    const current = photos.find((item) => item.id === target);
+    void library.updatePhoto(target, { favorite: !current?.favorite }).catch((reason: unknown) => notifyError(reason, 'Could not update the favorite.'));
+  }, [photo?.id, photos, library, notifyError]);
+  const setRating = (rating: number) => {
+    if (!photo) return;
+    void library.updatePhoto(photo.id, { rating }).catch((reason: unknown) => notifyError(reason, 'Could not update the rating.'));
+  };
 
   const selectTool = (next: Tool) => {
     setTool(next);
@@ -131,72 +127,61 @@ export default function App() {
   };
 
   const importFiles = async (files: FileList | File[]) => {
-    const { files: selected, suppressedSidecars } = resolveImportSelection(Array.from(files));
-    if (!selected.length) { notify('Choose a JPEG, PNG, WebP, RAW, or another browser-supported image.'); return; }
+    const list = Array.from(files);
+    if (!list.length) return;
     const albumId = albums.some((album) => album.id === collection) ? collection : 'imports';
-    let rawFailed = 0;
-    const imported = await Promise.all(selected.slice(0, 30).map(async (file, index) => {
-      const raw = isRawFilename(file.name);
-      let pixels: Blob = file;
-      let camera = 'Imported image';
-      let lens = 'No camera metadata';
-      let iso = 0;
-      let aperture = '-';
-      let shutter = '-';
-      let focalLength = '-';
-      let date = new Date(file.lastModified).toISOString();
-      if (raw) {
-        // Browsers cannot decode RAW sensor data: import renders the embedded
-        // JPEG preview and keeps the original RAW filename.
-        try {
-          const decoded = await decodeRawImport(file);
-          pixels = decoded.preview;
-          camera = decoded.metadata.camera;
-          lens = decoded.metadata.lens;
-          iso = decoded.metadata.iso;
-          aperture = decoded.metadata.aperture;
-          shutter = decoded.metadata.shutter;
-          focalLength = decoded.metadata.focalLength;
-          date = decoded.metadata.date ?? date;
-        } catch { rawFailed += 1; return null; }
-      }
-      const src = URL.createObjectURL(pixels);
-      objectUrls.current.push(src);
-      try {
-        // EXIF-aware decode: the browser pre-rotates pixels so the recorded
-        // size is the upright (orientation 1) size, never sideways.
-        const { width, height } = await decodeImportSize(pixels, src);
-        return {
-          id: `import-${Date.now()}-${index}`, name: file.name, title: file.name.replace(/\.[^.]+$/, ''), src, thumbnail: src,
-          albumId, location: 'Imported from this device', date,
-          width, height, camera, lens,
-          iso, aperture, shutter, focalLength, raw, favorite: false, rating: 0,
-        } satisfies Photo;
-      } catch { URL.revokeObjectURL(src); return null; }
-    }));
-    const valid = imported.filter((item): item is NonNullable<typeof item> => Boolean(item));
-    const first = valid[0];
-    if (!first) {
-      notify(rawFailed
-        ? 'These RAW files have no embedded preview this browser can read. Try JPEG, PNG, or WebP.'
-        : 'These files could not be decoded. Try JPEG, PNG, or WebP.');
-      return;
+    notify('Importing your photos…');
+    const summary = await library.uploadFiles(list, albumId);
+    if (summary.firstId) {
+      setCollection(albumId);
+      setSearch('');
+      selectPhoto(summary.firstId);
     }
-    setPhotos((current) => [...current, ...valid]);
-    setCollection(albumId);
-    setSearch('');
-    selectPhoto(first.id);
     const notes = [
-      `${valid.length} ${valid.length === 1 ? 'photo' : 'photos'} imported. Imported originals stay in this session.`,
-      suppressedSidecars ? `${suppressedSidecars} JPEG sidecar${suppressedSidecars === 1 ? ' was' : 's were'} skipped: the RAW original was kept.` : '',
-      rawFailed ? `${rawFailed} RAW file${rawFailed === 1 ? '' : 's'} had no readable preview and ${rawFailed === 1 ? 'was' : 'were'} skipped.` : '',
+      summary.imported ? `${summary.imported} ${summary.imported === 1 ? 'photo' : 'photos'} imported.` : '',
+      summary.deduplicated ? `${summary.deduplicated} ${summary.deduplicated === 1 ? 'was' : 'were'} already in your library.` : '',
+      summary.suppressedSidecars ? `${summary.suppressedSidecars} JPEG sidecar${summary.suppressedSidecars === 1 ? ' was' : 's were'} skipped: the RAW original was kept.` : '',
+      summary.failed ? `${summary.failed} could not be imported.` : '',
     ];
-    notify(notes.filter(Boolean).join(' '));
+    notify(notes.filter(Boolean).join(' ') || 'Nothing to import.');
+  };
+
+  const importFromPaths = async (paths: string[]) => {
+    const albumId = albums.some((album) => album.id === collection) ? collection : 'imports';
+    const locating = folderDialog?.mode === 'locate' ? folderDialog.photoId : null;
+    setFolderDialog(null);
+    notify('Importing from disk…');
+    try {
+      const report = await library.importPaths(paths, albumId);
+      const first = report.imported[0] ?? report.relinked[0] ?? report.duplicates[0];
+      if (first) {
+        if (!locating) setCollection(albumId);
+        setSearch('');
+        selectPhoto(first.id);
+      }
+      if (locating) {
+        const healed = [...report.relinked, ...report.duplicates].some((item) => item.id === locating);
+        notify(healed ? 'Original relinked. Your edits are back.' : 'That file does not match the missing photo.');
+        return;
+      }
+      const notes = [
+        report.imported.length ? `${report.imported.length} ${report.imported.length === 1 ? 'photo' : 'photos'} imported.` : '',
+        report.relinked.length ? `${report.relinked.length} relinked with ${report.relinked.length === 1 ? 'its' : 'their'} edits intact.` : '',
+        report.duplicates.length ? `${report.duplicates.length} already in your library.` : '',
+        report.suppressedSidecars ? `${report.suppressedSidecars} JPEG sidecar${report.suppressedSidecars === 1 ? ' was' : 's were'} skipped: the RAW original was kept.` : '',
+        report.skipped.length ? `${report.skipped.length} skipped.` : '',
+        report.truncated ? 'Stopped at the per-import limit; run it again for the rest.' : '',
+      ];
+      notify(notes.filter(Boolean).join(' ') || 'Nothing to import.');
+    } catch (reason) {
+      notifyError(reason, 'Could not import from disk.');
+    }
   };
 
   const handleAction = (action: MenuAction) => {
     switch (action) {
       case 'import': fileInput.current?.click(); break;
+      case 'import-folder': setFolderDialog({ mode: 'import' }); break;
       case 'export': setDialog('export'); break;
       case 'album': setDialog('album'); break;
       case 'undo': editor.undo(); break;
@@ -204,7 +189,7 @@ export default function App() {
       case 'reset': editor.reset(); notify('Adjustments reset. Your original is unchanged.'); break;
       case 'copy': copyAdjustments(); break;
       case 'paste': pasteAdjustments(); break;
-      case 'enhance': editor.autoEnhance(photo.src); setView('editor'); break;
+      case 'enhance': editor.autoEnhance(photo?.src); setView('editor'); break;
       case 'rotate': editor.change({ rotation: (editor.edit.rotation - 90) % 360 }); break;
       case 'favorite': toggleFavorite(); break;
       case 'sidebar': setSidebarOpen((current) => !current); if (window.innerWidth < 760) setInspectorOpen(false); break;
@@ -232,7 +217,7 @@ export default function App() {
       const command = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
       if (command) {
-        const shortcut = key === 'z' ? event.shiftKey ? 'redo' : 'undo' : key === 'o' ? 'import' : event.shiftKey && key === 'e' ? 'export' : event.shiftKey && key === 'c' ? 'copy' : event.shiftKey && key === 'v' ? 'paste' : null;
+        const shortcut = key === 'z' ? event.shiftKey ? 'redo' : 'undo' : key === 'o' ? event.shiftKey ? 'import-folder' : 'import' : event.shiftKey && key === 'e' ? 'export' : event.shiftKey && key === 'c' ? 'copy' : event.shiftKey && key === 'v' ? 'paste' : null;
         if (shortcut) { event.preventDefault(); actionRef.current(shortcut); }
         return;
       }
@@ -267,24 +252,31 @@ export default function App() {
   }, [dialog, filteredPhotos, selectedId, selectPhoto]);
 
   const createAlbum = (name: string, includePhoto: boolean) => {
-    if (albums.some((album) => album.name.toLowerCase() === name.toLowerCase())) { notify('An album with that name already exists.'); return; }
-    const id = `album-${Date.now()}`;
-    setAlbums((current) => [...current, { id, name, cover: includePhoto ? photo.thumbnail : '' }]);
-    if (includePhoto) setPhotos((current) => current.map((item) => item.id === photo.id ? { ...item, albumId: id } : item));
-    setCollection(id);
-    setView('library');
-    setDialog(null);
-    notify(`"${name}" is ready for your photos.`);
+    void (async () => {
+      try {
+        const album = await library.createAlbum(name, includePhoto && photo ? photo.thumbnail : '');
+        if (includePhoto && photo) await library.updatePhoto(photo.id, { albumId: album.id });
+        setCollection(album.id);
+        setView('library');
+        setDialog(null);
+        notify(`"${name}" is ready for your photos.`);
+      } catch (reason) {
+        notifyError(reason, 'Could not create the album.');
+      }
+    })();
   };
 
   const savePreset = (name: string) => {
-    if ([...PRESETS, ...customPresets].some((preset) => preset.name.toLowerCase() === name.toLowerCase())) { notify('A preset with that name already exists. Choose another name.'); return; }
     const { rotation: _rotation, flipH: _flipH, flipV: _flipV, straighten: _straighten, cropRatio: _cropRatio, retouches: _retouches, ...values } = editor.edit;
-    setCustomPresets((current) => [...current, { id: `preset-${Date.now()}`, name, category: 'My Presets', values }]);
-    editor.change({ preset: name });
-    setPresetsOpen(true);
-    setDialog(null);
-    notify(`"${name}" saved to My Presets.`);
+    void library.createPreset(name, values).then(
+      () => {
+        editor.change({ preset: name });
+        setPresetsOpen(true);
+        setDialog(null);
+        notify(`"${name}" saved to My Presets.`);
+      },
+      (reason: unknown) => notifyError(reason, 'Could not save the preset.'),
+    );
   };
 
   const handleDrag = (event: DragEvent, enter: boolean) => {
@@ -294,25 +286,63 @@ export default function App() {
     setDragging(dragCount.current > 0);
   };
 
+  if (library.status === 'loading' || !library.editsSeed) {
+    return <div className="library-gate" role="status"><span className="loading-spinner" aria-hidden="true" /><p>Opening your library…</p></div>;
+  }
+
+  if (library.status === 'offline') {
+    return <div className="library-gate">
+      <CloudOff size={40} strokeWidth={1.25} />
+      <h2>The library server is not running.</h2>
+      <p>{library.error || 'Start it with yarn dev, then try again.'}</p>
+      <button className="primary-button" onClick={() => void library.retry()}><RefreshCw size={14} />Try again</button>
+    </div>;
+  }
+
+  if (!photo) {
+    return <div className="library-gate">
+      <ImagePlus size={40} strokeWidth={1.25} />
+      <h2>A fresh perspective starts here.</h2>
+      <p>Import a few photos to make this space your own.</p>
+      <div className="gate-actions">
+        <button className="primary-button" onClick={() => fileInput.current?.click()}>Import photos</button>
+        <button className="secondary-button" onClick={() => setFolderDialog({ mode: 'import' })}>Import from folder</button>
+      </div>
+      <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
+      {folderDialog && <FsBrowser title="Import from folder" subtitle="Referenced in place — nothing is copied." actionLabel="Import selected" onClose={() => setFolderDialog(null)} onSelect={(paths) => void importFromPaths(paths)} />}
+      {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
+    </div>;
+  }
+
   return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${inspectorOpen ? 'has-inspector' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importFiles(event.dataTransfer.files); }}>
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} onTool={selectTool} onAction={handleAction} onDialog={setDialog} />
     <div className="workspace">
-      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} editedCount={photos.filter((item) => Boolean(editor.histories[item.id])).length} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} />}
+      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} editedCount={photos.filter((item) => item.edited).length} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} />}
       <main className="editor-column">
         {view === 'library' ? (
           <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} onSelect={selectPhoto} onFavorite={toggleFavorite} onImport={() => fileInput.current?.click()} />
         ) : (
           <>
-            <PhotoCanvas
-              photo={photo} edit={editor.edit} tool={tool} zoom={zoom}
-              compare={compare} showOriginal={showOriginal}
-              brushSize={brushSize} brushStrength={brushStrength}
-              inpaintRepair={inpaintRepair}
-              onZoom={setZoom} onCompare={() => setCompare(!compare)}
-              onFavorite={() => toggleFavorite()} onRating={setRating}
-              onInfo={() => setDialog('info')} onChange={editor.change} onHistogram={setHistogram}
-            />
+            {photo.missing ? (
+              <div className="missing-original" role="alert">
+                <FolderSearch size={40} strokeWidth={1.25} />
+                <h2>The original file moved.</h2>
+                <p>Your edits are safe. Reimport <strong>{photo.name}</strong> from its new location to relink them.</p>
+                {photo.path && <span className="missing-path">Last seen at {photo.path}</span>}
+                <button className="primary-button" onClick={() => setFolderDialog({ mode: 'locate', photoId: photo.id })}>Locate original…</button>
+              </div>
+            ) : (
+              <PhotoCanvas
+                photo={photo} edit={editor.edit} tool={tool} zoom={zoom}
+                compare={compare} showOriginal={showOriginal}
+                brushSize={brushSize} brushStrength={brushStrength}
+                inpaintRepair={inpaintRepair}
+                onZoom={setZoom} onCompare={() => setCompare(!compare)}
+                onFavorite={() => toggleFavorite()} onRating={setRating}
+                onInfo={() => setDialog('info')} onChange={editor.change} onHistogram={setHistogram}
+              />
+            )}
             {presetsOpen && <PresetStrip
               photo={photo} presets={availablePresets} selected={editor.edit.preset}
               onSelect={editor.applyPreset} onAdd={() => setDialog('preset')} onToggle={() => setPresetsOpen(false)}
@@ -350,6 +380,13 @@ export default function App() {
     />
     <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
     <EditorDialogs dialog={dialog} photo={photo} edit={editor.edit} inpaintRepair={inpaintRepair} onClose={() => setDialog(null)} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} />
+    {folderDialog && <FsBrowser
+      title={folderDialog.mode === 'locate' ? 'Locate original' : 'Import from folder'}
+      subtitle={folderDialog.mode === 'locate' ? 'Find the file in its new home.' : 'Referenced in place — nothing is copied.'}
+      actionLabel={folderDialog.mode === 'locate' ? 'Relink photo' : 'Import selected'}
+      onClose={() => setFolderDialog(null)}
+      onSelect={(paths) => void importFromPaths(paths)}
+    />}
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
     {dragging && <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos anywhere to start creating.</p><span>JPEG, PNG, WebP, RAW and more</span></div></div>}
   </div>;

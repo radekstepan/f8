@@ -19,7 +19,7 @@ export function Sidebar({ photos, albums, collection, search, editedCount, onSea
     { id: 'all', label: 'All Photos', icon: Images, count: photos.length },
     { id: 'favorites', label: 'Favorites', icon: Heart, count: photos.filter((photo) => photo.favorite).length },
     { id: 'edited', label: 'Recently Edited', icon: Clock3, count: editedCount },
-    { id: 'imports', label: 'Imports', icon: Download, count: photos.filter((photo) => photo.id.startsWith('import-')).length },
+    { id: 'imports', label: 'Imports', icon: Download, count: photos.filter((photo) => photo.albumId === 'imports').length },
   ];
   return (
     <aside className="library-sidebar" aria-label="Photo library">

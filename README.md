@@ -10,10 +10,11 @@ This is a Yarn workspaces + Turborepo monorepo. Use the Node version in `.nvmrc`
 
 - `nvm use` selects the pinned Node version.
 - `yarn install` installs the dependencies.
-- `yarn dev` starts the Vite development server (run `yarn build` once first so the workspace packages exist in `dist/`).
+- `yarn dev` starts the Vite development server and the library server together (run `yarn build` once first so the workspace packages exist in `dist/`). Open the printed Vite URL (usually `http://localhost:5173`); API calls proxy to the library server at `http://127.0.0.1:5193`.
 - `yarn build` builds every workspace package, then the application into `apps/web/dist/`.
 - `yarn typecheck` typechecks every workspace package.
-- `yarn workspace @photomator/web preview` serves the production build.
+- `yarn workspace @photomator/server start` serves the production build and the API from one process at `http://127.0.0.1:5193` (run `yarn build` first).
+- `yarn workspace @photomator/web preview` serves only the static production build (the library API stays unavailable).
 
 ## Build Notes
 
@@ -35,7 +36,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 - Draggable before/after comparison and hold-to-preview-original behavior.
 - Centered aspect-ratio cropping, rotation, flips, and straightening with automatic horizon detection, plus a rule-of-thirds overlay.
 - Browser-based repair brushes (OpenCV inpainting with a blur fallback) and clone stamping. Click to choose a clone source; Alt-click to choose another.
-- Photo import using a file picker or drag and drop, including camera RAW files (rendered from the largest embedded JPEG preview, with the RAW file's orientation applied). When a RAW file and a JPEG share a filename, only the RAW is imported.
+- Photo import using a file picker, drag and drop, or in-place folder import, including camera RAW files (rendered from the largest embedded JPEG preview, with the RAW file's orientation applied). When a RAW file and a JPEG share a filename, only the RAW is imported. Content hashing dedupes reimports and relinks moved files with their edits intact.
 - JPEG, PNG, and WebP export, configurable size and quality, plus JSON adjustment export.
 - Copy/paste adjustments between photographs, with each photograph's crop and retouching preserved.
 - Functional application menus, keyboard shortcuts, photo information, album creation, preset creation, and help dialogs.
@@ -45,18 +46,26 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 
 | Workspace | Responsibility |
 | --- | --- |
-| `apps/web` (`@photomator/web`) | Vite application: workspace composition, library state, keyboard shortcuts, import, and styles. |
-| `packages/core` (`@photomator/core`) | Framework-free editor logic: typed models, sample library, presets, and the image pipeline. |
-| `packages/ui` (`@photomator/ui`) | React components, the `useEditor` history hook, and shared UI utilities. Depends on `@photomator/core`. |
+| `apps/web` (`@photomator/web`) | Vite application: workspace composition, keyboard shortcuts, import, and styles. Library state comes from the server. |
+| `apps/server` (`@photomator/server`) | Local library server: SQLite catalog, referenced originals, SHA-256 identity, edit recipes, and preview cache. Serves the production web build when present. |
+| `packages/core` (`@photomator/core`) | Framework-free editor logic: typed models, sample library, presets, the image pipeline, and the library HTTP client. |
+| `packages/ui` (`@photomator/ui`) | React components, the `useEditor` history hook, the `useLibrary` server hook, and shared UI utilities. Depends on `@photomator/core`. |
 
 | File | Responsibility |
 | --- | --- |
-| `apps/web/src/App.tsx` | Application state, library management, keyboard shortcuts, import, and workspace composition. |
+| `apps/web/src/App.tsx` | Workspace composition, keyboard shortcuts, import flows, and server-offline handling. |
+| `apps/web/src/components/FsBrowser.tsx` | Server-folder browser for in-place import and missing-file relinking. |
 | `apps/web/src/index.css` | Visual tokens, native-style controls, responsive layout, and motion. |
+| `apps/server/src/app.ts` | HTTP API: library, imports, edits, albums, presets, folder browsing, and static serving. |
+| `apps/server/src/importer.ts` | Hashing, EXIF metadata, RAW preview extraction, dedupe/relink, and folder scanning. |
+| `apps/server/src/store.ts` | Typed SQLite access: photos, edits, albums, presets. |
+| `apps/server/src/db.ts` | Database open, WAL mode, and schema migrations. |
 | `packages/core/src/types.ts` | Typed photo, album, preset, adjustment, and history models. |
 | `packages/core/src/data.ts` | Sample library, default adjustments, built-in presets, and crop ratios. |
 | `packages/core/src/image.ts` | Shared image loading, geometry, filter mapping, retouching, effects, and export. |
-| `packages/ui/src/hooks/useEditor.ts` | Non-destructive per-photo edits, grouped history, persistence, and preset application. |
+| `packages/core/src/library.ts` | Library API contract and framework-free HTTP client. |
+| `packages/ui/src/hooks/useEditor.ts` | Non-destructive per-photo edits, grouped history, server persistence, and preset application. |
+| `packages/ui/src/hooks/useLibrary.ts` | Server library state: loading, uploads, folder import, metadata, and legacy migration. |
 | `packages/ui/src/components/EditorUI.tsx` | Reusable buttons, sliders, switches, selects, menus, and accessible dialogs. |
 | `packages/ui/src/components/Topbar.tsx` | Application menus, editing toolbar, and status bar. |
 | `packages/ui/src/components/Sidebar.tsx` | Library, album navigation, search, and import entry point. |
@@ -86,9 +95,27 @@ Both preview and export use that shared image pipeline, so changes to an effect 
 
 Extend the `Tool` or `DialogType` union in `packages/core/src/types.ts`, add the toolbar/menu action, and supply the inspector or dialog content. `ChangeEdit` is the public entry point for non-destructive changes; pass a stable merge key when an interaction generates continuous updates.
 
-### Connect a Real Library
+### Library Server
 
-Replace the library load/save logic in `apps/web/src/App.tsx` with your data layer. The components receive typed values and callbacks rather than directly accessing storage. An IndexedDB-backed blob store is a natural next step for retaining imported originals.
+`apps/server` is the library backend. It binds to localhost without authentication (single-user, this device only) and stores its catalog in `apps/server/data/photomator.db` (SQLite, WAL mode) with extracted RAW previews alongside it.
+
+- **Referenced originals.** Folder import (`File → Import from Folder…`, or `Ctrl/⌘ Shift O`) records a file's absolute path and never copies bytes. Uploads (picker or drag and drop) cannot see your paths — browsers hide them — so the server first stores them under `~/Pictures/Photomator/YYYY/MM/` and references them from there.
+- **Hash identity.** Every original is SHA-256 hashed at import. Reimporting a moved file relinks it to its record (edits intact); reimporting the same bytes anywhere reports a duplicate instead of a second record.
+- **Missing files.** A photo whose file is gone shows a Missing badge; opening it offers to locate the original, and any folder import that finds the bytes heals it automatically.
+- **Non-destructive edits.** The original is never written to. Each photo keeps one edit recipe in SQLite, saved ~500ms after each change; undo/redo stacks stay session-only.
+- **Samples.** The first boot seeds the twelve sample photos as URL records (no local bytes, never missing), with photo-1 starting on the Natural preset.
+
+Configuration is all environment variables:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PORT` / `PHOTOMATOR_PORT` | `5193` | HTTP port. |
+| `HOST` / `PHOTOMATOR_HOST` | `127.0.0.1` | Bind address; keep localhost unless you add authentication. |
+| `PHOTOMATOR_DATA` | `apps/server/data` | Database, previews, and upload staging. |
+| `PHOTOMATOR_LIBRARY` | `~/Pictures/Photomator` | Where uploaded bytes land. |
+| `PHOTOMATOR_ROOTS` | `~` | Colon-separated roots the folder browser and path import may touch. |
+
+The API contract lives in `packages/core/src/library.ts` (`LibraryPhoto`, `LibrarySnapshot`, `createLibraryClient`), so scripts and alternative clients can share it.
 
 ### Change the Visual System
 
@@ -96,9 +123,9 @@ The primary tokens are at the top of `apps/web/src/index.css`: `--accent`, `--ac
 
 ## Persistence and Privacy
 
-Sample-photo edits, favorites, ratings, albums, and custom presets are stored in `localStorage` under `photomator-demo-*-v1` keys. Undo/redo history is session-only. Imported photos use object URLs and intentionally remain session-only; they are not uploaded to a server. Download edited imports before refreshing.
+Photos, edits, favorites, ratings, albums, and custom presets live in the server's SQLite database; undo/redo history is session-only. The browser keeps no photo state — everything survives reloads, and edits reapply to the referenced originals every time. On the first run against a fresh database, any pre-server `photomator-demo-*-v1` localStorage state (sample edits, favorites, custom albums and presets) migrates into the library once, then clears.
 
-Clear the `photomator-demo-` local-storage entries to restore the original sample library. Remote sample images and the optional Inter font require an internet connection.
+Everything stays on your machine: the server binds to localhost, originals stay in your folders, and nothing is uploaded anywhere. Remote sample images and the optional Inter font require an internet connection.
 
 ## Demo Boundaries
 
@@ -107,9 +134,9 @@ Clear the `photomator-demo-` local-storage entries to restore the original sampl
 - Repair reconstructs masked regions with OpenCV inpainting (Telea or Navier-Stokes) in a worker, falling back to a local blur when the vision engine is unavailable. Clone copies pixels from a source region.
 - Crop supports centered ratios rather than a freely movable crop rectangle. The overlay is a rule-of-thirds framing guide.
 - Zoom percentages are relative to the fitted preview, not a one-to-one source-pixel scale.
-- Sample camera details are illustrative; importing a regular image does not parse EXIF data (RAW imports do read camera details from EXIF). Export does not embed the sample metadata.
+- Sample camera details are illustrative. Imported photos read real EXIF camera details when present. Export does not embed the sample metadata.
 - Export never upscales beyond the available source resolution.
-- There is no backend, cloud synchronization, account system, or Photos-library integration.
+- The backend is a local single-user server with no authentication: keep it on localhost. There is no cloud synchronization, account system, or Photos-library integration.
 
 ## Useful Shortcuts
 
@@ -130,9 +157,10 @@ Clear the `photomator-demo-` local-storage entries to restore the original sampl
 | `Ctrl/Cmd Shift Z` | Redo |
 | `Ctrl/Cmd Shift C` / `V` | Copy / paste adjustments |
 | `Ctrl/Cmd O` | Import |
+| `Ctrl/Cmd Shift O` | Import from folder |
 | `Ctrl/Cmd Shift E` | Export |
 | `I`, `?` | Photo information, shortcut help |
 
 ## Verification
 
-The production build is verified with `yarn build` (Turborepo: `tsc -b` for the workspace packages, then Vite for the app) and `yarn typecheck`. A browser automation runner is not included. For a quick interactive smoke test, run `yarn dev`, open the printed local URL, then change exposure, undo/redo it, select a preset, drag the comparison divider, crop a photo, import an image, export it, then reload to verify persistence of the sample library.
+The production build is verified with `yarn build` (Turborepo: `tsc` for the workspace packages, then Vite for the app), `yarn typecheck`, and `yarn test` (core pipeline tests plus server import/relink/edit/endpoint tests). A browser automation runner is not included. For a quick interactive smoke test, run `yarn dev`, open the printed local URL, then change exposure, undo/redo it, select a preset, drag the comparison divider, crop a photo, import an image, export it, reload to verify persistence, move the imported file on disk, and reimport it from its new location to verify relinking with edits intact.

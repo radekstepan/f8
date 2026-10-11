@@ -19,6 +19,12 @@ export interface Photo {
   favorite: boolean;
   rating: number;
   photographer?: string;
+  /** Server library only: the referenced original is unreachable at its recorded path. */
+  missing?: boolean;
+  /** Server library only: a non-default edit recipe is stored for this photo. */
+  edited?: boolean;
+  /** Server library only: absolute path of a referenced original, when it has one. */
+  path?: string | null;
 }
 
 export interface Album {

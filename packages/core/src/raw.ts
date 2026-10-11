@@ -34,6 +34,21 @@ function stemOf(filename: string): string {
   return stem.toLowerCase();
 }
 
+// Rendered image extensions accepted at import alongside RAW. These decode
+// directly (browser or server) and never need preview extraction.
+export const RENDERED_EXTENSIONS = [
+  "avif", "bmp", "gif", "heic", "heif", "jpeg", "jpg",
+  "png", "svg", "tif", "tiff", "webp",
+] as const;
+
+const RENDERED_EXTENSION_SET: ReadonlySet<string> = new Set(RENDERED_EXTENSIONS);
+
+// True for any filename the library accepts: camera RAW or rendered image.
+// Used by the server for path-based imports, where no MIME type exists.
+export function isImportableFilename(filename: string): boolean {
+  return isRawFilename(filename) || RENDERED_EXTENSION_SET.has(extensionOf(filename));
+}
+
 export function isRawFilename(filename: string): boolean {
   return RAW_EXTENSION_SET.has(extensionOf(filename));
 }
@@ -93,7 +108,7 @@ function formatShutter(seconds: unknown): string {
 
 // Map exifr's translated tags onto photo fields. Unknown shapes fall back
 // to the same placeholders regular imports use.
-export function formatRawMetadata(tags: Record<string, unknown> | undefined | null): RawMetadata {
+export function formatRawMetadata(tags: Record<string, unknown> | undefined | null, fallbackCamera = "Imported RAW image"): RawMetadata {
   const make = typeof tags?.["Make"] === "string" ? tags["Make"] : "";
   const model = typeof tags?.["Model"] === "string" ? tags["Model"] : "";
   const lens = typeof tags?.["LensModel"] === "string" ? tags["LensModel"] : "";
@@ -106,7 +121,7 @@ export function formatRawMetadata(tags: Record<string, unknown> | undefined | nu
     ? model
     : `${make} ${model}`.trim();
   return {
-    camera: cameraName || "Imported RAW image",
+    camera: cameraName || fallbackCamera,
     lens: lens || "No camera metadata",
     iso,
     aperture: typeof fNumber === "number" && Number.isFinite(fNumber) && fNumber > 0 ? `f/${trimmed(fNumber)}` : "-",
@@ -284,11 +299,11 @@ export async function extractRawPreview(file: Blob | Uint8Array): Promise<Blob> 
 }
 
 // Best-effort camera metadata for imported RAWs; never throws.
-export async function readRawMetadata(file: Blob | Uint8Array): Promise<RawMetadata> {
+export async function readRawMetadata(file: Blob | Uint8Array, fallbackCamera = "Imported RAW image"): Promise<RawMetadata> {
   try {
-    return formatRawMetadata(await exifr.parse(file));
+    return formatRawMetadata(await exifr.parse(file), fallbackCamera);
   } catch {
-    return formatRawMetadata(undefined);
+    return formatRawMetadata(undefined, fallbackCamera);
   }
 }
 

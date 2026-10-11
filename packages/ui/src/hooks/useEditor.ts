@@ -2,44 +2,54 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeWhiteBalanceAuto, decodeDownsampled } from '@photomator/core';
 import type { EditState, HistoryState, Preset } from '@photomator/core';
 
-const STORAGE_KEY = 'photomator-demo-edits-v1';
-
 const initialHistory = (id: string): HistoryState => ({
   past: id === 'photo-1' ? [{ ...DEFAULT_EDIT }] : [],
   present: { ...(id === 'photo-1' ? INITIAL_EDIT : DEFAULT_EDIT) },
   future: [],
 });
 
-function loadEdits(): Record<string, HistoryState> {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    return Object.fromEntries(
-      Object.entries(saved).filter(([, value]) => value && typeof value === 'object' && 'present' in value)
-        .map(([id, value]) => {
-          const history = value as HistoryState;
-          return [id, { past: [], present: { ...DEFAULT_EDIT, ...history.present }, future: [] }];
-        }),
-    );
-  } catch {
-    return {};
-  }
+export interface EditorPersistence {
+  /** Seed from the server library; applied once when it arrives. */
+  initial?: Record<string, HistoryState> | null;
+  /** Debounced persist of the current recipe; undo/redo stacks stay session-only. */
+  onPersist?: (photoId: string, present: EditState) => void;
 }
 
-export function useEditor(photoId: string) {
-  const [histories, setHistories] = useState<Record<string, HistoryState>>(loadEdits);
+export function useEditor(photoId: string, persistence?: EditorPersistence) {
+  const [histories, setHistories] = useState<Record<string, HistoryState>>(() => persistence?.initial ?? {});
   const lastChange = useRef({ key: '', photoId: '', time: 0 });
   const enhanceSnapshots = useRef<Record<string, EditState>>({});
+  const persistRef = useRef(persistence?.onPersist);
+  persistRef.current = persistence?.onPersist;
+  const latest = useRef<Record<string, EditState>>({});
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const seeded = useRef(false);
   const history = useMemo(() => histories[photoId] || initialHistory(photoId), [histories, photoId]);
 
+  const initial = persistence?.initial;
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try {
-        const compact = Object.fromEntries(Object.entries(histories).filter(([id]) => !id.startsWith('import-')).map(([id, item]) => [id, { present: item.present }]));
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(compact));
-      } catch { /* Editing stays available if browser storage is full. */ }
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [histories]);
+    if (initial && !seeded.current) {
+      seeded.current = true;
+      setHistories(initial);
+    }
+  }, [initial]);
+
+  useEffect(() => () => {
+    const persist = persistRef.current;
+    for (const [id, timer] of Object.entries(timers.current)) {
+      clearTimeout(timer);
+      const present = latest.current[id];
+      if (persist && present) persist(id, present);
+    }
+  }, []);
+
+  const schedulePersist = useCallback((id: string, present: EditState) => {
+    latest.current[id] = present;
+    const persist = persistRef.current;
+    if (!persist) return;
+    if (timers.current[id]) clearTimeout(timers.current[id]);
+    timers.current[id] = setTimeout(() => persist(id, present), 500);
+  }, []);
 
   const change = useCallback((patch: Partial<EditState>, mergeKey = '') => {
     const now = Date.now();
@@ -47,16 +57,18 @@ export function useEditor(photoId: string) {
     lastChange.current = { key: mergeKey, photoId, time: now };
     setHistories((all) => {
       const current = all[photoId] || initialHistory(photoId);
+      const present = { ...current.present, preset: 'Custom', ...patch };
+      schedulePersist(photoId, present);
       return {
         ...all,
         [photoId]: {
           past: merge ? current.past : [...current.past.slice(-49), current.present],
-          present: { ...current.present, preset: 'Custom', ...patch },
+          present,
           future: [],
         },
       };
     });
-  }, [photoId]);
+  }, [photoId, schedulePersist]);
 
   const undo = useCallback(() => {
     lastChange.current.key = '';
@@ -64,9 +76,10 @@ export function useEditor(photoId: string) {
       const current = all[photoId] || initialHistory(photoId);
       const previous = current.past[current.past.length - 1];
       if (!current.past.length || !previous) return all;
+      schedulePersist(photoId, previous);
       return { ...all, [photoId]: { past: current.past.slice(0, -1), present: previous, future: [current.present, ...current.future] } };
     });
-  }, [photoId]);
+  }, [photoId, schedulePersist]);
 
   const redo = useCallback(() => {
     lastChange.current.key = '';
@@ -74,9 +87,10 @@ export function useEditor(photoId: string) {
       const current = all[photoId] || initialHistory(photoId);
       const next = current.future[0];
       if (!current.future.length || !next) return all;
+      schedulePersist(photoId, next);
       return { ...all, [photoId]: { past: [...current.past, current.present], present: next, future: current.future.slice(1) } };
     });
-  }, [photoId]);
+  }, [photoId, schedulePersist]);
 
   const applyPreset = useCallback((preset: Preset) => {
     const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;

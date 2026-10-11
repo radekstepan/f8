@@ -1,0 +1,26 @@
+{
+  "name": "@photomator/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "lint": "echo \"(no lint configured)\" && exit 0",
+    "test": "node ../../node_modules/vitest/vitest.mjs run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.5",
+    "@photomator/core": "workspace:*",
+    "hono": "^4.10.3",
+    "image-size": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.17",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

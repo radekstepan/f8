@@ -3,7 +3,7 @@ import { ArrowLeft, Bandage, Check, Columns2, Crop, Info, Maximize2, PanelLeft, 
 import type { DialogType, Tool, VisionWorkerStatus } from '@photomator/core';
 import { BrandMark, IconButton, MenuItem } from './EditorUI.js';
 
-export type MenuAction = 'import' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'rotate' | 'favorite' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'fit' | 'fullscreen' | 'shortcuts' | 'about';
+export type MenuAction = 'import' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'rotate' | 'favorite' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'fit' | 'fullscreen' | 'shortcuts' | 'about';
 
 interface MenuBarProps {
   onAction: (action: MenuAction) => void;
@@ -30,7 +30,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, sidebar, inspect
   const item = (name: string, value: MenuAction, shortcut?: string, disabled?: boolean, checked?: boolean) => <MenuItem key={value} onClick={() => action(value)} shortcut={shortcut} disabled={disabled} checked={checked}>{name}</MenuItem>;
   const menus: Record<string, ReactNode> = {
     Photomator: <>{item('About this demo', 'about')}<div className="menu-separator" />{item('Keyboard Shortcuts', 'shortcuts', '?')}</>,
-    File: <>{item('Import Photos...', 'import', 'Ctrl O')}{item('New Album...', 'album')}<div className="menu-separator" />{item('Export Photo...', 'export', 'Ctrl Shift E')}</>,
+    File: <>{item('Import Photos...', 'import', 'Ctrl O')}{item('Import from Folder...', 'import-folder', 'Ctrl Shift O')}{item('New Album...', 'album')}<div className="menu-separator" />{item('Export Photo...', 'export', 'Ctrl Shift E')}</>,
     Edit: <>{item('Undo', 'undo', 'Ctrl Z', !canUndo)}{item('Redo', 'redo', 'Ctrl Shift Z', !canRedo)}<div className="menu-separator" />{item('Copy Adjustments', 'copy', 'Ctrl Shift C')}{item('Paste Adjustments', 'paste', 'Ctrl Shift V', !canPaste)}<div className="menu-separator" />{item('Reset All Adjustments', 'reset')}</>,
     Image: <>{item('Auto Enhance', 'enhance', 'A')}{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<div className="menu-separator" />{item('Compare with Original', 'compare', 'B')}</>,
     View: <>{item('Show Library', 'sidebar', undefined, false, sidebar)}{item('Show Adjustments', 'inspector', undefined, false, inspector)}{item('Show Presets', 'presets', undefined, false, presets)}{item('Show Filmstrip', 'filmstrip', undefined, false, filmstrip)}<div className="menu-separator" />{item('Photo Browser', 'grid', 'G')}{item('Zoom to Fit', 'fit', '0')}</>,
