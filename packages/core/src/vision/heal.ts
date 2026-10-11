@@ -7,13 +7,18 @@
 //   dust and zits, but one offset cannot reconstruct structure through a
 //   large or mixed-content hole — and past a certain size no offset qualifies
 //   at all, so it would silently do nothing.
-// - Exemplar fill (object removal): Criminisi-style per-patch fill. Patches
-//   on the fill front are ordered by confidence x structure priority so edges
-//   propagate before texture closes over them, and each patch finds its own
-//   donor matched on known pixels only: gradient-weighted color plus a
-//   texture term, so rippled water wins over flat canopy of the same color.
-//   Donor patches must be fully originally-known, so blemishes can never be
-//   transplanted and fill can never smear.
+// - Exemplar fill (object removal): three passes. First a Criminisi-ordered
+//   fill (confidence x structure priority, so edges propagate before texture
+//   closes over them) where each patch finds its own donor: truncated
+//   gradient-weighted color plus a texture term over known pixels, so
+//   rippled water wins over flat canopy of the same color, and a
+//   background-estimate prior over every member pixel, so a matching ripple
+//   phase cannot import a far-away shade. Then refinement sweeps propagate
+//   neighbours' offsets with seeded random search until the offset field
+//   agrees instead of tiling a mosaic. Finally each pixel takes the median
+//   of the nearby offsets' ballots, smoothing residual seams while keeping
+//   reconstructed edges sharp. Donor patches must be fully originally-known,
+//   so blemishes can never be transplanted and fill can never smear.
 //
 // Each component heals inside a cropped working region (its bbox expanded to
 // cover every reachable donor, then clamped to the image), so cost and memory
@@ -79,6 +84,55 @@ export const HEAL_EXEMPLAR_GRAD_WEIGHT_SCALE = 100;
  * pixels carry the blemish's own gradients).
  */
 export const HEAL_EXEMPLAR_GRAD_MATCH_WEIGHT = 2;
+/**
+ * Per-pixel ceiling on the match term (gradient-weighted color SSD plus the
+ * texture term). Outlier pixels — an oar tip or wake fleck inside an
+ * otherwise water target — stop dominating the score past this, so a donor
+ * is not chosen just because it continues a distractor. Genuine texture
+ * mismatches stay far below it and are unaffected.
+ */
+export const HEAL_EXEMPLAR_MATCH_TRUNC = 80 * 80;
+/**
+ * Box-blur radius for the background estimate: the mask-aware local mean
+ * color that donor content is judged against on member pixels.
+ */
+export const HEAL_PRIOR_RADIUS = 8;
+/**
+ * Weight of the donor prior: squared deviation of donor pixels from the
+ * background estimate, summed over every member pixel in the target patch.
+ * Donor content at unknown pixels is otherwise unscored, so without this a
+ * matching ripple phase can import a far-away shade (or a tree chunk) for
+ * free. The estimate is smooth, so texture still comes from the match term,
+ * not the prior.
+ */
+export const HEAL_PRIOR_WEIGHT = 1;
+/**
+ * Score multiplier for donor offsets already chosen by filled neighbours of
+ * the target. Adjacent patches then share donors unless another offset
+ * scores clearly better, which keeps tint regions from tiling into a mosaic
+ * and stops a wrong patch from becoming the template for its neighbours.
+ */
+export const HEAL_COHERENCE_BONUS = 0.9;
+/** Cap on distinct neighbour offsets tried per target patch. */
+export const HEAL_COHERENCE_MAX_OFFSETS = 8;
+/**
+ * Vote radius for the final offset field: each member pixel collects one
+ * ballot from every nearby member pixel's donor offset, and settles on the
+ * median. Median-over-overlaps smooths residual seams while keeping
+ * reconstructed edges sharp, and it rejects minority outlier voters.
+ */
+export const HEAL_VOTE_RADIUS = 4;
+/** Maximum refinement sweeps over the offset field; stops early when stable. */
+export const HEAL_REFINE_SWEEPS_MAX = 3;
+/**
+ * Match weight for already-filled pixels (original pixels always weigh 1).
+ * Filled pixels are estimates, so they count less than real ones — but
+ * above zero, so texture stays continuous across patch boundaries. The
+ * background-estimate prior (full weight on every member pixel) anchors
+ * the shade everywhere, which stops wrong tints from becoming
+ * self-consistent and locking in.
+ */
+export const HEAL_FILLED_WEIGHT = 0.5;
 
 /**
  * Heal effort preset. Quality tunes donor search reach and candidate
@@ -451,6 +505,14 @@ interface ExemplarState {
   matchX0: number;
   matchY0: number;
   matchW: number;
+  /** Smooth background color estimate (mask-aware blur, diffused inward). */
+  estR: Float32Array;
+  estG: Float32Array;
+  estB: Float32Array;
+  /** Donor offset chosen by the patch that filled each pixel, where hasOff is 1. */
+  offX: Int16Array;
+  offY: Int16Array;
+  hasOff: Uint8Array;
 }
 
 /** True when any 8-neighbour is known (bounds-clamped, so edges count). */
@@ -523,14 +585,251 @@ function patchPriority(
 }
 
 /**
- * Best donor patch center for the target: expanding square spiral, lowest
- * match score between the target's known pixels (original or already
- * filled) and the donor's pristine pixels. The score is gradient-weighted
- * color SSD plus a texture term (gradient-magnitude SSD) that tells rippled
- * water from flat canopy of the same color; both gradient terms apply only
- * where the target is originally known. Donor patches must be fully in
- * bounds and fully originally-known. Strict improvement wins; ties keep the
- * first (nearest) offset.
+ * Smooth background color estimate over the working region: a mask-aware
+ * box mean (blemish pixels excluded) wherever the blur window sees clean
+ * pixels, diffused inward across the hole from there. The result tracks
+ * local tint gradients — gold water stays gold, shaded water stays shaded —
+ * and gives the donor prior something to judge unscored donor content
+ * against. Deterministic single pass; every masked pixel is reachable from
+ * a clean seed on a connected crop.
+ */
+function buildBackgroundEstimate(
+  image: PixelImage,
+  mask: RepairMask,
+  sat: Uint32Array,
+): { r: Float32Array; g: Float32Array; b: Float32Array } {
+  const { width, height } = image;
+  const radius = HEAL_PRIOR_RADIUS;
+  const size = width * height;
+  // Channel integral images for O(1) box means at any radius.
+  const sumR = new Float64Array((width + 1) * (height + 1));
+  const sumG = new Float64Array((width + 1) * (height + 1));
+  const sumB = new Float64Array((width + 1) * (height + 1));
+  for (let y = 0; y < height; y += 1) {
+    let rowR = 0;
+    let rowG = 0;
+    let rowB = 0;
+    for (let x = 0; x < width; x += 1) {
+      const p = y * width + x;
+      if ((mask.data[p] ?? 0) === 0) {
+        const i = p * 4;
+        rowR += image.data[i] ?? 0;
+        rowG += image.data[i + 1] ?? 0;
+        rowB += image.data[i + 2] ?? 0;
+      }
+      const stride = width + 1;
+      sumR[(y + 1) * stride + (x + 1)] = (sumR[y * stride + (x + 1)] ?? 0) + rowR;
+      sumG[(y + 1) * stride + (x + 1)] = (sumG[y * stride + (x + 1)] ?? 0) + rowG;
+      sumB[(y + 1) * stride + (x + 1)] = (sumB[y * stride + (x + 1)] ?? 0) + rowB;
+    }
+  }
+  const boxSum = (sum: Float64Array, x0: number, y0: number, x1: number, y1: number): number => {
+    const stride = width + 1;
+    return (
+      (sum[(y1 + 1) * stride + (x1 + 1)] ?? 0) -
+      (sum[y0 * stride + (x1 + 1)] ?? 0) -
+      (sum[(y1 + 1) * stride + x0] ?? 0) +
+      (sum[y0 * stride + x0] ?? 0)
+    );
+  };
+  const estR = new Float32Array(size);
+  const estG = new Float32Array(size);
+  const estB = new Float32Array(size);
+  const settled = new Uint8Array(size);
+  const queue: number[] = [];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const x0 = Math.max(0, x - radius);
+      const y0 = Math.max(0, y - radius);
+      const x1 = Math.min(width - 1, x + radius);
+      const y1 = Math.min(height - 1, y + radius);
+      const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+      const clean = area - rectMasked(sat, width, x0, y0, x1, y1);
+      if (clean <= 0) continue;
+      const p = y * width + x;
+      estR[p] = boxSum(sumR, x0, y0, x1, y1) / clean;
+      estG[p] = boxSum(sumG, x0, y0, x1, y1) / clean;
+      estB[p] = boxSum(sumB, x0, y0, x1, y1) / clean;
+      settled[p] = 1;
+      queue.push(p);
+    }
+  }
+  // Diffuse inward: each unreached pixel takes the mean of its settled
+  // 4-neighbours (fixed order, single pass, so deterministic).
+  for (let head = 0; head < queue.length; head += 1) {
+    const p = queue[head] ?? 0;
+    const x = p % width;
+    const y = (p - x) / width;
+    const neighbours: number[] = [];
+    if (x > 0) neighbours.push(p - 1);
+    if (x + 1 < width) neighbours.push(p + 1);
+    if (y > 0) neighbours.push(p - width);
+    if (y + 1 < height) neighbours.push(p + width);
+    for (const q of neighbours) {
+      if (settled[q] === 1) continue;
+      const qx = q % width;
+      const qy = (q - qx) / width;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let n = 0;
+      if (qx > 0 && settled[q - 1] === 1) {
+        r += estR[q - 1] ?? 0;
+        g += estG[q - 1] ?? 0;
+        b += estB[q - 1] ?? 0;
+        n += 1;
+      }
+      if (qx + 1 < width && settled[q + 1] === 1) {
+        r += estR[q + 1] ?? 0;
+        g += estG[q + 1] ?? 0;
+        b += estB[q + 1] ?? 0;
+        n += 1;
+      }
+      if (qy > 0 && settled[q - width] === 1) {
+        r += estR[q - width] ?? 0;
+        g += estG[q - width] ?? 0;
+        b += estB[q - width] ?? 0;
+        n += 1;
+      }
+      if (qy + 1 < height && settled[q + width] === 1) {
+        r += estR[q + width] ?? 0;
+        g += estG[q + width] ?? 0;
+        b += estB[q + width] ?? 0;
+        n += 1;
+      }
+      if (n === 0) continue;
+      estR[q] = r / n;
+      estG[q] = g / n;
+      estB[q] = b / n;
+      settled[q] = 1;
+      queue.push(q);
+    }
+  }
+  return { r: estR, g: estG, b: estB };
+}
+
+/**
+ * Match score of one donor offset for the target patch. Originally-known
+ * pixels pay truncated gradient-weighted color SSD plus the texture term;
+ * filled pixels pay the same match down-weighted (they are estimates) plus
+ * the background-estimate prior; unknown pixels pay the prior alone. The
+ * prior on every member pixel anchors the shade everywhere, so a matching
+ * ripple phase cannot import a far-away tint, and wrong tints cannot become
+ * self-consistent. Returns +Infinity when the score reaches `bar` (pruned:
+ * only a strict improvement can win) or when the target has no known
+ * pixels to match on.
+ */
+function scorePatchDonor(
+  state: ExemplarState,
+  image: PixelImage,
+  mask: RepairMask,
+  tx: number,
+  ty: number,
+  ox: number,
+  oy: number,
+  bar: number,
+): number {
+  const {
+    width,
+    height,
+    patchR,
+    work,
+    known,
+    gradWeight,
+    gradX0,
+    gradY0,
+    gradW,
+    matchMag,
+    matchX0,
+    matchY0,
+    matchW,
+    estR,
+    estG,
+    estB,
+  } = state;
+  let ssd = 0;
+  let matched = 0;
+  for (let py = Math.max(0, ty - patchR); py <= Math.min(height - 1, ty + patchR); py += 1) {
+    for (let px = Math.max(0, tx - patchR); px <= Math.min(width - 1, tx + patchR); px += 1) {
+      const q = py * width + px;
+      const qi = ((py + oy) * width + (px + ox)) * 4;
+      // Donor content judged against the smooth local estimate wherever the
+      // target pixel is not an original scene pixel.
+      const originallyKnown = (mask.data[q] ?? 0) === 0;
+      if (!originallyKnown) {
+        const pr = (image.data[qi] ?? 0) - (estR[q] ?? 0);
+        const pg = (image.data[qi + 1] ?? 0) - (estG[q] ?? 0);
+        const pb = (image.data[qi + 2] ?? 0) - (estB[q] ?? 0);
+        ssd += HEAL_PRIOR_WEIGHT * (pr * pr + pg * pg + pb * pb);
+        if (ssd >= bar) return Number.POSITIVE_INFINITY;
+      }
+      if (known[q] !== 1) continue;
+      const ti = q * 4;
+      const dr = (work[ti] ?? 0) - (image.data[qi] ?? 0);
+      const dg = (work[ti + 1] ?? 0) - (image.data[qi + 1] ?? 0);
+      const db = (work[ti + 2] ?? 0) - (image.data[qi + 2] ?? 0);
+      let term = dr * dr + dg * dg + db * db;
+      if (originallyKnown) {
+        term *= gradWeight[(py - gradY0) * gradW + (px - gradX0)] ?? 1;
+        const tm = matchMag[(py - matchY0) * matchW + (px - matchX0)] ?? 0;
+        const dm = matchMag[(py + oy - matchY0) * matchW + (px + ox - matchX0)] ?? 0;
+        const dg2 = tm - dm;
+        term += HEAL_EXEMPLAR_GRAD_MATCH_WEIGHT * dg2 * dg2;
+        ssd += Math.min(term, HEAL_EXEMPLAR_MATCH_TRUNC);
+      } else {
+        ssd += HEAL_FILLED_WEIGHT * Math.min(term, HEAL_EXEMPLAR_MATCH_TRUNC);
+      }
+      matched += 1;
+      if (ssd >= bar) return Number.POSITIVE_INFINITY;
+    }
+  }
+  return matched === 0 ? Number.POSITIVE_INFINITY : ssd;
+}
+
+/** True when the donor patch centered at (tx + ox, ty + oy) is fully in bounds and fully originally-known. */
+function isUsableDonor(
+  state: ExemplarState,
+  sat: Uint32Array,
+  tx: number,
+  ty: number,
+  ox: number,
+  oy: number,
+): boolean {
+  const { width, height, patchR } = state;
+  const cx = tx + ox;
+  const cy = ty + oy;
+  if (cx - patchR < 0 || cy - patchR < 0 || cx + patchR >= width || cy + patchR >= height) return false;
+  return rectMasked(sat, width, cx - patchR, cy - patchR, cx + patchR, cy + patchR) === 0;
+}
+
+/**
+ * Distinct donor offsets already chosen by filled pixels in the target
+ * window, row-major, capped. Reusing a neighbour's offset keeps adjacent
+ * patches on the same donor unless another scores clearly better.
+ */
+function coherenceCandidates(state: ExemplarState, tx: number, ty: number): DonorOffset[] {
+  const { width, height, patchR, hasOff, offX, offY } = state;
+  const found: DonorOffset[] = [];
+  for (let py = Math.max(0, ty - patchR); py <= Math.min(height - 1, ty + patchR); py += 1) {
+    for (let px = Math.max(0, tx - patchR); px <= Math.min(width - 1, tx + patchR); px += 1) {
+      if (found.length >= HEAL_COHERENCE_MAX_OFFSETS) return found;
+      const q = py * width + px;
+      if (hasOff[q] !== 1) continue;
+      const ox = offX[q] ?? 0;
+      const oy = offY[q] ?? 0;
+      if (found.some((candidate) => candidate.ox === ox && candidate.oy === oy)) continue;
+      found.push({ ox, oy });
+    }
+  }
+  return found;
+}
+
+/**
+ * Best donor patch center for the target: neighbours' offsets first (with
+ * the coherence bonus), then an expanding square spiral, all scored with
+ * scorePatchDonor. Donor patches must be fully in bounds and fully
+ * originally-known. Strict improvement wins throughout, so ties keep the
+ * first (nearest) offset and results are deterministic.
  */
 function findPatchDonor(
   state: ExemplarState,
@@ -542,55 +841,37 @@ function findPatchDonor(
   ty: number,
   tuning: HealTuning,
 ): DonorOffset | null {
-  const { width, height, patchR, work, known, gradWeight, gradX0, gradY0, gradW, matchMag, matchX0, matchY0, matchW } = state;
+  const { patchR } = state;
   const radius = exemplarRadius(maxDim, tuning);
   // Donor centers closer than this necessarily overlap the target's own hole.
   const rMin = patchR + tuning.exemplarStride;
   const stride = tuning.exemplarStride;
   let best: DonorOffset | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
+  // Neighbours' offsets first, with the coherence bonus: sharing a donor
+  // with adjacent patches is preferred unless the spiral finds a clearly
+  // better-scoring offset. Strict improvement keeps this deterministic.
+  for (const candidate of coherenceCandidates(state, tx, ty)) {
+    if (!isUsableDonor(state, sat, tx, ty, candidate.ox, candidate.oy)) continue;
+    // Un-bonus the bar: the candidate wins only if score * bonus < best.
+    const bar = bestScore / HEAL_COHERENCE_BONUS;
+    const score = scorePatchDonor(state, image, mask, tx, ty, candidate.ox, candidate.oy, bar);
+    if (score === Number.POSITIVE_INFINITY) continue;
+    const adjusted = score * HEAL_COHERENCE_BONUS;
+    if (adjusted < bestScore) {
+      bestScore = adjusted;
+      best = candidate;
+    }
+  }
   let evaluated = 0;
   for (let r = rMin; r <= radius && evaluated < tuning.exemplarMaxCandidates; r += stride) {
     for (let oy = -r; oy <= r && evaluated < tuning.exemplarMaxCandidates; oy += stride) {
       for (let ox = -r; ox <= r && evaluated < tuning.exemplarMaxCandidates; ox += stride) {
         if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
         evaluated += 1;
-        const cx = tx + ox;
-        const cy = ty + oy;
-        if (cx - patchR < 0 || cy - patchR < 0 || cx + patchR >= width || cy + patchR >= height) continue;
-        if (rectMasked(sat, width, cx - patchR, cy - patchR, cx + patchR, cy + patchR) !== 0) continue;
-        let ssd = 0;
-        let matched = 0;
-        let usable = true;
-        // Pruning at >= is exact: only a strict improvement can win.
-        const bar = bestScore;
-        for (let py = Math.max(0, ty - patchR); py <= Math.min(height - 1, ty + patchR); py += 1) {
-          for (let px = Math.max(0, tx - patchR); px <= Math.min(width - 1, tx + patchR); px += 1) {
-            const q = py * width + px;
-            if (known[q] !== 1) continue;
-            const qi = ((py + oy) * width + (px + ox)) * 4;
-            const ti = q * 4;
-            const dr = (work[ti] ?? 0) - (image.data[qi] ?? 0);
-            const dg = (work[ti + 1] ?? 0) - (image.data[qi + 1] ?? 0);
-            const db = (work[ti + 2] ?? 0) - (image.data[qi + 2] ?? 0);
-            let term = dr * dr + dg * dg + db * db;
-            if ((mask.data[q] ?? 0) === 0) {
-              term *= gradWeight[(py - gradY0) * gradW + (px - gradX0)] ?? 1;
-              const tm = matchMag[(py - matchY0) * matchW + (px - matchX0)] ?? 0;
-              const dm = matchMag[(py + oy - matchY0) * matchW + (px + ox - matchX0)] ?? 0;
-              const dg2 = tm - dm;
-              term += HEAL_EXEMPLAR_GRAD_MATCH_WEIGHT * dg2 * dg2;
-            }
-            ssd += term;
-            matched += 1;
-            if (ssd >= bar) {
-              usable = false;
-              break;
-            }
-          }
-          if (!usable) break;
-        }
-        if (!usable || matched === 0) continue;
+        if (!isUsableDonor(state, sat, tx, ty, ox, oy)) continue;
+        const ssd = scorePatchDonor(state, image, mask, tx, ty, ox, oy, bestScore);
+        if (ssd === Number.POSITIVE_INFINITY) continue;
         if (ssd < bestScore) {
           bestScore = ssd;
           best = { ox, oy };
@@ -599,6 +880,100 @@ function findPatchDonor(
     }
   }
   return best;
+}
+
+/** Deterministic PRNG (mulberry32) for the refinement random search. */
+function makeSeededRandom(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Sweep the offset field until neighbouring pixels agree. For each member
+ * pixel with an offset, try the 4-neighbours' offsets (propagation: good
+ * donors spread across smooth regions) plus random perturbations of the
+ * current best at halving radii (random search: escape local minima),
+ * keeping strict improvements; improved centers are rewritten so later
+ * windows match fresher colours. Stops early when a sweep changes nothing.
+ * Deterministic: fixed pixel order, alternating sweep direction, seeded RNG.
+ */
+function refineOffsetField(
+  state: ExemplarState,
+  image: PixelImage,
+  mask: RepairMask,
+  sat: Uint32Array,
+  component: HealComponent,
+  maxDim: number,
+  tuning: HealTuning,
+): void {
+  const { width, height, work, hasOff, offX, offY } = state;
+  const seed =
+    ((component.minX + 1) * 73856093) ^
+    ((component.minY + 1) * 19349663) ^
+    (component.pixels.length * 83492791);
+  const random = makeSeededRandom(seed);
+  const order = [...component.pixels].sort((a, b) => a - b);
+  const searchRadius = exemplarRadius(maxDim, tuning);
+  for (let sweep = 0; sweep < HEAL_REFINE_SWEEPS_MAX; sweep += 1) {
+    let changed = 0;
+    const forward = sweep % 2 === 0;
+    for (let i = 0; i < order.length; i += 1) {
+      const p = (forward ? order[i] : order[order.length - 1 - i]) ?? 0;
+      if (hasOff[p] !== 1) continue;
+      const x = p % width;
+      const y = (p - x) / width;
+      let bestOx = offX[p] ?? 0;
+      let bestOy = offY[p] ?? 0;
+      let bestScore = scorePatchDonor(
+        state,
+        image,
+        mask,
+        x,
+        y,
+        bestOx,
+        bestOy,
+        Number.POSITIVE_INFINITY,
+      );
+      const consider = (ox: number, oy: number): void => {
+        if (ox === bestOx && oy === bestOy) return;
+        if (!isUsableDonor(state, sat, x, y, ox, oy)) return;
+        const score = scorePatchDonor(state, image, mask, x, y, ox, oy, bestScore);
+        if (score === Number.POSITIVE_INFINITY) return;
+        if (score < bestScore) {
+          bestScore = score;
+          bestOx = ox;
+          bestOy = oy;
+        }
+      };
+      if (x > 0 && hasOff[p - 1] === 1) consider(offX[p - 1] ?? 0, offY[p - 1] ?? 0);
+      if (x + 1 < width && hasOff[p + 1] === 1) consider(offX[p + 1] ?? 0, offY[p + 1] ?? 0);
+      if (y > 0 && hasOff[p - width] === 1) consider(offX[p - width] ?? 0, offY[p - width] ?? 0);
+      if (y + 1 < height && hasOff[p + width] === 1) consider(offX[p + width] ?? 0, offY[p + width] ?? 0);
+      for (let r = searchRadius; r >= 1; r = Math.floor(r / 2)) {
+        consider(
+          bestOx + Math.floor(random() * (2 * r + 1)) - r,
+          bestOy + Math.floor(random() * (2 * r + 1)) - r,
+        );
+      }
+      if (bestOx !== (offX[p] ?? 0) || bestOy !== (offY[p] ?? 0)) {
+        offX[p] = bestOx;
+        offY[p] = bestOy;
+        const si = ((y + bestOy) * width + (x + bestOx)) * 4;
+        const wi = p * 4;
+        work[wi] = image.data[si] ?? 0;
+        work[wi + 1] = image.data[si + 1] ?? 0;
+        work[wi + 2] = image.data[si + 2] ?? 0;
+        changed += 1;
+      }
+    }
+    if (changed === 0) break;
+  }
 }
 
 /**
@@ -688,6 +1063,7 @@ function healExemplar(
       matchMag[(y - matchY0) * matchW + (x - matchX0)] = Math.hypot(gx, gy);
     }
   }
+  const estimate = buildBackgroundEstimate(image, mask, sat);
   const state: ExemplarState = {
     width,
     height,
@@ -706,10 +1082,19 @@ function healExemplar(
     matchX0,
     matchY0,
     matchW,
+    estR: estimate.r,
+    estG: estimate.g,
+    estB: estimate.b,
+    offX: new Int16Array(size),
+    offY: new Int16Array(size),
+    hasOff: new Uint8Array(size),
   };
 
-  // Each iteration fills at least the target center, so this terminates; a
-  // missing donor (hole bigger than its clean surround) leaves the rest.
+  // Pass 1: Criminisi-ordered fill. Each iteration fills at least the
+  // target center, so this terminates; a missing donor (hole bigger than
+  // its clean surround) leaves the rest. Copies are verbatim: per-patch
+  // light shifts corrupt true edges, and tint tracking comes from the donor
+  // prior at selection time instead.
   let filled = 0;
   for (let iter = 0; iter < component.pixels.length; iter += 1) {
     let target = -1;
@@ -732,9 +1117,6 @@ function healExemplar(
     const ty = (target - tx) / width;
     const donor = findPatchDonor(state, image, mask, sat, maxDim, tx, ty, tuning);
     if (!donor) break;
-    // Verbatim copy, no per-patch light shift: the same donor reused across
-    // patches with slightly different shifts tiles into visible quilting
-    // blocks. Donors already match the known pixels, so copy them as-is.
     const x0 = Math.max(0, tx - patchR);
     const x1 = Math.min(width - 1, tx + patchR);
     const y0 = Math.max(0, ty - patchR);
@@ -750,16 +1132,91 @@ function healExemplar(
         work[wi + 2] = image.data[qi + 2] ?? 0;
         known[q] = 1;
         conf[q] = bestConf;
+        state.offX[q] = donor.ox;
+        state.offY[q] = donor.oy;
+        state.hasOff[q] = 1;
         filled += 1;
       }
     }
     onStep?.(filled, component.pixels.length);
   }
+
+  // Pass 2: sweep the offset field until neighbouring pixels agree.
+  // Independent per-patch choices tile smooth regions into a mosaic; sweeps
+  // with neighbour propagation plus seeded random search converge the field
+  // onto a few shared donors instead.
+  refineOffsetField(state, image, mask, sat, component, maxDim, tuning);
+
+  // Pass 3: median vote over the refined field. Each member pixel collects
+  // one ballot from every nearby offset and settles on the lower median per
+  // channel: deterministic, edge-preserving, and robust to minority outlier
+  // voters. Pixels with no ballot (fill gave up with no offsets nearby)
+  // fall back to the work buffer.
+  const votesPerPixel = (2 * HEAL_VOTE_RADIUS + 1) * (2 * HEAL_VOTE_RADIUS + 1);
+  const memberIndex = new Int32Array(size).fill(-1);
+  component.pixels.forEach((p, index) => {
+    memberIndex[p] = index;
+  });
+  const ballots = new Uint8Array(component.pixels.length * votesPerPixel * 3);
+  const ballotCounts = new Uint16Array(component.pixels.length);
+  for (const q of component.pixels) {
+    if (state.hasOff[q] !== 1) continue;
+    const qx = q % width;
+    const qy = (q - qx) / width;
+    const ox = state.offX[q] ?? 0;
+    const oy = state.offY[q] ?? 0;
+    const vx0 = Math.max(0, qx - HEAL_VOTE_RADIUS);
+    const vx1 = Math.min(width - 1, qx + HEAL_VOTE_RADIUS);
+    const vy0 = Math.max(0, qy - HEAL_VOTE_RADIUS);
+    const vy1 = Math.min(height - 1, qy + HEAL_VOTE_RADIUS);
+    for (let py = vy0; py <= vy1; py += 1) {
+      for (let px = vx0; px <= vx1; px += 1) {
+        const p = py * width + px;
+        const mi = memberIndex[p] ?? -1;
+        if (mi < 0) continue;
+        // The vote radius can exceed small donor patches, so guard every
+        // tap; blemish pixels must never be voted in.
+        const sx = px + ox;
+        const sy = py + oy;
+        if (sx < 0 || sy < 0 || sx >= width || sy >= height) continue;
+        if ((mask.data[sy * width + sx] ?? 0) !== 0) continue;
+        const count = ballotCounts[mi] ?? 0;
+        if (count >= votesPerPixel) continue;
+        const bi = (mi * votesPerPixel + count) * 3;
+        const si = (sy * width + sx) * 4;
+        ballots[bi] = image.data[si] ?? 0;
+        ballots[bi + 1] = image.data[si + 1] ?? 0;
+        ballots[bi + 2] = image.data[si + 2] ?? 0;
+        ballotCounts[mi] = count + 1;
+      }
+    }
+  }
+  const scratchR = new Uint8Array(votesPerPixel);
+  const scratchG = new Uint8Array(votesPerPixel);
+  const scratchB = new Uint8Array(votesPerPixel);
+  const medianOf = (scratch: Uint8Array, count: number): number => {
+    const values = Array.from(scratch.subarray(0, count)).sort((a, b) => a - b);
+    return values[(count - 1) >> 1] ?? 0;
+  };
   for (const p of component.pixels) {
     const oi = p * 4;
-    out[oi] = work[oi] ?? 0;
-    out[oi + 1] = work[oi + 1] ?? 0;
-    out[oi + 2] = work[oi + 2] ?? 0;
+    const mi = memberIndex[p] ?? -1;
+    const count = mi < 0 ? 0 : (ballotCounts[mi] ?? 0);
+    if (count === 0) {
+      out[oi] = work[oi] ?? 0;
+      out[oi + 1] = work[oi + 1] ?? 0;
+      out[oi + 2] = work[oi + 2] ?? 0;
+      continue;
+    }
+    const base = mi * votesPerPixel * 3;
+    for (let v = 0; v < count; v += 1) {
+      scratchR[v] = ballots[base + v * 3] ?? 0;
+      scratchG[v] = ballots[base + v * 3 + 1] ?? 0;
+      scratchB[v] = ballots[base + v * 3 + 2] ?? 0;
+    }
+    out[oi] = medianOf(scratchR, count);
+    out[oi + 1] = medianOf(scratchG, count);
+    out[oi + 2] = medianOf(scratchB, count);
   }
 }
 

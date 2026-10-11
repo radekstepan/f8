@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { PixelImage } from "./analyze.js";
 import { solidColor } from "./fixtures.js";
@@ -29,6 +30,22 @@ function halves(width: number, height: number): PixelImage {
       image.data[i] = v;
       image.data[i + 1] = v;
       image.data[i + 2] = v;
+    }
+  }
+  return image;
+}
+
+/** Diagonal olive-to-gold gradient with ripple texture, like sunlit lake water. */
+function lakeWater(width: number, height: number): PixelImage {
+  const image = solidColor(width, height, 0, 0, 0);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const t = (x / Math.max(1, width - 1) + y / Math.max(1, height - 1)) / 2;
+      const ripple = Math.round(12 * Math.sin((2 * Math.PI * (x + y)) / 8));
+      const i = (y * width + x) * 4;
+      image.data[i] = 100 + Math.round(125 * t) + ripple;
+      image.data[i + 1] = 100 + Math.round(90 * t) + ripple;
+      image.data[i + 2] = 10 + Math.round(115 * t) + ripple;
     }
   }
   return image;
@@ -70,6 +87,10 @@ function rectMask(width: number, height: number, x0: number, y0: number, x1: num
     }
   }
   return { width, height, data };
+}
+
+function sha256Hex(data: Uint8ClampedArray): string {
+  return createHash("sha256").update(data).digest("hex");
 }
 
 function channel(image: PixelImage, x: number, y: number): [number, number, number, number] {
@@ -267,6 +288,31 @@ describe("healRepair exemplar fill", () => {
         expect(channel(out, x, y)).toEqual([v, v, v, 255]);
       }
     }
+  });
+
+  it("interpolates a textured gradient smoothly instead of tiling wrong-shade blocks", () => {
+    // Lake-water gradient with ripples: donors from the wrong side of the
+    // hole match the ripple phase but carry the wrong shade. Patch-by-patch
+    // matching alone tiles olive blocks into the gold corner and vice versa;
+    // the fill must track the local gradient instead (the Lago di Braies
+    // boats case: jagged green where the water should be gold).
+    const clean = lakeWater(64, 64);
+    const image = lakeWater(64, 64);
+    blemish(image, 17, 17, 46, 46);
+    const out = healRepair(image, rectMask(64, 64, 17, 17, 46, 46));
+    let worst = 0;
+    for (let y = 17; y <= 46; y += 1) {
+      for (let x = 17; x <= 46; x += 1) {
+        const [r, g, b] = channel(out, x, y);
+        const [er, eg, eb] = channel(clean, x, y);
+        worst = Math.max(worst, Math.abs(r - er), Math.abs(g - eg), Math.abs(b - eb));
+      }
+    }
+    expect(worst).toBeLessThanOrEqual(30);
+    // Golden hash of the full output: the refined offset field plus median
+    // voting produce these exact bytes (deterministic seeded search), so any
+    // silent change to selection, refinement, or voting breaks the seal.
+    expect(sha256Hex(out.data)).toBe("5ef7867479cb3ae837d48a1655babee4deb151efd82b18e5e630b34d22d5a5f1");
   });
 
   it("never mutates its inputs and is deterministic on large holes", () => {
