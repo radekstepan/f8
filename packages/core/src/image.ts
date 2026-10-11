@@ -202,7 +202,7 @@ export interface RepairInpaintBinding {
 
 /**
  * Reconstruct the canvas's repair strokes with worker reconstruction (heal
- * by default, Telea/NS on request) instead of the blur fallback in
+ * by default, ml-heal or Telea/NS on request) instead of the blur fallback in
  * geometryCanvas. Reads the canvas pixels, rasterizes the repair mask at
  * canvas resolution, runs the injected worker call, and composites the
  * result back honoring per-stroke strength. The composite mask is feathered
@@ -230,7 +230,7 @@ export async function applyInpaintRepair(
   const source: PixelImage = { width, height, data: pixels.data };
   const filled = await runInpaint(source, mask, inpaintRadiusForStrokes(points, width), method, options);
   const featherPx = resolveFeatherPx(options?.featherPx);
-  const blendMask = method === 'heal'
+  const blendMask = method === 'heal' || method === 'ml-heal'
     ? featherRepairMask(mask, featherPx)
     : featherRepairMask(dilateRepairMask(mask, INPAINT_DILATE_PX), featherPx);
   const blended = blendInpainted(source, filled, blendMask);

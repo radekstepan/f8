@@ -26,6 +26,7 @@ import {
   type VisionWorkerRequest,
   type VisionWorkerResponse,
 } from "@photomator/core";
+import { MlHealUnavailableError, runMlHeal } from "./ml-heal-pipeline.js";
 
 /** Minimal structural view of the OpenCV.js runtime used by the worker. */
 interface OpenCvMat {
@@ -200,18 +201,55 @@ function straighten(cv: OpenCvApi, request: StraightenRequest): VisionWorkerResp
   }
 }
 
-function inpaint(
+async function inpaint(
   cv: OpenCvApi,
   request: InpaintRequest,
   postMessage: (message: VisionWorkerResponse) => void,
-): VisionWorkerResponse {
+): Promise<VisionWorkerResponse> {
   // Full caller resolution (preview or export): no downscaling, the mask
   // already matches the pixels. Heal is pure TypeScript (no OpenCV) and
   // fills the exact mask; diffusion dilates the fill region by the same
   // amount the caller dilates its blend mask, so fringe reconstruction is
   // kept. Mat wrangling is shared with the Node golden tests through
   // inpaintWithCv.
-  if (request.method === "heal") {
+  //
+  // ml-heal runs local ONNX inpainting and falls back to exemplar heal when
+  // the model runtime is unavailable (first-visit download blocked, no
+  // WebGPU/WASM, weights unreachable): repair must never fail because of ML.
+  if (request.method === "ml-heal") {
+    // Progress is throttled: the pipeline reports download/infer stages, and
+    // the UI only needs a few updates per second.
+    let lastPost = 0;
+    try {
+      const result = await runMlHeal(
+        { width: request.width, height: request.height, data: request.data },
+        { width: request.width, height: request.height, data: request.mask },
+        {
+          quality: request.quality ?? "balanced",
+          onProgress: (fraction, stage) => {
+            const now = performance.now();
+            if (now - lastPost > 50 || fraction >= 1) {
+              lastPost = now;
+              postMessage({ id: request.id, kind: "inpaint-progress", fraction, stage });
+            }
+          },
+        },
+      );
+      return {
+        id: request.id,
+        kind: "inpaint",
+        width: result.width,
+        height: result.height,
+        data: result.data,
+      };
+    } catch (error) {
+      if (!(error instanceof MlHealUnavailableError)) throw error;
+      postMessage({ id: request.id, kind: "inpaint-progress", fraction: 0, stage: "Classic heal" });
+    }
+  }
+  // Exemplar fallback: the "heal" method, plus "ml-heal" when the model was
+  // unavailable (see above). Pure TypeScript via the frozen classic engine.
+  if (request.method === "heal" || request.method === "ml-heal") {
     // Progress is throttled: exemplar fill reports every iteration, and the
     // UI only needs a few updates per second.
     let lastPost = 0;

@@ -1,4 +1,4 @@
-// Heal repair: exemplar-based reconstruction that transplants real texture.
+// Heal-classic repair: legacy exemplar-based reconstruction (frozen).
 //
 // Two paths, routed per connected component by size:
 //

@@ -175,7 +175,7 @@ describe("isVisionWorkerRequest", () => {
     ).toBe(true);
   });
 
-  it.each(["telea", "ns", "heal"] as const)("accepts the %s inpaint method", (method) => {
+  it.each(["telea", "ns", "heal", "ml-heal"] as const)("accepts the %s inpaint method", (method) => {
     expect(
       isVisionWorkerRequest({
         id: 4,

@@ -14,9 +14,11 @@ import { assertValidImage, type PixelImage } from "./analyze.js";
  * Repair reconstruction algorithm: exemplar heal (transplants matching
  * texture, the default) or a cv.inpaint diffusion method (Telea's fast
  * marching method, Navier-Stokes). Diffusion suits tiny smooth blemishes;
- * heal preserves texture and grain on everything else.
+ * heal preserves texture and grain on everything else. `ml-heal` runs local
+ * ONNX inpainting in the vision worker (LaMa now, diffusion-class next) and
+ * falls back to exemplar heal when the model runtime is unavailable.
  */
-export type InpaintMethod = "telea" | "ns" | "heal";
+export type InpaintMethod = "telea" | "ns" | "heal" | "ml-heal";
 
 /** Default algorithm: heal transplants real texture instead of smudging it. */
 export const INPAINT_DEFAULT_METHOD: InpaintMethod = "heal";
@@ -327,7 +329,7 @@ export function inpaintWithCv(
   }
   if (method !== "telea" && method !== "ns") {
     throw new RangeError(
-      `inpaintWithCv needs a diffusion method ("telea" or "ns"), got ${String(method)}. Heal runs through healRepair.`,
+      `inpaintWithCv needs a diffusion method ("telea" or "ns"), got ${String(method)}. Heal runs through healRepair; ml-heal runs through the ONNX pipeline.`,
     );
   }
   const mats: InpaintCvMat[] = [];

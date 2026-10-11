@@ -87,7 +87,9 @@ export interface RepairAssist {
 }
 
 function RepairMethodControl({ assist }: { assist: RepairAssist }) {
-  const methodBlurb = assist.method === 'heal'
+  const methodBlurb = assist.method === 'ml-heal'
+    ? 'ML heal runs a local inpainting model on your device — best for removing objects. Downloads weights once, then works offline; falls back to Heal automatically.'
+    : assist.method === 'heal'
     ? 'Heal copies matching texture from nearby — best for most fixes.'
     : assist.method === 'telea'
       ? 'Smooth fill (Telea) is a fast blur-like fill for tiny smooth blemishes.'
@@ -95,20 +97,23 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
   return <>
     <h4>Reconstruction</h4>
     <div className="segmented-control" role="group" aria-label="Repair reconstruction method">
+      <button className={assist.method === 'ml-heal' ? 'is-active' : ''} title="ML heal: local model inpainting — best for object removal (downloads weights once)" onClick={() => assist.onMethodChange('ml-heal')}>ML Heal</button>
       <button className={assist.method === 'heal' ? 'is-active' : ''} title="Heal: copies matching texture from nearby — best for most fixes" onClick={() => assist.onMethodChange('heal')}>Heal</button>
       <button className={assist.method === 'telea' ? 'is-active' : ''} title="Smooth fill (Telea): fast, blur-like fill for tiny smooth blemishes" onClick={() => assist.onMethodChange('telea')}>Smooth</button>
       <button className={assist.method === 'ns' ? 'is-active' : ''} title="Detail fill (Navier–Stokes): slower, follows edges — try when Smooth looks smeary" onClick={() => assist.onMethodChange('ns')}>Detail</button>
     </div>
     <p className="inspector-note repair-method-blurb">{methodBlurb}</p>
-    {assist.method === 'heal' && <>
+    {(assist.method === 'heal' || assist.method === 'ml-heal') && <>
       <h4>Heal Quality</h4>
       <div className="segmented-control" role="group" aria-label="Heal search effort">
         <button className={assist.quality === 'fast' ? 'is-active' : ''} title="Fast: nearby donors only, best for small blemishes" onClick={() => assist.onQualityChange('fast')}>Fast</button>
         <button className={assist.quality === 'balanced' ? 'is-active' : ''} title="Balanced: the default search reach and effort" onClick={() => assist.onQualityChange('balanced')}>Balanced</button>
         <button className={assist.quality === 'best' ? 'is-active' : ''} title="Best: widest search, slowest — for tricky removals" onClick={() => assist.onQualityChange('best')}>Best</button>
       </div>
+      {assist.method === 'heal' && <>
       <div className="repair-toggle-row"><span>Seamless light</span><Toggle checked={assist.seamlessLight} onChange={() => assist.onSeamlessLightChange(!assist.seamlessLight)} label="Seamless light adaptation" /></div>
       <p className="inspector-note">Seamless light adapts small repairs to lighting gradients instead of one flat level — slower, best for shaded skin and skies.</p>
+      </>}
     </>}
     <RangeControl label="Blend Feather" value={assist.featherPx} min={0} max={8} step={1} defaultValue={2} suffix="px" onChange={assist.onFeatherChange} />
     <p className="inspector-note">Blend feather softens the repair edge so it melts into the photo with no seam.</p>

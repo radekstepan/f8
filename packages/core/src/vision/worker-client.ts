@@ -83,11 +83,11 @@ interface PendingCall {
 }
 
 export interface InpaintOptions {
-  /** Heal effort preset; omitted means "balanced". Diffusion ignores it. */
+  /** Heal effort preset; omitted means "balanced". Diffusion ignores it; ml-heal maps it to steps. */
   quality?: HealQuality;
   /** Harmonic light adaptation for single-offset heal; omitted means false. */
   seamlessLight?: boolean;
-  /** Progress callback for heal jobs; diffusion jobs never report progress. */
+  /** Progress callback for heal/ml-heal jobs; diffusion jobs never report progress. */
   onProgress?: HealProgress;
 }
 
@@ -174,7 +174,7 @@ export class VisionWorkerClient {
   }
 
   /**
-   * Reconstruct masked regions off the main thread (heal, Telea, or
+   * Reconstruct masked regions off the main thread (heal, ml-heal, Telea, or
    * Navier-Stokes). Runs at the caller's resolution (preview or export);
    * callers composite the result back over the source, guided by the mask,
    * and fall back to blur repair when the worker is unavailable.

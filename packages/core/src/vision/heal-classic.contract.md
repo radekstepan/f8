@@ -1,4 +1,4 @@
-# heal.ts — API contract
+# heal-classic.ts — API contract (legacy exemplar engine, frozen)
 
 Reimplementation guide for `healRepair`. This document specifies **observable
 behavior only**. Matching internals are intentionally omitted: a

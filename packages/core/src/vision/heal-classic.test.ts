@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { PixelImage } from "./analyze.js";
 import { solidColor } from "./fixtures.js";
-import { HEAL_DEFAULT_QUALITY, HEAL_SINGLE_OFFSET_MAX_DIM, healRepair, type HealQuality } from "./heal.js";
+import { HEAL_DEFAULT_QUALITY, HEAL_SINGLE_OFFSET_MAX_DIM, healRepair, type HealQuality } from "./heal-classic.js";
 import type { RepairMask } from "./inpaint.js";
 
 /** Vertical 1px stripes: even columns 200, odd columns 60, fully opaque. */

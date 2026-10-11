@@ -1,5 +1,5 @@
-// React binding for repair inpainting: owns the Telea/NS method choice and the
-// heal quality preset, subscribes to worker readiness for the inspector
+// React binding for repair inpainting: owns the method choice (ml-heal, heal,
+// telea/ns) and the heal quality preset, subscribes to worker readiness for
 // status line, and exposes the stable worker transport that PhotoCanvas and
 // export inject into core's applyInpaintRepair/exportPhoto. Blur stays the
 // automatic fallback: callers render blur first and upgrade to inpaint only

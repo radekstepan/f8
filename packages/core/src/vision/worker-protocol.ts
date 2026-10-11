@@ -47,8 +47,9 @@ export interface InpaintRequest {
   radius: number;
   method: InpaintMethod;
   /**
-   * Heal effort preset. Only the heal method reads it (diffusion ignores
-   * it); absent means "balanced".
+   * Heal effort preset. Read by the heal and ml-heal methods (ml-heal maps it
+   * to diffusion steps / ROI overlap); diffusion ignores it. Absent means
+   * "balanced".
    */
   quality?: HealQuality;
   /**
@@ -154,7 +155,7 @@ export function createInpaintRequest(
   if (!Number.isFinite(radius) || radius <= 0) {
     throw new RangeError(`Expected a positive inpaint radius, got ${radius}.`);
   }
-  if (method !== "telea" && method !== "ns" && method !== "heal") {
+  if (method !== "telea" && method !== "ns" && method !== "heal" && method !== "ml-heal") {
     throw new RangeError(`Unknown inpaint method: ${String(method)}.`);
   }
   if (quality !== undefined && quality !== "fast" && quality !== "balanced" && quality !== "best") {
@@ -214,7 +215,7 @@ export function isVisionWorkerRequest(value: unknown): value is VisionWorkerRequ
       isImageRequest(value) &&
       isPixelBuffer(value.mask, (value.width as number) * (value.height as number)) &&
       isPositiveNumber(value.radius) &&
-      (value.method === "telea" || value.method === "ns" || value.method === "heal") &&
+      (value.method === "telea" || value.method === "ns" || value.method === "heal" || value.method === "ml-heal") &&
       (value.quality === undefined ||
         value.quality === "fast" ||
         value.quality === "balanced" ||
