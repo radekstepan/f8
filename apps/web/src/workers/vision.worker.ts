@@ -245,7 +245,7 @@ async function inpaint(
       };
     } catch (error) {
       if (!(error instanceof MlHealUnavailableError)) throw error;
-      postMessage({ id: request.id, kind: "inpaint-progress", fraction: 0, stage: "Classic heal" });
+      postMessage({ id: request.id, kind: "inpaint-progress", fraction: 0, stage: "Healing with Classic…" });
     }
   }
   // Exemplar fallback: the "heal" method, plus "ml-heal" when the model was

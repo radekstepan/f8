@@ -81,13 +81,67 @@ export interface RepairAssist {
   featherPx: number;
   status: VisionWorkerStatus;
   /** Latest ML progress (warmup or job); null when nothing ran yet. */
-  mlProgress: { fraction: number; stage: string } | null;
+  mlProgress: { fraction: number; stage: string; job?: 'heal' | 'warmup'; areas?: number | null; updatedAt?: number } | null;
+  /** Engine readiness from the last warmup/job (cached = on device). */
+  mlReady?: { engine: MlHealEngine; cached: boolean; updatedAt: number } | null;
   /** Engine the current ML Heal quality tier resolves to. */
   mlEngine: MlHealEngine;
   onMethodChange: (method: InpaintMethod) => void;
   onQualityChange: (quality: HealQuality) => void;
   onSeamlessLightChange: (value: boolean) => void;
   onFeatherChange: (value: number) => void;
+}
+
+/** Success stages auto-dismiss; errors never do. */
+const ML_SUCCESS_DISMISS_MS = 4000;
+
+function isMlErrorStage(stage: string): boolean {
+  return stage.startsWith('Model unavailable');
+}
+
+function isMlDoneStage(stage: string, fraction: number): boolean {
+  return fraction >= 1 || stage === 'Healing done' || stage.endsWith('ready on this device');
+}
+
+function isMlDownloadStage(stage: string): boolean {
+  return stage.startsWith('Downloading');
+}
+
+function isMlSteppedStage(stage: string): boolean {
+  return /^Healing \d+ of \d+/.test(stage);
+}
+
+function MlProgressView({ progress }: { progress: NonNullable<RepairAssist['mlProgress']> }) {
+  const isError = isMlErrorStage(progress.stage);
+  const isDone = isMlDoneStage(progress.stage, progress.fraction);
+  const [, setTick] = useState(0);
+  const updatedAt = progress.updatedAt ?? 0;
+  // Tick while active so "Still working… Xs" and success auto-dismiss stay
+  // live without new worker messages (LaMa inference has no per-step posts).
+  useEffect(() => {
+    if (isError || (isDone && Date.now() - updatedAt > ML_SUCCESS_DISMISS_MS)) return;
+    const timer = window.setInterval(() => setTick((value) => value + 1), 500);
+    return () => window.clearInterval(timer);
+  }, [isError, isDone, updatedAt, progress.stage, progress.fraction]);
+  if (!isError && isDone && Date.now() - updatedAt > ML_SUCCESS_DISMISS_MS) return null;
+  const showPercent = isMlDownloadStage(progress.stage) || isMlSteppedStage(progress.stage);
+  const pct = Math.round(progress.fraction * 100);
+  const elapsed = updatedAt ? Math.max(0, (Date.now() - updatedAt) / 1000) : 0;
+  const stalled = !isError && !isDone && elapsed > 2;
+  const areas = progress.areas ?? null;
+  const areaNote = progress.job === 'heal' && areas !== null && areas > 1 && !isError
+    ? `${areas} areas · one pass`
+    : null;
+  const headline = showPercent
+    ? `${progress.stage} · ${pct}%`
+    : stalled
+      ? `${progress.stage} Still working… ${Math.floor(elapsed)}s`
+      : progress.stage;
+  return <div className={`ml-progress${isError ? ' is-error' : ''}${!showPercent && !isError && !isDone ? ' is-busy' : ''}`} role={isError ? 'alert' : 'status'} aria-live="polite">
+    <div className={`ml-progress-bar${!showPercent && !isError && !isDone ? ' is-indeterminate' : ''}`}>{showPercent || isError || isDone ? <span style={{ width: `${pct}%` }} /> : <span className="ml-progress-pulse" />}</div>
+    <p className="inspector-note">{headline}</p>
+    {areaNote && <p className="inspector-note ml-area-note">{areaNote}</p>}
+  </div>;
 }
 
 function RepairMethodControl({ assist }: { assist: RepairAssist }) {
@@ -121,11 +175,8 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
         <button className={assist.quality === 'balanced' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('balanced') : 'Balanced: the default search reach and effort'} onClick={() => assist.onQualityChange('balanced')}>Balanced</button>
         <button className={assist.quality === 'best' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('best') : 'Best: widest search, slowest — for tricky removals'} onClick={() => assist.onQualityChange('best')}>Best</button>
       </div>
-      {assist.method === 'ml-heal' && <p className="inspector-note" role="status">Engine: {engineInfo.label} ({engineInfo.download}).</p>}
-      {progress && <div className="ml-progress" role="status" aria-live="polite">
-        <div className="ml-progress-bar"><span style={{ width: `${Math.round(progress.fraction * 100)}%` }} /></div>
-        <p className="inspector-note">{progress.stage} · {Math.round(progress.fraction * 100)}%</p>
-      </div>}
+      {assist.method === 'ml-heal' && <p className="inspector-note" role="status">Engine: {engineInfo.label}{assist.mlReady?.engine === assist.mlEngine && assist.mlReady.cached ? ' · ready on this device.' : ` (${engineInfo.download}).`}</p>}
+      {progress && <MlProgressView progress={progress} />}
       {assist.method === 'ml-heal' && progress?.stage.startsWith('Model unavailable') && <button className="secondary-button full-width" title="Drop to the instant classic engine" onClick={() => assist.onQualityChange('fast')}>Use Fast instead (instant, no model)</button>}
       {assist.method === 'heal' && <>
       <div className="repair-toggle-row"><span>Seamless light</span><Toggle checked={assist.seamlessLight} onChange={() => assist.onSeamlessLightChange(!assist.seamlessLight)} label="Seamless light adaptation" /></div>

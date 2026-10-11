@@ -40,7 +40,6 @@ import {
   MOEBIUS_VAE_SCALE,
   compositeMlHealOutput,
   downsampleMaskToLatent,
-  formatMlCapabilities,
   makeSeededGaussian,
   mlHealEngineForQuality,
   mlHealWasmThreads,
@@ -129,13 +128,15 @@ async function readWithProgress(
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;
+  const mb = (bytes: number) => `${Math.round(bytes / 1048576)}MB`;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     if (value) {
       chunks.push(value);
       received += value.length;
-      onProgress?.(base + (Math.min(1, received / total) * span), `${stage} ${Math.round((received / total) * 100)}%`);
+      const pct = Math.round((received / total) * 100);
+      onProgress?.(base + (Math.min(1, received / total) * span), `${stage} ${pct}% · ${mb(received)} of ${mb(total)}`);
     }
   }
   const merged = new Uint8Array(received);
@@ -160,7 +161,10 @@ async function fetchWeights(
     const cache = await caches.open(ML_HEAL_CACHE_NAME);
     const hit = await cache.match(url);
     if (hit) {
-      onProgress?.(base + span, `${stage} (cached)`);
+      // Weights are on the device: report the span as complete with a
+      // "found" stage (never "Downloading … (cached)") so the UI can show
+      // "found on this device" instead of download progress.
+      onProgress?.(base + span, `${stage.replace(/^Downloading\s+/, "")} found on this device`);
       return { buffer: await hit.arrayBuffer(), cached: true };
     }
     const response = await fetch(url);
@@ -193,7 +197,10 @@ async function getSession(
   const eps = [...ML_HEAL_ENGINE_EPS[engine]];
   const hit = sessions.get(url);
   if (hit) {
-    onProgress?.(fraction, `${stage} (ready)`);
+    // Session already warm: report the load checkpoint as-is (no "(ready)"
+    // suffix — "ready" at a partial fraction reads as done). The next phase
+    // (healing) follows immediately, so this never stalls on screen.
+    onProgress?.(fraction, stage);
     return hit;
   }
   onProgress?.(fraction, stage);
@@ -258,7 +265,10 @@ async function configureOrt(
     console.error("[ml-heal] wasm config failed:", error);
   }
   await verifyWasmServing(prefix, engine);
-  onProgress?.(0, formatMlCapabilities(caps));
+  // Friendly first stage: capabilities decide the tier, but the raw
+  // "WebGPU: … · Threads: …" line means nothing to most users. Keep it in
+  // the console-adjacent detail by folding it into a plain label.
+  onProgress?.(0, "Checking device…");
   return caps;
 }
 
@@ -330,9 +340,17 @@ async function runLama(
   const roi = planMlHealRoi(mask);
   if (!roi) return { width: image.width, height: image.height, data: new Uint8ClampedArray(image.data) };
   const { buffer } = await fetchWeights(url, 208 * 1024 * 1024, 0, 0.7, "Downloading LaMa", onProgress);
-  const session = await getSession(ort, url, buffer, "lama", 0.7, "Loading LaMa", onProgress);
+  const session = await getSession(ort, url, buffer, "lama", 0.7, "Loading LaMa…", onProgress);
   const { image: imageTensorData, mask: maskTensorData } = packMlHealInput(image, mask, roi);
-  onProgress?.(0.9, "Inpainting with LaMa");
+  onProgress?.(0.85, "Healing with LaMa…");
+  // LaMa is a single session.run with no per-step callbacks: it can sit at
+  // one fraction for seconds. Nudge the fraction on a timer so the UI can
+  // infer it is still working (capped well below Done).
+  let heartbeat = 0.85;
+  const pulse = setInterval(() => {
+    heartbeat = Math.min(0.97, heartbeat + 0.01);
+    onProgress?.(heartbeat, "Healing with LaMa…");
+  }, 600);
   let output: Float32Array;
   try {
     const feeds = {
@@ -346,8 +364,10 @@ async function runLama(
   } catch (error) {
     console.error("[ml-heal] LaMa inference failed:", error);
     throw new MlHealUnavailableError(`LaMa inference failed: ${errorMessage(error)}`);
+  } finally {
+    clearInterval(pulse);
   }
-  onProgress?.(1, "Done");
+  onProgress?.(1, "Healing done");
   return compositeMlHealOutput(image, mask, roi, output);
 }
 
@@ -397,15 +417,15 @@ async function runMoebius(
     parts.push(buffer);
     cursor += span;
   }
-  const unet = await getSession(ort, unetUrl, parts[0] as ArrayBuffer, "moebius", 0.6, "Loading Moebius UNet", onProgress);
-  const enc = await getSession(ort, encUrl, parts[1] as ArrayBuffer, "moebius", 0.63, "Loading Moebius VAE encoder", onProgress);
-  const dec = await getSession(ort, decUrl, parts[2] as ArrayBuffer, "moebius", 0.66, "Loading Moebius VAE decoder", onProgress);
+  const unet = await getSession(ort, unetUrl, parts[0] as ArrayBuffer, "moebius", 0.6, "Loading Moebius diffusion…", onProgress);
+  const enc = await getSession(ort, encUrl, parts[1] as ArrayBuffer, "moebius", 0.63, "Loading Moebius encoder…", onProgress);
+  const dec = await getSession(ort, decUrl, parts[2] as ArrayBuffer, "moebius", 0.66, "Loading Moebius decoder…", onProgress);
 
   const { image: packed, mask: maskPacked } = packMlHealInput(image, mask, roi);
   // VAE encode in [-1, 1]; latent = mean channels x scale.
   const vaeIn = new Float32Array(packed.length);
   for (let i = 0; i < packed.length; i += 1) vaeIn[i] = (packed[i] ?? 0) * 2 - 1;
-  onProgress?.(0.68, "Encoding image");
+  onProgress?.(0.68, "Preparing image…");
   let maskedLatent: Float32Array;
   try {
     const encOut = await enc.run({ image: new ort.Tensor("float32", vaeIn, [1, 3, 512, 512]) });
@@ -448,7 +468,7 @@ async function runMoebius(
         latent: new ort.Tensor("float32", unetIn.slice(), [1, 9, latent, latent]),
         timesteps: new ort.Tensor("int64", BigInt64Array.from([BigInt(t)]), [1]),
       };
-      onProgress?.(0.7 + (0.25 * step) / timesteps.length, `Diffusing ${step + 1}/${timesteps.length}`);
+      onProgress?.(0.7 + (0.25 * step) / timesteps.length, `Healing ${step + 1} of ${timesteps.length}…`);
       const [condOut, uncondOut] = await Promise.all([
         unet.run({ ...base_feeds, input_ids: condIds }),
         unet.run({ ...base_feeds, input_ids: uncondIds }),
@@ -484,7 +504,7 @@ async function runMoebius(
     console.error("[ml-heal] Moebius diffusion failed:", error);
     throw new MlHealUnavailableError(`Moebius diffusion failed: ${errorMessage(error)}`);
   }
-  onProgress?.(0.97, "Decoding image");
+  onProgress?.(0.97, "Finishing…");
   try {
     const decoded = new Float32Array(latentF32.length);
     for (let i = 0; i < decoded.length; i += 1) decoded[i] = (latentF32[i] ?? 0) / MOEBIUS_VAE_SCALE;
@@ -494,7 +514,7 @@ async function runMoebius(
     for (let i = 0; i < output.length; i += 1) {
       output[i] = Math.max(0, Math.min(255, ((rgb[i] ?? 0) * 0.5 + 0.5) * 255));
     }
-    onProgress?.(1, "Done");
+    onProgress?.(1, "Healing done");
     return compositeMlHealOutput(image, mask, roi, output);
   } catch (error) {
     console.error("[ml-heal] Moebius VAE decode failed:", error);
@@ -516,7 +536,7 @@ export async function runMlHeal(
   const quality = options.quality ?? "balanced";
   const engine: MlHealEngine = mlHealEngineForQuality(quality);
   if (engine === "classic") {
-    options.onProgress?.(0, "Classic heal");
+    options.onProgress?.(0, "Healing with Classic…");
     throw new MlHealUnavailableError("Fast tier uses classic heal.");
   }
   const ort = await ensureOrt(engine);
@@ -527,7 +547,7 @@ export async function runMlHeal(
       return await runMoebius(ort, image, mask, resolveMoebiusBase(options.moebiusBase), onProgress);
     } catch (error) {
       if (error instanceof MlHealUnavailableError && error.message !== "Fast tier uses classic heal.") {
-        onProgress?.(0, "Moebius unavailable, using LaMa");
+        onProgress?.(0, "Best unavailable — trying Balanced…");
       } else {
         throw error;
       }
@@ -570,16 +590,16 @@ export async function warmupMlHeal(
         onProgress,
       );
       allCached = allCached && cached;
-      await getSession(ort, url, buffer, "moebius", cursor, `Loading Moebius ${i + 1}/3`, onProgress);
+      await getSession(ort, url, buffer, "moebius", cursor, `Loading Moebius model ${i + 1} of 3…`, onProgress);
       cursor += span;
     }
-    onProgress?.(1, "Moebius ready");
+    onProgress?.(1, "Moebius ready on this device");
     return { engine, cached: allCached };
   }
   const url = resolveLamaUrl(options.modelUrl);
   const { buffer, cached } = await fetchWeights(url, 208 * 1024 * 1024, 0, 0.8, "Downloading LaMa", onProgress);
-  await getSession(ort, url, buffer, "lama", 0.8, "Loading LaMa", onProgress);
-  onProgress?.(1, "LaMa ready");
+  await getSession(ort, url, buffer, "lama", 0.8, "Loading LaMa…", onProgress);
+  onProgress?.(1, "LaMa ready on this device");
   return { engine, cached };
 }
 

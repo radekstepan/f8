@@ -90,6 +90,8 @@ export interface InpaintOptions {
   quality?: HealQuality;
   /** Harmonic light adaptation for single-offset heal; omitted means false. */
   seamlessLight?: boolean;
+  /** Number of repair areas covered by this run (progress copy only). */
+  areas?: number;
   /** Progress callback for heal/ml-heal jobs; diffusion jobs never report progress. */
   onProgress?: HealProgress;
 }

@@ -121,10 +121,14 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       const repairs = previewEdit.retouches.filter((point) => point.kind === 'repair');
       const run = inpaintRun.current;
       const method = inpaintRepair?.method;
+      // Distinct heal groups (strokes) covered by this pass, for progress
+      // copy ("Healing 3 areas…"). Points share a stroke id per drag.
+      const areas = new Set(repairs.map((point) => strokeIdForPoint(point))).size;
       const repairOptions = {
         quality: inpaintRepair?.quality,
         seamlessLight: inpaintRepair?.seamlessLight,
         featherPx: inpaintRepair?.featherPx,
+        areas,
       };
       if (repairs.length && run && method) {
         const generation = repairGeneration.current + 1;
@@ -238,17 +242,14 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const showOverlay = isBrush && !loading && !compare && !showOriginal;
   const draggingRepair = showOverlay && tool === 'repair' && activeStroke !== null;
   // While dragging, every repair area shows red — not just the new stroke —
-  // so the blur placeholder never competes with the mask.
+  // so the single worker pass over all areas is visible. Otherwise red
+  // appears only for the hovered heal group (canvas or inspector list):
+  // past work stays unobscured until inspected.
   const activePoints = draggingRepair
     ? edit.retouches.filter((point) => point.kind === 'repair')
     : [];
   const hoverPoints = showOverlay && activeStroke === null && highlightStroke !== null
     ? edit.retouches.filter((point) => strokeIdForPoint(point) === highlightStroke)
-    : [];
-  // With the repair tool on, every past repair stamp stays visible in red —
-  // not just while dragging or hovering — so completed work is always shown.
-  const storedPoints = showOverlay && tool === 'repair' && activeStroke === null
-    ? edit.retouches.filter((point) => point.kind === 'repair')
     : [];
   const maskCircle = (point: RetouchPoint, key: string) => (
     <circle key={key} cx={point.x * frameWidth} cy={point.y * frameHeight} r={Math.max(1, (point.size * frameWidth) / 2)} />
@@ -262,10 +263,10 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       {compare && !showOriginal && !loading && <><span className="comparison-label original-label">Original</span><span className="comparison-label edited-label">Edited</span><div className="comparison-divider" role="slider" aria-label="Before and after comparison" aria-valuemin={2} aria-valuemax={98} aria-valuenow={Math.round(split)} tabIndex={0} style={{ left: `${split}%` }} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setSplit(Math.max(2, Math.min(98, position(event).x * 100))); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); setSplit((value) => Math.max(2, Math.min(98, value + (event.key === 'ArrowRight' ? 2 : -2)))); } }}><span><ChevronsLeftRight size={17} /></span></div></>}
       {showOriginal && <span className="comparison-label original-label">Original</span>}
       {tool === 'crop' && !loading && <div className="crop-grid" aria-hidden="true"><i /><i /><i /><i /></div>}
-      {isBrush && cursor && !compare && <div className="brush-cursor" style={{ left: cursor.x, top: cursor.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
-      {(activePoints.length > 0 || hoverPoints.length > 0 || storedPoints.length > 0) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{storedPoints.length > 0 && <g className="retouch-stored-group">{storedPoints.map((point, index) => maskCircle(point, `s-${index}`))}</g>}{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}</svg>}
+      {isBrush && cursor && !showOriginal && <div className={`brush-cursor${compare ? ' is-compare' : ''}`} style={{ left: cursor.x, top: cursor.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
+      {(activePoints.length > 0 || hoverPoints.length > 0) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}</svg>}
     </div></div>
-      {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : 'Click and drag to repair — past repairs stay red while the tool is on.'}</div>}
+      {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : compare ? 'Comparing — turn off Compare to keep repairing.' : 'Click and drag to repair — hover a repair in the list to locate it.'}</div>}
     </div>
     <div className="canvas-status">
       <button className="canvas-dimensions" onClick={onInfo} title="Photo information">

@@ -26,6 +26,18 @@ import { getVisionWorkerClient } from "./visionClient";
 export interface MlProgress {
   fraction: number;
   stage: string;
+  /** heal job vs warmup prefetch — warmup never masks an active job. */
+  job: "heal" | "warmup";
+  /** Repair areas covered by the active heal job (stamps/groups). */
+  areas: number | null;
+  /** Last update timestamp (Date.now()) for still-working inference. */
+  updatedAt: number;
+}
+
+export interface MlReadyState {
+  engine: MlHealEngine;
+  cached: boolean;
+  updatedAt: number;
 }
 
 export interface InpaintRepairState {
@@ -36,6 +48,8 @@ export interface InpaintRepairState {
   status: VisionWorkerStatus;
   /** Latest ML progress (warmup or job); null when nothing ran yet. */
   mlProgress: MlProgress | null;
+  /** Engine readiness from the last warmup/job (cached = on device). */
+  mlReady: MlReadyState | null;
   /** Engine the current ML Heal quality tier resolves to. */
   mlEngine: MlHealEngine;
   /** Stable worker transport for core's applyInpaintRepair/exportPhoto. */
@@ -48,6 +62,10 @@ export interface InpaintRepairState {
   setFeatherPx: (value: number) => void;
 }
 
+function isErrorStage(stage: string): boolean {
+  return stage.startsWith("Model unavailable");
+}
+
 export function useInpaintRepair(): InpaintRepairState {
   const [client] = useState(getVisionWorkerClient);
   const [method, setMethod] = useState<InpaintMethod>(INPAINT_DEFAULT_METHOD);
@@ -56,27 +74,53 @@ export function useInpaintRepair(): InpaintRepairState {
   const [featherPx, setFeatherPx] = useState(BLEND_FEATHER_PX);
   const [status, setStatus] = useState<VisionWorkerStatus>(client.status);
   const [mlProgress, setMlProgress] = useState<MlProgress | null>(null);
+  const [mlReady, setMlReady] = useState<MlReadyState | null>(null);
   const progressRef = useRef(mlProgress);
   progressRef.current = mlProgress;
 
   useEffect(() => client.subscribe(setStatus), [client]);
 
-  const record = useCallback((fraction: number, stage: string) => {
-    const clamped = Math.max(0, Math.min(1, fraction));
-    const prev = progressRef.current;
-    if (prev && prev.stage === stage && Math.abs(prev.fraction - clamped) < 0.005) return;
-    setMlProgress({ fraction: clamped, stage });
-  }, []);
+  const record = useCallback(
+    (fraction: number, stage: string, job: "heal" | "warmup", areas: number | null) => {
+      const clamped = Math.max(0, Math.min(1, fraction));
+      const prev = progressRef.current;
+      // Warmup must never clobber an active heal job's stage/areas; errors
+      // always win so failures stay visible.
+      if (job === "warmup" && prev?.job === "heal" && !isErrorStage(stage)) {
+        const lastUpdate = prev.updatedAt;
+        if (Date.now() - lastUpdate < 30_000 && prev.fraction < 1) return;
+      }
+      if (
+        prev &&
+        prev.stage === stage &&
+        prev.job === job &&
+        prev.areas === areas &&
+        Math.abs(prev.fraction - clamped) < 0.005
+      ) {
+        return;
+      }
+      const next: MlProgress = { fraction: clamped, stage, job, areas, updatedAt: Date.now() };
+      setMlProgress(next);
+      // Terminal success marks the engine ready on device (drives the
+      // transient "ready" note + hides the download suffix).
+      if (clamped >= 1 && !isErrorStage(stage)) {
+        const engine = mlHealEngineForQuality(quality);
+        setMlReady({ engine, cached: true, updatedAt: Date.now() });
+      }
+    },
+    [quality],
+  );
 
   const run = useCallback<RunInpaint>(
     (image: PixelImage, mask: RepairMask, radius: number, next: InpaintMethod, options?: RunInpaintOptions) => {
       const callerProgress = options?.onProgress;
+      const areas = typeof options?.areas === "number" ? options.areas : null;
       return client.inpaint(image, mask, radius, next, {
         ...options,
         quality: options?.quality ?? quality,
         seamlessLight: options?.seamlessLight ?? seamlessLight,
         onProgress: (fraction, stage) => {
-          if (next === "ml-heal" || next === "heal") record(fraction, stage);
+          if (next === "ml-heal" || next === "heal") record(fraction, stage, "heal", areas);
           callerProgress?.(fraction, stage);
         },
       });
@@ -87,16 +131,22 @@ export function useInpaintRepair(): InpaintRepairState {
   const warmup = useCallback(() => {
     const engine = mlHealEngineForQuality(quality);
     if (engine === "classic") return Promise.resolve({ engine, cached: true });
-    return client.warmupMl(engine, { onProgress: record }).catch((error: unknown) => {
-      record(0, error instanceof Error ? `Model unavailable: ${error.message}` : "Model unavailable");
-      throw error;
-    });
+    return client
+      .warmupMl(engine, { onProgress: (fraction, stage) => record(fraction, stage, "warmup", null) })
+      .then((ready) => {
+        setMlReady({ engine: ready.engine, cached: ready.cached, updatedAt: Date.now() });
+        return ready;
+      })
+      .catch((error: unknown) => {
+        record(0, error instanceof Error ? `Model unavailable: ${error.message}` : "Model unavailable", "warmup", null);
+        throw error;
+      });
   }, [client, quality, record]);
 
   const mlEngine = mlHealEngineForQuality(quality);
 
   return useMemo(
-    () => ({ method, quality, seamlessLight, featherPx, status, mlProgress, mlEngine, run, warmup, setMethod, setQuality, setSeamlessLight, setFeatherPx }),
-    [method, quality, seamlessLight, featherPx, status, mlProgress, mlEngine, run, warmup],
+    () => ({ method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, run, warmup, setMethod, setQuality, setSeamlessLight, setFeatherPx }),
+    [method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, run, warmup],
   );
 }

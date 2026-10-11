@@ -175,6 +175,8 @@ export interface RunInpaintOptions {
   seamlessLight?: boolean;
   /** Blend feather in px; omitted means the BLEND_FEATHER_PX default. */
   featherPx?: number;
+  /** Number of repair areas covered by this run (for progress copy). */
+  areas?: number;
   onProgress?: HealProgress;
 }
 
