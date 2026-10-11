@@ -164,6 +164,56 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         featherPx: inpaintRepair?.featherPx,
         areas,
       };
+      // Finished groups must stay visibly healed while follow-up groups
+      // wait in the serial queue (Best takes seconds per group) or heal:
+      // the blur preview above wipes them, and prepare() below only runs
+      // once the running job finishes. Recomposite whatever is already
+      // cached, synchronously, so the canvas never drops finished work.
+      // Dirty areas briefly show the original instead of blur until their
+      // group heals — same as mid-job rendering after the first group.
+      if (method === 'ml-heal' && repairs.length && !paintingRepair && canvasRef.current) {
+        try {
+          if (healCachePhoto.current !== photo.src) {
+            healCache.current.clear();
+            healCachePhoto.current = photo.src;
+          }
+          const baseEditSync = { ...edit, retouches: edit.retouches.filter((point) => point.kind !== 'repair') };
+          const cleanSync = geometryCanvas(image, baseEditSync);
+          const syncWidth = cleanSync.width;
+          const syncHeight = cleanSync.height;
+          if (Number.isInteger(syncWidth) && Number.isInteger(syncHeight) && syncWidth > 0 && syncHeight > 0) {
+            const syncParams = {
+              method,
+              quality: inpaintRepair?.quality,
+              seamlessLight: inpaintRepair?.seamlessLight,
+              featherPx: inpaintRepair?.featherPx,
+              geometryKey: geometryKeyForHealCache(photo.src, baseEditSync, syncWidth, syncHeight),
+            };
+            const syncGroups = groupRetouchStrokes(repairs).filter((group) => group.kind === 'repair');
+            for (const group of syncGroups) {
+              if (healCache.current.has(group.id)) continue;
+              const overlay = reusableOverlayForGroup(overlayStore.current, group, syncParams);
+              if (!overlay || overlay.canvasWidth !== syncWidth || overlay.canvasHeight !== syncHeight) continue;
+              healCache.current.set(group.id, { signature: signatureForHealGroup(group, syncParams), x0: overlay.x0, y0: overlay.y0, width: overlay.width, height: overlay.height, data: overlay.data.slice() });
+            }
+            const syncPart = partitionHealGroups(repairs, healCache.current, syncParams, syncWidth, syncHeight);
+            const syncPatches = syncPart.valid.flatMap((group) => {
+              const entry = healCache.current.get(group.id);
+              return entry ? [entry] : [];
+            });
+            if (syncPatches.length) {
+              const syncCtx = cleanSync.getContext('2d')!;
+              const syncPixels = syncCtx.getImageData(0, 0, syncWidth, syncHeight);
+              const syncSource = { width: syncWidth, height: syncHeight, data: new Uint8ClampedArray(syncPixels.data) };
+              const composited = pasteHealPatches(syncSource, syncPatches);
+              const bytes = new Uint8ClampedArray(composited.data.length);
+              bytes.set(composited.data);
+              syncCtx.putImageData(new ImageData(bytes, syncWidth, syncHeight), 0, 0);
+              renderBase(cleanSync);
+            }
+          }
+        } catch { /* Blur fallback already displayed. */ }
+      }
       if (repairs.length && run && method) {
         const generation = repairGeneration.current + 1;
         repairGeneration.current = generation;
@@ -251,6 +301,12 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
                     return null;
                   }
                   const fresh: CachedHealPatch[] = [];
+                  // The effect's blur preview (and a just-finished prior
+                  // job's stale render) both hide already-healed groups.
+                  // Recomposite them now so the new job starts from
+                  // finished work instead of flashing it away until the
+                  // first new group lands.
+                  renderPatches(validPatches);
                   return {
                     source,
                     groups: dirty,
