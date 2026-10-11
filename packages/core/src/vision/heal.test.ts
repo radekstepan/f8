@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PixelImage } from "./analyze.js";
 import { solidColor } from "./fixtures.js";
-import { healRepair } from "./heal.js";
+import { HEAL_SINGLE_OFFSET_MAX_DIM, healRepair } from "./heal.js";
 import type { RepairMask } from "./inpaint.js";
 
 /** Vertical 1px stripes: even columns 200, odd columns 60, fully opaque. */
@@ -10,6 +10,21 @@ function stripes(width: number, height: number): PixelImage {
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const v = x % 2 === 0 ? 200 : 60;
+      const i = (y * width + x) * 4;
+      image.data[i] = v;
+      image.data[i + 1] = v;
+      image.data[i + 2] = v;
+    }
+  }
+  return image;
+}
+
+/** Sharp vertical edge: left half 200, right half 60, fully opaque. */
+function halves(width: number, height: number): PixelImage {
+  const image = solidColor(width, height, 0, 0, 0);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const v = x < width / 2 ? 200 : 60;
       const i = (y * width + x) * 4;
       image.data[i] = v;
       image.data[i + 1] = v;
@@ -206,5 +221,83 @@ describe("healRepair", () => {
     expect(() =>
       healRepair(solidColor(4, 4, 0, 0, 0), { width: 2, height: 2, data: new Uint8ClampedArray(4) }),
     ).toThrow(RangeError);
+  });
+});
+
+describe("healRepair exemplar fill", () => {
+  it("routes components larger than 24px per side to per-patch fill", () => {
+    expect(HEAL_SINGLE_OFFSET_MAX_DIM).toBe(24);
+  });
+
+  it("reconstructs a sharp edge through a large hole without blending", () => {
+    // 28x28 hole straddling the edge: exemplar territory. Donor patches are
+    // copied verbatim, so every filled pixel is exactly one side or the
+    // other — a smudge would land near the ~130 midpoint.
+    const image = halves(96, 64);
+    blemish(image, 34, 18, 61, 45);
+    const mask = rectMask(96, 64, 34, 18, 61, 45);
+    const out = healRepair(image, mask);
+    for (let y = 18; y <= 45; y += 1) {
+      for (let x = 34; x <= 61; x += 1) {
+        const [r, g, b] = channel(out, x, y);
+        expect([r, g, b].every((v) => v === 200 || v === 60)).toBe(true);
+      }
+    }
+    // Away from the edge column the halves continue exactly.
+    for (let y = 22; y <= 41; y += 1) {
+      for (let x = 36; x <= 42; x += 1) {
+        expect(channel(out, x, y)).toEqual([200, 200, 200, 255]);
+      }
+      for (let x = 54; x <= 59; x += 1) {
+        expect(channel(out, x, y)).toEqual([60, 60, 60, 255]);
+      }
+    }
+  });
+
+  it("continues fine texture through a large hole", () => {
+    // 32x32 hole in 1px stripes: only a phase-matched donor scores zero, so
+    // every filled pixel keeps its column's stripe exactly.
+    const image = stripes(64, 64);
+    blemish(image, 16, 16, 47, 47);
+    const mask = rectMask(64, 64, 16, 16, 47, 47);
+    const out = healRepair(image, mask);
+    for (let y = 16; y <= 47; y += 1) {
+      for (let x = 16; x <= 47; x += 1) {
+        const v = x % 2 === 0 ? 200 : 60;
+        expect(channel(out, x, y)).toEqual([v, v, v, 255]);
+      }
+    }
+  });
+
+  it("never mutates its inputs and is deterministic on large holes", () => {
+    const image = halves(96, 64);
+    blemish(image, 34, 18, 61, 45);
+    const mask = rectMask(96, 64, 34, 18, 61, 45);
+    const imageBefore = Array.from(image.data);
+    const maskBefore = Array.from(mask.data);
+    const first = healRepair(image, mask);
+    const second = healRepair(image, mask);
+    expect(Array.from(image.data)).toEqual(imageBefore);
+    expect(Array.from(mask.data)).toEqual(maskBefore);
+    expect(Array.from(first.data)).toEqual(Array.from(second.data));
+  });
+
+  it("degrades gracefully when the hole dwarfs its surround", () => {
+    // 28x28 hole in a 32x32 image: no 9x9 fully-known donor patch exists, so
+    // the fill gives up without throwing and the border stays bit-exact.
+    const image = solidColor(32, 32, 90, 100, 110);
+    blemish(image, 2, 2, 29, 29);
+    const mask = rectMask(32, 32, 2, 2, 29, 29);
+    const out = healRepair(image, mask);
+    expect(out.width).toBe(32);
+    expect(out.height).toBe(32);
+    for (let p = 0; p < mask.data.length; p += 1) {
+      if ((mask.data[p] ?? 0) !== 0) continue;
+      const i = p * 4;
+      expect(out.data[i]).toBe(image.data[i]);
+      expect(out.data[i + 1]).toBe(image.data[i + 1]);
+      expect(out.data[i + 2]).toBe(image.data[i + 2]);
+      expect(out.data[i + 3]).toBe(image.data[i + 3]);
+    }
   });
 });
