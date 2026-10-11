@@ -52,6 +52,8 @@ export interface InpaintRepairState {
   mlReady: MlReadyState | null;
   /** Engine the current ML Heal quality tier resolves to. */
   mlEngine: MlHealEngine;
+  /** True while the current tier's weights/sessions are being prefetched. */
+  mlWarming: boolean;
   /** Stable worker transport for core's applyInpaintRepair/exportPhoto. */
   run: RunInpaint;
   /** Prefetch weights + sessions for the current tier (Repair tool opened). */
@@ -75,6 +77,7 @@ export function useInpaintRepair(): InpaintRepairState {
   const [status, setStatus] = useState<VisionWorkerStatus>(client.status);
   const [mlProgress, setMlProgress] = useState<MlProgress | null>(null);
   const [mlReady, setMlReady] = useState<MlReadyState | null>(null);
+  const [mlWarming, setMlWarming] = useState(false);
   const progressRef = useRef(mlProgress);
   progressRef.current = mlProgress;
 
@@ -131,13 +134,19 @@ export function useInpaintRepair(): InpaintRepairState {
   const warmup = useCallback(() => {
     const engine = mlHealEngineForQuality(quality);
     if (engine === "classic") return Promise.resolve({ engine, cached: true });
+    setMlWarming(true);
     return client
       .warmupMl(engine, { onProgress: (fraction, stage) => record(fraction, stage, "warmup", null) })
       .then((ready) => {
         setMlReady({ engine: ready.engine, cached: ready.cached, updatedAt: Date.now() });
+        setMlWarming(false);
         return ready;
       })
       .catch((error: unknown) => {
+        // A failed warmup must not leave a stale "ready on this device" line
+        // next to the error (see Inspector): drop readiness for this engine.
+        setMlReady((prev) => (prev?.engine === engine ? null : prev));
+        setMlWarming(false);
         record(0, error instanceof Error ? `Model unavailable: ${error.message}` : "Model unavailable", "warmup", null);
         throw error;
       });
@@ -145,8 +154,24 @@ export function useInpaintRepair(): InpaintRepairState {
 
   const mlEngine = mlHealEngineForQuality(quality);
 
+  // Switching tiers discards the previous tier's warmup error so a Moebius
+  // failure never lingers under Balanced/Fast.
+  const setQualityAndClearStale = useCallback(
+    (next: HealQuality) => {
+      const prevEngine = mlHealEngineForQuality(quality);
+      const nextEngine = mlHealEngineForQuality(next);
+      if (prevEngine !== nextEngine) {
+        const cur = progressRef.current;
+        if (cur && (isErrorStage(cur.stage) || cur.job === "warmup")) setMlProgress(null);
+        setMlWarming(false);
+      }
+      setQuality(next);
+    },
+    [quality],
+  );
+
   return useMemo(
-    () => ({ method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, run, warmup, setMethod, setQuality, setSeamlessLight, setFeatherPx }),
-    [method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, run, warmup],
+    () => ({ method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, setMethod, setQuality: setQualityAndClearStale, setSeamlessLight, setFeatherPx }),
+    [method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, setQualityAndClearStale],
   );
 }

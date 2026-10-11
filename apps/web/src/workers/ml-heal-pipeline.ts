@@ -210,18 +210,23 @@ async function getSession(
     return session;
   } catch (error) {
     const detail = errorMessage(error);
+    let paths = "";
+    try {
+      const configured = (ort as { env?: { wasm?: { wasmPaths?: unknown } } }).env?.wasm?.wasmPaths;
+      if (typeof configured === "string" && configured) paths = ` · wasmPaths ${configured}`;
+    } catch {
+      // Diagnostic only.
+    }
     console.error(`[ml-heal] ${stage} failed on ${eps.join("/") || "no runtime"}: ${detail}`, error);
-    throw new MlHealUnavailableError(`${stage} failed (${eps.join("/") || "no runtime"}): ${detail}`);
+    throw new MlHealUnavailableError(`${stage} failed (${eps.join("/") || "no runtime"}${paths}): ${detail}`);
   }
 }
 
-/** Short readable cause; never throws, never leaks more than one line. */
+/** Readable cause on one line; keeps ORT backend detail (up to ~800 chars). */
 function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message.length > 300 ? `${error.message.slice(0, 300)}…` : error.message;
-  }
-  const text = String(error);
-  return text.length > 300 ? `${text.slice(0, 300)}…` : text;
+  const raw = error instanceof Error && error.message ? error.message : String(error);
+  const flat = raw.replace(/\s+/g, " ").trim();
+  return flat.length > 800 ? `${flat.slice(0, 800)}…` : flat;
 }
 
 /** Device capabilities that decide which engines can run. Worker-safe. */
@@ -247,9 +252,10 @@ function probeCapabilities(): MlCapabilities {
 /**
  * Tune the ORT runtime for this page and report the capability line first —
  * before any gigabyte downloads — so an unrunnable tier says so upfront.
- * Also verifies the .wasm backends are actually servable (a dev server SPA
+ * Also verifies the .wasm/.mjs backends are actually servable (a dev server SPA
  * fallback returns HTML here, which fails later with an unreadable
- * WebAssembly magic-word error).
+ * WebAssembly magic-word error), and fail-fasts Moebius when WebGPU has no
+ * adapter (no point downloading 1.3GB first).
  */
 async function configureOrt(
   ort: OrtModule,
@@ -264,6 +270,7 @@ async function configureOrt(
   } catch (error) {
     console.error("[ml-heal] wasm config failed:", error);
   }
+  if (engine === "moebius") await ensureWebGpuAvailable();
   await verifyWasmServing(prefix, engine);
   // Friendly first stage: capabilities decide the tier, but the raw
   // "WebGPU: … · Threads: …" line means nothing to most users. Keep it in
@@ -284,12 +291,50 @@ function ortWasmPrefix(): string {
 }
 
 /**
- * Fetch the first bytes of the engine's .wasm backend and check the
- * WebAssembly magic header (00 61 73 6d). Catches "HTML served instead of
- * wasm" misconfiguration with a readable error instead of ORT's CompileError.
+ * Fail fast when WebGPU cannot serve Moebius: no navigator.gpu, or
+ * requestAdapter() resolves null / rejects / times out. Runs before any
+ * weight download so Best says so upfront instead of after 1.3GB.
+ */
+async function ensureWebGpuAvailable(timeoutMs = 5000): Promise<void> {
+  const nav = globalThis.navigator as (Navigator & { gpu?: { requestAdapter?: () => Promise<unknown> } }) | undefined;
+  const gpu = nav?.gpu;
+  if (!gpu) {
+    throw new MlHealUnavailableError(
+      "WebGPU unavailable in this browser (no navigator.gpu). Use Balanced instead, or enable WebGPU (Chrome/Edge 113+, Safari macOS 14+, secure context).",
+    );
+  }
+  if (typeof gpu.requestAdapter !== "function") {
+    throw new MlHealUnavailableError("WebGPU unavailable (requestAdapter missing). Use Balanced instead.");
+  }
+  try {
+    const adapter = await Promise.race([
+      gpu.requestAdapter(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+    if (!adapter) {
+      throw new MlHealUnavailableError(
+        "WebGPU has no adapter on this device (requestAdapter returned null — check chrome://gpu, GPU drivers, or remote-desktop flags). Use Balanced instead.",
+      );
+    }
+  } catch (error) {
+    if (error instanceof MlHealUnavailableError) throw error;
+    throw new MlHealUnavailableError(`WebGPU adapter check failed: ${errorMessage(error)} Use Balanced instead.`);
+  }
+}
+
+/**
+ * Fetch the first bytes of the engine's backend files and check them.
+ * The .wasm must start with the WebAssembly magic header (00 61 73 6d);
+ * the WebGPU asyncify .mjs must be servable JS (not an SPA HTML fallback).
+ * Catches static-asset misconfiguration with a readable error instead of
+ * ORT's "no available backend found" + failed dynamic import.
  */
 async function verifyWasmServing(prefix: string, engine: MlHealEngine): Promise<void> {
-  const file = engine === "moebius" ? "ort-wasm-simd-threaded.jsep.wasm" : "ort-wasm-simd-threaded.wasm";
+  await verifyWasmMagic(prefix, engine === "moebius" ? "ort-wasm-simd-threaded.jsep.wasm" : "ort-wasm-simd-threaded.wasm");
+  if (engine === "moebius") await verifyJsServing(prefix, "ort-wasm-simd-threaded.asyncify.mjs");
+}
+
+async function verifyWasmMagic(prefix: string, file: string): Promise<void> {
   const fail = (detail: string): MlHealUnavailableError =>
     new MlHealUnavailableError(`ONNX runtime files missing at ${prefix}${file} (${detail}).`);
   let response: Response;
@@ -319,6 +364,25 @@ async function verifyWasmServing(prefix: string, engine: MlHealEngine): Promise<
     if (error instanceof MlHealUnavailableError) throw error;
     throw fail(errorMessage(error));
   }
+}
+
+/** The WebGPU .mjs glue must be servable JS, not an HTML fallback page. */
+async function verifyJsServing(prefix: string, file: string): Promise<void> {
+  const fail = (detail: string): MlHealUnavailableError =>
+    new MlHealUnavailableError(`ONNX runtime files missing at ${prefix}${file} (${detail}).`);
+  let response: Response;
+  try {
+    response = await fetch(`${prefix}${file}`, { headers: { Range: "bytes=0-127" } });
+  } catch (error) {
+    throw fail(`fetch failed: ${errorMessage(error)}`);
+  }
+  if (!response.ok && response.status !== 206) throw fail(`HTTP ${response.status}`);
+  const text = await response.text();
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith("<!") || trimmed.startsWith("<html")) {
+    throw fail("got HTML, not JavaScript (check viteStaticCopy serves ort/*.mjs)");
+  }
+  if (text.length < 64) throw fail("empty response");
 }
 
 async function ensureOrt(engine: MlHealEngine): Promise<OrtModule> {

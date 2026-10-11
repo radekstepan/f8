@@ -5,6 +5,7 @@ import type { PixelImage } from './vision/analyze.js';
 import type { HealProgress, HealQuality } from './vision/heal.js';
 import { INPAINT_DEFAULT_METHOD, INPAINT_DILATE_PX, blendInpainted, dilateRepairMask, featherRepairMask, hasRepairStrokes, inpaintRadiusForStrokes, rasterizeRepairMask, resolveFeatherPx } from './vision/inpaint.js';
 import type { InpaintMethod, RepairMask } from './vision/inpaint.js';
+import type { MlHealEngine } from './vision/ml-heal.js';
 import type { VisionWorkerStatus } from './vision/worker-client.js';
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
@@ -200,6 +201,12 @@ export interface RepairInpaintBinding {
   featherPx: number;
   status: VisionWorkerStatus;
   run: RunInpaint;
+  /** Engine the current ML Heal tier resolves to (absent for non-ML methods). */
+  mlEngine?: MlHealEngine;
+  /** True while ML weights/sessions are being prefetched; strokes should wait. */
+  mlWarming?: boolean;
+  /** True when the current ML engine is warmed and strokes may paint. */
+  mlReady?: boolean;
 }
 
 /**

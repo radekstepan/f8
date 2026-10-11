@@ -264,6 +264,8 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
 
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!isBrush || compare || showOriginal) return;
+    // ML tiers must be warmed before painting: no round cursor, no strokes.
+    if (tool === 'repair' && inpaintRepair?.method === 'ml-heal' && inpaintRepair.mlEngine !== 'classic' && inpaintRepair.mlReady === false) return;
     if (tool === 'clone' && (event.altKey || !cloneSource.current)) { cloneSource.current = position(event); setSourceSet(true); return; }
     points.current = [...edit.retouches];
     painting.current = true;
@@ -298,6 +300,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
 
   const frameHeight = frameWidth / aspect;
   const showOverlay = isBrush && !loading && !compare && !showOriginal;
+  // ML-gated repair: hide the round brush until the tier is warmed, and block
+  // strokes outright on a failed tier (user must pick a working tier first).
+  const mlRepairBlocked = tool === 'repair' && inpaintRepair?.method === 'ml-heal' && (inpaintRepair.mlEngine ?? 'classic') !== 'classic' && inpaintRepair.mlReady === false;
+  const mlRepairWarming = tool === 'repair' && inpaintRepair?.method === 'ml-heal' && (inpaintRepair.mlEngine ?? 'classic') !== 'classic' && inpaintRepair.mlReady === false && inpaintRepair.mlWarming === true;
+  const showBrushCursor = isBrush && cursor && !showOriginal && !mlRepairBlocked;
   const draggingRepair = showOverlay && tool === 'repair' && activeStroke !== null;
   // While dragging, every repair area shows red — not just the new stroke —
   // so the single worker pass over all areas is visible. Otherwise red
@@ -321,10 +328,10 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       {compare && !showOriginal && !loading && <><span className="comparison-label original-label">Original</span><span className="comparison-label edited-label">Edited</span><div className="comparison-divider" role="slider" aria-label="Before and after comparison" aria-valuemin={2} aria-valuemax={98} aria-valuenow={Math.round(split)} tabIndex={0} style={{ left: `${split}%` }} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setSplit(Math.max(2, Math.min(98, position(event).x * 100))); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); setSplit((value) => Math.max(2, Math.min(98, value + (event.key === 'ArrowRight' ? 2 : -2)))); } }}><span><ChevronsLeftRight size={17} /></span></div></>}
       {showOriginal && <span className="comparison-label original-label">Original</span>}
       {tool === 'crop' && !loading && <div className="crop-grid" aria-hidden="true"><i /><i /><i /><i /></div>}
-      {isBrush && cursor && !showOriginal && <div className={`brush-cursor${compare ? ' is-compare' : ''}`} style={{ left: cursor.x, top: cursor.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
+      {showBrushCursor && <div className={`brush-cursor${compare ? ' is-compare' : ''}`} style={{ left: cursor!.x, top: cursor!.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
       {(activePoints.length > 0 || hoverPoints.length > 0) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}</svg>}
     </div></div>
-      {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : compare ? 'Comparing — turn off Compare to keep repairing.' : 'Click and drag to repair — hover a repair in the list to locate it.'}</div>}
+      {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : compare ? 'Comparing — turn off Compare to keep repairing.' : mlRepairWarming ? 'Loading the ML engine… painting unlocks when ready.' : mlRepairBlocked ? 'This ML engine is unavailable — pick Balanced or Fast in the inspector.' : 'Click and drag to repair — hover a repair in the list to locate it.'}</div>}
     </div>
     <div className="canvas-status">
       <button className="canvas-dimensions" onClick={onInfo} title="Photo information">

@@ -86,6 +86,8 @@ export interface RepairAssist {
   mlReady?: { engine: MlHealEngine; cached: boolean; updatedAt: number } | null;
   /** Engine the current ML Heal quality tier resolves to. */
   mlEngine: MlHealEngine;
+  /** True while the current tier is being prefetched; painting is gated. */
+  mlWarming?: boolean;
   onMethodChange: (method: InpaintMethod) => void;
   onQualityChange: (quality: HealQuality) => void;
   onSeamlessLightChange: (value: boolean) => void;
@@ -147,7 +149,7 @@ function MlProgressView({ progress }: { progress: NonNullable<RepairAssist['mlPr
 function RepairMethodControl({ assist }: { assist: RepairAssist }) {
   const engineInfo = ML_HEAL_ENGINE_INFO[assist.mlEngine];
   const methodBlurb = assist.method === 'ml-heal'
-    ? `ML heal picks its engine from quality: Fast runs ${ML_HEAL_ENGINE_INFO.classic.label} instantly (${ML_HEAL_ENGINE_INFO.classic.download}), Balanced runs ${ML_HEAL_ENGINE_INFO.lama.label} (${ML_HEAL_ENGINE_INFO.lama.download}), Best runs ${ML_HEAL_ENGINE_INFO.moebius.label} (${ML_HEAL_ENGINE_INFO.moebius.download}) with automatic fallback. Models stay on your device and work offline after the first download.`
+    ? `ML heal picks its engine from quality: Fast runs ${ML_HEAL_ENGINE_INFO.classic.label} instantly (${ML_HEAL_ENGINE_INFO.classic.download}), Balanced runs ${ML_HEAL_ENGINE_INFO.lama.label} (${ML_HEAL_ENGINE_INFO.lama.download}), Best runs ${ML_HEAL_ENGINE_INFO.moebius.label} (${ML_HEAL_ENGINE_INFO.moebius.download}). Painting unlocks when the tier is ready; models stay on your device and work offline after the first download.`
     : assist.method === 'heal'
     ? 'Heal copies matching texture from nearby — best for most fixes.'
     : assist.method === 'telea'
@@ -159,6 +161,8 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
       ? `Balanced: ${ML_HEAL_ENGINE_INFO.lama.label} — one-pass neural fill, ${ML_HEAL_ENGINE_INFO.lama.download}`
       : `Best: ${ML_HEAL_ENGINE_INFO.moebius.label} — diffusion inpainting, ${ML_HEAL_ENGINE_INFO.moebius.download}, slowest`;
   const progress = assist.method === 'ml-heal' ? assist.mlProgress : null;
+  const isError = progress?.stage.startsWith('Model unavailable') ?? false;
+  const isReady = !isError && assist.mlReady?.engine === assist.mlEngine && assist.mlReady.cached;
   return <>
     <h4>Reconstruction</h4>
     <div className="segmented-control" role="group" aria-label="Repair reconstruction method">
@@ -175,9 +179,12 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
         <button className={assist.quality === 'balanced' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('balanced') : 'Balanced: the default search reach and effort'} onClick={() => assist.onQualityChange('balanced')}>Balanced</button>
         <button className={assist.quality === 'best' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('best') : 'Best: widest search, slowest — for tricky removals'} onClick={() => assist.onQualityChange('best')}>Best</button>
       </div>
-      {assist.method === 'ml-heal' && <p className="inspector-note" role="status">Engine: {engineInfo.label}{assist.mlReady?.engine === assist.mlEngine && assist.mlReady.cached ? ' · ready on this device.' : ` (${engineInfo.download}).`}</p>}
+      {assist.method === 'ml-heal' && <p className="inspector-note" role="status">Engine: {engineInfo.label}{isReady ? ' · ready on this device.' : assist.mlWarming ? ' · loading…' : ` (${engineInfo.download}).`}</p>}
       {progress && <MlProgressView progress={progress} />}
-      {assist.method === 'ml-heal' && progress?.stage.startsWith('Model unavailable') && <button className="secondary-button full-width" title="Drop to the instant classic engine" onClick={() => assist.onQualityChange('fast')}>Use Fast instead (instant, no model)</button>}
+      {assist.method === 'ml-heal' && isError && <>
+        {assist.mlEngine === 'moebius' && <button className="secondary-button full-width" title="Fall back to the one-pass neural engine" onClick={() => assist.onQualityChange('balanced')}>Try Balanced instead (~208MB)</button>}
+        <button className="secondary-button full-width" title="Drop to the instant classic engine" onClick={() => assist.onQualityChange('fast')}>Use Fast instead (instant, no model)</button>
+      </>}
       {assist.method === 'heal' && <>
       <div className="repair-toggle-row"><span>Seamless light</span><Toggle checked={assist.seamlessLight} onChange={() => assist.onSeamlessLightChange(!assist.seamlessLight)} label="Seamless light adaptation" /></div>
       <p className="inspector-note">Seamless light adapts small repairs to lighting gradients instead of one flat level — slower, best for shaded skin and skies.</p>

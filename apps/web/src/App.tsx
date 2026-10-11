@@ -52,6 +52,14 @@ export default function App() {
   const vision = useVisionWorker();
   const straighten = useStraighten(photo?.id ?? selectedId);
   const inpaintRepair = useInpaintRepair();
+  // Canvas binding: ML strokes are gated until the tier is warmed, so the
+  // brush cursor stays hidden and painting is ignored while loading.
+  const canvasRepairBinding = useMemo(() => {
+    if (inpaintRepair.method !== "ml-heal") return { ...inpaintRepair, mlReady: true as const, mlWarming: false as const };
+    const needsModel = inpaintRepair.mlEngine !== "classic";
+    const ready = !needsModel || (inpaintRepair.mlReady?.engine === inpaintRepair.mlEngine && inpaintRepair.mlReady.cached);
+    return { ...inpaintRepair, mlReady: ready, mlWarming: inpaintRepair.mlWarming };
+  }, [inpaintRepair]);
   // Prefetch the ML engine's weights while the user picks a brush: the first
   // stroke then inpaints immediately instead of waiting on the download.
   // Fire-and-forget by design — jobs fall back down the tier chain anyway.
@@ -350,7 +358,7 @@ export default function App() {
                 photo={photo} edit={editor.edit} tool={tool} zoom={zoom}
                 compare={compare} showOriginal={showOriginal}
                 brushSize={brushSize} brushStrength={brushStrength}
-                inpaintRepair={inpaintRepair}
+                inpaintRepair={canvasRepairBinding}
                 highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
                 onZoom={setZoom} onCompare={() => setCompare(!compare)}
                 onFavorite={() => toggleFavorite()} onRating={setRating}
@@ -374,7 +382,7 @@ export default function App() {
         photo={photo} edit={editor.edit} tool={tool} histogram={histogram}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss }}
-        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, mlReady: inpaintRepair.mlReady, mlEngine: inpaintRepair.mlEngine, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
+        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, mlReady: inpaintRepair.mlReady, mlEngine: inpaintRepair.mlEngine, mlWarming: inpaintRepair.mlWarming, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={editor.change} onTool={selectTool} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
@@ -394,7 +402,7 @@ export default function App() {
       }}
     />
     <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
-    <EditorDialogs dialog={dialog} photo={photo} edit={editor.edit} inpaintRepair={inpaintRepair} onClose={() => setDialog(null)} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} />
+    <EditorDialogs dialog={dialog} photo={photo} edit={editor.edit} inpaintRepair={canvasRepairBinding} onClose={() => setDialog(null)} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} />
     {folderDialog && <FsBrowser
       title={folderDialog.mode === 'locate' ? 'Locate original' : 'Import from folder'}
       subtitle={folderDialog.mode === 'locate' ? 'Find the file in its new home.' : 'Referenced in place — nothing is copied.'}

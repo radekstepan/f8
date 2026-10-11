@@ -25,11 +25,12 @@ export default defineConfig({
     // ort.env.wasm.wasmPaths, served from "ort/"). They live only in
     // node_modules, so copy them for dev serving and dist output alike instead
     // of committing binaries to the repo. Only the two builds the app uses:
-    // plain threaded (wasm EP) and jsep (webgpu EP).
+    // plain threaded (wasm EP) and jsep + asyncify (webgpu EP — the webgpu
+    // bundle dynamically imports the asyncify .mjs/.wasm at session init).
     viteStaticCopy({
       targets: [
         {
-          src: "../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.{mjs,wasm,jsep.mjs,jsep.wasm}",
+          src: "../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.{mjs,wasm,jsep.mjs,jsep.wasm,asyncify.mjs,asyncify.wasm}",
           dest: "ort",
           // Strip the node_modules/.../dist base dirs so files land flat in
           // ort/ instead of ort/node_modules/onnxruntime-web/dist/.
