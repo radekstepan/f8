@@ -2,6 +2,7 @@ import { isNeutralEdit, renderAdjustedPixels } from './adjustments.js';
 import { CROP_RATIOS } from './data.js';
 import type { EditState, RetouchPoint } from './types.js';
 import type { PixelImage } from './vision/analyze.js';
+import type { HealProgress, HealQuality } from './vision/heal.js';
 import { BLEND_FEATHER_PX, INPAINT_DEFAULT_METHOD, INPAINT_DILATE_PX, blendInpainted, dilateRepairMask, featherRepairMask, hasRepairStrokes, inpaintRadiusForStrokes, rasterizeRepairMask } from './vision/inpaint.js';
 import type { InpaintMethod, RepairMask } from './vision/inpaint.js';
 import type { VisionWorkerStatus } from './vision/worker-client.js';
@@ -168,6 +169,12 @@ export function drawEffects(ctx: CanvasRenderingContext2D, width: number, height
   }
 }
 
+/** Per-call options for repair inpainting; quality only affects heal. */
+export interface RunInpaintOptions {
+  quality?: HealQuality;
+  onProgress?: HealProgress;
+}
+
 /**
  * Worker transport for repair inpainting, injected by the app (core never
  * touches the worker directly). Resolves to the reconstructed RGBA image.
@@ -177,11 +184,13 @@ export type RunInpaint = (
   mask: RepairMask,
   radius: number,
   method: InpaintMethod,
+  options?: RunInpaintOptions,
 ) => Promise<PixelImage>;
 
-/** UI-facing repair binding: the chosen algorithm, worker transport, and engine readiness. */
+/** UI-facing repair binding: the chosen algorithm and quality, worker transport, and engine readiness. */
 export interface RepairInpaintBinding {
   method: InpaintMethod;
+  quality: HealQuality;
   status: VisionWorkerStatus;
   run: RunInpaint;
 }
@@ -203,6 +212,7 @@ export async function applyInpaintRepair(
   points: RetouchPoint[],
   method: InpaintMethod,
   runInpaint: RunInpaint,
+  options?: RunInpaintOptions,
 ): Promise<boolean> {
   if (!hasRepairStrokes(points)) return false;
   const width = canvas.width;
@@ -213,7 +223,7 @@ export async function applyInpaintRepair(
   const ctx = canvas.getContext('2d')!;
   const pixels = ctx.getImageData(0, 0, width, height);
   const source: PixelImage = { width, height, data: pixels.data };
-  const filled = await runInpaint(source, mask, inpaintRadiusForStrokes(points, width), method);
+  const filled = await runInpaint(source, mask, inpaintRadiusForStrokes(points, width), method, options);
   const blendMask = method === 'heal'
     ? featherRepairMask(mask, BLEND_FEATHER_PX)
     : featherRepairMask(dilateRepairMask(mask, INPAINT_DILATE_PX), BLEND_FEATHER_PX);
@@ -227,6 +237,8 @@ export interface ExportRepairOptions {
   method?: InpaintMethod;
   /** Worker transport; when absent, repairs render with the blur fallback. */
   runInpaint?: RunInpaint;
+  /** Heal effort preset; omitted means "balanced". Diffusion ignores it. */
+  quality?: HealQuality;
 }
 
 // Resolve the geometry canvas, preferring worker inpainting for repair
@@ -246,7 +258,7 @@ async function geometryForExport(
     maxSize,
   );
   try {
-    const applied = await applyInpaintRepair(clean, repairs, repair.method ?? INPAINT_DEFAULT_METHOD, repair.runInpaint);
+    const applied = await applyInpaintRepair(clean, repairs, repair.method ?? INPAINT_DEFAULT_METHOD, repair.runInpaint, { quality: repair.quality });
     return applied ? clean : geometryCanvas(image, edit, maxSize);
   } catch {
     return geometryCanvas(image, edit, maxSize);

@@ -200,7 +200,11 @@ function straighten(cv: OpenCvApi, request: StraightenRequest): VisionWorkerResp
   }
 }
 
-function inpaint(cv: OpenCvApi, request: InpaintRequest): VisionWorkerResponse {
+function inpaint(
+  cv: OpenCvApi,
+  request: InpaintRequest,
+  postMessage: (message: VisionWorkerResponse) => void,
+): VisionWorkerResponse {
   // Full caller resolution (preview or export): no downscaling, the mask
   // already matches the pixels. Heal is pure TypeScript (no OpenCV) and
   // fills the exact mask; diffusion dilates the fill region by the same
@@ -208,9 +212,22 @@ function inpaint(cv: OpenCvApi, request: InpaintRequest): VisionWorkerResponse {
   // kept. Mat wrangling is shared with the Node golden tests through
   // inpaintWithCv.
   if (request.method === "heal") {
+    // Progress is throttled: exemplar fill reports every iteration, and the
+    // UI only needs a few updates per second.
+    let lastPost = 0;
     const result = healRepair(
       { width: request.width, height: request.height, data: request.data },
       { width: request.width, height: request.height, data: request.mask },
+      {
+        quality: request.quality ?? "balanced",
+        onProgress: (fraction, stage) => {
+          const now = performance.now();
+          if (now - lastPost > 50 || fraction >= 1) {
+            lastPost = now;
+            postMessage({ id: request.id, kind: "inpaint-progress", fraction, stage });
+          }
+        },
+      },
     );
     return {
       id: request.id,
@@ -240,7 +257,10 @@ function inpaint(cv: OpenCvApi, request: InpaintRequest): VisionWorkerResponse {
   };
 }
 
-async function handle(request: VisionWorkerRequest): Promise<VisionWorkerResponse> {
+async function handle(
+  request: VisionWorkerRequest,
+  postMessage: (message: VisionWorkerResponse) => void,
+): Promise<VisionWorkerResponse> {
   const cv = await loadOpenCv();
   if (request.kind === "ping") {
     return { id: request.id, kind: "pong", version: openCvVersion(cv) };
@@ -249,7 +269,7 @@ async function handle(request: VisionWorkerRequest): Promise<VisionWorkerRespons
     return straighten(cv, request);
   }
   if (request.kind === "inpaint") {
-    return inpaint(cv, request);
+    return inpaint(cv, request, postMessage);
   }
   return grayscale(cv, request);
 }
@@ -264,7 +284,7 @@ const scope = self as unknown as WorkerScope;
 scope.onmessage = (event: MessageEvent<VisionWorkerRequest>) => {
   const request = event.data;
   if (!isVisionWorkerRequest(request)) return;
-  void handle(request).then(
+  void handle(request, (message) => scope.postMessage(message)).then(
     (response) => scope.postMessage(response),
     (error: unknown) =>
       scope.postMessage({

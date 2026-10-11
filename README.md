@@ -35,7 +35,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 - Per-photo undo/redo with up to fifty history entries. Consecutive slider changes are grouped into a single edit.
 - Draggable before/after comparison and hold-to-preview-original behavior.
 - Centered aspect-ratio cropping, rotation, flips, and straightening with automatic horizon detection, plus a rule-of-thirds overlay.
-- Browser-based repair brushes (texture-transplant Heal by default, OpenCV Telea/Navier-Stokes on request, blur fallback) and clone stamping. Click to choose a clone source; Alt-click to choose another.
+- Browser-based repair brushes (texture-transplant Heal by default with Fast/Balanced/Best search effort, OpenCV Telea/Navier-Stokes on request, blur fallback) and clone stamping. Click to choose a clone source; Alt-click to choose another.
 - Photo import using a file picker, drag and drop, or in-place folder import, including camera RAW files (rendered from the largest embedded JPEG preview, with the RAW file's orientation applied). When a RAW file and a JPEG share a filename, only the RAW is imported. Content hashing dedupes reimports and relinks moved files with their edits intact.
 - JPEG, PNG, and WebP export, configurable size and quality, plus JSON adjustment export.
 - Copy/paste adjustments between photographs, with each photograph's crop and retouching preserved.

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Bandage, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, FlipHorizontal2, FlipVertical2, Focus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Stamp, Sun, Thermometer, Trash2, X } from 'lucide-react';
 import { CROP_RATIOS, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD } from '@photomator/core';
-import type { ChangeEdit, EditState, InpaintMethod, NumericAdjustment, Photo, Tool, VisionWorkerStatus } from '@photomator/core';
+import type { ChangeEdit, EditState, HealQuality, InpaintMethod, NumericAdjustment, Photo, Tool, VisionWorkerStatus } from '@photomator/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { IconButton, MenuItem, RangeControl, SelectField, Toggle } from './EditorUI.js';
 
@@ -76,8 +76,10 @@ function StraightenControl({ value, assist, onChange }: { value: number; assist:
 /** View model for repair inpainting, driven by the app's vision hook. */
 export interface RepairAssist {
   method: InpaintMethod;
+  quality: HealQuality;
   status: VisionWorkerStatus;
   onMethodChange: (method: InpaintMethod) => void;
+  onQualityChange: (quality: HealQuality) => void;
 }
 
 function RepairMethodControl({ assist }: { assist: RepairAssist }) {
@@ -88,6 +90,14 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
       <button className={assist.method === 'telea' ? 'is-active' : ''} title="Telea's fast marching method: quick and smooth" onClick={() => assist.onMethodChange('telea')}>Telea</button>
       <button className={assist.method === 'ns' ? 'is-active' : ''} title="Navier-Stokes fluid dynamics: slower, sometimes crisper" onClick={() => assist.onMethodChange('ns')}>Navier–Stokes</button>
     </div>
+    {assist.method === 'heal' && <>
+      <h4>Heal Quality</h4>
+      <div className="segmented-control" role="group" aria-label="Heal search effort">
+        <button className={assist.quality === 'fast' ? 'is-active' : ''} title="Fast: nearby donors only, best for small blemishes" onClick={() => assist.onQualityChange('fast')}>Fast</button>
+        <button className={assist.quality === 'balanced' ? 'is-active' : ''} title="Balanced: the default search reach and effort" onClick={() => assist.onQualityChange('balanced')}>Balanced</button>
+        <button className={assist.quality === 'best' ? 'is-active' : ''} title="Best: widest search, slowest — for tricky removals" onClick={() => assist.onQualityChange('best')}>Best</button>
+      </div>
+    </>}
     {assist.status === 'loading' && <p className="inspector-note" role="status">Loading enhanced repair…</p>}
     {assist.status === 'failed' && <p className="inspector-note" role="alert">Enhanced repair is unavailable — using soft retouch instead.</p>}
   </>;

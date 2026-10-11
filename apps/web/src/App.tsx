@@ -360,7 +360,7 @@ export default function App() {
         photo={photo} edit={editor.edit} tool={tool} histogram={histogram}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss }}
-        repairAssist={{ method: inpaintRepair.method, status: inpaintRepair.status, onMethodChange: inpaintRepair.setMethod }}
+        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, status: inpaintRepair.status, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality }}
         onChange={editor.change} onTool={selectTool} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}

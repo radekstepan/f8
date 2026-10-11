@@ -15,6 +15,12 @@
 //   Donor patches must be fully originally-known, so blemishes can never be
 //   transplanted and fill can never smear.
 //
+// Each component heals inside a cropped working region (its bbox expanded to
+// cover every reachable donor, then clamped to the image), so cost and memory
+// scale with the repair instead of the photo. The crop margins are exact: the
+// cropped run sees the same donors, ring pixels, and Sobel taps as a
+// full-image run, and output is bit-identical either way.
+//
 // Pure TypeScript, no OpenCV dependency: runs in the vision worker and in
 // Node tests identically. Deterministic: fixed scan orders, first-wins ties,
 // integer SSD. When no donor qualifies, the remainder is left as the source —
@@ -73,6 +79,85 @@ export const HEAL_EXEMPLAR_GRAD_WEIGHT_SCALE = 100;
  * pixels carry the blemish's own gradients).
  */
 export const HEAL_EXEMPLAR_GRAD_MATCH_WEIGHT = 2;
+
+/**
+ * Heal effort preset. Quality tunes donor search reach and candidate
+ * budgets only — matching rules, patch geometry, and routing are identical,
+ * so `balanced` reproduces the original output exactly.
+ */
+export type HealQuality = "fast" | "balanced" | "best";
+
+/** Default preset: the original search budgets. */
+export const HEAL_DEFAULT_QUALITY: HealQuality = "balanced";
+
+/** Progress callback: fraction in [0, 1] plus a human-readable stage. */
+export type HealProgress = (fraction: number, stage: string) => void;
+
+export interface HealOptions {
+  quality?: HealQuality;
+  onProgress?: HealProgress;
+}
+
+interface HealTuning {
+  searchMin: number;
+  searchMax: number;
+  maxCandidates: number;
+  exemplarMin: number;
+  exemplarMax: number;
+  exemplarStride: number;
+  exemplarMaxCandidates: number;
+}
+
+const HEAL_TUNING: Record<HealQuality, HealTuning> = {
+  fast: {
+    searchMin: 24,
+    searchMax: 80,
+    maxCandidates: 600,
+    exemplarMin: 48,
+    exemplarMax: 96,
+    exemplarStride: 3,
+    exemplarMaxCandidates: 1200,
+  },
+  balanced: {
+    searchMin: HEAL_SEARCH_RADIUS_MIN,
+    searchMax: HEAL_SEARCH_RADIUS_MAX,
+    maxCandidates: HEAL_MAX_CANDIDATES,
+    exemplarMin: HEAL_EXEMPLAR_SEARCH_MIN,
+    exemplarMax: HEAL_EXEMPLAR_SEARCH_MAX,
+    exemplarStride: HEAL_EXEMPLAR_STRIDE,
+    exemplarMaxCandidates: HEAL_EXEMPLAR_MAX_CANDIDATES,
+  },
+  best: {
+    searchMin: 32,
+    searchMax: 224,
+    maxCandidates: 3000,
+    exemplarMin: 80,
+    exemplarMax: 224,
+    exemplarStride: 1,
+    exemplarMaxCandidates: 8000,
+  },
+};
+
+/** Donor search radius for one single-offset component. */
+function singleOffsetRadius(maxDim: number, tuning: HealTuning): number {
+  return Math.min(tuning.searchMax, Math.max(tuning.searchMin, Math.ceil((3 * maxDim) / 2)));
+}
+
+/** Donor search radius for one exemplar component. */
+function exemplarRadius(maxDim: number, tuning: HealTuning): number {
+  return Math.min(tuning.exemplarMax, Math.max(tuning.exemplarMin, maxDim * 2));
+}
+
+/** Exemplar patch half-size for one component, clamped to the working region. */
+function exemplarPatchRadius(maxDim: number, width: number, height: number): number {
+  return Math.max(
+    1,
+    Math.min(
+      maxDim >= HEAL_PATCH_LARGE_MIN_DIM ? HEAL_PATCH_RADIUS_LARGE : HEAL_PATCH_RADIUS,
+      Math.floor((Math.min(width, height) - 1) / 2),
+    ),
+  );
+}
 
 interface HealComponent {
   pixels: number[];
@@ -225,20 +310,18 @@ function findDonor(
   sat: Uint32Array,
   component: HealComponent,
   ring: number[],
+  tuning: HealTuning,
 ): DonorOffset | null {
   const { width, height } = image;
   const maxDim = Math.max(component.maxX - component.minX + 1, component.maxY - component.minY + 1);
-  const radius = Math.min(
-    HEAL_SEARCH_RADIUS_MAX,
-    Math.max(HEAL_SEARCH_RADIUS_MIN, Math.ceil((3 * maxDim) / 2)),
-  );
+  const radius = singleOffsetRadius(maxDim, tuning);
   const stride = maxDim <= 12 ? 1 : maxDim <= 48 ? 2 : 4;
   let best: DonorOffset | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
   let evaluated = 0;
-  for (let r = stride; r <= radius && evaluated < HEAL_MAX_CANDIDATES; r += stride) {
-    for (let oy = -r; oy <= r && evaluated < HEAL_MAX_CANDIDATES; oy += stride) {
-      for (let ox = -r; ox <= r && evaluated < HEAL_MAX_CANDIDATES; ox += stride) {
+  for (let r = stride; r <= radius && evaluated < tuning.maxCandidates; r += stride) {
+    for (let oy = -r; oy <= r && evaluated < tuning.maxCandidates; oy += stride) {
+      for (let ox = -r; ox <= r && evaluated < tuning.maxCandidates; ox += stride) {
         if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
         evaluated += 1;
         const dx0 = component.minX + ox;
@@ -293,6 +376,7 @@ function healSingleOffset(
   sat: Uint32Array,
   component: HealComponent,
   out: Uint8ClampedArray,
+  tuning: HealTuning,
 ): void {
   let ring: number[] = [];
   for (let ringWidth = HEAL_RING_WIDTH; ringWidth <= HEAL_RING_WIDTH_MAX; ringWidth += 1) {
@@ -301,7 +385,7 @@ function healSingleOffset(
   }
   if (ring.length < HEAL_MIN_RING_SAMPLES) return;
   const sampled = sampleRing(ring);
-  const donor = findDonor(image, mask, sat, component, sampled);
+  const donor = findDonor(image, mask, sat, component, sampled, tuning);
   if (!donor) return;
   // Per-channel light adaptation: shift the donor so its ring mean matches
   // the target ring mean. All sampled donor pixels are in bounds and
@@ -456,21 +540,19 @@ function findPatchDonor(
   maxDim: number,
   tx: number,
   ty: number,
+  tuning: HealTuning,
 ): DonorOffset | null {
   const { width, height, patchR, work, known, gradWeight, gradX0, gradY0, gradW, matchMag, matchX0, matchY0, matchW } = state;
-  const radius = Math.min(
-    HEAL_EXEMPLAR_SEARCH_MAX,
-    Math.max(HEAL_EXEMPLAR_SEARCH_MIN, maxDim * 2),
-  );
+  const radius = exemplarRadius(maxDim, tuning);
   // Donor centers closer than this necessarily overlap the target's own hole.
-  const rMin = patchR + HEAL_EXEMPLAR_STRIDE;
-  const stride = HEAL_EXEMPLAR_STRIDE;
+  const rMin = patchR + tuning.exemplarStride;
+  const stride = tuning.exemplarStride;
   let best: DonorOffset | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
   let evaluated = 0;
-  for (let r = rMin; r <= radius && evaluated < HEAL_EXEMPLAR_MAX_CANDIDATES; r += stride) {
-    for (let oy = -r; oy <= r && evaluated < HEAL_EXEMPLAR_MAX_CANDIDATES; oy += stride) {
-      for (let ox = -r; ox <= r && evaluated < HEAL_EXEMPLAR_MAX_CANDIDATES; ox += stride) {
+  for (let r = rMin; r <= radius && evaluated < tuning.exemplarMaxCandidates; r += stride) {
+    for (let oy = -r; oy <= r && evaluated < tuning.exemplarMaxCandidates; oy += stride) {
+      for (let ox = -r; ox <= r && evaluated < tuning.exemplarMaxCandidates; ox += stride) {
         if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
         evaluated += 1;
         const cx = tx + ox;
@@ -519,23 +601,22 @@ function findPatchDonor(
   return best;
 }
 
-/** Per-patch exemplar fill for one large component, written into out. */
+/**
+ * Per-patch exemplar fill for one large component, written into out.
+ * onStep reports filled vs total member pixels after every fill iteration.
+ */
 function healExemplar(
   image: PixelImage,
   mask: RepairMask,
   sat: Uint32Array,
   component: HealComponent,
   out: Uint8ClampedArray,
+  tuning: HealTuning,
+  onStep?: (filled: number, total: number) => void,
 ): void {
   const { width, height } = image;
   const maxDim = Math.max(component.maxX - component.minX + 1, component.maxY - component.minY + 1);
-  const patchR = Math.max(
-    1,
-    Math.min(
-      maxDim >= HEAL_PATCH_LARGE_MIN_DIM ? HEAL_PATCH_RADIUS_LARGE : HEAL_PATCH_RADIUS,
-      Math.floor((Math.min(width, height) - 1) / 2),
-    ),
-  );
+  const patchR = exemplarPatchRadius(maxDim, width, height);
   const size = width * height;
   const known = new Uint8Array(size);
   const member = new Uint8Array(size);
@@ -548,10 +629,7 @@ function healExemplar(
   for (const p of component.pixels) member[p] = 1;
   const work = new Uint8ClampedArray(image.data);
 
-  const searchRadius = Math.min(
-    HEAL_EXEMPLAR_SEARCH_MAX,
-    Math.max(HEAL_EXEMPLAR_SEARCH_MIN, maxDim * 2),
-  );
+  const searchRadius = exemplarRadius(maxDim, tuning);
   // Sobel luma gradients over the expanded bbox, computed once from the
   // original pixels. BT.601 luma matches the repo's grayscaleReference.
   // matchMag covers the whole donor search area so texture matching can
@@ -632,6 +710,7 @@ function healExemplar(
 
   // Each iteration fills at least the target center, so this terminates; a
   // missing donor (hole bigger than its clean surround) leaves the rest.
+  let filled = 0;
   for (let iter = 0; iter < component.pixels.length; iter += 1) {
     let target = -1;
     let bestPri = -1;
@@ -651,7 +730,7 @@ function healExemplar(
     if (target < 0) break;
     const tx = target % width;
     const ty = (target - tx) / width;
-    const donor = findPatchDonor(state, image, mask, sat, maxDim, tx, ty);
+    const donor = findPatchDonor(state, image, mask, sat, maxDim, tx, ty, tuning);
     if (!donor) break;
     // Verbatim copy, no per-patch light shift: the same donor reused across
     // patches with slightly different shifts tiles into visible quilting
@@ -671,8 +750,10 @@ function healExemplar(
         work[wi + 2] = image.data[qi + 2] ?? 0;
         known[q] = 1;
         conf[q] = bestConf;
+        filled += 1;
       }
     }
+    onStep?.(filled, component.pixels.length);
   }
   for (const p of component.pixels) {
     const oi = p * 4;
@@ -682,13 +763,65 @@ function healExemplar(
   }
 }
 
+interface HealCrop {
+  x0: number;
+  y0: number;
+  image: PixelImage;
+  mask: RepairMask;
+  component: HealComponent;
+  sat: Uint32Array;
+}
+
+/**
+ * Crop one component to its working region: the component bbox expanded by
+ * `expansion` pixels, clamped to the image. The component is translated into
+ * crop coordinates. Expansion must cover every donor the fill can reach —
+ * see the margin notes at the call sites — so the cropped run is exact.
+ */
+function cropComponent(image: PixelImage, mask: RepairMask, component: HealComponent, expansion: number): HealCrop {
+  const x0 = Math.max(0, component.minX - expansion);
+  const y0 = Math.max(0, component.minY - expansion);
+  const x1 = Math.min(image.width - 1, component.maxX + expansion);
+  const y1 = Math.min(image.height - 1, component.maxY + expansion);
+  const width = x1 - x0 + 1;
+  const height = y1 - y0 + 1;
+  const data = new Uint8ClampedArray(width * height * 4);
+  const maskData = new Uint8ClampedArray(width * height);
+  for (let y = 0; y < height; y += 1) {
+    const srcRow = (y + y0) * image.width + x0;
+    data.set(image.data.subarray(srcRow * 4, (srcRow + width) * 4), y * width * 4);
+    maskData.set(mask.data.subarray(srcRow, srcRow + width), y * width);
+  }
+  const cropImage: PixelImage = { width, height, data };
+  const cropMask: RepairMask = { width, height, data: maskData };
+  const pixels = component.pixels.map((p) => {
+    const x = p % image.width;
+    const y = (p - x) / image.width;
+    return (y - y0) * width + (x - x0);
+  });
+  const translated: HealComponent = {
+    pixels,
+    minX: component.minX - x0,
+    minY: component.minY - y0,
+    maxX: component.maxX - x0,
+    maxY: component.maxY - y0,
+  };
+  return { x0, y0, image: cropImage, mask: cropMask, component: translated, sat: maskIntegral(cropMask) };
+}
+
 /**
  * Reconstruct masked regions by transplanting donor texture adapted to local
  * light. Returns a fresh buffer; inputs are never mutated. Unmasked pixels
  * (including alpha) pass through bit-exact, and alpha always comes from the
  * source. Components without a qualifying donor keep their source pixels.
+ *
+ * Options: `quality` selects the donor search budgets (`balanced` is the
+ * default and reproduces the original output exactly); `onProgress` receives
+ * nondecreasing fractions in [0, 1] with stage labels, ending in exactly
+ * (1, "Done"). No progress calls are made when the mask is empty. Unknown
+ * quality values throw RangeError, like every other contract violation here.
  */
-export function healRepair(image: PixelImage, mask: RepairMask): PixelImage {
+export function healRepair(image: PixelImage, mask: RepairMask, options: HealOptions = {}): PixelImage {
   assertValidImage(image);
   assertValidMask(mask);
   if (image.width !== mask.width || image.height !== mask.height) {
@@ -697,17 +830,72 @@ export function healRepair(image: PixelImage, mask: RepairMask): PixelImage {
         `and mask ${mask.width}x${mask.height}.`,
     );
   }
+  const quality = options.quality ?? HEAL_DEFAULT_QUALITY;
+  const tuning = HEAL_TUNING[quality];
+  if (!tuning) {
+    throw new RangeError(`Unknown heal quality: ${String(quality)}. Expected "fast", "balanced", or "best".`);
+  }
+  const onProgress = options.onProgress;
   const out = new Uint8ClampedArray(image.data);
   const components = findComponents(mask);
   if (components.length === 0) return { width: image.width, height: image.height, data: out };
-  const sat = maskIntegral(mask);
-  for (const component of components) {
+  const total = components.reduce((sum, component) => sum + component.pixels.length, 0);
+  let done = 0;
+  components.forEach((component, index) => {
+    const stage = `Healing ${index + 1}/${components.length}`;
+    onProgress?.(done / total, stage);
     const maxDim = Math.max(component.maxX - component.minX + 1, component.maxY - component.minY + 1);
     if (maxDim <= HEAL_SINGLE_OFFSET_MAX_DIM) {
-      healSingleOffset(image, mask, sat, component, out);
+      // Donor bboxes shift the component bbox by at most the search radius,
+      // and shifted ring taps reach one ring band beyond that.
+      const expansion =
+        singleOffsetRadius(maxDim, tuning) + HEAL_RING_GAP + HEAL_RING_WIDTH_MAX;
+      const crop = cropComponent(image, mask, component, expansion);
+      const cropOut = new Uint8ClampedArray(crop.image.data);
+      healSingleOffset(crop.image, crop.mask, crop.sat, crop.component, cropOut, tuning);
+      scatterCrop(crop, component, image.width, cropOut, out);
     } else {
-      healExemplar(image, mask, sat, component, out);
+      // Donor patches reach the search radius plus one patch half-size from
+      // the component; +2 keeps every Sobel tap off the crop edge.
+      const expansion =
+        exemplarRadius(maxDim, tuning) +
+        exemplarPatchRadius(maxDim, image.width, image.height) +
+        2;
+      const crop = cropComponent(image, mask, component, expansion);
+      const cropOut = new Uint8ClampedArray(crop.image.data);
+      const base = done;
+      const span = component.pixels.length;
+      healExemplar(crop.image, crop.mask, crop.sat, crop.component, cropOut, tuning, (filled, count) => {
+        onProgress?.((base + (filled / count) * span) / total, stage);
+      });
+      scatterCrop(crop, component, image.width, cropOut, out);
     }
-  }
+    done += component.pixels.length;
+  });
+  onProgress?.(1, "Done");
   return { width: image.width, height: image.height, data: out };
+}
+
+/**
+ * Copy healed component pixels from the crop buffer back to the full-image
+ * output. Unfilled pixels carry source values in both buffers, so copying
+ * every member pixel is exact whether or not a donor was found.
+ */
+function scatterCrop(
+  crop: HealCrop,
+  component: HealComponent,
+  fullWidth: number,
+  cropOut: Uint8ClampedArray,
+  out: Uint8ClampedArray,
+): void {
+  const { x0, y0, image } = crop;
+  for (const p of component.pixels) {
+    const x = p % fullWidth;
+    const y = (p - x) / fullWidth;
+    const qi = ((y - y0) * image.width + (x - x0)) * 4;
+    const oi = p * 4;
+    out[oi] = cropOut[qi] ?? 0;
+    out[oi + 1] = cropOut[qi + 1] ?? 0;
+    out[oi + 2] = cropOut[qi + 2] ?? 0;
+  }
 }

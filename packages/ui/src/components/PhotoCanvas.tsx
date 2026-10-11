@@ -36,6 +36,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const points = useRef<RetouchPoint[]>([]);
   const cloneSource = useRef<{ x: number; y: number } | null>(null);
   const cloneStart = useRef<{ x: number; y: number } | null>(null);
+  const lastStamp = useRef<{ x: number; y: number } | null>(null);
   const repairGeneration = useRef(0);
   const inpaintRun = useRef<RunInpaint | null>(null);
   inpaintRun.current = inpaintRepair?.run ?? null;
@@ -121,25 +122,63 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       }
     }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setLoading(false); } });
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
-  }, [photo.src, edit, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.status]);
+  }, [photo.src, edit, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.status]);
 
   const fitWidth = Math.max(100, Math.min(stageSize.width - 64, (stageSize.height - 48) * aspect));
   const frameWidth = fitWidth * zoom;
 
-  const position = (event: ReactPointerEvent) => {
+  const positionFromClient = (clientX: number, clientY: number) => {
     const rect = frameRef.current!.getBoundingClientRect();
-    return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) };
+    return { x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)) };
   };
 
-  const paint = (event: ReactPointerEvent) => {
-    const point = position(event);
-    if (tool === 'clone' && (!cloneSource.current || !cloneStart.current)) return;
-    const next: RetouchPoint = { ...point, size: brushSize / 800, strength: brushStrength, kind: tool === 'clone' ? 'clone' : 'repair' };
+  const position = (event: ReactPointerEvent) => positionFromClient(event.clientX, event.clientY);
+
+  /** Pen pressure shrinks the stamp; mouse and touch always paint full size. */
+  const stampSize = (native: { pointerType?: string; pressure?: number }) => {
+    const base = brushSize / 800;
+    if (native.pointerType === 'pen' && typeof native.pressure === 'number' && native.pressure > 0) {
+      return base * (0.4 + 0.6 * Math.min(1, native.pressure));
+    }
+    return base;
+  };
+
+  const stampAt = (point: { x: number; y: number }, size: number) => {
+    const next: RetouchPoint = { ...point, size, strength: brushStrength, kind: tool === 'clone' ? 'clone' : 'repair' };
     if (tool === 'clone' && cloneSource.current && cloneStart.current) {
       next.sourceX = Math.max(0, Math.min(1, cloneSource.current.x + point.x - cloneStart.current.x));
       next.sourceY = Math.max(0, Math.min(1, cloneSource.current.y + point.y - cloneStart.current.y));
     }
     points.current = [...points.current, next];
+  };
+
+  const paint = (event: ReactPointerEvent) => {
+    if (tool === 'clone' && (!cloneSource.current || !cloneStart.current)) return;
+    // Coalesced events recover the pointer positions the browser merged
+    // between frames, so fast strokes stay continuous.
+    const native = event.nativeEvent as PointerEvent & { getCoalescedEvents?: () => PointerEvent[] };
+    const samples = native.getCoalescedEvents && native.getCoalescedEvents().length
+      ? native.getCoalescedEvents()
+      : [native];
+    for (const sample of samples) {
+      const point = positionFromClient(sample.clientX, sample.clientY);
+      const size = stampSize(sample);
+      // Interpolate between stamps so discs always overlap: without this,
+      // fast drags leave dotted gaps the mask rasterizer keeps.
+      const last = lastStamp.current;
+      const spacing = Math.max(1e-4, size / 2);
+      if (last) {
+        const dist = Math.hypot(point.x - last.x, point.y - last.y);
+        const steps = Math.max(1, Math.min(64, Math.ceil(dist / spacing)));
+        for (let i = 1; i <= steps; i += 1) {
+          const t = i / steps;
+          stampAt({ x: last.x + (point.x - last.x) * t, y: last.y + (point.y - last.y) * t }, size);
+        }
+      } else {
+        stampAt(point, size);
+      }
+      lastStamp.current = point;
+    }
     onChange({ retouches: points.current }, 'retouch-stroke');
   };
 
@@ -149,6 +188,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     points.current = [...edit.retouches];
     painting.current = true;
     cloneStart.current = position(event);
+    lastStamp.current = null;
     event.currentTarget.setPointerCapture(event.pointerId);
     paint(event);
   };

@@ -6,6 +6,7 @@
 // unchanged.
 
 import { assertValidImage, type PixelImage } from "./analyze.js";
+import type { HealQuality } from "./heal.js";
 import { assertValidMask, type InpaintMethod, type RepairMask } from "./inpaint.js";
 
 export type VisionRequestId = number;
@@ -45,6 +46,11 @@ export interface InpaintRequest {
   /** cv.inpaint neighbourhood radius in pixels. */
   radius: number;
   method: InpaintMethod;
+  /**
+   * Heal effort preset. Only the heal method reads it (diffusion ignores
+   * it); absent means "balanced".
+   */
+  quality?: HealQuality;
 }
 
 export type VisionWorkerRequest = PingRequest | GrayscaleRequest | StraightenRequest | InpaintRequest;
@@ -83,6 +89,19 @@ export interface InpaintResponse {
   data: Uint8ClampedArray;
 }
 
+/**
+ * Progress emitted while an inpaint job runs. Shares the request id; any
+ * number may precede the terminal inpaint/error response.
+ */
+export interface InpaintProgressResponse {
+  id: VisionRequestId;
+  kind: "inpaint-progress";
+  /** Completed fraction, 0..1. */
+  fraction: number;
+  /** Human-readable stage, e.g. "Healing 2/5". */
+  stage: string;
+}
+
 export interface VisionErrorResponse {
   id: VisionRequestId;
   kind: "error";
@@ -94,6 +113,7 @@ export type VisionWorkerResponse =
   | GrayscaleResponse
   | StraightenResponse
   | InpaintResponse
+  | InpaintProgressResponse
   | VisionErrorResponse;
 
 export function createPingRequest(id: VisionRequestId): PingRequest {
@@ -116,6 +136,7 @@ export function createInpaintRequest(
   mask: RepairMask,
   radius: number,
   method: InpaintMethod,
+  quality?: HealQuality,
 ): InpaintRequest {
   assertValidImage(image);
   assertValidMask(mask);
@@ -130,6 +151,9 @@ export function createInpaintRequest(
   if (method !== "telea" && method !== "ns" && method !== "heal") {
     throw new RangeError(`Unknown inpaint method: ${String(method)}.`);
   }
+  if (quality !== undefined && quality !== "fast" && quality !== "balanced" && quality !== "best") {
+    throw new RangeError(`Unknown heal quality: ${String(quality)}.`);
+  }
   return {
     id,
     kind: "inpaint",
@@ -139,6 +163,7 @@ export function createInpaintRequest(
     mask: mask.data,
     radius,
     method,
+    ...(quality === undefined ? {} : { quality }),
   };
 }
 
@@ -179,7 +204,11 @@ export function isVisionWorkerRequest(value: unknown): value is VisionWorkerRequ
       isImageRequest(value) &&
       isPixelBuffer(value.mask, (value.width as number) * (value.height as number)) &&
       isPositiveNumber(value.radius) &&
-      (value.method === "telea" || value.method === "ns" || value.method === "heal")
+      (value.method === "telea" || value.method === "ns" || value.method === "heal") &&
+      (value.quality === undefined ||
+        value.quality === "fast" ||
+        value.quality === "balanced" ||
+        value.quality === "best")
     );
   }
   return false;
@@ -210,6 +239,15 @@ export function isVisionWorkerResponse(value: unknown): value is VisionWorkerRes
       isPositiveInt(value.width) &&
       isPositiveInt(value.height) &&
       isPixelBuffer(value.data, (value.width as number) * (value.height as number) * 4)
+    );
+  }
+  if (value.kind === "inpaint-progress") {
+    return (
+      typeof value.fraction === "number" &&
+      Number.isFinite(value.fraction) &&
+      (value.fraction as number) >= 0 &&
+      (value.fraction as number) <= 1 &&
+      typeof value.stage === "string"
     );
   }
   if (value.kind === "error") return typeof value.message === "string";

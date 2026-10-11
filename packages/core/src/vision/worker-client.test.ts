@@ -165,7 +165,93 @@ describe("VisionWorkerClient", () => {
     );
     await expect(client.inpaint(image, mask, 0, "telea")).rejects.toThrow(RangeError);
     await expect(client.inpaint(image, mask, 3, "patchmatch" as never)).rejects.toThrow(RangeError);
+    await expect(client.inpaint(image, mask, 3, "heal", { quality: "ultra" as never })).rejects.toThrow(
+      RangeError,
+    );
     expect(ports).toHaveLength(0);
+  });
+
+  it("sends the heal quality through to the worker", async () => {
+    const { client, ports } = setup();
+    const ready = client.ensureReady();
+    ports[0]?.emit({ id: 1, kind: "pong", version: "5.0.0" });
+    await ready;
+    const pending = client.inpaint(
+      solidColor(8, 6, 10, 20, 30),
+      { width: 8, height: 6, data: new Uint8ClampedArray(8 * 6) },
+      3,
+      "heal",
+      { quality: "best" },
+    );
+    await tick();
+    expect(ports[0]?.sent[1]).toMatchObject({ id: 2, kind: "inpaint", method: "heal", quality: "best" });
+    ports[0]?.emit({ id: 2, kind: "inpaint", width: 8, height: 6, data: new Uint8ClampedArray(8 * 6 * 4) });
+    await pending;
+  });
+
+  it("routes inpaint progress to the subscriber without resolving", async () => {
+    const { client, ports } = setup();
+    const ready = client.ensureReady();
+    ports[0]?.emit({ id: 1, kind: "pong", version: "5.0.0" });
+    await ready;
+    const calls: Array<[number, string]> = [];
+    const pending = client.inpaint(
+      solidColor(8, 6, 10, 20, 30),
+      { width: 8, height: 6, data: new Uint8ClampedArray(8 * 6) },
+      3,
+      "heal",
+      { onProgress: (fraction, stage) => calls.push([fraction, stage]) },
+    );
+    await tick();
+    ports[0]?.emit({ id: 2, kind: "inpaint-progress", fraction: 0.25, stage: "Healing 1/2" });
+    ports[0]?.emit({ id: 2, kind: "inpaint-progress", fraction: 0.75, stage: "Healing 2/2" });
+    await tick();
+    expect(calls).toEqual([
+      [0.25, "Healing 1/2"],
+      [0.75, "Healing 2/2"],
+    ]);
+    // The call is still pending: only the terminal response resolves it.
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await tick();
+    expect(settled).toBe(false);
+    ports[0]?.emit({ id: 2, kind: "inpaint", width: 8, height: 6, data: new Uint8ClampedArray(8 * 6 * 4) });
+    await pending;
+    expect(settled).toBe(true);
+  });
+
+  it("ignores progress for calls without a subscriber and survives a throwing one", async () => {
+    const { client, ports } = setup();
+    const ready = client.ensureReady();
+    ports[0]?.emit({ id: 1, kind: "pong", version: "5.0.0" });
+    await ready;
+    const plain = client.inpaint(
+      solidColor(4, 4, 0, 0, 0),
+      { width: 4, height: 4, data: new Uint8ClampedArray(16) },
+      3,
+      "heal",
+    );
+    const throwing = client.inpaint(
+      solidColor(4, 4, 0, 0, 0),
+      { width: 4, height: 4, data: new Uint8ClampedArray(16) },
+      3,
+      "heal",
+      {
+        onProgress: () => {
+          throw new Error("subscriber boom");
+        },
+      },
+    );
+    await tick();
+    ports[0]?.emit({ id: 2, kind: "inpaint-progress", fraction: 0.5, stage: "Healing" });
+    ports[0]?.emit({ id: 3, kind: "inpaint-progress", fraction: 0.5, stage: "Healing" });
+    ports[0]?.emit({ id: 2, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64) });
+    ports[0]?.emit({ id: 3, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64) });
+    await plain;
+    await throwing;
+    expect(client.status).toBe("ready");
   });
 
   it("fails when the worker answers ping with an error", async () => {

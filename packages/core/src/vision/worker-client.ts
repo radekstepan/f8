@@ -7,6 +7,7 @@
 // ownership of their PixelImage data.
 
 import { assertValidImage, type PixelImage } from "./analyze.js";
+import type { HealProgress, HealQuality } from "./heal.js";
 import type { InpaintMethod, RepairMask } from "./inpaint.js";
 import { STRAIGHTEN_MAX_ANGLE } from "./straighten.js";
 import {
@@ -78,6 +79,14 @@ interface PendingCall {
   resolve: (response: VisionWorkerResponse) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  onProgress?: HealProgress;
+}
+
+export interface InpaintOptions {
+  /** Heal effort preset; omitted means "balanced". Diffusion ignores it. */
+  quality?: HealQuality;
+  /** Progress callback for heal jobs; diffusion jobs never report progress. */
+  onProgress?: HealProgress;
 }
 
 export class VisionWorkerClient {
@@ -163,27 +172,28 @@ export class VisionWorkerClient {
   }
 
   /**
-   * Reconstruct masked regions with cv.inpaint off the main thread. Runs at
-   * the caller's resolution (preview or export); callers composite the result
-   * back over the source, guided by the mask, and fall back to blur repair
-   * when the worker is unavailable.
+   * Reconstruct masked regions off the main thread (heal, Telea, or
+   * Navier-Stokes). Runs at the caller's resolution (preview or export);
+   * callers composite the result back over the source, guided by the mask,
+   * and fall back to blur repair when the worker is unavailable.
    */
   async inpaint(
     image: PixelImage,
     mask: RepairMask,
     radius: number,
     method: InpaintMethod,
+    options: InpaintOptions = {},
   ): Promise<InpaintResult> {
     // Built (and validated) up front so malformed input throws RangeError
     // before any worker contact, like the other ops.
     const id = this.nextId;
     this.nextId += 1;
-    const request = createInpaintRequest(id, image, mask, radius, method);
+    const request = createInpaintRequest(id, image, mask, radius, method, options.quality);
     if (this.statusValue === "failed") {
       throw new VisionWorkerError("Vision worker failed; call ensureReady() to retry.");
     }
     await this.ensureReady();
-    const response = (await this.send(request)) as InpaintResponse;
+    const response = (await this.send(request, options.onProgress)) as InpaintResponse;
     return { width: response.width, height: response.height, data: response.data };
   }
 
@@ -233,7 +243,7 @@ export class VisionWorkerClient {
     this.setStatus("failed");
   }
 
-  private send(request: VisionWorkerRequest): Promise<VisionWorkerResponse> {
+  private send(request: VisionWorkerRequest, onProgress?: HealProgress): Promise<VisionWorkerResponse> {
     const port = this.port;
     if (!port) return Promise.reject(new VisionWorkerError("Vision worker is not running."));
     return new Promise<VisionWorkerResponse>((resolve, reject) => {
@@ -241,7 +251,7 @@ export class VisionWorkerClient {
         this.pending.delete(request.id);
         reject(new VisionWorkerError(`Vision worker timed out after ${this.timeoutMs}ms.`));
       }, this.timeoutMs);
-      this.pending.set(request.id, { resolve, reject, timer });
+      this.pending.set(request.id, { resolve, reject, timer, onProgress });
       try {
         port.postMessage(request);
       } catch (error) {
@@ -257,6 +267,15 @@ export class VisionWorkerClient {
     if (!isVisionWorkerResponse(response)) return;
     const call = this.pending.get(response.id);
     if (!call) return;
+    if (response.kind === "inpaint-progress") {
+      // Non-terminal: report and keep waiting for the result.
+      try {
+        call.onProgress?.(response.fraction, response.stage);
+      } catch {
+        // A throwing progress subscriber must not break the pending call.
+      }
+      return;
+    }
     clearTimeout(call.timer);
     this.pending.delete(response.id);
     if (response.kind === "error") {

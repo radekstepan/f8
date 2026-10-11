@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PixelImage } from "./analyze.js";
 import { solidColor } from "./fixtures.js";
-import { HEAL_SINGLE_OFFSET_MAX_DIM, healRepair } from "./heal.js";
+import { HEAL_DEFAULT_QUALITY, HEAL_SINGLE_OFFSET_MAX_DIM, healRepair, type HealQuality } from "./heal.js";
 import type { RepairMask } from "./inpaint.js";
 
 /** Vertical 1px stripes: even columns 200, odd columns 60, fully opaque. */
@@ -298,6 +298,131 @@ describe("healRepair exemplar fill", () => {
       expect(out.data[i + 1]).toBe(image.data[i + 1]);
       expect(out.data[i + 2]).toBe(image.data[i + 2]);
       expect(out.data[i + 3]).toBe(image.data[i + 3]);
+    }
+  });
+});
+
+describe("healRepair quality", () => {
+  it("defaults to balanced", () => {
+    expect(HEAL_DEFAULT_QUALITY).toBe("balanced");
+  });
+
+  it("reproduces the default output exactly when balanced is explicit", () => {
+    const image = stripes(24, 24);
+    blemish(image, 10, 10, 12, 12);
+    const mask = rectMask(24, 24, 10, 10, 12, 12);
+    const implicit = healRepair(image, mask);
+    const explicit = healRepair(image, mask, { quality: "balanced" });
+    expect(Array.from(explicit.data)).toEqual(Array.from(implicit.data));
+  });
+
+  it.each(["fast", "balanced", "best"] as const)("heals a small blemish exactly on %s", (quality: HealQuality) => {
+    const image = stripes(24, 24);
+    blemish(image, 10, 10, 12, 12);
+    const out = healRepair(image, rectMask(24, 24, 10, 10, 12, 12), { quality });
+    for (let y = 10; y <= 12; y += 1) {
+      for (let x = 10; x <= 12; x += 1) {
+        const v = x % 2 === 0 ? 200 : 60;
+        expect(channel(out, x, y)).toEqual([v, v, v, 255]);
+      }
+    }
+  });
+
+  it.each(["fast", "best"] as const)("stays valid and deterministic on large holes (%s)", (quality: HealQuality) => {
+    const image = halves(96, 64);
+    blemish(image, 34, 18, 61, 45);
+    const mask = rectMask(96, 64, 34, 18, 61, 45);
+    const first = healRepair(image, mask, { quality });
+    const second = healRepair(image, mask, { quality });
+    expect(first.width).toBe(96);
+    expect(first.height).toBe(64);
+    expect(Array.from(first.data)).toEqual(Array.from(second.data));
+    // Verbatim donor copies: every filled pixel is exactly one side or the
+    // other, never a blend and never the dark blemish left behind.
+    for (let y = 18; y <= 45; y += 1) {
+      for (let x = 34; x <= 61; x += 1) {
+        const [r, g, b, a] = channel(first, x, y);
+        expect([r, g, b].every((v) => v === 200 || v === 60)).toBe(true);
+        expect(a).toBe(255);
+      }
+    }
+  });
+
+  it("rejects unknown qualities", () => {
+    const image = stripes(16, 16);
+    const mask = rectMask(16, 16, 7, 7, 9, 9);
+    expect(() => healRepair(image, mask, { quality: "ultra" as never })).toThrow(RangeError);
+  });
+});
+
+describe("healRepair progress", () => {
+  it("reports (0, stage) then (1, Done) for a single-offset repair", () => {
+    const image = stripes(24, 24);
+    blemish(image, 10, 10, 12, 12);
+    const calls: Array<[number, string]> = [];
+    healRepair(image, rectMask(24, 24, 10, 10, 12, 12), {
+      onProgress: (fraction, stage) => calls.push([fraction, stage]),
+    });
+    expect(calls).toEqual([
+      [0, "Healing 1/1"],
+      [1, "Done"],
+    ]);
+  });
+
+  it("reports nondecreasing fractions ending in (1, Done) for exemplar fill", () => {
+    const image = halves(96, 64);
+    blemish(image, 34, 18, 61, 45);
+    const calls: Array<[number, string]> = [];
+    healRepair(image, rectMask(96, 64, 34, 18, 61, 45), {
+      onProgress: (fraction, stage) => calls.push([fraction, stage]),
+    });
+    expect(calls.length).toBeGreaterThan(2);
+    expect(calls[0]).toEqual([0, "Healing 1/1"]);
+    for (const [fraction, stage] of calls) {
+      expect(fraction).toBeGreaterThanOrEqual(0);
+      expect(fraction).toBeLessThanOrEqual(1);
+      expect(typeof stage).toBe("string");
+    }
+    for (let i = 1; i < calls.length; i += 1) {
+      expect(calls[i]?.[0] ?? 0).toBeGreaterThanOrEqual(calls[i - 1]?.[0] ?? 0);
+    }
+    expect(calls[calls.length - 1]).toEqual([1, "Done"]);
+  });
+
+  it("makes no progress calls for an empty mask", () => {
+    let count = 0;
+    healRepair(stripes(16, 16), { width: 16, height: 16, data: new Uint8ClampedArray(16 * 16) }, {
+      onProgress: () => {
+        count += 1;
+      },
+    });
+    expect(count).toBe(0);
+  });
+});
+
+describe("healRepair cropped working region", () => {
+  it("heals a blemish in the image corner where the crop clamps to the edge", () => {
+    const image = stripes(24, 24);
+    blemish(image, 0, 0, 2, 2);
+    const out = healRepair(image, rectMask(24, 24, 0, 0, 2, 2));
+    for (let y = 0; y <= 2; y += 1) {
+      for (let x = 0; x <= 2; x += 1) {
+        const v = x % 2 === 0 ? 200 : 60;
+        expect(channel(out, x, y)).toEqual([v, v, v, 255]);
+      }
+    }
+  });
+
+  it("fills an exemplar hole flush against the image edge", () => {
+    const image = halves(96, 64);
+    blemish(image, 0, 18, 27, 45);
+    const out = healRepair(image, rectMask(96, 64, 0, 18, 27, 45));
+    // The hole sits entirely in the left half: donors from the same half
+    // must rebuild it exactly, with no clamped-edge artifacts.
+    for (let y = 18; y <= 45; y += 1) {
+      for (let x = 0; x <= 27; x += 1) {
+        expect(channel(out, x, y)).toEqual([200, 200, 200, 255]);
+      }
     }
   });
 });

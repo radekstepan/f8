@@ -94,10 +94,24 @@ describe("createInpaintRequest", () => {
     expect(createInpaintRequest(2, image, testMask(4, 4), 3, "heal").method).toBe("heal");
   });
 
+  it("carries an explicit heal quality and omits the key otherwise", () => {
+    const image = solidColor(4, 4, 0, 0, 0);
+    const mask = testMask(4, 4);
+    expect(createInpaintRequest(2, image, mask, 3, "heal", "best")).toMatchObject({ quality: "best" });
+    expect("quality" in createInpaintRequest(2, image, mask, 3, "heal")).toBe(false);
+  });
+
   it("rejects unknown methods", () => {
     expect(() =>
       createInpaintRequest(1, solidColor(4, 4, 0, 0, 0), testMask(4, 4), 3, "patchmatch" as never),
     ).toThrow(RangeError);
+  });
+
+  it("rejects unknown qualities", () => {
+    const image = solidColor(4, 4, 0, 0, 0);
+    expect(() => createInpaintRequest(1, image, testMask(4, 4), 3, "heal", "ultra" as never)).toThrow(
+      RangeError,
+    );
   });
 });
 
@@ -160,6 +174,22 @@ describe("isVisionWorkerRequest", () => {
     ).toBe(true);
   });
 
+  it.each(["fast", "balanced", "best"] as const)("accepts the %s heal quality", (quality) => {
+    expect(
+      isVisionWorkerRequest({
+        id: 4,
+        kind: "inpaint",
+        width: 8,
+        height: 6,
+        data: new Uint8ClampedArray(8 * 6 * 4),
+        mask: new Uint8ClampedArray(8 * 6),
+        radius: 3,
+        method: "heal",
+        quality,
+      }),
+    ).toBe(true);
+  });
+
   it.each([
     ["null", null],
     ["string", "ping"],
@@ -183,13 +213,14 @@ describe("isVisionWorkerRequest", () => {
     ["inpaint with NaN radius", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64), mask: new Uint8ClampedArray(16), radius: NaN, method: "telea" }],
     ["inpaint without method", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64), mask: new Uint8ClampedArray(16), radius: 3 }],
     ["inpaint with unknown method", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64), mask: new Uint8ClampedArray(16), radius: 3, method: "patchmatch" }],
+    ["inpaint with unknown quality", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64), mask: new Uint8ClampedArray(16), radius: 3, method: "heal", quality: "ultra" }],
   ])("rejects %s", (_label, value) => {
     expect(isVisionWorkerRequest(value)).toBe(false);
   });
 });
 
 describe("isVisionWorkerResponse", () => {
-  it("accepts pong, grayscale, straighten, inpaint, and error responses", () => {
+  it("accepts pong, grayscale, straighten, inpaint, progress, and error responses", () => {
     expect(isVisionWorkerResponse({ id: 1, kind: "pong", version: "5.0.0" })).toBe(true);
     expect(
       isVisionWorkerResponse({ id: 2, kind: "grayscale", width: 4, height: 4, data: new Uint8ClampedArray(16) }),
@@ -197,6 +228,9 @@ describe("isVisionWorkerResponse", () => {
     expect(isVisionWorkerResponse({ id: 3, kind: "straighten", angle: -2.5, confidence: 0.8 })).toBe(true);
     expect(
       isVisionWorkerResponse({ id: 4, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(64) }),
+    ).toBe(true);
+    expect(
+      isVisionWorkerResponse({ id: 4, kind: "inpaint-progress", fraction: 0.5, stage: "Healing 1/2" }),
     ).toBe(true);
     expect(isVisionWorkerResponse({ id: 5, kind: "error", message: "boom" })).toBe(true);
   });
@@ -216,6 +250,11 @@ describe("isVisionWorkerResponse", () => {
     ["straighten with oversized confidence", { id: 1, kind: "straighten", angle: 1, confidence: 1.5 }],
     ["short inpaint buffer", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(63) }],
     ["single-channel inpaint buffer", { id: 1, kind: "inpaint", width: 4, height: 4, data: new Uint8ClampedArray(16) }],
+    ["progress without fraction", { id: 1, kind: "inpaint-progress", stage: "Healing" }],
+    ["progress with NaN fraction", { id: 1, kind: "inpaint-progress", fraction: NaN, stage: "Healing" }],
+    ["progress with negative fraction", { id: 1, kind: "inpaint-progress", fraction: -0.1, stage: "Healing" }],
+    ["progress with oversized fraction", { id: 1, kind: "inpaint-progress", fraction: 1.5, stage: "Healing" }],
+    ["progress without stage", { id: 1, kind: "inpaint-progress", fraction: 0.5 }],
   ])("rejects %s", (_label, value) => {
     expect(isVisionWorkerResponse(value)).toBe(false);
   });
