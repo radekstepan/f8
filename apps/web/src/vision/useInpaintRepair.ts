@@ -75,6 +75,35 @@ function isErrorStage(stage: string): boolean {
   return stage.startsWith("Model unavailable");
 }
 
+/** Tool prefs live in one localStorage object (see hooks/useToolPrefs); the
+ * repair hook reads its slice lazily and writes back on change. Adjust
+ * sliders are excluded by design — those persist per-photo on the server. */
+const PREFS_KEY = "photomator.tool-prefs-v1";
+
+function readPref<K extends "repairMethod" | "repairQuality" | "seamlessLight" | "featherPx", V>(
+  key: K,
+  fallback: V,
+): V {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return fallback;
+    const value = (JSON.parse(raw) as Record<string, unknown>)[key];
+    return (value === undefined ? fallback : value) as V;
+  } catch {
+    return fallback;
+  }
+}
+
+function writePrefs(patch: Record<string, unknown>): void {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    const current = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ ...current, ...patch }));
+  } catch {
+    /* Private mode / quota — prefs stay session-only. */
+  }
+}
+
 /**
  * Map one group's transport progress onto a serial multi-group job: the bar
  * advances monotonically across groups and only the last group may report
@@ -98,10 +127,10 @@ function mapAggregateProgress(
 
 export function useInpaintRepair(): InpaintRepairState {
   const [client] = useState(getVisionWorkerClient);
-  const [method, setMethod] = useState<InpaintMethod>(INPAINT_DEFAULT_METHOD);
-  const [quality, setQuality] = useState<HealQuality>(HEAL_DEFAULT_QUALITY);
-  const [seamlessLight, setSeamlessLight] = useState(false);
-  const [featherPx, setFeatherPx] = useState(BLEND_FEATHER_PX);
+  const [method, setMethod] = useState<InpaintMethod>(() => readPref("repairMethod", INPAINT_DEFAULT_METHOD));
+  const [quality, setQuality] = useState<HealQuality>(() => readPref("repairQuality", HEAL_DEFAULT_QUALITY));
+  const [seamlessLight, setSeamlessLight] = useState(() => readPref("seamlessLight", false));
+  const [featherPx, setFeatherPx] = useState(() => readPref("featherPx", BLEND_FEATHER_PX));
   const [status, setStatus] = useState<VisionWorkerStatus>(client.status);
   const [mlProgress, setMlProgress] = useState<MlProgress | null>(null);
   const [mlReady, setMlReady] = useState<MlReadyState | null>(null);
@@ -112,6 +141,10 @@ export function useInpaintRepair(): InpaintRepairState {
   const cancelledRef = useRef(false);
 
   useEffect(() => client.subscribe(setStatus), [client]);
+
+  useEffect(() => {
+    writePrefs({ repairMethod: method, repairQuality: quality, seamlessLight, featherPx });
+  }, [method, quality, seamlessLight, featherPx]);
 
   const record = useCallback(
     (fraction: number, stage: string, job: "heal" | "warmup", areas: number | null, qualityOverride?: HealQuality) => {

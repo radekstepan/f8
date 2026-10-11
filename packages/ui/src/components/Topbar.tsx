@@ -97,12 +97,14 @@ interface ToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   libraryView: boolean;
+  presetsOpen?: boolean;
   onTool: (tool: Tool) => void;
   onAction: (action: MenuAction) => void;
   onDialog: (dialog: DialogType) => void;
+  onTogglePresets?: () => void;
 }
 
-export function Toolbar({ collectionName, count, tool, enhanced, compare, canUndo, canRedo, libraryView, onTool, onAction, onDialog }: ToolbarProps) {
+export function Toolbar({ collectionName, count, tool, enhanced, compare, canUndo, canRedo, libraryView, presetsOpen, onTool, onAction, onDialog, onTogglePresets }: ToolbarProps) {
   const tools = [
     { id: 'enhance', label: 'Enhance', icon: Sparkles, active: enhanced },
     { id: 'repair', label: 'Repair', icon: Bandage, active: tool === 'repair' },
@@ -146,6 +148,7 @@ export function Toolbar({ collectionName, count, tool, enhanced, compare, canUnd
         </div>
       </div>
       <div className="toolbar-actions">
+        {onTogglePresets && <IconButton label={presetsOpen ? 'Hide presets' : 'Show presets'} active={presetsOpen} onClick={onTogglePresets}><SlidersHorizontal size={18} strokeWidth={1.6} /></IconButton>}
         <IconButton label="Compare with original (B)" active={compare} onClick={() => onAction('compare')}><Columns2 size={18} strokeWidth={1.6} /></IconButton>
         <IconButton label="Photo information (I)" onClick={() => onDialog('info')}><Info size={18} strokeWidth={1.6} /></IconButton>
         <button className="export-button" onClick={() => onDialog('export')}><Share size={15} /><span>Export</span></button>

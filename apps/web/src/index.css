@@ -151,6 +151,7 @@ img { display: block; }
 .cached-preview { display: block; width: 100%; height: 100%; position: absolute; inset: 0; pointer-events: none; }
 .photo-frame.is-loading .edited-canvas { opacity: .15; }
 .original-layer { position: absolute; inset: 0; pointer-events: none; }
+.edited-layer { position: absolute; inset: 0; pointer-events: none; }
 .photo-loading, .photo-error { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; position: absolute; inset: 0; background: #1a1a1d; color: #8e8e98; font-size: 11px; }
 .photo-error { padding: 30px; text-align: center; color: #aaaab3; line-height: 1.7; }
 .photo-error p { max-width: 320px; }
@@ -302,7 +303,6 @@ img { display: block; }
 .add-adjustment > svg:last-child { margin-left: auto; width: 12px; }
 .add-adjustment > svg:first-child { margin-right: auto; }
 .add-adjustment-menu { top: auto; bottom: calc(100% + 3px); right: 15px; left: 15px; }
-.inspector-footer > .primary-button { height: 27px; }
 
 .tool-inspector { padding: 0 20px 20px; }
 .tool-intro { text-align: center; padding: 31px 0 27px; }

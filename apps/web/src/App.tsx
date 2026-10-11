@@ -14,30 +14,50 @@ import { useVisionWorker } from './vision/useVisionWorker';
 import { useStraighten } from './vision/useStraighten';
 import { useInpaintRepair } from './vision/useInpaintRepair';
 import { FsBrowser } from './components/FsBrowser';
+import { readToolPrefs, TOOL_PREFS_KEY } from './hooks/useToolPrefs';
 
 const collectionTitles: Record<string, string> = { all: 'All Photos', favorites: 'Favorites', edited: 'Recently Edited', imports: 'Imports', landscapes: 'Landscapes', raw: 'RAW Photos' };
 
 type FolderDialog = { mode: 'import' } | { mode: 'locate'; photoId: string };
 
+const TOOLS: Tool[] = ['adjust', 'crop', 'repair', 'clone'];
+
+function initialPhotoId(): string {
+  try {
+    return new URLSearchParams(window.location.search).get('photo') || 'photo-1';
+  } catch {
+    return 'photo-1';
+  }
+}
+
+function initialTool(): Tool {
+  try {
+    const tool = new URLSearchParams(window.location.search).get('tool') as Tool | null;
+    return tool && TOOLS.includes(tool) ? tool : 'adjust';
+  } catch {
+    return 'adjust';
+  }
+}
+
 export default function App() {
   const library = useLibrary();
   const { photos, albums, customPresets } = library;
-  const [selectedId, setSelectedId] = useState('photo-1');
+  const [selectedId, setSelectedId] = useState(initialPhotoId);
   const [collection, setCollection] = useState('dolomites');
   const [search, setSearch] = useState('');
   const [view, setView] = useState<ViewMode>('editor');
-  const [tool, setTool] = useState<Tool>('adjust');
+  const [tool, setTool] = useState<Tool>(initialTool);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 1080);
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth > 760);
-  const [presetsOpen, setPresetsOpen] = useState(true);
-  const [filmstripOpen, setFilmstripOpen] = useState(true);
+  const [presetsOpen, setPresetsOpen] = useState(() => readToolPrefs().presetsOpen);
+  const [filmstripOpen, setFilmstripOpen] = useState(() => readToolPrefs().filmstripOpen);
   const [compare, setCompare] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [reversed, setReversed] = useState(false);
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
-  const [brushSize, setBrushSize] = useState(45);
-  const [brushStrength, setBrushStrength] = useState(100);
+  const [brushSize, setBrushSize] = useState(() => readToolPrefs().brushSize);
+  const [brushStrength, setBrushStrength] = useState(() => readToolPrefs().brushStrength);
   const [highlightStroke, setHighlightStroke] = useState<number | null>(null);
   const [clipboard, setClipboard] = useState<EditState | null>(null);
   const [dialog, setDialog] = useState<DialogType>(null);
@@ -71,6 +91,47 @@ export default function App() {
     // progress tick, which must not re-trigger the prefetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tool, inpaintRepair.method, inpaintRepair.warmup]);
+  // Persist tool preferences (brush, panels) across reloads. Adjust sliders
+  // are excluded by design — those persist per-photo on the server.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(TOOL_PREFS_KEY);
+      const current = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify({ ...current, brushSize, brushStrength, presetsOpen, filmstripOpen }));
+    } catch {
+      /* Private mode / quota — prefs stay session-only. */
+    }
+  }, [brushSize, brushStrength, presetsOpen, filmstripOpen]);
+  // Deep-link the open image + tool (?photo=<id>&tool=<name>) so a reload or
+  // shared URL restores them. View-only pointer: edits still live on the
+  // server. replaceState avoids spamming history on every filmstrip click.
+  const photoIdForUrl = photo?.id ?? selectedId;
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      params.set('photo', photoIdForUrl);
+      params.set('tool', tool);
+      window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+    } catch {
+      /* Non-browser / restricted context — URL stays as-is. */
+    }
+  }, [photoIdForUrl, tool]);
+  useEffect(() => {
+    const onPopState = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const nextPhoto = params.get('photo');
+        const nextTool = params.get('tool') as Tool | null;
+        if (nextTool && TOOLS.includes(nextTool)) setTool(nextTool);
+        if (nextPhoto) setSelectedId(nextPhoto);
+        setView('editor');
+      } catch {
+        /* Keep current state on malformed URLs. */
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
   const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
 
@@ -139,6 +200,22 @@ export default function App() {
     if (window.innerWidth < 760) setSidebarOpen(false);
     if (next !== 'adjust') { setCompare(false); setShowOriginal(false); }
   };
+
+  // Records the last-used crop ratio as a tool preference (per-photo crop
+  // state itself still lives on the server). Brush/repair prefs persist via
+  // the tool-prefs effect and useInpaintRepair; Adjust sliders are excluded.
+  const handleEditChange: typeof editor.change = useCallback((patch, mergeKey) => {
+    if (patch.cropRatio !== undefined) {
+      try {
+        const raw = localStorage.getItem(TOOL_PREFS_KEY);
+        const current = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify({ ...current, cropRatio: patch.cropRatio }));
+      } catch {
+        /* Private mode / quota — prefs stay session-only. */
+      }
+    }
+    editor.change(patch, mergeKey);
+  }, [editor]);
 
   const copyAdjustments = () => { setClipboard({ ...editor.edit, retouches: [] }); notify('Adjustments copied. Pick another photo to paste them.'); };
   const pasteAdjustments = () => {
@@ -337,7 +414,7 @@ export default function App() {
 
   return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${inspectorOpen ? 'has-inspector' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importFiles(event.dataTransfer.files); }}>
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
-    <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} onTool={selectTool} onAction={handleAction} onDialog={setDialog} />
+    <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} presetsOpen={presetsOpen} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
       {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} editedCount={photos.filter((item) => item.edited).length} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} />}
       <main className="editor-column">
@@ -386,10 +463,9 @@ export default function App() {
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss }}
         repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, mlReady: inpaintRepair.mlReady, mlEngine: inpaintRepair.mlEngine, mlWarming: inpaintRepair.mlWarming, onCancelHeal: inpaintRepair.cancelHeal, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
-        onChange={editor.change} onTool={selectTool} onReset={() => handleAction('reset')}
+        onChange={handleEditChange} onTool={selectTool} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
-        onApplyCrop={() => { setTool('adjust'); notify('Composition updated. You can change it again at any time.'); }}
         onClose={() => setInspectorOpen(false)}
       />}
     </div>

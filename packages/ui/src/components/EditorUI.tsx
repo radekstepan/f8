@@ -52,6 +52,7 @@ export function RangeControl({ label, value, min = -100, max = 100, step = 1, de
   const displayed = String(Number(value.toFixed(digits)));
   const progress = (value - min) / (max - min) * 100;
   const center = (defaultValue - min) / (max - min) * 100;
+  const showOrigin = !color && center >= 0 && center <= 100;
   const style = { '--range-progress': `${progress}%`, '--range-center': `${center}%` } as CSSProperties;
   return (
     <div className={`range-control ${disabled ? 'is-disabled' : ''}`} {...(testId ? { 'data-testid': testId } : {})}>
@@ -87,7 +88,7 @@ export function RangeControl({ label, value, min = -100, max = 100, step = 1, de
         </div>
       </div>
       <div className={`range-track ${color ? `range-${color}` : ''}`} style={style}>
-        {!color && <span className="range-origin" />}
+        {showOrigin && <span className="range-origin" />}
         <input id={id} type="range" min={min} max={max} step={step} value={value} disabled={disabled} title={`Double-click to reset ${label.toLowerCase()}`} onDoubleClick={() => onChange(defaultValue)} onChange={(event) => onChange(Number(event.target.value))} />
       </div>
     </div>
