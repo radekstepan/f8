@@ -1,8 +1,9 @@
-// Histogram-based auto-enhance: pure functions mapping pixel data to an
-// EditState patch. No DOM access; safe in Node tests, workers, and UI.
+// Histogram-based automatic adjustments: pure functions mapping pixel data
+// to EditState patches. No DOM access; safe in Node tests, workers, and UI.
 //
-// The patch only ever carries exposure, contrast, temperature, tint, and
-// saturation. Geometry and retouch fields are owned by the caller.
+// computeAutoEnhance carries exposure, contrast, temperature, tint, and
+// saturation; the per-section helpers carry their section's fields only.
+// Geometry and retouch fields are owned by the caller.
 
 import type { EditState } from "../types.js";
 import { assertValidImage, channelMeans, type PixelImage } from "./analyze.js";
@@ -140,12 +141,15 @@ export function meanSaturation(image: PixelImage): number {
 
 const TEMPERATURE_NEUTRAL = 5500;
 
+export type WhiteBalanceAutoPatch = Pick<EditState, "temperature" | "tint">;
+export type LightnessAutoPatch = Pick<EditState, "exposure" | "contrast" | "highlights" | "shadows">;
+
 /**
- * Derive the auto-enhance patch from pixel data. Warm casts cool the
- * temperature, green casts push tint negative (toward magenta), flat
- * tonal ranges gain contrast, and muted colors gain saturation.
+ * Derive the White Balance section's Auto values from pixel data. Warm
+ * casts cool the temperature, green casts push tint negative (toward
+ * magenta). Near-neutral images stay at the neutral defaults.
  */
-export function computeAutoEnhance(image: PixelImage): AutoEnhancePatch {
+export function computeWhiteBalanceAuto(image: PixelImage): WhiteBalanceAutoPatch {
   assertValidImage(image);
   const { r, g, b } = channelMeans(image);
   const gray = (r + g + b) / 3;
@@ -162,11 +166,47 @@ export function computeAutoEnhance(image: PixelImage): AutoEnhancePatch {
       tint = Math.round(Math.min(100, Math.max(-100, -greenCast * 80)));
     }
   }
+  return { temperature, tint };
+}
 
+/**
+ * Derive the Lightness section's Auto values from pixel data. Exposure
+ * aims mean luminance at mid-gray, flat tonal ranges gain contrast,
+ * clipped whites (over 2% of pixels at luminance 252+) are recovered
+ * with negative highlights, and crushed blacks (over 2% at luminance
+ * 3 or below) are lifted with positive shadows. Balanced images stay
+ * near zero.
+ */
+export function computeLightnessAuto(image: PixelImage): LightnessAutoPatch {
+  assertValidImage(image);
   const { black, white } = blackWhitePoints(image);
   const spread = white - black;
   let contrast = Math.round(Math.min(1, Math.max(0, (190 - spread) / 190)) * 45);
   if (contrast < 3) contrast = 0;
+
+  const { luminance } = channelHistograms(image);
+  const total = image.width * image.height;
+  let atWhite = 0;
+  let atBlack = 0;
+  for (let bin = 252; bin < 256; bin += 1) atWhite += luminance[bin] ?? 0;
+  for (let bin = 0; bin <= 3; bin += 1) atBlack += luminance[bin] ?? 0;
+  const whiteFraction = atWhite / total;
+  const blackFraction = atBlack / total;
+  const highlights = whiteFraction > 0.02 ? -Math.round(Math.min(1, whiteFraction / 0.25) * 40) : 0;
+  const shadows = blackFraction > 0.02 ? Math.round(Math.min(1, blackFraction / 0.25) * 30) : 0;
+
+  return { exposure: estimateExposureShift(image), contrast, highlights, shadows };
+}
+
+/**
+ * Derive the auto-enhance patch from pixel data. Warm casts cool the
+ * temperature, green casts push tint negative (toward magenta), flat
+ * tonal ranges gain contrast, and muted colors gain saturation.
+ */
+export function computeAutoEnhance(image: PixelImage): AutoEnhancePatch {
+  assertValidImage(image);
+  const { temperature, tint } = computeWhiteBalanceAuto(image);
+  const { exposure, contrast } = computeLightnessAuto(image);
 
   const saturationRaw = meanSaturation(image);
   let saturation = 0;
@@ -175,5 +215,5 @@ export function computeAutoEnhance(image: PixelImage): AutoEnhancePatch {
     if (saturation < 3) saturation = 0;
   }
 
-  return { exposure: estimateExposureShift(image), contrast, temperature, tint, saturation };
+  return { exposure, contrast, temperature, tint, saturation };
 }

@@ -4,6 +4,8 @@ import {
   blackWhitePoints,
   channelHistograms,
   computeAutoEnhance,
+  computeLightnessAuto,
+  computeWhiteBalanceAuto,
   estimateExposureShift,
   grayWorldGains,
   meanSaturation,
@@ -91,6 +93,58 @@ describe("meanSaturation", () => {
   it("is zero for gray and rises with colorfulness", () => {
     expect(meanSaturation(solidColor(8, 8, 100, 100, 100))).toBe(0);
     expect(meanSaturation(solidColor(8, 8, 200, 100, 100))).toBeCloseTo(0.5, 10);
+  });
+});
+
+describe("computeWhiteBalanceAuto", () => {
+  it("carries only the white-balance fields", () => {
+    expect(Object.keys(computeWhiteBalanceAuto(solidColor(8, 8, 100, 100, 100))).sort()).toEqual(["temperature", "tint"]);
+  });
+
+  it("cools a strongly warm cast", () => {
+    const patch = computeWhiteBalanceAuto(solidColor(32, 32, 180, 120, 80));
+    expect(patch.temperature).toBeLessThan(5500);
+  });
+
+  it("pushes tint against a green cast", () => {
+    const patch = computeWhiteBalanceAuto(solidColor(32, 32, 100, 180, 100));
+    expect(patch.tint).toBeLessThan(0);
+  });
+
+  it("stays neutral for a mid-gray image", () => {
+    expect(computeWhiteBalanceAuto(horizontalGradient(256, 4))).toEqual({ temperature: 5500, tint: 0 });
+  });
+});
+
+describe("computeLightnessAuto", () => {
+  it("carries only the lightness fields", () => {
+    expect(Object.keys(computeLightnessAuto(solidColor(8, 8, 100, 100, 100))).sort()).toEqual(
+      ["contrast", "exposure", "highlights", "shadows"],
+    );
+  });
+
+  it("brightens a dark image", () => {
+    const patch = computeLightnessAuto(solidColor(32, 32, 30, 28, 26));
+    expect(patch.exposure).toBeGreaterThan(0);
+  });
+
+  it("recovers near-clipped whites with negative highlights", () => {
+    const patch = computeLightnessAuto(solidColor(32, 32, 255, 252, 250));
+    expect(patch.highlights).toBeLessThan(0);
+  });
+
+  it("lifts crushed blacks with positive shadows", () => {
+    const patch = computeLightnessAuto(solidColor(32, 32, 2, 2, 2));
+    expect(patch.shadows).toBeGreaterThan(0);
+  });
+
+  it("stays near-neutral for a balanced image", () => {
+    expect(computeLightnessAuto(horizontalGradient(256, 4))).toEqual({
+      exposure: 0,
+      contrast: 0,
+      highlights: 0,
+      shadows: 0,
+    });
   });
 });
 

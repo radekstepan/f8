@@ -102,10 +102,10 @@ Clear the `photomator-demo-` local-storage entries to restore the original sampl
 
 ## Demo Boundaries
 
-- The ML-labeled Enhance control applies an illustrative preset; no machine-learning model is included.
+- The Enhance control and per-section Auto buttons apply histogram-based adjustments; no machine-learning model is included.
 - Color adjustments are lightweight browser-filter approximations, not a color-managed RAW engine. Tone, clarity, and sharpness are simplified contrast mappings.
 - Repair reconstructs masked regions with OpenCV inpainting (Telea or Navier-Stokes) in a worker, falling back to a local blur when the vision engine is unavailable. Clone copies pixels from a source region.
-- Crop supports centered ratios rather than a freely movable crop rectangle. The corner marks are framing guides.
+- Crop supports centered ratios rather than a freely movable crop rectangle. The overlay is a rule-of-thirds framing guide.
 - Zoom percentages are relative to the fitted preview, not a one-to-one source-pixel scale.
 - Sample camera details are illustrative; importing a regular image does not parse EXIF data (RAW imports do read camera details from EXIF). Export does not embed the sample metadata.
 - Export never upscales beyond the available source resolution.

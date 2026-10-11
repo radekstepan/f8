@@ -84,17 +84,18 @@ export default function App() {
       if (search) return true;
       if (collection === 'all') return true;
       if (collection === 'favorites') return item.favorite;
-      if (collection === 'edited') return item.id === 'photo-1' || Boolean(editor.histories[item.id]);
+      if (collection === 'edited') return Boolean(editor.histories[item.id]);
       if (collection === 'imports') return item.id.startsWith('import-');
       if (collection === 'raw') return item.raw;
-      if (collection === 'landscapes') return !item.id.startsWith('import-');
+      if (collection === 'landscapes') return item.width > item.height;
       return item.albumId === collection;
     });
     if (search) {
       const query = search.toLowerCase();
       items = items.filter((item) => `${item.name} ${item.title} ${item.location} ${item.camera}`.toLowerCase().includes(query));
     }
-    return reversed ? [...items].reverse() : items;
+    const byDate = [...items].sort((a, b) => a.date.localeCompare(b.date));
+    return reversed ? byDate.reverse() : byDate;
   }, [photos, collection, search, reversed, editor.histories]);
 
   const selectPhoto = useCallback((id: string) => {
@@ -297,7 +298,7 @@ export default function App() {
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} onTool={selectTool} onAction={handleAction} onDialog={setDialog} />
     <div className="workspace">
-      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} editedCount={photos.filter((item) => item.id === 'photo-1' || Boolean(editor.histories[item.id])).length} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} />}
+      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} editedCount={photos.filter((item) => Boolean(editor.histories[item.id])).length} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} />}
       <main className="editor-column">
         {view === 'library' ? (
           <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} onSelect={selectPhoto} onFavorite={toggleFavorite} onImport={() => fileInput.current?.click()} />
@@ -331,7 +332,7 @@ export default function App() {
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss }}
         repairAssist={{ method: inpaintRepair.method, status: inpaintRepair.status, onMethodChange: inpaintRepair.setMethod }}
         onChange={editor.change} onTool={selectTool} onReset={() => handleAction('reset')}
-        onAuto={() => editor.autoEnhance(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
+        onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
         onApplyCrop={() => { setTool('adjust'); notify('Composition updated. You can change it again at any time.'); }}
         onClose={() => setInspectorOpen(false)}

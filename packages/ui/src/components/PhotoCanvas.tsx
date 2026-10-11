@@ -160,7 +160,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       {error && <div className="photo-error"><ImageOff size={28} /><p>{error}</p><button className="secondary-button" onClick={() => setRetry((value) => value + 1)}>Try again</button></div>}
       {compare && !showOriginal && !loading && <><span className="comparison-label original-label">Original</span><span className="comparison-label edited-label">Edited</span><div className="comparison-divider" role="slider" aria-label="Before and after comparison" aria-valuemin={2} aria-valuemax={98} aria-valuenow={Math.round(split)} tabIndex={0} style={{ left: `${split}%` }} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setSplit(Math.max(2, Math.min(98, position(event).x * 100))); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); setSplit((value) => Math.max(2, Math.min(98, value + (event.key === 'ArrowRight' ? 2 : -2)))); } }}><span><ChevronsLeftRight size={17} /></span></div></>}
       {showOriginal && <span className="comparison-label original-label">Original</span>}
-      {tool === 'crop' && !loading && <div className="crop-grid"><i /><i /><i /><i /><span className="crop-corner top-left" /><span className="crop-corner top-right" /><span className="crop-corner bottom-left" /><span className="crop-corner bottom-right" /></div>}
+      {tool === 'crop' && !loading && <div className="crop-grid" aria-hidden="true"><i /><i /><i /><i /></div>}
       {isBrush && cursor && !compare && <div className="brush-cursor" style={{ left: cursor.x, top: cursor.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
     </div></div>
       {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : 'Click and drag to repair small distractions.'}</div>}
@@ -172,7 +172,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         <span className="dimension-separator" />{Math.round(photo.width * photo.height / 1000000)} MP
       </button>
       <button className={`compare-button ${compare ? 'is-active' : ''}`} onClick={onCompare} title="Compare with original (B)">
-        <Columns2 size={14} /><span>Compare</span><kbd>\</kbd>
+        <Columns2 size={14} /><span>Compare</span><kbd>B</kbd>
       </button>
       <div className="zoom-controls">
         <IconButton label="Zoom out (-)" disabled={zoom <= 0.5} onClick={() => onZoom(Math.max(0.5, zoom - 0.25))}><Minus size={13} /></IconButton>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, decodeDownsampled } from '@photomator/core';
+import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeWhiteBalanceAuto, decodeDownsampled } from '@photomator/core';
 import type { EditState, HistoryState, Preset } from '@photomator/core';
 
 const STORAGE_KEY = 'photomator-demo-edits-v1';
@@ -102,5 +102,25 @@ export function useEditor(photoId: string) {
     })();
   }, [change, history.present, photoId]);
 
-  return { edit: history.present, histories, change, undo, redo, reset, autoEnhance, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
+  const autoWhiteBalance = useCallback((src?: string) => {
+    const fallback = () => change({ temperature: 5800, tint: 6, whiteBalanceEnabled: true });
+    if (!src) { fallback(); return; }
+    void (async () => {
+      try {
+        change({ ...computeWhiteBalanceAuto(await decodeDownsampled(src)), whiteBalanceEnabled: true });
+      } catch { fallback(); }
+    })();
+  }, [change]);
+
+  const autoLightness = useCallback((src?: string) => {
+    const fallback = () => change({ exposure: 0.2, contrast: 12, highlights: -28, shadows: 24, lightnessEnabled: true });
+    if (!src) { fallback(); return; }
+    void (async () => {
+      try {
+        change({ ...computeLightnessAuto(await decodeDownsampled(src)), lightnessEnabled: true });
+      } catch { fallback(); }
+    })();
+  }, [change]);
+
+  return { edit: history.present, histories, change, undo, redo, reset, autoEnhance, autoWhiteBalance, autoLightness, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { ArrowLeft, Bandage, Check, ChevronDown, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Sparkles, Stamp, Undo2 } from 'lucide-react';
+import { ArrowLeft, Bandage, Check, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Sparkles, Stamp, Undo2 } from 'lucide-react';
 import type { DialogType, Tool, VisionWorkerStatus } from '@photomator/core';
 import { BrandMark, IconButton, MenuItem } from './EditorUI.js';
 
@@ -124,7 +124,7 @@ export function Toolbar({ collectionName, count, tool, enhanced, compare, canUnd
         <div className="collection-breadcrumb">
           <IconButton label={libraryView ? 'Open selected photo' : 'Back to photo browser'} onClick={() => onAction('grid')}><ArrowLeft size={19} /></IconButton>
           <div>
-            <button onClick={() => onAction('grid')} title={libraryView ? 'Return to editor' : 'Browse collection'}>{collectionName}<ChevronDown size={12} /></button>
+            <button onClick={() => onAction('grid')} title={libraryView ? 'Return to editor' : 'Browse collection'}>{collectionName}</button>
             <small>{count} photos</small>
           </div>
         </div>
@@ -148,7 +148,7 @@ export function Toolbar({ collectionName, count, tool, enhanced, compare, canUnd
       <div className="toolbar-actions">
         <IconButton label="Compare with original (B)" active={compare} onClick={() => onAction('compare')}><Columns2 size={18} strokeWidth={1.6} /></IconButton>
         <IconButton label="Photo information (I)" onClick={() => onDialog('info')}><Info size={18} strokeWidth={1.6} /></IconButton>
-        <button className="export-button" onClick={() => onDialog('export')}><Share size={15} /><span>Export</span><ChevronDown size={12} /></button>
+        <button className="export-button" onClick={() => onDialog('export')}><Share size={15} /><span>Export</span></button>
         <IconButton label="Focus mode (Shift F)" className="mobile-focus" onClick={() => onAction('fullscreen')}><Maximize2 size={17} /></IconButton>
       </div>
     </header>
