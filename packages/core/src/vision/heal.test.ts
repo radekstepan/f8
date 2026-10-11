@@ -51,6 +51,29 @@ function lakeWater(width: number, height: number): PixelImage {
   return image;
 }
 
+/** Mirrored low-contrast grain: left half NW-SE ridges, right half NE-SW. Same mean, amplitude, and gradient magnitudes — only direction differs. */
+function mirroredGrain(width: number, height: number, amp: number): PixelImage {
+  const image = solidColor(width, height, 0, 0, 0);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const s =
+        x < width / 2
+          ? Math.sin((2 * Math.PI * (x + y)) / 8) > 0
+            ? 1
+            : -1
+          : Math.sin((2 * Math.PI * (x - y)) / 8) > 0
+            ? 1
+            : -1;
+      const v = 128 + amp * s;
+      const i = (y * width + x) * 4;
+      image.data[i] = v;
+      image.data[i + 1] = v;
+      image.data[i + 2] = v;
+    }
+  }
+  return image;
+}
+
 /** Horizontal gradient, black at x = 0 to white at x = width - 1. */
 function gradient(width: number, height: number): PixelImage {
   const image = solidColor(width, height, 0, 0, 0);
@@ -288,6 +311,34 @@ describe("healRepair exemplar fill", () => {
         expect(channel(out, x, y)).toEqual([v, v, v, 255]);
       }
     }
+  });
+
+  it("keeps grain direction instead of importing mirrored texture", () => {
+    // The two halves share mean, amplitude, and gradient magnitudes, so color
+    // and magnitude matching tie and only gradient direction tells them
+    // apart. At low contrast the color margins shrink while cosine
+    // disagreement stays decisive: without the orientation term this
+    // straddling hole imports 45 wrong pixels (16 mirrored) into the left
+    // half; with it, 11 (5 mirrored). Thresholds sit ~1.5x above the
+    // orientation-term output, well below the no-orientation output.
+    const clean = mirroredGrain(64, 64, 12);
+    const image = mirroredGrain(64, 64, 12);
+    blemish(image, 10, 17, 39, 46);
+    const out = healRepair(image, rectMask(64, 64, 10, 17, 39, 46));
+    let bad = 0;
+    let mirrored = 0;
+    for (let y = 17; y <= 46; y += 1) {
+      for (let x = 10; x <= 31; x += 1) {
+        const i = (y * 64 + x) * 4;
+        if (out.data[i] !== clean.data[i]) {
+          bad += 1;
+          const s = Math.sin((2 * Math.PI * (x - y)) / 8) > 0 ? 1 : -1;
+          if (out.data[i] === 128 + 12 * s) mirrored += 1;
+        }
+      }
+    }
+    expect(bad).toBeLessThanOrEqual(16);
+    expect(mirrored).toBeLessThanOrEqual(8);
   });
 
   it("interpolates a textured gradient smoothly instead of tiling wrong-shade blocks", () => {

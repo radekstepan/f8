@@ -10,8 +10,10 @@
 // - Exemplar fill (object removal): three passes. First a Criminisi-ordered
 //   fill (confidence x structure priority, so edges propagate before texture
 //   closes over them) where each patch finds its own donor: truncated
-//   gradient-weighted color plus a texture term over known pixels, so
-//   rippled water wins over flat canopy of the same color, and a
+//   gradient-weighted color plus an isotropic texture term and an orientation
+//   term (squared cosine disagreement, gated on edge strength) over known
+//   pixels, so rippled water wins over flat canopy of the same color and
+//   matching grain direction wins over cross-grain, and a
 //   background-estimate prior over every member pixel, so a matching ripple
 //   phase cannot import a far-away shade. Then refinement sweeps propagate
 //   neighbours' offsets with seeded random search until the offset field
@@ -84,6 +86,23 @@ export const HEAL_EXEMPLAR_GRAD_WEIGHT_SCALE = 100;
  * pixels carry the blemish's own gradients).
  */
 export const HEAL_EXEMPLAR_GRAD_MATCH_WEIGHT = 2;
+/**
+ * Weight of the orientation term: squared cosine disagreement between target
+ * and donor gradient vectors, `(1 - cos)^2`. Tells same-magnitude textures
+ * apart by direction (diagonal grain vs cross-grain, ripple phase vs mirrored
+ * ripple); applied only where the target pixel is originally known and both
+ * gradient magnitudes clear HEAL_EXEMPLAR_ORIENT_MIN_MAG, so flat noise never
+ * steers the fill. Fixed scale (not magnitude-product) so a single misaligned
+ * edge adds a bounded cost inside the match truncation instead of vetoing.
+ */
+export const HEAL_EXEMPLAR_ORIENT_WEIGHT = 800;
+/**
+ * Gradient magnitude below which orientation is noise: both target and donor
+ * must clear this for the orientation term to apply. Sobel luma magnitudes
+ * on real 1px texture edges measure in the hundreds, so 20 keeps flat-pixel
+ * jitter out while letting genuine grain through.
+ */
+export const HEAL_EXEMPLAR_ORIENT_MIN_MAG = 20;
 /**
  * Per-pixel ceiling on the match term (gradient-weighted color SSD plus the
  * texture term). Outlier pixels — an oar tip or wake fleck inside an
@@ -502,6 +521,9 @@ interface ExemplarState {
   gradWeight: Float32Array;
   /** Gradient magnitudes over the donor search bbox, for texture matching. */
   matchMag: Float32Array;
+  /** Gradient vectors over the donor search bbox, for orientation matching. */
+  matchGX: Float32Array;
+  matchGY: Float32Array;
   matchX0: number;
   matchY0: number;
   matchW: number;
@@ -740,6 +762,8 @@ function scorePatchDonor(
     gradY0,
     gradW,
     matchMag,
+    matchGX,
+    matchGY,
     matchX0,
     matchY0,
     matchW,
@@ -775,6 +799,21 @@ function scorePatchDonor(
         const dm = matchMag[(py + oy - matchY0) * matchW + (px + ox - matchX0)] ?? 0;
         const dg2 = tm - dm;
         term += HEAL_EXEMPLAR_GRAD_MATCH_WEIGHT * dg2 * dg2;
+        // Orientation term: penalize direction disagreement where both sides
+        // have a real edge. Normalized cosine form, so an aligned donor pays
+        // 0, a 90-degree donor pays one weight, an opposed donor pays four.
+        const tgx = matchGX[(py - matchY0) * matchW + (px - matchX0)] ?? 0;
+        const tgy = matchGY[(py - matchY0) * matchW + (px - matchX0)] ?? 0;
+        const dgx = matchGX[(py + oy - matchY0) * matchW + (px + ox - matchX0)] ?? 0;
+        const dgy = matchGY[(py + oy - matchY0) * matchW + (px + ox - matchX0)] ?? 0;
+        if (tm >= HEAL_EXEMPLAR_ORIENT_MIN_MAG && dm >= HEAL_EXEMPLAR_ORIENT_MIN_MAG) {
+          const denom = tm * dm;
+          if (denom > 0) {
+            const cos = (tgx * dgx + tgy * dgy) / denom;
+            const penalty = 1 - (cos > 1 ? 1 : cos < -1 ? -1 : cos);
+            term += HEAL_EXEMPLAR_ORIENT_WEIGHT * penalty * penalty;
+          }
+        }
         ssd += Math.min(term, HEAL_EXEMPLAR_MATCH_TRUNC);
       } else {
         ssd += HEAL_FILLED_WEIGHT * Math.min(term, HEAL_EXEMPLAR_MATCH_TRUNC);
@@ -1016,6 +1055,8 @@ function healExemplar(
   const matchW = matchX1 - matchX0 + 1;
   const matchH = matchY1 - matchY0 + 1;
   const matchMag = new Float32Array(matchW * matchH);
+  const matchGX = new Float32Array(matchW * matchH);
+  const matchGY = new Float32Array(matchW * matchH);
   const gradX0 = Math.max(0, component.minX - patchR - 2);
   const gradY0 = Math.max(0, component.minY - patchR - 2);
   const gradX1 = Math.min(width - 1, component.maxX + patchR + 2);
@@ -1060,7 +1101,10 @@ function healExemplar(
   for (let y = matchY0; y <= matchY1; y += 1) {
     for (let x = matchX0; x <= matchX1; x += 1) {
       const [gx, gy] = sobel(x, y);
-      matchMag[(y - matchY0) * matchW + (x - matchX0)] = Math.hypot(gx, gy);
+      const mi = (y - matchY0) * matchW + (x - matchX0);
+      matchMag[mi] = Math.hypot(gx, gy);
+      matchGX[mi] = gx;
+      matchGY[mi] = gy;
     }
   }
   const estimate = buildBackgroundEstimate(image, mask, sat);
@@ -1079,6 +1123,8 @@ function healExemplar(
     gradW,
     gradWeight,
     matchMag,
+    matchGX,
+    matchGY,
     matchX0,
     matchY0,
     matchW,
