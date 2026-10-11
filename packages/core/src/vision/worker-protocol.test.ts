@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createGrayscaleRequest,
   createInpaintRequest,
+  createMlWarmupRequest,
   createPingRequest,
   createStraightenRequest,
   grayscaleReference,
@@ -288,5 +289,21 @@ describe("grayscaleReference", () => {
   it("ignores alpha and keeps mid-gray stable", () => {
     const image = solidColor(3, 2, 128, 128, 128, 0);
     expect(Array.from(grayscaleReference(image))).toEqual([128, 128, 128, 128, 128, 128]);
+  });
+});
+
+describe("ml-warmup", () => {
+  it.each(["classic", "lama", "moebius"] as const)("accepts the %s warmup engine", (engine) => {
+    expect(isVisionWorkerRequest(createMlWarmupRequest(9, engine))).toBe(true);
+  });
+
+  it("rejects unknown engines", () => {
+    expect(() => createMlWarmupRequest(9, "gan" as never)).toThrow(RangeError);
+    expect(isVisionWorkerRequest({ id: 9, kind: "ml-warmup", engine: "gan" })).toBe(false);
+  });
+
+  it("accepts ml-ready with a cached flag", () => {
+    expect(isVisionWorkerResponse({ id: 9, kind: "ml-ready", engine: "moebius", cached: true })).toBe(true);
+    expect(isVisionWorkerResponse({ id: 9, kind: "ml-ready", engine: "moebius" })).toBe(false);
   });
 });

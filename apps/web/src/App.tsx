@@ -52,6 +52,17 @@ export default function App() {
   const vision = useVisionWorker();
   const straighten = useStraighten(photo?.id ?? selectedId);
   const inpaintRepair = useInpaintRepair();
+  // Prefetch the ML engine's weights while the user picks a brush: the first
+  // stroke then inpaints immediately instead of waiting on the download.
+  // Fire-and-forget by design — jobs fall back down the tier chain anyway.
+  useEffect(() => {
+    if (tool === 'repair' && inpaintRepair.method === 'ml-heal') {
+      void inpaintRepair.warmup().catch(() => { /* Fallback chain covers it. */ });
+    }
+    // Narrow deps: the inpaintRepair object identity changes on every ML
+    // progress tick, which must not re-trigger the prefetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool, inpaintRepair.method, inpaintRepair.warmup]);
   const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
 
@@ -363,7 +374,7 @@ export default function App() {
         photo={photo} edit={editor.edit} tool={tool} histogram={histogram}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss }}
-        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
+        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, mlEngine: inpaintRepair.mlEngine, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={editor.change} onTool={selectTool} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}

@@ -245,6 +245,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const hoverPoints = showOverlay && activeStroke === null && highlightStroke !== null
     ? edit.retouches.filter((point) => strokeIdForPoint(point) === highlightStroke)
     : [];
+  // With the repair tool on, every past repair stamp stays visible in red —
+  // not just while dragging or hovering — so completed work is always shown.
+  const storedPoints = showOverlay && tool === 'repair' && activeStroke === null
+    ? edit.retouches.filter((point) => point.kind === 'repair')
+    : [];
   const maskCircle = (point: RetouchPoint, key: string) => (
     <circle key={key} cx={point.x * frameWidth} cy={point.y * frameHeight} r={Math.max(1, (point.size * frameWidth) / 2)} />
   );
@@ -258,9 +263,9 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       {showOriginal && <span className="comparison-label original-label">Original</span>}
       {tool === 'crop' && !loading && <div className="crop-grid" aria-hidden="true"><i /><i /><i /><i /></div>}
       {isBrush && cursor && !compare && <div className="brush-cursor" style={{ left: cursor.x, top: cursor.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
-      {(activePoints.length > 0 || hoverPoints.length > 0) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}</svg>}
+      {(activePoints.length > 0 || hoverPoints.length > 0 || storedPoints.length > 0) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{storedPoints.length > 0 && <g className="retouch-stored-group">{storedPoints.map((point, index) => maskCircle(point, `s-${index}`))}</g>}{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}</svg>}
     </div></div>
-      {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : 'Click and drag to repair — the mask shows red while you paint.'}</div>}
+      {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : 'Click and drag to repair — past repairs stay red while the tool is on.'}</div>}
     </div>
     <div className="canvas-status">
       <button className="canvas-dimensions" onClick={onInfo} title="Photo information">

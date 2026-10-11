@@ -26,7 +26,7 @@ import {
   type VisionWorkerRequest,
   type VisionWorkerResponse,
 } from "@photomator/core";
-import { MlHealUnavailableError, runMlHeal } from "./ml-heal-pipeline.js";
+import { MlHealUnavailableError, runMlHeal, warmupMlHeal } from "./ml-heal-pipeline.js";
 
 /** Minimal structural view of the OpenCV.js runtime used by the worker. */
 interface OpenCvMat {
@@ -213,9 +213,10 @@ async function inpaint(
   // kept. Mat wrangling is shared with the Node golden tests through
   // inpaintWithCv.
   //
-  // ml-heal runs local ONNX inpainting and falls back to exemplar heal when
-  // the model runtime is unavailable (first-visit download blocked, no
-  // WebGPU/WASM, weights unreachable): repair must never fail because of ML.
+  // ml-heal runs local ONNX inpainting for its quality tier (Fast reuses the
+  // classic engine with no download, Balanced runs LaMa, Best runs Moebius
+  // diffusion with LaMa fallback) and falls back to exemplar heal when the
+  // model runtime is unavailable: repair must never fail because of ML.
   if (request.method === "ml-heal") {
     // Progress is throttled: the pipeline reports download/infer stages, and
     // the UI only needs a few updates per second.
@@ -300,6 +301,21 @@ async function handle(
   request: VisionWorkerRequest,
   postMessage: (message: VisionWorkerResponse) => void,
 ): Promise<VisionWorkerResponse> {
+  // Warmup needs no OpenCV: weights + ORT sessions only, so the 15MB vision
+  // bundle is not fetched just to prefetch the ML engine.
+  if (request.kind === "ml-warmup") {
+    let lastPost = 0;
+    const ready = await warmupMlHeal(request.engine, {
+      onProgress: (fraction, stage) => {
+        const now = performance.now();
+        if (now - lastPost > 100 || fraction >= 1) {
+          lastPost = now;
+          postMessage({ id: request.id, kind: "inpaint-progress", fraction, stage });
+        }
+      },
+    });
+    return { id: request.id, kind: "ml-ready", engine: ready.engine, cached: ready.cached };
+  }
   const cv = await loadOpenCv();
   if (request.kind === "ping") {
     return { id: request.id, kind: "pong", version: openCvVersion(cv) };

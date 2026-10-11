@@ -2,8 +2,19 @@ import { describe, expect, it } from "vitest";
 import { solidColor } from "./fixtures.js";
 import type { RepairMask } from "./inpaint.js";
 import {
+  ML_HEAL_ENGINE_EPS,
   ML_HEAL_MODEL_SIZE,
+  MOEBIUS_TRAIN_STEPS,
   compositeMlHealOutput,
+  downsampleMaskToLatent,
+  formatMlCapabilities,
+  makeSeededGaussian,
+  mlHealEngineForQuality,
+  mlHealWasmThreads,
+  moebiusAlphasCumprod,
+  moebiusBetas,
+  moebiusStepCount,
+  moebiusTimesteps,
   packMlHealInput,
   planMlHealRoi,
 } from "./ml-heal.js";
@@ -70,6 +81,98 @@ describe("packMlHealInput", () => {
   });
 });
 
+describe("mlHealEngineForQuality", () => {
+  it("maps Fast to classic, Balanced to LaMa, Best to Moebius", () => {
+    expect(mlHealEngineForQuality("fast")).toBe("classic");
+    expect(mlHealEngineForQuality("balanced")).toBe("lama");
+    expect(mlHealEngineForQuality("best")).toBe("moebius");
+  });
+
+  it("routes LaMa to wasm-only and Moebius to webgpu-only", () => {
+    expect(ML_HEAL_ENGINE_EPS.lama).toEqual(["wasm"]);
+    expect(ML_HEAL_ENGINE_EPS.moebius).toEqual(["webgpu"]);
+    expect(ML_HEAL_ENGINE_EPS.classic).toEqual([]);
+  });
+});
+
+describe("mlHealWasmThreads", () => {
+  it("is single-threaded without cross-origin isolation", () => {
+    expect(mlHealWasmThreads(false, 16)).toBe(1);
+  });
+
+  it("uses up to 4 threads with isolation", () => {
+    expect(mlHealWasmThreads(true, 16)).toBe(4);
+    expect(mlHealWasmThreads(true, 2)).toBe(2);
+    expect(mlHealWasmThreads(true, 0)).toBe(1);
+  });
+});
+
+describe("formatMlCapabilities", () => {
+  it("summarizes webgpu and threading", () => {
+    expect(formatMlCapabilities({ webgpu: true, crossOriginIsolated: false, hardwareConcurrency: 8 })).toBe(
+      "WebGPU: yes · Threads: single",
+    );
+    expect(formatMlCapabilities({ webgpu: false, crossOriginIsolated: true, hardwareConcurrency: 8 })).toBe(
+      "WebGPU: no · Threads: shared (4)",
+    );
+  });
+});
+
+describe("moebius schedule", () => {
+  it("uses 19 steps at 20 inference steps and 0.99 strength", () => {
+    expect(moebiusStepCount(20, 0.99)).toBe(19);
+    expect(moebiusTimesteps(20, 0.99)).toHaveLength(19);
+  });
+
+  it("emits descending timesteps within the training range", () => {
+    const steps = moebiusTimesteps();
+    for (const t of steps) {
+      expect(Number.isInteger(t)).toBe(true);
+      expect(t).toBeGreaterThanOrEqual(0);
+      expect(t).toBeLessThan(MOEBIUS_TRAIN_STEPS);
+    }
+    for (let i = 1; i < steps.length; i += 1) {
+      expect(steps[i] as number).toBeLessThan(steps[i - 1] as number);
+    }
+  });
+
+  it("builds a decaying cumulative alpha product", () => {
+    const alphas = moebiusAlphasCumprod(moebiusBetas());
+    expect(alphas.length).toBe(MOEBIUS_TRAIN_STEPS);
+    expect(alphas[0] as number).toBeLessThan(1);
+    expect(alphas[0] as number).toBeGreaterThan(0.99);
+    expect(alphas[alphas.length - 1] as number).toBeLessThan(alphas[0] as number);
+    for (let i = 1; i < alphas.length; i += 1) {
+      expect(alphas[i] as number).toBeLessThanOrEqual(alphas[i - 1] as number);
+    }
+  });
+});
+
+describe("downsampleMaskToLatent", () => {
+  it("marks latent cells whose 8x8 block has any fill", () => {
+    const mask = new Float32Array(ML_HEAL_MODEL_SIZE * ML_HEAL_MODEL_SIZE);
+    mask[100 * ML_HEAL_MODEL_SIZE + 100] = 1;
+    const latent = downsampleMaskToLatent(mask);
+    expect(latent.length).toBe(64 * 64);
+    expect(latent[(100 >> 3) * 64 + (100 >> 3)]).toBe(1);
+    expect(latent[0]).toBe(0);
+    expect(latent[63 * 64 + 63]).toBe(0);
+  });
+
+  it("throws on wrong input size", () => {
+    expect(() => downsampleMaskToLatent(new Float32Array(4))).toThrow(RangeError);
+  });
+});
+
+describe("makeSeededGaussian", () => {
+  it("is deterministic for one seed and differs across seeds", () => {
+    const first = makeSeededGaussian(0);
+    const second = makeSeededGaussian(0);
+    const values = Array.from({ length: 8 }, () => first());
+    expect(Array.from({ length: 8 }, () => second())).toEqual(values);
+    expect(makeSeededGaussian(1)()).not.toBe(values[0]);
+  });
+});
 describe("compositeMlHealOutput", () => {
   it("passes unmasked pixels through and fills masked ones", () => {
     const source = solidColor(16, 16, 10, 20, 30);

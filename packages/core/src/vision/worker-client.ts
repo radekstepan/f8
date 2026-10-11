@@ -8,16 +8,19 @@
 
 import { assertValidImage, type PixelImage } from "./analyze.js";
 import type { HealProgress, HealQuality } from "./heal.js";
+import type { MlHealEngine } from "./ml-heal.js";
 import type { InpaintMethod, RepairMask } from "./inpaint.js";
 import { STRAIGHTEN_MAX_ANGLE } from "./straighten.js";
 import {
   createGrayscaleRequest,
   createInpaintRequest,
+  createMlWarmupRequest,
   createPingRequest,
   createStraightenRequest,
   isVisionWorkerResponse,
   type GrayscaleResponse,
   type InpaintResponse,
+  type MlReadyResponse,
   type PongResponse,
   type StraightenResponse,
   type VisionRequestId,
@@ -197,6 +200,28 @@ export class VisionWorkerClient {
     await this.ensureReady();
     const response = (await this.send(request, options.onProgress)) as InpaintResponse;
     return { width: response.width, height: response.height, data: response.data };
+  }
+
+  /**
+   * Prefetch ML weights + sessions without an image. The worker reports
+   * byte/step progress with throttled inpaint-progress messages, then
+   * ml-ready. Classic needs nothing and resolves immediately. Never throws
+   * for geometric reasons; transport failures reject like other ops.
+   */
+  async warmupMl(
+    engine: MlHealEngine,
+    options: { onProgress?: HealProgress } = {},
+  ): Promise<{ engine: MlHealEngine; cached: boolean }> {
+    const id = this.nextId;
+    this.nextId += 1;
+    const request = createMlWarmupRequest(id, engine);
+    if (engine === "classic") return { engine, cached: true };
+    if (this.statusValue === "failed") {
+      throw new VisionWorkerError("Vision worker failed; call ensureReady() to retry.");
+    }
+    await this.ensureReady();
+    const response = (await this.send(request, options.onProgress)) as MlReadyResponse;
+    return { engine: response.engine, cached: response.cached };
   }
 
   /** Stop the worker, reject pending calls, return to idle for a later restart. */

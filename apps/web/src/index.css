@@ -356,6 +356,10 @@ img { display: block; }
 .retouch-overlay circle { stroke: none; }
 .retouch-overlay .retouch-highlight-group { opacity: .45; fill: #ff5040; }
 .retouch-overlay .retouch-active-group { opacity: .5; fill: #ff2d23; }
+.retouch-overlay .retouch-stored-group { opacity: .3; fill: #ff2d23; }
+.ml-progress { margin-top: 10px; }
+.ml-progress-bar { height: 4px; border-radius: 2px; background: #2c2c31; overflow: hidden; margin-bottom: 6px; }
+.ml-progress-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 2px; transition: width 150ms linear; }
 
 .app-status { height: 23px; flex-shrink: 0; background: #242426; border-top: 1px solid #36363b; padding: 0 17px; display: flex; align-items: center; justify-content: space-between; font-size: 8px; color: #85858f; position: relative; }
 .status-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; font-size: 7.5px; color: #74747e; gap: 8px; }

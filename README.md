@@ -22,7 +22,7 @@ The production build keeps the single-file main bundle but emits the vision work
 
 - `dist/vision.worker-*.js` (~1KB): the worker shell, spawned only when a vision feature starts it.
 - `dist/opencv-*.js` (~15MB): OpenCV, fetched lazily by the worker on first use — never in the initial page load.
-- `dist/ort-*.js` + WASM: ONNX Runtime Web, fetched lazily by the worker on the first ML Heal only. Model weights (~200MB LaMa) load from HuggingFace once and persist in Cache Storage.
+- `dist/ort-*.js` (tens of KB each): ONNX Runtime Web per-engine JS (wasm backend for LaMa, WebGPU backend for Moebius), fetched lazily by the worker on the first ML Heal only. The `.wasm` backends live in `dist/ort/` (copied from `node_modules` by `vite-plugin-static-copy`, never committed). Model weights load from HuggingFace once and persist in Cache Storage: LaMa (~208MB, Balanced) or Moebius diffusion (~1.3GB, Best).
 
 The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64), so there is no separate `.wasm` asset to serve. Heavy vision entry points must keep this shape: construct the worker via `new Worker(new URL(..., import.meta.url))`, import OpenCV only inside the worker, and never import it from main-thread code. The one exception is Node-only: `@photomator/core` lists the package as a devDependency so the inpaint golden tests can run real `cv.inpaint` outside the browser; test files are never shipped in the app bundle. A networked `yarn install` fetches the package from the npm registry.
 
@@ -36,7 +36,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 - Per-photo undo/redo with up to fifty history entries. Consecutive slider changes are grouped into a single edit.
 - Draggable before/after comparison and hold-to-preview-original behavior.
 - Centered aspect-ratio cropping, rotation, flips, and straightening with automatic horizon detection, plus a rule-of-thirds overlay.
-- Browser-based repair brushes (texture-transplant Heal by default with Fast/Balanced/Best search effort, on-device ML Heal for object removal with automatic Heal fallback, OpenCV Telea/Navier-Stokes on request, blur fallback) and clone stamping. Click to choose a clone source; Alt-click to choose another.
+- Browser-based repair brushes (texture-transplant Heal by default with Fast/Balanced/Best search effort, tiered on-device ML Heal — Fast reuses classic Heal instantly, Balanced runs LaMa neural fill, Best runs Moebius diffusion with automatic fallback — OpenCV Telea/Navier-Stokes on request, blur fallback) and clone stamping. Click to choose a clone source; Alt-click to choose another.
 - Photo import using a file picker, drag and drop, or in-place folder import, including camera RAW files (rendered from the largest embedded JPEG preview, with the RAW file's orientation applied). When a RAW file and a JPEG share a filename, only the RAW is imported. Content hashing dedupes reimports and relinks moved files with their edits intact.
 - JPEG, PNG, and WebP export, configurable size and quality, plus JSON adjustment export.
 - Copy/paste adjustments between photographs, with each photograph's crop and retouching preserved.
@@ -132,7 +132,7 @@ Everything stays on your machine: the server binds to localhost, originals stay 
 
 - The Enhance control and per-section Auto buttons apply histogram-based adjustments; no machine-learning model is included.
 - Color adjustments are lightweight browser-filter approximations, not a color-managed RAW engine. Tone, clarity, and sharpness are simplified contrast mappings.
-- Repair reconstructs masked regions in a worker — Heal transplants matching nearby texture adapted to local light (default), on-device ML Heal inpaints larger removals via a locally cached ONNX model with Heal fallback, Telea or Navier-Stokes diffusion remain available — falling back to a local blur when the vision engine is unavailable. Clone copies pixels from a source region. ML weights download once (~200MB LaMa) and are cached for offline use; photos never leave the device.
+- Repair reconstructs masked regions in a worker — Heal transplants matching nearby texture adapted to local light (default), on-device ML Heal inpaints larger removals via a locally cached ONNX model with Heal fallback, Telea or Navier-Stokes diffusion remain available — falling back to a local blur when the vision engine is unavailable. Clone copies pixels from a source region. ML weights download once (LaMa ~208MB, Moebius ~1.3GB) and are cached for offline use; opening the Repair tool prefetches the selected tier while you paint. Photos never leave the device.
 - Crop supports centered ratios rather than a freely movable crop rectangle. The overlay is a rule-of-thirds framing guide.
 - Zoom percentages are relative to the fitted preview, not a one-to-one source-pixel scale.
 - Sample camera details are illustrative. Imported photos read real EXIF camera details when present. Export does not embed the sample metadata.

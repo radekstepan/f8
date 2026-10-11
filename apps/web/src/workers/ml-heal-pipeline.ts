@@ -1,29 +1,58 @@
-// ML-heal worker pipeline: local ONNX inpainting (LaMa now, Moebius next).
+// ML-heal worker pipeline: local ONNX inpainting with engine tiers.
 //
 // Runs inside the vision worker only. Everything ORT-flavoured is lazily
 // imported here so the main bundle and the worker shell stay small: the ORT
 // chunk plus model weights only load when an ml-heal job actually runs.
 //
+// Engine tiers (selected by Heal Quality, see mlHealEngineForQuality):
+// - classic: no model; the caller runs exemplar heal instead. The pipeline
+//   throws MlHealUnavailableError so routing stays in one place.
+// - lama: single-pass LaMa fill (208MB). Fast, great texture.
+// - moebius: Moebius diffusion (UNet + VAE enc/dec, ~1.3GB, 19 DDIM steps
+//   with classifier-free guidance). Best removals; falls back to LaMa when
+//   diffusion cannot serve the job.
+//
 // Design notes:
 // - WebGPU-first with WASM fallback: `["webgpu", "wasm"]` lets ORT pick the
-//   best available backend per device; Safari without WebGPU lands on WASM.
+//   best available backend per device; Safari without WebGPU lands on WASM
+//   (Moebius fp32 on WASM will likely OOM and fall back — by design).
 // - Weights are cached in Cache Storage (ML_HEAL_CACHE_NAME) after the first
 //   fetch, so repeat visits work offline. The full URL is the cache key.
-// - Any failure (no WebGPU+WASM, fetch blocked, session create throws)
-//   surfaces as MlHealUnavailableError so the caller falls back to the frozen
-//   exemplar engine — export/preview must never fail because of ML.
-// - Quality currently selects nothing structural (LaMa is single-pass); it is
-//   reserved for diffusion steps / ROI tiling when the Moebius UNet lands.
+// - Any terminal failure surfaces as MlHealUnavailableError so the caller
+//   falls back down the tier chain — export/preview must never fail because
+//   of ML.
+// - Progress is reported at maximum granularity: per-file byte progress while
+//   downloading, per-session while loading, per-step while diffusing.
 
 import {
   ML_HEAL_CACHE_NAME,
+  ML_HEAL_ENGINE_EPS,
   ML_HEAL_LAMA_DEFAULT_URL,
+  ML_HEAL_MOEBIUS_DEFAULT_BASE,
+  ML_HEAL_MOEBIUS_FILES,
+  ML_HEAL_MOEBIUS_FILE_SIZES,
   ML_HEAL_MODEL_SIZE,
+  MOEBIUS_GUIDANCE,
+  MOEBIUS_INFERENCE_STEPS,
+  MOEBIUS_LATENT_SIZE,
+  MOEBIUS_SEED,
+  MOEBIUS_STRENGTH,
+  MOEBIUS_VAE_SCALE,
   compositeMlHealOutput,
+  downsampleMaskToLatent,
+  formatMlCapabilities,
+  makeSeededGaussian,
+  mlHealEngineForQuality,
+  mlHealWasmThreads,
+  moebiusAlphasCumprod,
+  moebiusBetas,
+  moebiusTimesteps,
   packMlHealInput,
   planMlHealRoi,
   type HealProgress,
   type HealQuality,
+  type MlCapabilities,
+  type MlHealEngine,
   type PixelImage,
   type RepairMask,
 } from "@photomator/core";
@@ -37,43 +66,64 @@ export class MlHealUnavailableError extends Error {
 
 export interface MlHealRunOptions {
   quality?: HealQuality;
-  /** Explicit weights URL; defaults to VITE_ML_HEAL_MODEL_URL or the LaMa default. */
+  /** Explicit LaMa weights URL; defaults to VITE_ML_HEAL_MODEL_URL or the LaMa default. */
   modelUrl?: string;
+  /** Explicit Moebius base URL; defaults to VITE_ML_HEAL_MOEBIUS_BASE or the default base. */
+  moebiusBase?: string;
   onProgress?: HealProgress;
 }
 
-type OrtModule = typeof import("onnxruntime-web");
+type OrtModule = typeof import("onnxruntime-web/wasm") | typeof import("onnxruntime-web/webgpu");
 type OrtSession = import("onnxruntime-web").InferenceSession;
 
-let ortPromise: Promise<OrtModule> | null = null;
-let lamaSession: OrtSession | null = null;
-let lamaSessionUrl: string | null = null;
+let ortWasmPromise: Promise<typeof import("onnxruntime-web/wasm")> | null = null;
+let ortWebgpuPromise: Promise<typeof import("onnxruntime-web/webgpu")> | null = null;
+const sessions = new Map<string, OrtSession>();
 
-function loadOrt(): Promise<OrtModule> {
-  if (!ortPromise) ortPromise = import("onnxruntime-web");
-  return ortPromise;
+/**
+ * Per-engine ORT entry points: the package's subpath builds carry only one
+ * backend's JS (extern-wasm), unlike the 75MB all-EPs default bundle. LaMa
+ * (Fourier ops, no WebGPU kernels) loads the wasm build; Moebius loads the
+ * WebGPU build.
+ */
+function loadOrtWasm(): Promise<typeof import("onnxruntime-web/wasm")> {
+  if (!ortWasmPromise) ortWasmPromise = import("onnxruntime-web/wasm");
+  return ortWasmPromise;
 }
 
-function resolveModelUrl(explicit?: string): string {
-  if (explicit) return explicit;
+function loadOrtWebgpu(): Promise<typeof import("onnxruntime-web/webgpu")> {
+  if (!ortWebgpuPromise) ortWebgpuPromise = import("onnxruntime-web/webgpu");
+  return ortWebgpuPromise;
+}
+
+function env(key: string): string | undefined {
   try {
-    const fromEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env
-      ?.VITE_ML_HEAL_MODEL_URL;
-    if (fromEnv) return fromEnv;
+    return (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.[key];
   } catch {
-    // import.meta.env is Vite-only; Node/test contexts land here.
+    return undefined;
   }
-  return ML_HEAL_LAMA_DEFAULT_URL;
+}
+
+function resolveLamaUrl(explicit?: string): string {
+  return explicit ?? env("VITE_ML_HEAL_MODEL_URL") ?? ML_HEAL_LAMA_DEFAULT_URL;
+}
+
+function resolveMoebiusBase(explicit?: string): string {
+  const base = explicit ?? env("VITE_ML_HEAL_MOEBIUS_BASE") ?? ML_HEAL_MOEBIUS_DEFAULT_BASE;
+  return base.endsWith("/") ? base : `${base}/`;
 }
 
 async function readWithProgress(
   response: Response,
+  total: number,
+  base: number,
+  span: number,
+  stage: string,
   onProgress?: HealProgress,
 ): Promise<ArrayBuffer> {
-  const total = Number(response.headers.get("content-length") ?? 0);
   const body = response.body;
   if (!body || !Number.isFinite(total) || total <= 0) {
-    onProgress?.(0.05, "Downloading model");
+    onProgress?.(base, `${stage} (size unknown)`);
     return response.arrayBuffer();
   }
   const reader = body.getReader();
@@ -85,7 +135,7 @@ async function readWithProgress(
     if (value) {
       chunks.push(value);
       received += value.length;
-      onProgress?.(Math.min(0.99, received / total) * 0.8, "Downloading model");
+      onProgress?.(base + (Math.min(1, received / total) * span), `${stage} ${Math.round((received / total) * 100)}%`);
     }
   }
   const merged = new Uint8Array(received);
@@ -97,86 +147,192 @@ async function readWithProgress(
   return merged.buffer;
 }
 
-async function fetchWeights(url: string, onProgress?: HealProgress): Promise<ArrayBuffer> {
+async function fetchWeights(
+  url: string,
+  knownSize: number,
+  base: number,
+  span: number,
+  stage: string,
+  onProgress?: HealProgress,
+): Promise<{ buffer: ArrayBuffer; cached: boolean }> {
   // Cache-first: offline repeat visits never re-download.
   try {
     const cache = await caches.open(ML_HEAL_CACHE_NAME);
     const hit = await cache.match(url);
-    if (hit) return hit.arrayBuffer();
+    if (hit) {
+      onProgress?.(base + span, `${stage} (cached)`);
+      return { buffer: await hit.arrayBuffer(), cached: true };
+    }
     const response = await fetch(url);
-    if (!response.ok) {
-      throw new MlHealUnavailableError(`Model download failed: HTTP ${response.status}.`);
-    }
-    const buffer = await readWithProgress(response, onProgress);
-    // Best-effort re-cache; a full fetch that fails to cache still runs.
+    if (!response.ok) throw new MlHealUnavailableError(`Model download failed: HTTP ${response.status}.`);
+    const size = Number(response.headers.get("content-length") ?? knownSize);
+    const buffer = await readWithProgress(response, size, base, span, stage, onProgress);
     try {
-      await cache.put(
-        url,
-        new Response(buffer.slice(0), { headers: { "content-type": "application/octet-stream" } }),
-      );
+      await cache.put(url, new Response(buffer.slice(0), { headers: { "content-type": "application/octet-stream" } }));
     } catch {
-      // Quota or opaque-response limits: ignore, inference proceeds.
+      // Quota limits: ignore, inference proceeds.
     }
-    return buffer;
+    return { buffer, cached: false };
   } catch (error) {
     if (error instanceof MlHealUnavailableError) throw error;
-    // Cache Storage unavailable (some private modes): plain fetch fallback.
     const response = await fetch(url);
-    if (!response.ok) {
-      throw new MlHealUnavailableError(`Model download failed: HTTP ${response.status}.`);
-    }
-    return response.arrayBuffer();
+    if (!response.ok) throw new MlHealUnavailableError(`Model download failed: HTTP ${response.status}.`);
+    return { buffer: await response.arrayBuffer(), cached: false };
   }
 }
 
-async function getLamaSession(url: string, onProgress?: HealProgress): Promise<OrtSession> {
-  if (lamaSession && lamaSessionUrl === url) return lamaSession;
-  let ort: OrtModule;
-  try {
-    onProgress?.(0, "Loading runtime");
-    ort = await loadOrt();
-  } catch {
-    throw new MlHealUnavailableError("ONNX runtime failed to load.");
+async function getSession(
+  ort: OrtModule,
+  url: string,
+  weights: ArrayBuffer,
+  engine: MlHealEngine,
+  fraction: number,
+  stage: string,
+  onProgress?: HealProgress,
+): Promise<OrtSession> {
+  const eps = [...ML_HEAL_ENGINE_EPS[engine]];
+  const hit = sessions.get(url);
+  if (hit) {
+    onProgress?.(fraction, `${stage} (ready)`);
+    return hit;
   }
-  const weights = await fetchWeights(url, onProgress);
+  onProgress?.(fraction, stage);
   try {
-    onProgress?.(0.85, "Loading model");
-    lamaSession = await ort.InferenceSession.create(weights, {
-      executionProviders: ["webgpu", "wasm"],
-    });
-    lamaSessionUrl = url;
-    return lamaSession;
-  } catch {
-    lamaSession = null;
-    lamaSessionUrl = null;
-    throw new MlHealUnavailableError("ONNX session failed to start (WebGPU/WASM unavailable?).");
+    const session = await ort.InferenceSession.create(weights, { executionProviders: eps });
+    sessions.set(url, session);
+    return session;
+  } catch (error) {
+    const detail = errorMessage(error);
+    console.error(`[ml-heal] ${stage} failed on ${eps.join("/") || "no runtime"}: ${detail}`, error);
+    throw new MlHealUnavailableError(`${stage} failed (${eps.join("/") || "no runtime"}): ${detail}`);
   }
+}
+
+/** Short readable cause; never throws, never leaks more than one line. */
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message.length > 300 ? `${error.message.slice(0, 300)}…` : error.message;
+  }
+  const text = String(error);
+  return text.length > 300 ? `${text.slice(0, 300)}…` : text;
+}
+
+/** Device capabilities that decide which engines can run. Worker-safe. */
+function probeCapabilities(): MlCapabilities {
+  const nav = globalThis.navigator as (Navigator & { gpu?: unknown }) | undefined;
+  let hardwareConcurrency = 4;
+  let webgpu = false;
+  try {
+    if (typeof nav?.hardwareConcurrency === "number") hardwareConcurrency = nav.hardwareConcurrency;
+    webgpu = !!nav?.gpu;
+  } catch {
+    // Navigator inaccessible (locked-down context): conservative defaults.
+  }
+  let crossOriginIsolated = false;
+  try {
+    crossOriginIsolated = globalThis.crossOriginIsolated === true;
+  } catch {
+    crossOriginIsolated = false;
+  }
+  return { webgpu, crossOriginIsolated, hardwareConcurrency };
 }
 
 /**
- * Run local ML inpainting over the repair mask. Returns a full reconstruction
- * (caller blends with a feathered mask). Empty mask returns a source copy.
- * Throws MlHealUnavailableError when the model runtime cannot serve the job —
- * callers must fall back to exemplar heal, never surface this to export.
+ * Tune the ORT runtime for this page and report the capability line first —
+ * before any gigabyte downloads — so an unrunnable tier says so upfront.
+ * Also verifies the .wasm backends are actually servable (a dev server SPA
+ * fallback returns HTML here, which fails later with an unreadable
+ * WebAssembly magic-word error).
  */
-export async function runMlHeal(
+async function configureOrt(
+  ort: OrtModule,
+  engine: MlHealEngine,
+  onProgress?: HealProgress,
+): Promise<MlCapabilities> {
+  const caps = probeCapabilities();
+  const prefix = ortWasmPrefix();
+  try {
+    ort.env.wasm.wasmPaths = prefix;
+    ort.env.wasm.numThreads = mlHealWasmThreads(caps.crossOriginIsolated, caps.hardwareConcurrency);
+  } catch (error) {
+    console.error("[ml-heal] wasm config failed:", error);
+  }
+  await verifyWasmServing(prefix, engine);
+  onProgress?.(0, formatMlCapabilities(caps));
+  return caps;
+}
+
+/** Where the vite-static-copy'd ORT backends are served (dev and dist alike). */
+function ortWasmPrefix(): string {
+  let base = "/";
+  try {
+    base = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.BASE_URL ?? "/";
+  } catch {
+    base = "/";
+  }
+  return base.endsWith("/") ? `${base}ort/` : `${base}/ort/`;
+}
+
+/**
+ * Fetch the first bytes of the engine's .wasm backend and check the
+ * WebAssembly magic header (00 61 73 6d). Catches "HTML served instead of
+ * wasm" misconfiguration with a readable error instead of ORT's CompileError.
+ */
+async function verifyWasmServing(prefix: string, engine: MlHealEngine): Promise<void> {
+  const file = engine === "moebius" ? "ort-wasm-simd-threaded.jsep.wasm" : "ort-wasm-simd-threaded.wasm";
+  const fail = (detail: string): MlHealUnavailableError =>
+    new MlHealUnavailableError(`ONNX runtime files missing at ${prefix}${file} (${detail}).`);
+  let response: Response;
+  try {
+    response = await fetch(`${prefix}${file}`, { headers: { Range: "bytes=0-3" } });
+  } catch (error) {
+    throw fail(`fetch failed: ${errorMessage(error)}`);
+  }
+  try {
+    if (!response.ok && response.status !== 206) throw fail(`HTTP ${response.status}`);
+    const reader = response.body?.getReader();
+    if (!reader) throw fail("empty response");
+    try {
+      const { value } = await reader.read();
+      const magic = Array.from((value ?? new Uint8Array(0)).subarray(0, 4));
+      if (magic.length < 4 || magic[0] !== 0x00 || magic[1] !== 0x61 || magic[2] !== 0x73 || magic[3] !== 0x6d) {
+        throw fail("got HTML, not a WebAssembly binary (check static asset serving)");
+      }
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        // Best effort: the ranged body is tiny either way.
+      }
+    }
+  } catch (error) {
+    if (error instanceof MlHealUnavailableError) throw error;
+    throw fail(errorMessage(error));
+  }
+}
+
+async function ensureOrt(engine: MlHealEngine): Promise<OrtModule> {
+  try {
+    return engine === "moebius" ? await loadOrtWebgpu() : await loadOrtWasm();
+  } catch (error) {
+    console.error("[ml-heal] ONNX runtime failed to load:", error);
+    throw new MlHealUnavailableError(`ONNX runtime failed to load: ${errorMessage(error)}`);
+  }
+}
+
+async function runLama(
+  ort: OrtModule,
   image: PixelImage,
   mask: RepairMask,
-  options: MlHealRunOptions = {},
+  url: string,
+  onProgress?: HealProgress,
 ): Promise<PixelImage> {
   const roi = planMlHealRoi(mask);
   if (!roi) return { width: image.width, height: image.height, data: new Uint8ClampedArray(image.data) };
-  const url = resolveModelUrl(options.modelUrl);
-  const onProgress = options.onProgress;
-  const session = await getLamaSession(url, onProgress);
+  const { buffer } = await fetchWeights(url, 208 * 1024 * 1024, 0, 0.7, "Downloading LaMa", onProgress);
+  const session = await getSession(ort, url, buffer, "lama", 0.7, "Loading LaMa", onProgress);
   const { image: imageTensorData, mask: maskTensorData } = packMlHealInput(image, mask, roi);
-  let ort: OrtModule;
-  try {
-    ort = await loadOrt();
-  } catch {
-    throw new MlHealUnavailableError("ONNX runtime failed to load.");
-  }
-  onProgress?.(0.9, "Inpainting");
+  onProgress?.(0.9, "Inpainting with LaMa");
   let output: Float32Array;
   try {
     const feeds = {
@@ -187,15 +343,247 @@ export async function runMlHeal(
     const tensor = results.output ?? results[Object.keys(results)[0] as string];
     if (!tensor) throw new Error("empty output");
     output = tensor.data as Float32Array;
-  } catch {
-    throw new MlHealUnavailableError("ML inpainting inference failed.");
+  } catch (error) {
+    console.error("[ml-heal] LaMa inference failed:", error);
+    throw new MlHealUnavailableError(`LaMa inference failed: ${errorMessage(error)}`);
   }
   onProgress?.(1, "Done");
   return compositeMlHealOutput(image, mask, roi, output);
 }
 
+function firstTensor(results: Record<string, import("onnxruntime-web").Tensor>): Float32Array {
+  const tensor = results.output ?? results[Object.keys(results)[0] as string];
+  if (!tensor) throw new Error("empty model output");
+  return tensor.data as Float32Array;
+}
+
+/**
+ * Moebius diffusion inpainting: VAE-encode the masked ROI, seed a noisy
+ * latent, run classifier-free-guided DDIM with known-region re-injection,
+ * VAE-decode. Conventions: VAE I/O in [-1, 1] (SD-style), latent scaled by
+ * MOEBIUS_VAE_SCALE, 9-channel UNet input
+ * [noisy_latent(4), fill_mask(1), masked_latent(4)], input_ids [0..9]
+ * conditional / [10..19] unconditional.
+ */
+async function runMoebius(
+  ort: OrtModule,
+  image: PixelImage,
+  mask: RepairMask,
+  base: string,
+  onProgress?: HealProgress,
+): Promise<PixelImage> {
+  const roi = planMlHealRoi(mask);
+  if (!roi) return { width: image.width, height: image.height, data: new Uint8ClampedArray(image.data) };
+  const latent = MOEBIUS_LATENT_SIZE;
+  const latentN = latent * latent;
+  const [unetFile, encFile, decFile] = ML_HEAL_MOEBIUS_FILES;
+  const unetUrl = `${base}${unetFile}`;
+  const encUrl = `${base}${encFile}`;
+  const decUrl = `${base}${decFile}`;
+  const totalBytes = ML_HEAL_MOEBIUS_FILE_SIZES.reduce((sum, size) => sum + size, 0);
+  // Download: 0..0.6 byte-weighted across the three graphs.
+  let cursor = 0;
+  const parts: ArrayBuffer[] = [];
+  for (let i = 0; i < ML_HEAL_MOEBIUS_FILES.length; i += 1) {
+    const span = ((ML_HEAL_MOEBIUS_FILE_SIZES[i] ?? 0) / totalBytes) * 0.6;
+    const { buffer } = await fetchWeights(
+      [unetUrl, encUrl, decUrl][i] as string,
+      ML_HEAL_MOEBIUS_FILE_SIZES[i] ?? 0,
+      cursor,
+      span,
+      `Downloading Moebius ${i + 1}/3`,
+      onProgress,
+    );
+    parts.push(buffer);
+    cursor += span;
+  }
+  const unet = await getSession(ort, unetUrl, parts[0] as ArrayBuffer, "moebius", 0.6, "Loading Moebius UNet", onProgress);
+  const enc = await getSession(ort, encUrl, parts[1] as ArrayBuffer, "moebius", 0.63, "Loading Moebius VAE encoder", onProgress);
+  const dec = await getSession(ort, decUrl, parts[2] as ArrayBuffer, "moebius", 0.66, "Loading Moebius VAE decoder", onProgress);
+
+  const { image: packed, mask: maskPacked } = packMlHealInput(image, mask, roi);
+  // VAE encode in [-1, 1]; latent = mean channels x scale.
+  const vaeIn = new Float32Array(packed.length);
+  for (let i = 0; i < packed.length; i += 1) vaeIn[i] = (packed[i] ?? 0) * 2 - 1;
+  onProgress?.(0.68, "Encoding image");
+  let maskedLatent: Float32Array;
+  try {
+    const encOut = await enc.run({ image: new ort.Tensor("float32", vaeIn, [1, 3, 512, 512]) });
+    const moments = firstTensor(encOut);
+    maskedLatent = new Float32Array(4 * latentN);
+    for (let c = 0; c < 4; c += 1) {
+      for (let i = 0; i < latentN; i += 1) {
+        maskedLatent[c * latentN + i] = (moments[c * latentN + i] ?? 0) * MOEBIUS_VAE_SCALE;
+      }
+    }
+    } catch (error) {
+    console.error("[ml-heal] Moebius VAE encode failed:", error);
+    throw new MlHealUnavailableError(`Moebius VAE encode failed: ${errorMessage(error)}`);
+  }
+  const fillLatent = downsampleMaskToLatent(maskPacked);
+  const alphas = moebiusAlphasCumprod(moebiusBetas());
+  const timesteps = moebiusTimesteps(MOEBIUS_INFERENCE_STEPS, MOEBIUS_STRENGTH);
+  const randn = makeSeededGaussian(MOEBIUS_SEED);
+  const condIds = new ort.Tensor("int64", BigInt64Array.from({ length: 10 }, (_, i) => BigInt(i)), [1, 10]);
+  const uncondIds = new ort.Tensor("int64", BigInt64Array.from({ length: 10 }, (_, i) => BigInt(10 + i)), [1, 10]);
+  // Seed the trajectory at the first timestep's noise level.
+  const t0 = timesteps[0] ?? 999;
+  const a0 = alphas[t0] ?? 1;
+  let latentF32 = new Float32Array(4 * latentN);
+  for (let i = 0; i < latentF32.length; i += 1) {
+    latentF32[i] = Math.sqrt(a0) * (maskedLatent[i] ?? 0) + Math.sqrt(1 - a0) * randn();
+  }
+  const unetIn = new Float32Array(9 * latentN);
+  try {
+    for (let step = 0; step < timesteps.length; step += 1) {
+      const t = timesteps[step] ?? 0;
+      const tPrev = step + 1 < timesteps.length ? (timesteps[step + 1] ?? -1) : -1;
+      const aT = alphas[t] ?? 1;
+      const aPrev = tPrev < 0 ? 1 : (alphas[tPrev] ?? 1);
+      // 9-channel assembly: [noisy(4), fill(1), masked(4)].
+      unetIn.set(latentF32, 0);
+      unetIn.set(fillLatent, 4 * latentN);
+      unetIn.set(maskedLatent, 5 * latentN);
+      const base_feeds = {
+        latent: new ort.Tensor("float32", unetIn.slice(), [1, 9, latent, latent]),
+        timesteps: new ort.Tensor("int64", BigInt64Array.from([BigInt(t)]), [1]),
+      };
+      onProgress?.(0.7 + (0.25 * step) / timesteps.length, `Diffusing ${step + 1}/${timesteps.length}`);
+      const [condOut, uncondOut] = await Promise.all([
+        unet.run({ ...base_feeds, input_ids: condIds }),
+        unet.run({ ...base_feeds, input_ids: uncondIds }),
+      ]);
+      const cond = firstTensor(condOut);
+      const uncond = firstTensor(uncondOut);
+      // CFG + DDIM (eta 0), then re-inject known regions at the prev level.
+      const sqrtAT = Math.sqrt(aT);
+      const sqrt1mAT = Math.sqrt(Math.max(0, 1 - aT));
+      const sqrtAPrev = Math.sqrt(aPrev);
+      const sqrt1mAPrev = Math.sqrt(Math.max(0, 1 - aPrev));
+      const next = new Float32Array(4 * latentN);
+      for (let i = 0; i < next.length; i += 1) {
+        const eps = (uncond[i] ?? 0) + MOEBIUS_GUIDANCE * ((cond[i] ?? 0) - (uncond[i] ?? 0));
+        const predX0 = ((latentF32[i] ?? 0) - sqrt1mAT * eps) / Math.max(1e-8, sqrtAT);
+        next[i] = sqrtAPrev * predX0 + sqrt1mAPrev * eps;
+      }
+      // Blend per channel: fill cells take the denoised value, known cells
+      // take the masked latent re-noised to the prev level (fresh noise keeps
+      // the trajectory stochastic only through the seeded stream).
+      for (let c = 0; c < 4; c += 1) {
+        for (let i = 0; i < latentN; i += 1) {
+          const fill = fillLatent[i] ?? 0;
+          const knownNoisy = sqrtAPrev * (maskedLatent[c * latentN + i] ?? 0) + sqrt1mAPrev * randn();
+          next[c * latentN + i] =
+            fill * (next[c * latentN + i] ?? 0) + (1 - fill) * knownNoisy;
+        }
+      }
+      latentF32 = next;
+    }
+  } catch (error) {
+    if (error instanceof MlHealUnavailableError) throw error;
+    console.error("[ml-heal] Moebius diffusion failed:", error);
+    throw new MlHealUnavailableError(`Moebius diffusion failed: ${errorMessage(error)}`);
+  }
+  onProgress?.(0.97, "Decoding image");
+  try {
+    const decoded = new Float32Array(latentF32.length);
+    for (let i = 0; i < decoded.length; i += 1) decoded[i] = (latentF32[i] ?? 0) / MOEBIUS_VAE_SCALE;
+    const decOut = await dec.run({ latent: new ort.Tensor("float32", decoded, [1, 4, latent, latent]) });
+    const rgb = firstTensor(decOut);
+    const output = new Float32Array(3 * 512 * 512);
+    for (let i = 0; i < output.length; i += 1) {
+      output[i] = Math.max(0, Math.min(255, ((rgb[i] ?? 0) * 0.5 + 0.5) * 255));
+    }
+    onProgress?.(1, "Done");
+    return compositeMlHealOutput(image, mask, roi, output);
+  } catch (error) {
+    console.error("[ml-heal] Moebius VAE decode failed:", error);
+    throw new MlHealUnavailableError(`Moebius VAE decode failed: ${errorMessage(error)}`);
+  }
+}
+
+/**
+ * Run local ML inpainting for the quality tier. Fast (classic) throws
+ * MlHealUnavailableError so the worker routes it to exemplar heal without
+ * touching the model runtime. Best tries Moebius, then LaMa, then throws for
+ * the classic fallback. Empty mask returns a source copy.
+ */
+export async function runMlHeal(
+  image: PixelImage,
+  mask: RepairMask,
+  options: MlHealRunOptions = {},
+): Promise<PixelImage> {
+  const quality = options.quality ?? "balanced";
+  const engine: MlHealEngine = mlHealEngineForQuality(quality);
+  if (engine === "classic") {
+    options.onProgress?.(0, "Classic heal");
+    throw new MlHealUnavailableError("Fast tier uses classic heal.");
+  }
+  const ort = await ensureOrt(engine);
+  const onProgress = options.onProgress;
+  await configureOrt(ort, engine, onProgress);
+  if (engine === "moebius") {
+    try {
+      return await runMoebius(ort, image, mask, resolveMoebiusBase(options.moebiusBase), onProgress);
+    } catch (error) {
+      if (error instanceof MlHealUnavailableError && error.message !== "Fast tier uses classic heal.") {
+        onProgress?.(0, "Moebius unavailable, using LaMa");
+      } else {
+        throw error;
+      }
+    }
+  }
+  try {
+    return await runLama(ort, image, mask, resolveLamaUrl(options.modelUrl), onProgress);
+  } catch (error) {
+    if (error instanceof MlHealUnavailableError) throw error;
+    throw new MlHealUnavailableError("ML inpainting inference failed.");
+  }
+}
+
+/**
+ * Prefetch weights + sessions for an engine without an image (called when the
+ * Repair tool opens so the first stroke never waits on the download).
+ */
+export async function warmupMlHeal(
+  engine: MlHealEngine,
+  options: Pick<MlHealRunOptions, "modelUrl" | "moebiusBase" | "onProgress"> = {},
+): Promise<{ engine: MlHealEngine; cached: boolean }> {
+  if (engine === "classic") return { engine, cached: true };
+  const ort = await ensureOrt(engine);
+  const onProgress = options.onProgress;
+  await configureOrt(ort, engine, onProgress);
+  if (engine === "moebius") {
+    const base = resolveMoebiusBase(options.moebiusBase);
+    const totalBytes = ML_HEAL_MOEBIUS_FILE_SIZES.reduce((sum, size) => sum + size, 0);
+    let cursor = 0;
+    let allCached = true;
+    for (let i = 0; i < ML_HEAL_MOEBIUS_FILES.length; i += 1) {
+      const url = `${base}${ML_HEAL_MOEBIUS_FILES[i]}`;
+      const span = ((ML_HEAL_MOEBIUS_FILE_SIZES[i] ?? 0) / totalBytes) * 0.7;
+      const { buffer, cached } = await fetchWeights(
+        url,
+        ML_HEAL_MOEBIUS_FILE_SIZES[i] ?? 0,
+        cursor,
+        span,
+        `Downloading Moebius ${i + 1}/3`,
+        onProgress,
+      );
+      allCached = allCached && cached;
+      await getSession(ort, url, buffer, "moebius", cursor, `Loading Moebius ${i + 1}/3`, onProgress);
+      cursor += span;
+    }
+    onProgress?.(1, "Moebius ready");
+    return { engine, cached: allCached };
+  }
+  const url = resolveLamaUrl(options.modelUrl);
+  const { buffer, cached } = await fetchWeights(url, 208 * 1024 * 1024, 0, 0.8, "Downloading LaMa", onProgress);
+  await getSession(ort, url, buffer, "lama", 0.8, "Loading LaMa", onProgress);
+  onProgress?.(1, "LaMa ready");
+  return { engine, cached };
+}
+
 /** Drop cached sessions (tests, memory pressure). Weights stay in Cache Storage. */
 export function resetMlHealPipeline(): void {
-  lamaSession = null;
-  lamaSessionUrl = null;
+  sessions.clear();
 }

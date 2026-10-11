@@ -7,6 +7,7 @@
 
 import { assertValidImage, type PixelImage } from "./analyze.js";
 import type { HealQuality } from "./heal.js";
+import type { MlHealEngine } from "./ml-heal.js";
 import { assertValidMask, type InpaintMethod, type RepairMask } from "./inpaint.js";
 
 export type VisionRequestId = number;
@@ -59,7 +60,17 @@ export interface InpaintRequest {
   seamlessLight?: boolean;
 }
 
-export type VisionWorkerRequest = PingRequest | GrayscaleRequest | StraightenRequest | InpaintRequest;
+export type VisionWorkerRequest = PingRequest | GrayscaleRequest | StraightenRequest | InpaintRequest | MlWarmupRequest;
+
+/**
+ * Prefetch ML weights + sessions without an image (Repair tool opened).
+ * The worker reports byte/step progress with the request id, then ml-ready.
+ */
+export interface MlWarmupRequest {
+  id: VisionRequestId;
+  kind: "ml-warmup";
+  engine: MlHealEngine;
+}
 
 export interface PongResponse {
   id: VisionRequestId;
@@ -114,16 +125,33 @@ export interface VisionErrorResponse {
   message: string;
 }
 
+/** Terminal warmup answer: the engine's weights + sessions are ready. */
+export interface MlReadyResponse {
+  id: VisionRequestId;
+  kind: "ml-ready";
+  engine: MlHealEngine;
+  /** True when every file came from Cache Storage (no download). */
+  cached: boolean;
+}
+
 export type VisionWorkerResponse =
   | PongResponse
   | GrayscaleResponse
   | StraightenResponse
   | InpaintResponse
   | InpaintProgressResponse
+  | MlReadyResponse
   | VisionErrorResponse;
 
 export function createPingRequest(id: VisionRequestId): PingRequest {
   return { id, kind: "ping" };
+}
+
+export function createMlWarmupRequest(id: VisionRequestId, engine: MlHealEngine): MlWarmupRequest {
+  if (engine !== "classic" && engine !== "lama" && engine !== "moebius") {
+    throw new RangeError(`Unknown ML engine: ${String(engine)}.`);
+  }
+  return { id, kind: "ml-warmup", engine };
 }
 
 export function createGrayscaleRequest(id: VisionRequestId, image: PixelImage): GrayscaleRequest {
@@ -209,6 +237,9 @@ function isImageRequest(value: Record<string, unknown>): boolean {
 export function isVisionWorkerRequest(value: unknown): value is VisionWorkerRequest {
   if (!isRecord(value) || !isId(value.id)) return false;
   if (value.kind === "ping") return true;
+  if (value.kind === "ml-warmup") {
+    return value.engine === "classic" || value.engine === "lama" || value.engine === "moebius";
+  }
   if (value.kind === "grayscale" || value.kind === "straighten") return isImageRequest(value);
   if (value.kind === "inpaint") {
     return (
@@ -263,6 +294,12 @@ export function isVisionWorkerResponse(value: unknown): value is VisionWorkerRes
     );
   }
   if (value.kind === "error") return typeof value.message === "string";
+  if (value.kind === "ml-ready") {
+    return (
+      (value.engine === "classic" || value.engine === "lama" || value.engine === "moebius") &&
+      typeof value.cached === "boolean"
+    );
+  }
   return false;
 }
 

@@ -28,6 +28,196 @@ export const ML_HEAL_LAMA_DEFAULT_URL =
   "https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx";
 /** Default Moebius ONNX base (unet/vae_encoder/vae_decoder live underneath). */
 export const ML_HEAL_MOEBIUS_DEFAULT_BASE = "https://huggingface.co/simonw/Moebius-ONNX/resolve/main";
+/** Moebius weight files under the base URL. */
+export const ML_HEAL_MOEBIUS_FILES = ["unet.onnx", "vae_encoder.onnx", "vae_decoder.onnx"] as const;
+/** Approximate Moebius fp32 download sizes in bytes (unet, vae_encoder, vae_decoder). */
+export const ML_HEAL_MOEBIUS_FILE_SIZES = [907 * 1024 * 1024, 137 * 1024 * 1024, 198 * 1024 * 1024] as const;
+/** Approximate LaMa fp32 download size in bytes. */
+export const ML_HEAL_LAMA_FILE_SIZE = 208 * 1024 * 1024;
+
+/**
+ * Local engine tier selected by the Heal Quality preset under ML Heal:
+ * Fast runs the instant classic exemplar engine (no download), Balanced runs
+ * LaMa single-pass neural fill, Best runs Moebius diffusion (with automatic
+ * LaMa fallback when diffusion cannot serve the job).
+ */
+export type MlHealEngine = "classic" | "lama" | "moebius";
+
+export function mlHealEngineForQuality(quality: "fast" | "balanced" | "best"): MlHealEngine {
+  if (quality === "fast") return "classic";
+  if (quality === "best") return "moebius";
+  return "lama";
+}
+
+/** Human-facing engine facts for blurbs and status lines. */
+export const ML_HEAL_ENGINE_INFO: Record<MlHealEngine, { label: string; download: string }> = {
+  classic: { label: "Classic exemplar", download: "no download" },
+  lama: { label: "LaMa neural fill", download: "~208MB once" },
+  moebius: { label: "Moebius diffusion", download: "~1.3GB once" },
+};
+
+/**
+ * Execution providers per engine, in ORT trial order. LaMa is wasm-only: its
+ * Fourier ops have no WebGPU kernels, so offering WebGPU only produces a
+ * confusing failure before the working backend is tried. Moebius is
+ * WebGPU-only: a 907MB fp32 UNet cannot serve on a 32-bit WASM heap, and
+ * attempting it wastes minutes before OOMing — the tier chain falls back to
+ * LaMa instead.
+ */
+export const ML_HEAL_ENGINE_EPS: Record<MlHealEngine, readonly string[]> = {
+  classic: [],
+  lama: ["wasm"],
+  moebius: ["webgpu"],
+};
+
+/**
+ * WASM thread count for the ORT runtime. Threaded WASM needs
+ * SharedArrayBuffer, which needs a cross-origin-isolated page (COOP/COEP
+ * headers the app deliberately does not send — they would risk the remote
+ * sample images and webfont). Without isolation, single-threaded: slower but
+ * works everywhere. Capped at 4 with isolation: the 208MB graph gains little
+ * past that and each thread costs arena memory.
+ */
+export function mlHealWasmThreads(crossOriginIsolated: boolean, hardwareConcurrency = 4): number {
+  if (!crossOriginIsolated) return 1;
+  if (!Number.isFinite(hardwareConcurrency) || hardwareConcurrency < 1) return 1;
+  return Math.max(1, Math.min(4, Math.floor(hardwareConcurrency)));
+}
+
+/** Device capabilities that decide which engines can run. */
+export interface MlCapabilities {
+  webgpu: boolean;
+  crossOriginIsolated: boolean;
+  hardwareConcurrency: number;
+}
+
+/** One-line human summary for status lines, e.g. "WebGPU: yes · Threads: shared (4)". */
+export function formatMlCapabilities(caps: MlCapabilities): string {
+  const threads = caps.crossOriginIsolated
+    ? `shared (${mlHealWasmThreads(true, caps.hardwareConcurrency)})`
+    : "single";
+  return `WebGPU: ${caps.webgpu ? "yes" : "no"} · Threads: ${threads}`;
+}
+
+/** Moebius diffusion constants (ECCV'26 0.22B export; see pipeline notes). */
+export const MOEBIUS_VAE_SCALE = 0.13025;
+export const MOEBIUS_LATENT_SIZE = 64;
+export const MOEBIUS_TRAIN_STEPS = 1000;
+export const MOEBIUS_BETA_START = 0.00085;
+export const MOEBIUS_BETA_END = 0.012;
+export const MOEBIUS_INFERENCE_STEPS = 20;
+export const MOEBIUS_STRENGTH = 0.99;
+export const MOEBIUS_GUIDANCE = 7.5;
+/** Fixed sampling seed so ML jobs are reproducible run to run. */
+export const MOEBIUS_SEED = 0;
+
+/** Actual DDIM step count for the strength-truncated schedule. */
+export function moebiusStepCount(
+  inferenceSteps: number = MOEBIUS_INFERENCE_STEPS,
+  strength: number = MOEBIUS_STRENGTH,
+): number {
+  return Math.max(1, Math.floor(inferenceSteps * strength));
+}
+
+/** Scaled-linear training betas: linspace(sqrt(start), sqrt(end))^2. */
+export function moebiusBetas(trainSteps: number = MOEBIUS_TRAIN_STEPS): Float64Array {
+  const start = Math.sqrt(MOEBIUS_BETA_START);
+  const end = Math.sqrt(MOEBIUS_BETA_END);
+  const betas = new Float64Array(trainSteps);
+  for (let i = 0; i < trainSteps; i += 1) {
+    const t = trainSteps === 1 ? 0 : i / (trainSteps - 1);
+    const beta = start + (end - start) * t;
+    betas[i] = beta * beta;
+  }
+  return betas;
+}
+
+/** Cumulative alphas for the training schedule. */
+export function moebiusAlphasCumprod(betas: Float64Array): Float64Array {
+  const alphas = new Float64Array(betas.length);
+  let acc = 1;
+  for (let i = 0; i < betas.length; i += 1) {
+    acc *= 1 - (betas[i] ?? 0);
+    alphas[i] = acc;
+  }
+  return alphas;
+}
+
+/**
+ * DDIM inference timesteps: the last `count` of `inferenceSteps` linearly
+ * spaced timesteps over [0, trainSteps). Descending, deterministic.
+ */
+export function moebiusTimesteps(
+  inferenceSteps: number = MOEBIUS_INFERENCE_STEPS,
+  strength: number = MOEBIUS_STRENGTH,
+  trainSteps: number = MOEBIUS_TRAIN_STEPS,
+): number[] {
+  const count = moebiusStepCount(inferenceSteps, strength);
+  const all: number[] = [];
+  for (let i = 0; i < inferenceSteps; i += 1) {
+    all.push(Math.round(((inferenceSteps - 1 - i) * (trainSteps - 1)) / Math.max(1, inferenceSteps - 1)));
+  }
+  return all.slice(inferenceSteps - count);
+}
+
+/**
+ * Nearest downsample of a 512x512 binary mask to the 64x64 latent grid:
+ * a latent cell is fill (1) when any source pixel in its 8x8 block is fill.
+ */
+export function downsampleMaskToLatent(mask512: Float32Array): Float32Array {
+  const size = ML_HEAL_MODEL_SIZE;
+  const latent = MOEBIUS_LATENT_SIZE;
+  if (mask512.length !== size * size) {
+    throw new RangeError(`Expected a ${size}x${size} mask, got ${mask512.length} values.`);
+  }
+  const block = size / latent;
+  const out = new Float32Array(latent * latent);
+  for (let ly = 0; ly < latent; ly += 1) {
+    for (let lx = 0; lx < latent; lx += 1) {
+      let fill = 0;
+      for (let by = 0; by < block && fill === 0; by += 1) {
+        for (let bx = 0; bx < block; bx += 1) {
+          if ((mask512[(ly * block + by) * size + lx * block + bx] ?? 0) > 0.5) {
+            fill = 1;
+            break;
+          }
+        }
+      }
+      out[ly * latent + lx] = fill;
+    }
+  }
+  return out;
+}
+
+/**
+ * Deterministic PRNG (mulberry32) with Box-Muller gaussian sampling for the
+ * diffusion initial noise and per-step known-region noise.
+ */
+export function makeSeededGaussian(seed: number): () => number {
+  let a = seed >>> 0;
+  const uniform = (): number => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  let spare: number | null = null;
+  return (): number => {
+    if (spare !== null) {
+      const value = spare;
+      spare = null;
+      return value;
+    }
+    let u = 0;
+    let v = 0;
+    while (u === 0) u = uniform();
+    while (v === 0) v = uniform();
+    const mag = Math.sqrt(-2 * Math.log(u));
+    spare = mag * Math.sin(2 * Math.PI * v);
+    return mag * Math.cos(2 * Math.PI * v);
+  };
+}
 
 /** Square region of interest in source pixels. */
 export interface MlHealRoi {
