@@ -69,6 +69,22 @@ describe("heal overlays", () => {
     expect(bad.status).toBe(400);
   });
 
+  it("accepts short hashed signatures but still rejects oversized ones", async () => {
+    const hashed = await ctx.app.request(`/api/photos/${photoId}/heal-overlays/9`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patchBody("id:9|g:photo|4/3|0|0|0|0|100x80|h:0123456789abcdef")),
+    });
+    expect(hashed.status).toBe(200);
+    const oversized = await ctx.app.request(`/api/photos/${photoId}/heal-overlays/10`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patchBody("s".repeat(4097))),
+    });
+    expect(oversized.status).toBe(400);
+    expect(((await oversized.json()) as { error: string }).error).toBe("Invalid signature.");
+  });
+
   it("404s unknown photos and purges overlays with the photo", async () => {
     const missing = await ctx.app.request("/api/photos/nope/heal-overlays");
     expect(missing.status).toBe(404);

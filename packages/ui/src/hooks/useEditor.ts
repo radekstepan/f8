@@ -24,6 +24,10 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
   const latest = useRef<Record<string, EditState>>({});
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const seeded = useRef(false);
+  // True once the server seed has been applied. Before that, `edit` is a
+  // default placeholder — consumers must not paint it (one frame of empty
+  // retouches would flash over saved work on reload).
+  const [seedApplied, setSeedApplied] = useState(() => persistence?.initial != null);
   const history = useMemo(() => histories[photoId] || initialHistory(photoId), [histories, photoId]);
 
   const initial = persistence?.initial;
@@ -31,6 +35,7 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     if (initial && !seeded.current) {
       seeded.current = true;
       setHistories(initial);
+      setSeedApplied(true);
     }
   }, [initial]);
 
@@ -136,5 +141,5 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     })();
   }, [change]);
 
-  return { edit: history.present, histories, change, undo, redo, reset, autoEnhance, autoWhiteBalance, autoLightness, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
+  return { edit: history.present, ready: seedApplied, histories, change, undo, redo, reset, autoEnhance, autoWhiteBalance, autoLightness, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
 }

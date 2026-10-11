@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star } from 'lucide-react';
 import { DEFAULT_EDIT } from '@photomator/core';
-import { applyInpaintRepair, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, partitionHealGroups, pasteHealPatches, renderAdjustedCanvas, reusableOverlayForGroup, signatureForHealGroup, strokeIdForPoint } from '@photomator/core';
+import { LibraryError, applyInpaintRepair, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewRenderKey, renderAdjustedCanvas, reusableOverlayForGroup, savePreviewRender, signatureForHealGroup, strokeIdForPoint } from '@photomator/core';
 import type { CachedHealPatch, ChangeEdit, EditState, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RunInpaint, StoredHealPatch, Tool } from '@photomator/core';
 import { IconButton } from './EditorUI.js';
 
@@ -90,8 +90,26 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   /** Repair stroke groups with a heal still in flight (clean canvas + red overlay, never blur). */
   const [pendingRepairIds, setPendingRepairIds] = useState<number[]>([]);
-  /** Bumped when persisted overlays arrive so late loads reseed without rehealing. */
-  const [overlayVersion, setOverlayVersion] = useState(0);
+  /** In-flight overlay fetch for the open photo; the main effect awaits it before first paint. */
+  const overlayPromise = useRef<Promise<StoredHealPatch[]> | null>(null);
+  /**
+   * Content key of the last canvas paint (photo + full edit). The instant
+   * preview shows whenever the cached key matches current state but differs
+   * from what's on screen — robust even if edits arrive in phases.
+   */
+  const paintedKey = useRef<string | null>(null);
+  /** Object URL of the cached last render shown instantly while the pipeline prepares. */
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const setPreviewUrlTracked = (url: string | null) => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = url;
+    setPreviewUrl(url);
+  };
+  /** Last preview-cache key written, so repeat paints of one state save once. */
+  const lastSavedPreviewKey = useRef<string | null>(null);
+  /** Bumped on every canvas paint so the idle-save effect re-evaluates. */
+  const [paintCount, setPaintCount] = useState(0);
   const isBrush = tool === 'repair' || tool === 'clone';
 
   useEffect(() => {
@@ -105,13 +123,66 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => { setLoading(true); setError(''); cloneSource.current = null; setSourceSet(false); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); const myPhotoId = photo.id; let alive = true; void loadStoredHealOverlays(overlayClient, myPhotoId).then((patches) => { if (!alive) return; overlayStore.current = patches; setOverlayVersion((v) => v + 1); }); return () => { alive = false; healEpoch.current += 1; }; }, [photo.id, photo.src, retry]);
+  useEffect(() => { setLoading(true); setError(''); cloneSource.current = null; setSourceSet(false); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src, retry]);
 
   useEffect(() => {
     let cancelled = false;
     let timer: number | null = null;
-    loadImage(photo.src).then((image) => {
-      if (cancelled || !canvasRef.current || !originalRef.current) return;
+    const generation = repairGeneration.current + 1;
+    repairGeneration.current = generation;
+    void (async () => {
+      // Content key of the state this run will paint; doubles as the
+      // preview-cache key.
+      const runKey = previewRenderKey(photo.id, photo.src, edit);
+      // Image decode starts immediately so it overlaps the cache read below.
+      const imagePromise = loadImage(photo.src);
+      // Instant preview: the cached last render is pixel-identical when its
+      // version key matches, so it shows immediately while the pipeline
+      // prepares behind it and swaps in invisibly. Shows whenever the canvas
+      // doesn't already hold this exact state — even if an earlier run
+      // painted something else first.
+      const repairsAtStart = edit.retouches.filter((point) => point.kind === 'repair');
+      if (paintedKey.current !== runKey && repairsAtStart.length > 0 && canvasRef.current) {
+        try {
+          const cached = await loadPreviewRender(photo.id, runKey);
+          if (cached && !cancelled && repairGeneration.current === generation && paintedKey.current !== runKey && canvasRef.current) {
+            setPreviewUrlTracked(URL.createObjectURL(cached));
+            setLoading(false);
+          }
+        } catch { /* The pipeline paint below is the fallback. */ }
+      }
+      let image: HTMLImageElement;
+      try {
+        image = await imagePromise;
+      } catch (reason) {
+        if (!cancelled && repairGeneration.current === generation) {
+          setError(reason instanceof Error ? reason.message : 'This photo could not be loaded. Check your connection and try again.');
+          setLoading(false);
+        }
+        return;
+      }
+      // First paint waits for saved work: no clean flash, no pop-in. Photos
+      // without repairs skip the wait (nothing to composite, and an offline
+      // hang must never block them).
+      if (repairsAtStart.length > 0) {
+        let fetched: StoredHealPatch[] = [];
+        try {
+          fetched = (await overlayPromise.current) ?? [];
+        } catch { fetched = []; }
+        // Session-saved groups win over the fetch (a PUT may have landed
+        // after the GET started).
+        if (fetched.length || overlayStore.current.length) {
+          const merged = new Map<number, StoredHealPatch>();
+          for (const entry of fetched) merged.set(entry.groupId, entry);
+          for (const entry of overlayStore.current) merged.set(entry.groupId, entry);
+          overlayStore.current = [...merged.values()];
+        }
+      } else if (overlayPromise.current) {
+        void overlayPromise.current.then((patches) => {
+          if (!cancelled && patches.length && !overlayStore.current.length) overlayStore.current = patches;
+        }).catch(() => undefined);
+      }
+      if (cancelled || repairGeneration.current !== generation || !canvasRef.current || !originalRef.current) return;
       const renderBase = (base: HTMLCanvasElement) => {
         const canvas = canvasRef.current!;
         const adjusted = renderAdjustedCanvas(base, edit);
@@ -139,31 +210,15 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         }
         onHistogram(histogram);
       };
-      // While a repair stroke is being painted — and while its heal is still
-      // in flight after release — every repair stamp stays out of the
-      // canvas: the red mask overlay shows those areas instead of the blur
-      // placeholder. The canvas stays clean until inpainting composites the
-      // healed pixels; failures fall back to blur in the job catch below.
+      // While a repair stroke is being painted, every repair stamp stays out
+      // of the canvas: the red mask overlay shows those areas instead of the
+      // blur placeholder. Otherwise the single paint below already contains
+      // the final healed pixels — saved work is composited before anything
+      // becomes visible, so reloads never flash clean first.
       const paintingRepair = tool === 'repair' && activeStroke !== null;
-      const allRepairs = edit.retouches.filter((point) => point.kind === 'repair');
-      const pendingRun = inpaintRun.current;
-      const pendingMethod = inpaintRepair?.method;
-      const healingPlanned = !paintingRepair && allRepairs.length > 0 && Boolean(pendingRun) && Boolean(pendingMethod);
-      const previewEdit = (paintingRepair || healingPlanned) ? { ...edit, retouches: edit.retouches.filter((point) => point.kind !== 'repair') } : edit;
-      renderBase(geometryCanvas(image, previewEdit));
-      const original = geometryCanvas(image, { ...DEFAULT_EDIT, cropRatio: edit.cropRatio, rotation: edit.rotation, flipH: edit.flipH, flipV: edit.flipV, straighten: edit.straighten });
-      originalRef.current.width = original.width;
-      originalRef.current.height = original.height;
-      originalRef.current.getContext('2d')!.drawImage(original, 0, 0);
-      setLoading(false);
-
-      // Upgrade repair strokes with worker inpainting, debounced so a
-      // painting stroke doesn't flood the worker queue. While dragging or
-      // healing, repairs are excluded above (clean canvas + red mask);
-      // failures render the blur fallback in the catch below.
-      const repairs = allRepairs;
-      const run = pendingRun;
-      const method = pendingMethod;
+      const repairs = edit.retouches.filter((point) => point.kind === 'repair');
+      const run = inpaintRun.current;
+      const method = inpaintRepair?.method;
       // Distinct heal groups (strokes) covered by this pass, for progress
       // copy ("Healing 3 areas…"). Points share a stroke id per drag.
       const areas = new Set(repairs.map((point) => strokeIdForPoint(point))).size;
@@ -173,24 +228,55 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         featherPx: inpaintRepair?.featherPx,
         areas,
       };
-      // Finished groups must stay visibly healed while follow-up groups
-      // wait in the serial queue (Best takes seconds per group) or heal:
-      // the clean base above wipes them, and prepare() below only runs
-      // once the running job finishes. Recomposite whatever is already
-      // cached, synchronously, so the canvas never drops finished work.
-      // Dirty areas stay clean with a red mask until their group heals.
-      // Pending ids drive the red overlay: dirty groups only, so finished
-      // work is never covered while the queue drains.
-      if ((method === 'ml-heal' || method === 'heal') && repairs.length && !paintingRepair && canvasRef.current) {
+      // Single clean base for this run: repairs excluded (clone stamps stay),
+      // healed patches composited below before the only paint. One geometry
+      // pass feeds seeding, partitioning, and rendering alike.
+      const baseEditSync = { ...edit, retouches: edit.retouches.filter((point) => point.kind !== 'repair') };
+      const paintOriginal = () => {
+        const original = geometryCanvas(image, { ...DEFAULT_EDIT, cropRatio: edit.cropRatio, rotation: edit.rotation, flipH: edit.flipH, flipV: edit.flipV, straighten: edit.straighten });
+        originalRef.current!.width = original.width;
+        originalRef.current!.height = original.height;
+        originalRef.current!.getContext('2d')!.drawImage(original, 0, 0);
+      };
+      const finishPaint = () => {
+        paintedKey.current = runKey;
+        setPreviewUrlTracked(null);
+        setLoading(false);
+        setPaintCount((count) => count + 1);
+      };
+      const maybeSavePreview = (key: string) => {
+        // Stash the final on-screen pixels for instant reloads. Only the
+        // latest pipeline state may write (a newer run owns its own save).
+        if (lastSavedPreviewKey.current === key || !canvasRef.current || repairGeneration.current !== generation) return;
+        lastSavedPreviewKey.current = key;
+        const canvas = canvasRef.current;
+        void previewBlobFromCanvas(canvas).then((blob) => {
+          if (blob && repairGeneration.current === generation) void savePreviewRender(photo.id, key, blob);
+        });
+      };
+      // True when the queue below must run; false once everything is cached —
+      // the single paint above already shows the final state.
+      let needsQueue = true;
+      if (paintingRepair) {
+        // Live drag feedback only; the debounced queue below still schedules
+        // the post-release heal.
+        renderBase(geometryCanvas(image, baseEditSync));
+        paintOriginal();
+        setPendingRepairIds((prev) => (prev.length ? [] : prev));
+        finishPaint();
+      } else if ((method === 'ml-heal' || method === 'heal') && repairs.length && canvasRef.current) {
+        // Finished groups stay visibly healed while follow-up groups heal:
+        // valid patches composite here, dirty areas stay clean with a red
+        // mask until their group heals. Pending ids drive the red overlay:
+        // dirty groups only, so finished work is never covered.
         try {
           if (healCachePhoto.current !== photo.src) {
             healCache.current.clear();
             healCachePhoto.current = photo.src;
           }
-          const baseEditSync = { ...edit, retouches: edit.retouches.filter((point) => point.kind !== 'repair') };
-          const cleanSync = geometryCanvas(image, baseEditSync);
-          const syncWidth = cleanSync.width;
-          const syncHeight = cleanSync.height;
+          const cleanOne = geometryCanvas(image, baseEditSync);
+          const syncWidth = cleanOne.width;
+          const syncHeight = cleanOne.height;
           if (Number.isInteger(syncWidth) && Number.isInteger(syncHeight) && syncWidth > 0 && syncHeight > 0) {
             const syncParams = {
               method,
@@ -206,41 +292,65 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
               if (!overlay || overlay.canvasWidth !== syncWidth || overlay.canvasHeight !== syncHeight) continue;
               healCache.current.set(group.id, { signature: signatureForHealGroup(group, syncParams), x0: overlay.x0, y0: overlay.y0, width: overlay.width, height: overlay.height, data: overlay.data.slice() });
             }
+            // Best-effort: drop server overlays for deleted strokes.
+            const liveSync = new Set(syncGroups.map((group) => group.id));
+            const orphansSync = overlayStore.current.filter((entry) => !liveSync.has(entry.groupId));
+            if (orphansSync.length) {
+              overlayStore.current = overlayStore.current.filter((entry) => liveSync.has(entry.groupId));
+              for (const orphan of orphansSync) void overlayClient.deleteHealOverlay(photo.id, orphan.groupId).catch(() => undefined);
+            }
             const syncPart = partitionHealGroups(repairs, healCache.current, syncParams, syncWidth, syncHeight);
             const syncPatches = syncPart.valid.flatMap((group) => {
               const entry = healCache.current.get(group.id);
               return entry ? [entry] : [];
             });
             if (syncPatches.length) {
-              const syncCtx = cleanSync.getContext('2d')!;
+              const syncCtx = cleanOne.getContext('2d')!;
               const syncPixels = syncCtx.getImageData(0, 0, syncWidth, syncHeight);
               const syncSource = { width: syncWidth, height: syncHeight, data: new Uint8ClampedArray(syncPixels.data) };
               const composited = pasteHealPatches(syncSource, syncPatches);
               const bytes = new Uint8ClampedArray(composited.data.length);
               bytes.set(composited.data);
               syncCtx.putImageData(new ImageData(bytes, syncWidth, syncHeight), 0, 0);
-              renderBase(cleanSync);
             }
+            renderBase(cleanOne);
+            paintOriginal();
             // Only still-dirty groups stay red; cached groups already show healed.
             const dirtyIds = syncPart.dirty.map((group) => group.id);
             setPendingRepairIds((prev) => (prev.length === dirtyIds.length && prev.every((id) => dirtyIds.includes(id)) ? prev : dirtyIds));
+            finishPaint();
+            if (!syncPart.dirty.length) {
+              needsQueue = false;
+              if (syncPatches.length) maybeSavePreview(runKey);
+            }
           } else {
             const fallbackIds = [...new Set(repairs.map((point) => strokeIdForPoint(point)))];
             setPendingRepairIds((prev) => (prev.length === fallbackIds.length && prev.every((id) => fallbackIds.includes(id)) ? prev : fallbackIds));
+            finishPaint();
           }
         } catch {
-          // Base canvas above is clean (no blur); leave it so areas stay
-          // marked red instead of flashing a blurry placeholder.
+          // Leave previous pixels up (spinner/preview covers photo opens);
+          // mark areas red instead of flashing a blurry placeholder.
+          const fallbackIds = [...new Set(repairs.map((point) => strokeIdForPoint(point)))];
+          setPendingRepairIds((prev) => (prev.length === fallbackIds.length && prev.every((id) => fallbackIds.includes(id)) ? prev : fallbackIds));
         }
-      } else if (method !== 'ml-heal' && method !== 'heal' && repairs.length && !paintingRepair && run && method) {
+      } else if (method && method !== 'ml-heal' && method !== 'heal' && repairs.length && run) {
+        // Telea/NS keep the single full-pass path: clean single paint now,
+        // worker upgrade when it lands.
+        renderBase(geometryCanvas(image, baseEditSync));
+        paintOriginal();
         const allIds = [...new Set(repairs.map((point) => strokeIdForPoint(point)))];
         setPendingRepairIds((prev) => (prev.length === allIds.length && prev.every((id) => allIds.includes(id)) ? prev : allIds));
-      } else if (!repairs.length || paintingRepair) {
+        finishPaint();
+      } else {
+        renderBase(geometryCanvas(image, edit));
+        paintOriginal();
         setPendingRepairIds((prev) => (prev.length ? [] : prev));
+        finishPaint();
       }
-      if (repairs.length && run && method) {
-        const generation = repairGeneration.current + 1;
-        repairGeneration.current = generation;
+      // The single paint above already shows the final state when nothing is
+      // dirty, so the queue only runs for groups that still need inference.
+      if (needsQueue && repairs.length && run && method) {
         timer = window.setTimeout(() => {
           if (cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
           // heal/ml-heal heals each stroke group once, saves the overlay,
@@ -355,9 +465,30 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
                       overlayStore.current = overlayStore.current.filter((entry) => entry.groupId !== group.id && healCache.current.has(entry.groupId));
                       overlayStore.current.push({ ...patch, data: patch.data.slice(), groupId: group.id, geometryKey: cacheParams.geometryKey, canvasWidth: width, canvasHeight: height });
                       // Persist before the next group starts: reopening can
-                      // never lose a finished group. Failures keep the
-                      // in-memory patch for this session.
-                      await overlayClient.saveHealOverlay(myPhotoId, group.id, overlayBodyFromPatch(patch, { geometryKey: cacheParams.geometryKey, canvasWidth: width, canvasHeight: height, method: methodAtEnqueue, quality: latest.quality, featherPx: latest.featherPx })).catch(() => undefined);
+                      // never lose a finished group. Transient failures keep
+                      // the in-memory patch for this session; a 4xx is our
+                      // own malformed payload (a bug), so it warns instead
+                      // of vanishing silently.
+                      await overlayClient.saveHealOverlay(myPhotoId, group.id, overlayBodyFromPatch(patch, { geometryKey: cacheParams.geometryKey, canvasWidth: width, canvasHeight: height, method: methodAtEnqueue, quality: latest.quality, featherPx: latest.featherPx })).catch((reason: unknown) => {
+                        if (reason instanceof LibraryError && reason.status >= 400 && reason.status < 500) {
+                          console.warn(`[heal] Overlay persist rejected for group ${group.id}: ${reason.message}`);
+                        }
+                      });
+                      // Stash the final on-screen pixels once every group is
+                      // healed, so the next open shows instantly. Only the
+                      // latest pipeline state may write.
+                      const cur = latestHealState.current;
+                      const liveGroups = groupRetouchStrokes(cur?.edit.retouches ?? []).filter((g) => g.kind === 'repair');
+                      if (cur && canvasRef.current && repairGeneration.current === generation && liveGroups.length > 0 && liveGroups.every((g) => healCache.current.has(g.id))) {
+                        const doneKey = previewRenderKey(myPhotoId, myPhotoSrc, cur.edit);
+                        if (lastSavedPreviewKey.current !== doneKey) {
+                          lastSavedPreviewKey.current = doneKey;
+                          const doneCanvas = canvasRef.current;
+                          void previewBlobFromCanvas(doneCanvas).then((blob) => {
+                            if (blob && repairGeneration.current === generation) void savePreviewRender(myPhotoId, doneKey, blob);
+                          });
+                        }
+                      }
                     },
                   };
                 },
@@ -374,7 +505,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
             }, 300);
             return;
           }
-          const clean = geometryCanvas(image, { ...previewEdit, retouches: previewEdit.retouches.filter((point) => point.kind !== 'repair') });
+          const clean = geometryCanvas(image, { ...baseEditSync, retouches: baseEditSync.retouches.filter((point) => point.kind !== 'repair') });
           void applyInpaintRepair(clean, repairs, method, run, repairOptions).then((applied) => {
             if (!applied || cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
             renderBase(clean);
@@ -388,9 +519,31 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
           });
         }, 300);
       }
-    }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setLoading(false); } });
+    })();
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
-  }, [photo.src, edit, tool, activeStroke, onHistogram, retry, overlayVersion, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.seamlessLight, inpaintRepair?.featherPx, inpaintRepair?.status]);
+  }, [photo.src, edit, tool, activeStroke, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.seamlessLight, inpaintRepair?.featherPx, inpaintRepair?.status]);
+
+  // Idle persistence: once the pipeline settles (painted, nothing healing,
+  // nothing queued, not painting), stash the on-screen pixels under the
+  // current content key so any state — not just post-heal — reopens
+  // instantly. Debounced so slider drags and heal jobs settle first;
+  // exact-key only, so a stale bitmap can never pass as current.
+  useEffect(() => {
+    if (loading || activeStroke !== null || pendingRepairIds.length > 0) return;
+    if (paintedKey.current == null || !canvasRef.current) return;
+    if (healQueue.current?.active || (healQueue.current?.pendingJobs ?? 0) > 0) return;
+    const key = previewRenderKey(photo.id, photo.src, edit);
+    if (paintedKey.current !== key || lastSavedPreviewKey.current === key) return;
+    const timer = window.setTimeout(() => {
+      if (!canvasRef.current || lastSavedPreviewKey.current === key) return;
+      lastSavedPreviewKey.current = key;
+      const canvas = canvasRef.current;
+      void previewBlobFromCanvas(canvas).then((blob) => {
+        if (blob) void savePreviewRender(photo.id, key, blob);
+      });
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [photo.id, photo.src, edit, loading, activeStroke, pendingRepairIds, paintCount]);
 
   const fitWidth = Math.max(100, Math.min(stageSize.width - 64, (stageSize.height - 48) * aspect));
   const frameWidth = fitWidth * zoom;
@@ -520,6 +673,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
 
   return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{edit.preset !== 'Original' && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton></div></div><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onPointerMove={(event) => { if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
       <canvas className="edited-canvas" ref={canvasRef} role="img" aria-label={`${photo.title}, with current adjustments`} />
+      {previewUrl && <img className="cached-preview" src={previewUrl} alt="" aria-hidden="true" draggable={false} />}
       <div className="original-layer" style={{ clipPath: `inset(0 ${showOriginal ? 0 : compare ? 100 - split : 100}% 0 0)` }}><canvas ref={originalRef} role="img" aria-label="Original photo" /></div>
       {loading && <div className="photo-loading"><span className="loading-spinner" /><span>Developing your photo...</span></div>}
       {error && <div className="photo-error"><ImageOff size={28} /><p>{error}</p><button className="secondary-button" onClick={() => setRetry((value) => value + 1)}>Try again</button></div>}

@@ -345,7 +345,9 @@ export default function App() {
           <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} onSelect={selectPhoto} onFavorite={toggleFavorite} onImport={() => fileInput.current?.click()} />
         ) : (
           <>
-            {photo.missing ? (
+            {!editor.ready ? (
+              <div className="library-gate" role="status"><span className="loading-spinner" aria-hidden="true" /><p>Developing your photo…</p></div>
+            ) : photo.missing ? (
               <div className="missing-original" role="alert">
                 <FolderSearch size={40} strokeWidth={1.25} />
                 <h2>The original file moved.</h2>

@@ -106,7 +106,7 @@ export function reusableOverlayForGroup(
   const overlay = overlays.find((entry) => entry.groupId === group.id);
   if (!overlay) return null;
   if (geometryPrefixForKey(overlay.geometryKey) !== geometryPrefixForKey(params.geometryKey)) return null;
-  if (pointsKeyFromSignature(overlay.signature) !== pointsKeyForGroup(group)) return null;
+  if (signaturePointsHash(overlay.signature) !== pointsHashForGroup(group)) return null;
   return overlay;
 }
 
@@ -159,8 +159,8 @@ export function pointsKeyForGroup(group: RetouchStrokeGroup): string {
 
 /**
  * Extract the trailing points key from a signature. Legacy signatures
- * (`id|m|q|s|f|g|p`) and current signatures (`id|g|p`) both end with
- * `|p:<points>`, so old overlays saved before immutable reuse still match.
+ * (`id|m|q|s|f|g|p`) and verbose signatures (`id|g|p`) both end with
+ * `|p:<points>`, so old overlays saved before hashed reuse still match.
  */
 export function pointsKeyFromSignature(signature: string): string {
   const marker = "|p:";
@@ -169,10 +169,51 @@ export function pointsKeyFromSignature(signature: string): string {
 }
 
 /**
+ * Short stable hash (cyrb53, hex) of a group's points. Stamps are verbose
+ * (~40 chars each at 6 decimals) and a normal interpolated drag is hundreds
+ * of stamps — embedding them verbatim blew the server's 4KB signature cap
+ * and every PUT failed, so signatures carry only the hash.
+ */
+export function pointsHashForGroup(group: RetouchStrokeGroup): string {
+  return pointsHashForKey(pointsKeyForGroup(group));
+}
+
+/** Hash a raw points key (also used to match legacy verbose signatures). */
+export function pointsHashForKey(pointsKey: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < pointsKey.length; i += 1) {
+    const ch = pointsKey.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return ((h2 >>> 0).toString(16).padStart(8, "0") + (h1 >>> 0).toString(16).padStart(8, "0"));
+}
+
+/**
+ * Points identity of a stored signature, normalized to a hash. Hashed
+ * signatures (`id|g|h`) compare directly; legacy verbose ones (`|p:<points>`)
+ * are hashed on the fly so old overlays keep matching.
+ */
+export function signaturePointsHash(signature: string): string {
+  const marker = "|h:";
+  const cut = signature.lastIndexOf(marker);
+  if (cut >= 0) {
+    const tail = signature.slice(cut + marker.length);
+    const end = tail.indexOf("|");
+    return end < 0 ? tail : tail.slice(0, end);
+  }
+  return pointsHashForKey(pointsKeyFromSignature(signature));
+}
+
+/**
  * Stable signature for one group's healed output. Deliberately excludes
  * method/quality/seamlessLight/featherPx: those describe how a patch was
  * built, never whether it is reusable. Only the stroke identity, the canvas
- * geometry, and the points bust the cache.
+ * geometry, and the points bust the cache. Points travel as a hash so long
+ * strokes stay far under the server's signature cap.
  */
 export function signatureForHealGroup(
   group: RetouchStrokeGroup,
@@ -181,7 +222,7 @@ export function signatureForHealGroup(
   return [
     `id:${group.id}`,
     `g:${params.geometryKey}`,
-    `p:${pointsKeyForGroup(group)}`,
+    `h:${pointsHashForGroup(group)}`,
   ].join("|");
 }
 

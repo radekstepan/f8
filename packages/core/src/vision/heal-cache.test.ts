@@ -10,8 +10,11 @@ import {
   healSingleGroup,
   pasteHealPatches,
   partitionHealGroups,
+  pointsHashForGroup,
+  pointsKeyForGroup,
   reusableOverlayForGroup,
   signatureForHealGroup,
+  signaturePointsHash,
   type CachedHealPatch,
   type HealCacheParams,
   type StoredHealPatch,
@@ -121,16 +124,14 @@ describe("partitionHealGroups", () => {
     ).toHaveLength(1);
   });
 
-  it("reuses persisted overlays saved with the legacy method-scoped signature", async () => {
+  it("reuses persisted overlays saved with the legacy method-scoped signature", () => {
     // Persisted overlays carry a separate geometryKey field, so reuse matches
     // by points key and survives the migration; in-memory entries with a stale
     // format simply reheal once.
-    const { reusableOverlayForGroup } = await import("./heal-cache.js");
-    const { groupRetouchStrokes } = await import("../retouch.js");
     const points = [repair(0.2, 0.2, 0.1, 1)];
     const p = params();
     const group = groupRetouchStrokes(points).filter((g) => g.kind === "repair")[0]!;
-    const legacySig = `id:1|m:ml-heal|q:balanced|s:0|f:2|g:${p.geometryKey}|p:${points.map(() => "0.200000,0.200000,0.100000,100.000000").join(";")}`;
+    const legacySig = `id:1|m:ml-heal|q:balanced|s:0|f:2|g:${p.geometryKey}|p:${pointsKeyForGroup(group)}`;
     const overlay = {
       groupId: 1,
       signature: legacySig,
@@ -149,6 +150,47 @@ describe("partitionHealGroups", () => {
     partitionHealGroups(points, cache, params(), 100, 80);
     expect(cache.has(99)).toBe(false);
     expect(cache.has(1)).toBe(true);
+  });
+});
+
+describe("hashed signatures", () => {
+  // A normal interpolated drag is hundreds of stamps; verbatim points blew
+  // the server's 4KB signature cap and every PUT failed with 400.
+  function longStroke(n: number): RetouchPoint[] {
+    return Array.from({ length: n }, (_, i) => repair(0.2 + (i % 50) * 0.001, 0.2 + Math.floor(i / 50) * 0.001, 0.08, 7));
+  }
+
+  it("stays far under the server cap for long strokes", () => {
+    const points = longStroke(3000);
+    const group = groupRetouchStrokes(points).filter((g) => g.kind === "repair")[0]!;
+    expect(pointsKeyForGroup(group).length).toBeGreaterThan(4096);
+    expect(signatureForHealGroup(group, params()).length).toBeLessThan(300);
+  });
+
+  it("round-trips long strokes through persisted overlays", () => {
+    const points = longStroke(500);
+    const p = params();
+    const group = groupRetouchStrokes(points).filter((g) => g.kind === "repair")[0]!;
+    const overlay: StoredHealPatch = {
+      groupId: group.id,
+      signature: signatureForHealGroup(group, p),
+      x0: 0, y0: 0, width: 2, height: 2,
+      geometryKey: p.geometryKey,
+      canvasWidth: 100, canvasHeight: 80,
+      data: new Uint8ClampedArray(16),
+    };
+    expect(reusableOverlayForGroup([overlay], group, params({ method: "heal", quality: "best" }))).not.toBeNull();
+  });
+
+  it("distinguishes strokes and normalizes legacy tails to the same hash", () => {
+    const a = groupRetouchStrokes([repair(0.2, 0.2, 0.1, 1)]).filter((g) => g.kind === "repair")[0]!;
+    const b = groupRetouchStrokes([repair(0.6, 0.6, 0.1, 1)]).filter((g) => g.kind === "repair")[0]!;
+    expect(pointsHashForGroup(a)).toMatch(/^[0-9a-f]{16}$/);
+    expect(pointsHashForGroup(a)).not.toBe(pointsHashForGroup(b));
+    expect(signaturePointsHash(signatureForHealGroup(a, params()))).toBe(pointsHashForGroup(a));
+    expect(signaturePointsHash(`id:1|m:ml-heal|q:balanced|s:0|f:2|g:x|p:${pointsKeyForGroup(a)}`)).toBe(
+      pointsHashForGroup(a),
+    );
   });
 });
 
