@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Bandage, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, FlipHorizontal2, FlipVertical2, Focus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Stamp, Sun, Thermometer, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Bandage, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, FlipHorizontal2, FlipVertical2, Focus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Stamp, Sun, Thermometer, Trash2, X } from 'lucide-react';
 import { CROP_RATIOS, ML_HEAL_ENGINE_INFO, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, groupRetouchStrokes, strokeIdForPoint } from '@photomator/core';
 import type { ChangeEdit, EditState, HealQuality, InpaintMethod, MlHealEngine, NumericAdjustment, Photo, Tool, VisionWorkerStatus } from '@photomator/core';
 import type { HistogramData } from './PhotoCanvas.js';
@@ -82,8 +82,8 @@ export interface RepairAssist {
   status: VisionWorkerStatus;
   /** Latest ML progress (warmup or job); null when nothing ran yet. */
   mlProgress: { fraction: number; stage: string; job?: 'heal' | 'warmup'; areas?: number | null; updatedAt?: number } | null;
-  /** Engine readiness from the last warmup/job (cached = on device). */
-  mlReady?: { engine: MlHealEngine; cached: boolean; updatedAt: number } | null;
+  /** Engine readiness from the last warmup/job (serving = real inference, never a fallback). */
+  mlReady?: { engine: MlHealEngine; cached: boolean; serving: boolean; updatedAt: number } | null;
   /** Engine the current ML Heal quality tier resolves to. */
   mlEngine: MlHealEngine;
   /** True while the current tier is being prefetched; painting is gated. */
@@ -152,7 +152,7 @@ function MlProgressView({ progress, onCancel }: { progress: NonNullable<RepairAs
 function RepairMethodControl({ assist }: { assist: RepairAssist }) {
   const engineInfo = ML_HEAL_ENGINE_INFO[assist.mlEngine];
   const methodBlurb = assist.method === 'ml-heal'
-    ? `ML heal picks its engine from quality: Fast runs ${ML_HEAL_ENGINE_INFO.classic.label} instantly (${ML_HEAL_ENGINE_INFO.classic.download}), Balanced runs ${ML_HEAL_ENGINE_INFO.lama.label} (${ML_HEAL_ENGINE_INFO.lama.download}), Best runs ${ML_HEAL_ENGINE_INFO.moebius.label} (${ML_HEAL_ENGINE_INFO.moebius.download}). Painting unlocks when the tier is ready; models stay on your device and work offline after the first download.`
+    ? `ML heal picks its engine from quality: Fast runs ${ML_HEAL_ENGINE_INFO.classic.label} instantly (${ML_HEAL_ENGINE_INFO.classic.download}), Balanced runs ${ML_HEAL_ENGINE_INFO.lama.label} (${ML_HEAL_ENGINE_INFO.lama.download}), Best runs ${ML_HEAL_ENGINE_INFO.moebius.label} (${ML_HEAL_ENGINE_INFO.moebius.download}). Painting unlocks when the tier is ready; neural tiers need the photo server.`
     : assist.method === 'heal'
     ? 'Heal copies matching texture from nearby — best for most fixes.'
     : assist.method === 'telea'
@@ -166,6 +166,10 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
   const progress = assist.method === 'ml-heal' ? assist.mlProgress : null;
   const isError = progress?.stage.startsWith('Model unavailable') ?? false;
   const isReady = !isError && assist.mlReady?.engine === assist.mlEngine && assist.mlReady.cached;
+  // Persistent, non-dismissing warning while the selected neural engine is
+  // known-not-serving (failed/downloadable states) — never shown for Fast.
+  const showNotServing = assist.method === 'ml-heal' && assist.mlEngine !== 'classic'
+    && assist.mlReady?.engine === assist.mlEngine && assist.mlReady.serving === false && !assist.mlWarming;
   return <>
     <h4>Reconstruction</h4>
     <div className="segmented-control" role="group" aria-label="Repair reconstruction method">
@@ -182,10 +186,11 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
         <button className={assist.quality === 'balanced' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('balanced') : 'Balanced: the default search reach and effort'} onClick={() => assist.onQualityChange('balanced')}>Balanced</button>
         <button className={assist.quality === 'best' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('best') : 'Best: widest search, slowest — for tricky removals'} onClick={() => assist.onQualityChange('best')}>Best</button>
       </div>
-      {assist.method === 'ml-heal' && <p className="inspector-note" role="status">Engine: {engineInfo.label}{isReady ? ' · ready on this device.' : assist.mlWarming ? ' · loading…' : ` (${engineInfo.download}).`}</p>}
+      {assist.method === 'ml-heal' && <p className="inspector-note" role="status">Engine: {engineInfo.label}{isReady ? ' · server ready.' : assist.mlWarming ? ' · loading…' : ` (${engineInfo.download}).`}</p>}
+      {showNotServing && <p className="inspector-note ml-warning" role="alert"><AlertTriangle size={12} /> Best isn't serving diffusion on the server — heals will fail until its models finish provisioning.</p>}
       {progress && <MlProgressView progress={progress} onCancel={assist.onCancelHeal} />}
       {assist.method === 'ml-heal' && isError && <>
-        {assist.mlEngine === 'moebius' && <button className="secondary-button full-width" title="Fall back to the one-pass neural engine" onClick={() => assist.onQualityChange('balanced')}>Try Balanced instead (~208MB)</button>}
+        {assist.mlEngine === 'moebius' && <button className="secondary-button full-width" title="Fall back to the one-pass neural engine" onClick={() => assist.onQualityChange('balanced')}>Try Balanced instead</button>}
         <button className="secondary-button full-width" title="Drop to the instant classic engine" onClick={() => assist.onQualityChange('fast')}>Use Fast instead (instant, no model)</button>
       </>}
       {assist.method === 'heal' && <>

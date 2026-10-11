@@ -8,6 +8,8 @@ import type { Context } from "hono";
 import { DEFAULT_EDIT } from "@photomator/core";
 import type { EditState, LibraryPhoto } from "@photomator/core";
 import type { ServerConfig } from "./config.ts";
+import { getMlHealHealth, kickEngineReady, runRemoteHeal, validateRemoteBody } from "./ml-heal.ts";
+import type { RemoteHealEngine } from "./ml-heal.ts";
 import { BrowseError, browse } from "./fs-browse.ts";
 import { ImportError, importUpload, scanPaths } from "./importer.ts";
 import type { ImportOutcome } from "./importer.ts";
@@ -135,6 +137,50 @@ export function createApp(ctx: AppContext): Hono {
   };
 
   app.get("/api/health", (c) => c.json({ ok: true }));
+
+  app.get("/api/ml-heal/health", async (c) => c.json(await getMlHealHealth(config.dataDir)));
+
+  app.post("/api/ml-heal/warmup", async (c) => {
+    // Kick provisioning into the background and return immediately: the
+    // client polls health for download/session progress. First Best use
+    // downloads ~1.3GB once; later warmups resolve instantly.
+    let engine: RemoteHealEngine = "moebius";
+    try {
+      const body = (await c.req.json()) as { engine?: unknown };
+      if (body.engine !== undefined) {
+        if (body.engine !== "lama" && body.engine !== "moebius") {
+          return c.json({ error: 'Invalid engine (expected "lama" or "moebius").' }, 400);
+        }
+        engine = body.engine;
+      }
+    } catch {
+      // Empty/unreadable body → default engine.
+    }
+    kickEngineReady(config.dataDir, engine);
+    return c.json(await getMlHealHealth(config.dataDir));
+  });
+
+  app.post("/api/ml-heal/inpaint", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    const parsed = validateRemoteBody(body);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    try {
+      const result = await runRemoteHeal(config.dataDir, parsed.value);
+      const rgb = Buffer.from(
+        Uint8Array.from(result.output, (value) => Math.round(Math.max(0, Math.min(255, value)))),
+      ).toString("base64");
+      return c.json({ engine: result.engine, width: result.width, height: result.height, outputB64: rgb });
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 400);
+      console.error(error);
+      return c.json({ error: "Remote heal failed." }, 503);
+    }
+  });
 
   app.get("/api/library", (c) => {
     const photos = store.listPhotos().map((row) => withEdit(store, row));

@@ -213,10 +213,10 @@ async function inpaint(
   // kept. Mat wrangling is shared with the Node golden tests through
   // inpaintWithCv.
   //
-  // ml-heal runs local ONNX inpainting for its quality tier (Fast reuses the
-  // classic engine with no download, Balanced runs LaMa, Best runs Moebius
-  // diffusion with LaMa fallback) and falls back to exemplar heal when the
-  // model runtime is unavailable: repair must never fail because of ML.
+  // ml-heal is server-required: every neural tier runs on the photo server
+  // (the app routes there before the worker is involved). A stray worker
+  // ml-heal call throws MlHealUnavailableError and falls back to exemplar
+  // heal: repair must never fail because of ML.
   if (request.method === "ml-heal") {
     // Progress is throttled: the pipeline reports download/infer stages, and
     // the UI only needs a few updates per second.
@@ -301,8 +301,8 @@ async function handle(
   request: VisionWorkerRequest,
   postMessage: (message: VisionWorkerResponse) => void,
 ): Promise<VisionWorkerResponse> {
-  // Warmup needs no OpenCV: weights + ORT sessions only, so the 15MB vision
-  // bundle is not fetched just to prefetch the ML engine.
+  // Warmup needs no OpenCV, so the 15MB vision bundle is not fetched just
+  // to answer an ML readiness probe (neural tiers live on the server).
   if (request.kind === "ml-warmup") {
     let lastPost = 0;
     const ready = await warmupMlHeal(request.engine, {

@@ -23,6 +23,7 @@ import {
   type VisionWorkerStatus,
 } from "@photomator/core";
 import { getVisionWorkerClient } from "./visionClient";
+import { runRemoteHeal, warmupRemoteHeal } from "./remoteMlHeal";
 
 export interface MlProgress {
   fraction: number;
@@ -38,6 +39,8 @@ export interface MlProgress {
 export interface MlReadyState {
   engine: MlHealEngine;
   cached: boolean;
+  /** True when the warmed engine serves real inference (never a fallback). */
+  serving: boolean;
   updatedAt: number;
 }
 
@@ -109,11 +112,12 @@ export function useInpaintRepair(): InpaintRepairState {
       }
       const next: MlProgress = { fraction: clamped, stage, job, areas, updatedAt: Date.now() };
       setMlProgress(next);
-      // Terminal success marks the engine ready on device (drives the
-      // transient "ready" note + hides the download suffix).
+      // Terminal success marks the engine serving (drives the "server
+      // ready" note). Serving is only ever true after real readiness —
+      // warmup sets it explicitly from the server poll.
       if (clamped >= 1 && !isErrorStage(stage)) {
         const engine = mlHealEngineForQuality(quality);
-        setMlReady({ engine, cached: true, updatedAt: Date.now() });
+        setMlReady({ engine, cached: true, serving: true, updatedAt: Date.now() });
       }
     },
     [quality],
@@ -124,11 +128,29 @@ export function useInpaintRepair(): InpaintRepairState {
       const callerProgress = options?.onProgress;
       const areas = typeof options?.areas === "number" ? options.areas : null;
       const effectiveQuality = options?.quality ?? quality;
+      // All ML tiers run on the photo server, never in the browser: the
+      // in-browser paths hung multi-area jobs. Server-required, always up.
+      if (next === "ml-heal" && mlHealEngineForQuality(effectiveQuality) !== "classic") {
+        const engine = mlHealEngineForQuality(effectiveQuality);
+        const timeoutMs = options?.timeoutMs ?? (engine === "lama" ? undefined : ML_HEAL_DIFFUSION_TIMEOUT_MS);
+        return runRemoteHeal(engine, image, mask, {
+          ...(timeoutMs === undefined ? {} : { timeoutMs }),
+          onProgress: (fraction, stage) => {
+            if (next === "ml-heal" || next === "heal") record(fraction, stage, "heal", areas);
+            callerProgress?.(fraction, stage);
+          },
+        }).catch((error: unknown) => {
+          if (cancelledRef.current) {
+            cancelledRef.current = false;
+            throw error;
+          }
+          const detail = error instanceof Error ? error.message : String(error);
+          record(0, `Model unavailable: ${detail}`, "heal", areas);
+          throw error;
+        });
+      }
       // Diffusion heals need a long ceiling; progress re-arms it per message.
-      const timeoutMs =
-        next === "ml-heal" && mlHealEngineForQuality(effectiveQuality) === "moebius"
-          ? (options?.timeoutMs ?? ML_HEAL_DIFFUSION_TIMEOUT_MS)
-          : options?.timeoutMs;
+      const timeoutMs = options?.timeoutMs;
       return client
         .inpaint(image, mask, radius, next, {
           ...options,
@@ -149,7 +171,7 @@ export function useInpaintRepair(): InpaintRepairState {
           // the last step forever (blur fallback stays underneath).
           if (next === "ml-heal") {
             const detail = error instanceof Error ? error.message : String(error);
-            record(0, `Model unavailable: Healing stalled — ${detail} Try Balanced.`, "heal", areas);
+            record(0, `Model unavailable: Healing stalled — ${detail}`, "heal", areas);
           }
           throw error;
         });
@@ -159,28 +181,28 @@ export function useInpaintRepair(): InpaintRepairState {
 
   const warmup = useCallback(() => {
     const engine = mlHealEngineForQuality(quality);
-    if (engine === "classic") return Promise.resolve({ engine, cached: true });
+    if (engine === "classic") return Promise.resolve({ engine, cached: true, serving: true });
+    // Every ML tier warms the photo server, never the browser worker: kick
+    // provisioning and poll until it serves, with real download %.
     setMlWarming(true);
-    return client
-      .warmupMl(engine, {
-        onProgress: (fraction, stage) => record(fraction, stage, "warmup", null),
-        // 1.3GB downloads + shader compile far exceed the 60s default.
-        timeoutMs: engine === "moebius" ? ML_HEAL_DIFFUSION_TIMEOUT_MS : undefined,
-      })
-      .then((ready) => {
-        setMlReady({ engine: ready.engine, cached: ready.cached, updatedAt: Date.now() });
+    return warmupRemoteHeal(engine, {
+      onProgress: (fraction, stage) => record(fraction, stage, "warmup", null),
+    })
+      .then((result) => {
+        const ready = { engine, cached: true, serving: result.serving, updatedAt: Date.now() };
+        setMlReady(ready);
         setMlWarming(false);
         return ready;
       })
       .catch((error: unknown) => {
-        // A failed warmup must not leave a stale "ready on this device" line
-        // next to the error (see Inspector): drop readiness for this engine.
-        setMlReady((prev) => (prev?.engine === engine ? null : prev));
+        // Keep a not-serving marker so the Inspector's persistent warning
+        // stays up alongside the error (which never auto-dismisses).
+        setMlReady({ engine, cached: false, serving: false, updatedAt: Date.now() });
         setMlWarming(false);
         record(0, error instanceof Error ? `Model unavailable: ${error.message}` : "Model unavailable", "warmup", null);
         throw error;
       });
-  }, [client, quality, record]);
+  }, [quality, record]);
 
   const mlEngine = mlHealEngineForQuality(quality);
 

@@ -36,10 +36,10 @@ export const ML_HEAL_MOEBIUS_FILE_SIZES = [907 * 1024 * 1024, 137 * 1024 * 1024,
 export const ML_HEAL_LAMA_FILE_SIZE = 208 * 1024 * 1024;
 
 /**
- * Local engine tier selected by the Heal Quality preset under ML Heal:
- * Fast runs the instant classic exemplar engine (no download), Balanced runs
- * LaMa single-pass neural fill, Best runs Moebius diffusion (with automatic
- * LaMa fallback when diffusion cannot serve the job).
+ * Engine tier selected by the Heal Quality preset under ML Heal: Fast runs
+ * the instant classic exemplar engine (no model), Balanced runs LaMa
+ * single-pass neural fill, Best runs Moebius diffusion. Neural tiers are
+ * server-required and run on the photo server via /api/ml-heal.
  */
 export type MlHealEngine = "classic" | "lama" | "moebius";
 
@@ -52,8 +52,8 @@ export function mlHealEngineForQuality(quality: "fast" | "balanced" | "best"): M
 /** Human-facing engine facts for blurbs and status lines. */
 export const ML_HEAL_ENGINE_INFO: Record<MlHealEngine, { label: string; download: string }> = {
   classic: { label: "Classic exemplar", download: "no download" },
-  lama: { label: "LaMa neural fill", download: "~208MB once" },
-  moebius: { label: "Moebius diffusion", download: "~1.3GB once" },
+  lama: { label: "LaMa neural fill", download: "via photo server" },
+  moebius: { label: "Moebius diffusion", download: "via photo server" },
 };
 
 /**
