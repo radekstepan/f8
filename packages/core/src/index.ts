@@ -1,3 +1,4 @@
+export * from "./adjustments.js";
 export * from "./data.js";
 export * from "./image.js";
 export * from "./raw.js";

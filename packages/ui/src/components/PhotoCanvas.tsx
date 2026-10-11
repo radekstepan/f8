@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star } from 'lucide-react';
 import { DEFAULT_EDIT } from '@photomator/core';
-import { applyInpaintRepair, drawEffects, geometryCanvas, getPhotoFilter, loadImage } from '@photomator/core';
+import { applyInpaintRepair, drawEffects, geometryCanvas, loadImage, renderAdjustedCanvas } from '@photomator/core';
 import type { ChangeEdit, EditState, Photo, RepairInpaintBinding, RetouchPoint, RunInpaint, Tool } from '@photomator/core';
 import { IconButton } from './EditorUI.js';
 
@@ -69,14 +69,13 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       if (cancelled || !canvasRef.current || !originalRef.current) return;
       const renderBase = (base: HTMLCanvasElement) => {
         const canvas = canvasRef.current!;
-        canvas.width = base.width;
-        canvas.height = base.height;
+        const adjusted = renderAdjustedCanvas(base, edit);
+        canvas.width = adjusted.width;
+        canvas.height = adjusted.height;
         const ctx = canvas.getContext('2d')!;
-        ctx.filter = getPhotoFilter(edit);
-        ctx.drawImage(base, 0, 0);
-        ctx.filter = 'none';
-        drawEffects(ctx, base.width, base.height, edit);
-        setAspect(base.width / base.height);
+        ctx.drawImage(adjusted, 0, 0);
+        drawEffects(ctx, adjusted.width, adjusted.height, edit);
+        setAspect(adjusted.width / adjusted.height);
 
         const sampler = document.createElement('canvas');
         sampler.width = 160;

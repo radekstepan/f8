@@ -83,7 +83,7 @@ export const EXPOSURE_TARGET_LUMINANCE = 128;
 /**
  * Exposure shift in EV that would move the image's mean luminance toward
  * the target, given the preview pipeline maps exposure EV to a
- * 2^(EV * 0.6) brightness factor (see getPhotoFilter). Positive for dark
+ * 2^(EV * 0.6) brightness factor (see EXPOSURE_RESPONSE in adjustments.ts). Positive for dark
  * images, negative for bright ones, 0 within a small dead zone.
  * Gains are capped to protect already-bright highlights from clipping.
  */

@@ -1,3 +1,4 @@
+import { isNeutralEdit, renderAdjustedPixels } from './adjustments.js';
 import { CROP_RATIOS } from './data.js';
 import type { EditState, RetouchPoint } from './types.js';
 import type { PixelImage } from './vision/analyze.js';
@@ -62,8 +63,11 @@ export async function decodeDownsampled(src: string, maxDimension = 160): Promis
   return { width, height, data: new Uint8ClampedArray(pixels.data) };
 }
 
-// The preview and exported image share the same filter mapping.
-// These lightweight browser adjustments are not a RAW or machine-learning engine.
+// Fast CSS approximation of the adjustments, used only for small thumbnails
+// (preset strip, export dialog preview) where a full pixel render per thumb
+// is wasteful. The editor canvas and export use renderAdjustedCanvas, which
+// applies every slider per pixel (tonal masks, vibrance, hue, clarity,
+// sharpness) via adjustments.ts. Not a RAW or machine-learning engine.
 export function getPhotoFilter(edit: EditState): string {
   const brightness = edit.lightnessEnabled
     ? Math.max(0.08, Math.pow(2, edit.exposure * 0.6) * (1 + edit.brightness / 100) * (1 + edit.shadows / 650 + edit.highlights / 1000)) : 1;
@@ -243,16 +247,35 @@ async function geometryForExport(
   }
 }
 
-export async function exportPhoto(src: string, edit: EditState, format: string, quality: number, maxSize: number, repair?: ExportRepairOptions): Promise<Blob> {
-  const image = await loadImage(src);
-  const base = await geometryForExport(image, edit, maxSize, repair);
+// The preview and exported image share this pixel pipeline: geometry first,
+// then every color/detail slider, then the overlay effects in drawEffects.
+// Neutral edits skip the pixel pass; unreadable (CORS-tainted) canvases fall
+// back to the CSS approximation so a blocked readback degrades the look
+// instead of breaking the editor or export.
+export function renderAdjustedCanvas(base: HTMLCanvasElement, edit: EditState): HTMLCanvasElement {
   const output = document.createElement('canvas');
   output.width = base.width;
   output.height = base.height;
   const ctx = output.getContext('2d')!;
-  ctx.filter = getPhotoFilter(edit);
   ctx.drawImage(base, 0, 0);
-  ctx.filter = 'none';
+  if (isNeutralEdit(edit)) return output;
+  try {
+    const pixels = ctx.getImageData(0, 0, output.width, output.height);
+    const rendered = renderAdjustedPixels({ width: output.width, height: output.height, data: pixels.data }, edit);
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(rendered.data), output.width, output.height), 0, 0);
+  } catch {
+    ctx.filter = getPhotoFilter(edit);
+    ctx.drawImage(base, 0, 0);
+    ctx.filter = 'none';
+  }
+  return output;
+}
+
+export async function exportPhoto(src: string, edit: EditState, format: string, quality: number, maxSize: number, repair?: ExportRepairOptions): Promise<Blob> {
+  const image = await loadImage(src);
+  const base = await geometryForExport(image, edit, maxSize, repair);
+  const output = renderAdjustedCanvas(base, edit);
+  const ctx = output.getContext('2d')!;
   drawEffects(ctx, output.width, output.height, edit);
   return new Promise((resolve, reject) => output.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Your browser could not create the image. Try another format.')), `image/${format}`, quality / 100));
 }
