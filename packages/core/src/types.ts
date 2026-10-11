@@ -45,6 +45,8 @@ export interface RetouchPoint {
   kind: 'repair' | 'clone';
   sourceX?: number;
   sourceY?: number;
+  /** Paint stroke id: every stamp in one drag shares it. Absent on legacy edits. */
+  stroke?: number;
 }
 
 export interface EditState {

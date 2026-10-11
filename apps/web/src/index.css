@@ -344,6 +344,17 @@ img { display: block; }
 .brush-preview > span { border-radius: 50%; background: #d9c599; box-shadow: 0 0 13px 5px #b4a17b30; }
 .brush-preview > small { position: absolute; bottom: 11px; color: #797983; font-size: 8px; }
 .retouch-status { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; border-top: 1px solid #414147; padding-top: 10px; color: #9b9baa; font-size: 9px; }
+.repair-method-blurb { margin: -12px 0 20px; }
+.retouch-group-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 172px; overflow-y: auto; }
+.retouch-group { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border: 1px solid #3d3d44; border-radius: 5px; background: #1f1f23; font-size: 9.5px; color: #c2c2cb; }
+.retouch-group.is-highlighted { border-color: #a2544d; background: #2a2223; }
+.retouch-group-label { white-space: nowrap; }
+.retouch-group-count { margin-left: auto; color: #85858f; font-size: 8.5px; white-space: nowrap; }
+.retouch-group .icon-button { width: 22px; height: 22px; }
+.retouch-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; }
+.retouch-overlay circle { stroke: none; }
+.retouch-overlay .retouch-highlight-group { opacity: .45; fill: #ff5040; }
+.retouch-overlay .retouch-active-group { opacity: .5; fill: #ff2d23; }
 
 .app-status { height: 23px; flex-shrink: 0; background: #242426; border-top: 1px solid #36363b; padding: 0 17px; display: flex; align-items: center; justify-content: space-between; font-size: 8px; color: #85858f; position: relative; }
 .status-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; font-size: 7.5px; color: #74747e; gap: 8px; }

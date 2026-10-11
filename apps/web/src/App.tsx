@@ -37,7 +37,8 @@ export default function App() {
   const [reversed, setReversed] = useState(false);
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
   const [brushSize, setBrushSize] = useState(45);
-  const [brushStrength, setBrushStrength] = useState(85);
+  const [brushStrength, setBrushStrength] = useState(100);
+  const [highlightStroke, setHighlightStroke] = useState<number | null>(null);
   const [clipboard, setClipboard] = useState<EditState | null>(null);
   const [dialog, setDialog] = useState<DialogType>(null);
   const [folderDialog, setFolderDialog] = useState<FolderDialog | null>(null);
@@ -91,6 +92,7 @@ export default function App() {
     setView('editor');
     setZoom(1);
     setShowOriginal(false);
+    setHighlightStroke(null);
   }, []);
 
   const selectCollection = (id: string) => {
@@ -338,6 +340,7 @@ export default function App() {
                 compare={compare} showOriginal={showOriginal}
                 brushSize={brushSize} brushStrength={brushStrength}
                 inpaintRepair={inpaintRepair}
+                highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
                 onZoom={setZoom} onCompare={() => setCompare(!compare)}
                 onFavorite={() => toggleFavorite()} onRating={setRating}
                 onInfo={() => setDialog('info')} onChange={editor.change} onHistogram={setHistogram}
@@ -361,6 +364,7 @@ export default function App() {
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss }}
         repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, status: inpaintRepair.status, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality }}
+        highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={editor.change} onTool={selectTool} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star } from 'lucide-react';
 import { DEFAULT_EDIT } from '@photomator/core';
-import { applyInpaintRepair, drawEffects, geometryCanvas, loadImage, renderAdjustedCanvas } from '@photomator/core';
+import { applyInpaintRepair, drawEffects, geometryCanvas, loadImage, nextRetouchStrokeId, renderAdjustedCanvas, strokeIdForPoint } from '@photomator/core';
 import type { ChangeEdit, EditState, Photo, RepairInpaintBinding, RetouchPoint, RunInpaint, Tool } from '@photomator/core';
 import { IconButton } from './EditorUI.js';
 
@@ -18,6 +18,9 @@ interface PhotoCanvasProps {
   brushStrength: number;
   /** Worker inpainting for repair strokes; absent means blur repair only. */
   inpaintRepair?: RepairInpaintBinding | null;
+  /** Stroke group highlighted from the inspector list (red overlay). */
+  highlightStroke?: number | null;
+  onHighlightStroke?: (stroke: number | null) => void;
   onZoom: (zoom: number) => void;
   onCompare: () => void;
   onFavorite: () => void;
@@ -27,7 +30,7 @@ interface PhotoCanvasProps {
   onHistogram: (data: HistogramData) => void;
 }
 
-export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, brushSize, brushStrength, inpaintRepair, onZoom, onCompare, onFavorite, onRating, onInfo, onChange, onHistogram }: PhotoCanvasProps) {
+export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, brushSize, brushStrength, inpaintRepair, highlightStroke = null, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onInfo, onChange, onHistogram }: PhotoCanvasProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -37,6 +40,9 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const cloneSource = useRef<{ x: number; y: number } | null>(null);
   const cloneStart = useRef<{ x: number; y: number } | null>(null);
   const lastStamp = useRef<{ x: number; y: number } | null>(null);
+  const strokeCounter = useRef(1);
+  const activeStrokeRef = useRef<number | null>(null);
+  const [activeStroke, setActiveStroke] = useState<number | null>(null);
   const repairGeneration = useRef(0);
   const inpaintRun = useRef<RunInpaint | null>(null);
   inpaintRun.current = inpaintRepair?.run ?? null;
@@ -61,7 +67,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => { setLoading(true); setError(''); cloneSource.current = null; setSourceSet(false); }, [photo.src, retry]);
+  useEffect(() => { setLoading(true); setError(''); cloneSource.current = null; setSourceSet(false); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); }, [photo.src, retry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,7 +101,13 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         }
         onHistogram(histogram);
       };
-      renderBase(geometryCanvas(image, edit));
+      // While a repair stroke is being painted every repair stamp stays out
+      // of the canvas: the red mask overlay shows all repair areas live
+      // instead of the blur placeholder, which appears only after release
+      // (then inpainting upgrades it).
+      const paintingRepair = tool === 'repair' && activeStroke !== null;
+      const previewEdit = paintingRepair ? { ...edit, retouches: edit.retouches.filter((point) => point.kind !== 'repair') } : edit;
+      renderBase(geometryCanvas(image, previewEdit));
       const original = geometryCanvas(image, { ...DEFAULT_EDIT, cropRatio: edit.cropRatio, rotation: edit.rotation, flipH: edit.flipH, flipV: edit.flipV, straighten: edit.straighten });
       originalRef.current.width = original.width;
       originalRef.current.height = original.height;
@@ -103,9 +115,10 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       setLoading(false);
 
       // Upgrade repair strokes from the blur fallback to worker inpainting,
-      // debounced so a painting stroke doesn't flood the worker queue while
-      // the blur shows live. Failures keep the blur already displayed.
-      const repairs = edit.retouches.filter((point) => point.kind === 'repair');
+      // debounced so a painting stroke doesn't flood the worker queue. While
+      // dragging, all repairs are excluded until release (the red mask shows
+      // instead). Failures keep the blur already displayed.
+      const repairs = previewEdit.retouches.filter((point) => point.kind === 'repair');
       const run = inpaintRun.current;
       const method = inpaintRepair?.method;
       if (repairs.length && run && method) {
@@ -113,7 +126,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         repairGeneration.current = generation;
         timer = window.setTimeout(() => {
           if (cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
-          const clean = geometryCanvas(image, { ...edit, retouches: edit.retouches.filter((point) => point.kind === 'clone') });
+          const clean = geometryCanvas(image, { ...previewEdit, retouches: previewEdit.retouches.filter((point) => point.kind === 'clone') });
           void applyInpaintRepair(clean, repairs, method, run).then((applied) => {
             if (!applied || cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
             renderBase(clean);
@@ -122,7 +135,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       }
     }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setLoading(false); } });
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
-  }, [photo.src, edit, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.status]);
+  }, [photo.src, edit, tool, activeStroke, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.status]);
 
   const fitWidth = Math.max(100, Math.min(stageSize.width - 64, (stageSize.height - 48) * aspect));
   const frameWidth = fitWidth * zoom;
@@ -144,7 +157,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   };
 
   const stampAt = (point: { x: number; y: number }, size: number) => {
-    const next: RetouchPoint = { ...point, size, strength: brushStrength, kind: tool === 'clone' ? 'clone' : 'repair' };
+    const next: RetouchPoint = { ...point, size, strength: brushStrength, kind: tool === 'clone' ? 'clone' : 'repair', stroke: activeStrokeRef.current ?? undefined };
     if (tool === 'clone' && cloneSource.current && cloneStart.current) {
       next.sourceX = Math.max(0, Math.min(1, cloneSource.current.x + point.x - cloneStart.current.x));
       next.sourceY = Math.max(0, Math.min(1, cloneSource.current.y + point.y - cloneStart.current.y));
@@ -187,13 +200,51 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     if (tool === 'clone' && (event.altKey || !cloneSource.current)) { cloneSource.current = position(event); setSourceSet(true); return; }
     points.current = [...edit.retouches];
     painting.current = true;
+    const id = Math.max(nextRetouchStrokeId(edit.retouches), strokeCounter.current);
+    strokeCounter.current = id + 1;
+    activeStrokeRef.current = id;
+    setActiveStroke(id);
     cloneStart.current = position(event);
     lastStamp.current = null;
     event.currentTarget.setPointerCapture(event.pointerId);
     paint(event);
   };
 
-  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{edit.preset !== 'Original' && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton></div></div><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush ? 'brush-active' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} style={{ width: frameWidth, height: frameWidth / aspect }} onPointerDown={pointerDown} onPointerMove={(event) => { if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameWidth / aspect }); } if (painting.current) paint(event); }} onPointerUp={(event) => { painting.current = false; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { painting.current = false; }} onPointerLeave={() => setCursor(null)}>
+  const endStroke = (event: ReactPointerEvent<HTMLDivElement>) => {
+    painting.current = false;
+    activeStrokeRef.current = null;
+    setActiveStroke(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  /** Topmost stroke group under the cursor, for hover highlighting. */
+  const strokeAt = (point: { x: number; y: number }, frameHeight: number, frameWidth: number) => {
+    for (let i = edit.retouches.length - 1; i >= 0; i -= 1) {
+      const stamp = edit.retouches[i];
+      if (!stamp) continue;
+      const dx = (point.x - stamp.x) * frameWidth;
+      const dy = (point.y - stamp.y) * frameHeight;
+      if (Math.hypot(dx, dy) <= (stamp.size * frameWidth) / 2) return strokeIdForPoint(stamp);
+    }
+    return null;
+  };
+
+  const frameHeight = frameWidth / aspect;
+  const showOverlay = isBrush && !loading && !compare && !showOriginal;
+  const draggingRepair = showOverlay && tool === 'repair' && activeStroke !== null;
+  // While dragging, every repair area shows red — not just the new stroke —
+  // so the blur placeholder never competes with the mask.
+  const activePoints = draggingRepair
+    ? edit.retouches.filter((point) => point.kind === 'repair')
+    : [];
+  const hoverPoints = showOverlay && activeStroke === null && highlightStroke !== null
+    ? edit.retouches.filter((point) => strokeIdForPoint(point) === highlightStroke)
+    : [];
+  const maskCircle = (point: RetouchPoint, key: string) => (
+    <circle key={key} cx={point.x * frameWidth} cy={point.y * frameHeight} r={Math.max(1, (point.size * frameWidth) / 2)} />
+  );
+
+  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{edit.preset !== 'Original' && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton></div></div><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush ? 'brush-active' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onPointerMove={(event) => { if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
       <canvas className="edited-canvas" ref={canvasRef} role="img" aria-label={`${photo.title}, with current adjustments`} />
       <div className="original-layer" style={{ clipPath: `inset(0 ${showOriginal ? 0 : compare ? 100 - split : 100}% 0 0)` }}><canvas ref={originalRef} role="img" aria-label="Original photo" /></div>
       {loading && <div className="photo-loading"><span className="loading-spinner" /><span>Developing your photo...</span></div>}
@@ -202,8 +253,9 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       {showOriginal && <span className="comparison-label original-label">Original</span>}
       {tool === 'crop' && !loading && <div className="crop-grid" aria-hidden="true"><i /><i /><i /><i /></div>}
       {isBrush && cursor && !compare && <div className="brush-cursor" style={{ left: cursor.x, top: cursor.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
+      {(activePoints.length > 0 || hoverPoints.length > 0) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}</svg>}
     </div></div>
-      {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : 'Click and drag to repair small distractions.'}</div>}
+      {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : 'Click and drag to repair — the mask shows red while you paint.'}</div>}
     </div>
     <div className="canvas-status">
       <button className="canvas-dimensions" onClick={onInfo} title="Photo information">
