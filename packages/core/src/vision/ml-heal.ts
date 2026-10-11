@@ -107,7 +107,11 @@ export const MOEBIUS_BETA_START = 0.00085;
 export const MOEBIUS_BETA_END = 0.012;
 export const MOEBIUS_INFERENCE_STEPS = 20;
 export const MOEBIUS_STRENGTH = 0.99;
+/** Interactive preview uses fewer DDIM steps so Best finishes in low minutes on integrated GPUs. */
+export const MOEBIUS_PREVIEW_INFERENCE_STEPS = 10;
 export const MOEBIUS_GUIDANCE = 7.5;
+/** Per-channel noise offset added to the initial latents (reference parity). */
+export const MOEBIUS_NOISE_OFFSET = 0.0357;
 /** Fixed sampling seed so ML jobs are reproducible run to run. */
 export const MOEBIUS_SEED = 0;
 
@@ -144,25 +148,29 @@ export function moebiusAlphasCumprod(betas: Float64Array): Float64Array {
 }
 
 /**
- * DDIM inference timesteps: the last `count` of `inferenceSteps` linearly
- * spaced timesteps over [0, trainSteps). Descending, deterministic.
+ * DDIM inference timesteps, ported verbatim from the reference pipeline
+ * (floor(1000/steps) grid, descending, strength-truncated with floor —
+ * Python int() truncation, not rounding). 20 steps at 0.99 strength gives
+ * 19 steps starting at 900.
  */
 export function moebiusTimesteps(
   inferenceSteps: number = MOEBIUS_INFERENCE_STEPS,
   strength: number = MOEBIUS_STRENGTH,
   trainSteps: number = MOEBIUS_TRAIN_STEPS,
 ): number[] {
-  const count = moebiusStepCount(inferenceSteps, strength);
+  const stepRatio = Math.floor(trainSteps / inferenceSteps);
   const all: number[] = [];
-  for (let i = 0; i < inferenceSteps; i += 1) {
-    all.push(Math.round(((inferenceSteps - 1 - i) * (trainSteps - 1)) / Math.max(1, inferenceSteps - 1)));
-  }
-  return all.slice(inferenceSteps - count);
+  for (let i = 0; i < inferenceSteps; i += 1) all.push(Math.round(i * stepRatio));
+  all.reverse();
+  // Strength drops the first init_timestep entries (floor, not round).
+  const initTimestep = Math.min(Math.floor(inferenceSteps * strength), inferenceSteps);
+  return all.slice(Math.max(inferenceSteps - initTimestep, 0));
 }
 
 /**
- * Nearest downsample of a 512x512 binary mask to the 64x64 latent grid:
- * a latent cell is fill (1) when any source pixel in its 8x8 block is fill.
+ * Downsample a 512x512 binary mask to the 64x64 latent grid using
+ * PyTorch-nearest convention (top-left pixel of each 8x8 block), matching the
+ * reference pipeline exactly.
  */
 export function downsampleMaskToLatent(mask512: Float32Array): Float32Array {
   const size = ML_HEAL_MODEL_SIZE;
@@ -170,21 +178,56 @@ export function downsampleMaskToLatent(mask512: Float32Array): Float32Array {
   if (mask512.length !== size * size) {
     throw new RangeError(`Expected a ${size}x${size} mask, got ${mask512.length} values.`);
   }
-  const block = size / latent;
+  const ratio = size / latent;
   const out = new Float32Array(latent * latent);
   for (let ly = 0; ly < latent; ly += 1) {
     for (let lx = 0; lx < latent; lx += 1) {
-      let fill = 0;
-      for (let by = 0; by < block && fill === 0; by += 1) {
-        for (let bx = 0; bx < block; bx += 1) {
-          if ((mask512[(ly * block + by) * size + lx * block + bx] ?? 0) > 0.5) {
-            fill = 1;
-            break;
-          }
-        }
-      }
-      out[ly * latent + lx] = fill;
+      out[ly * latent + lx] = mask512[ly * ratio * size + lx * ratio] ?? 0;
     }
+  }
+  return out;
+}
+
+/**
+ * Masked image for the VAE encoder: `image * (1 - mask)` in [-1, 1] space,
+ * so the hole encodes as 0.0 (mid-gray) exactly like the reference pipeline.
+ * The inpainting model must never see the object it has to remove.
+ */
+export function maskMlHealInputForEncode(image01: Float32Array, mask01: Float32Array): Float32Array {
+  const size = ML_HEAL_MODEL_SIZE;
+  if (image01.length !== 3 * size * size || mask01.length !== size * size) {
+    throw new RangeError(
+      `Expected image of ${3 * size * size} and mask of ${size * size} floats, ` +
+        `got ${image01.length} and ${mask01.length}.`,
+    );
+  }
+  const out = new Float32Array(image01.length);
+  const plane = size * size;
+  for (let c = 0; c < 3; c += 1) {
+    for (let p = 0; p < plane; p += 1) {
+      out[c * plane + p] = ((image01[c * plane + p] ?? 0) * 2 - 1) * (1 - (mask01[p] ?? 0));
+    }
+  }
+  return out;
+}
+
+/**
+ * Initial diffusion latents: pure Gaussian noise plus a small per-channel
+ * offset (`NOISE_OFFSET * off[c]`, offsets drawn from a xored seed stream).
+ * Image latents play no role at strength≈1 — the trajectory starts from noise.
+ */
+export function seedMoebiusLatents(
+  makeRandn: (seed: number) => () => number,
+  seed: number = MOEBIUS_SEED,
+): Float32Array {
+  const randn = makeRandn(seed);
+  const latentN = MOEBIUS_LATENT_SIZE * MOEBIUS_LATENT_SIZE;
+  const out = new Float32Array(4 * latentN);
+  for (let i = 0; i < out.length; i += 1) out[i] = randn();
+  const offStream = makeRandn(seed ^ 0x9e3779b9);
+  for (let c = 0; c < 4; c += 1) {
+    const off = offStream() * MOEBIUS_NOISE_OFFSET;
+    for (let p = 0; p < latentN; p += 1) out[c * latentN + p] = (out[c * latentN + p] ?? 0) + off;
   }
   return out;
 }

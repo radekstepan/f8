@@ -90,11 +90,16 @@ export interface InpaintOptions {
   quality?: HealQuality;
   /** Harmonic light adaptation for single-offset heal; omitted means false. */
   seamlessLight?: boolean;
-  /** Number of repair areas covered by this run (progress copy only). */
+  /** Number of repair areas covered by this run (for progress copy). */
   areas?: number;
   /** Progress callback for heal/ml-heal jobs; diffusion jobs never report progress. */
   onProgress?: HealProgress;
+  /** Per-request ceiling in ms; progress re-arms it (sliding window). */
+  timeoutMs?: number;
 }
+
+/** Long ceiling for diffusion heals: 19→9 preview steps plus shader compile still take minutes. */
+export const ML_HEAL_DIFFUSION_TIMEOUT_MS = 15 * 60_000;
 
 export class VisionWorkerClient {
   private port: VisionWorkerPort | null = null;
@@ -200,7 +205,7 @@ export class VisionWorkerClient {
       throw new VisionWorkerError("Vision worker failed; call ensureReady() to retry.");
     }
     await this.ensureReady();
-    const response = (await this.send(request, options.onProgress)) as InpaintResponse;
+    const response = (await this.send(request, options.onProgress, options.timeoutMs)) as InpaintResponse;
     return { width: response.width, height: response.height, data: response.data };
   }
 
@@ -212,7 +217,7 @@ export class VisionWorkerClient {
    */
   async warmupMl(
     engine: MlHealEngine,
-    options: { onProgress?: HealProgress } = {},
+    options: { onProgress?: HealProgress; timeoutMs?: number } = {},
   ): Promise<{ engine: MlHealEngine; cached: boolean }> {
     const id = this.nextId;
     this.nextId += 1;
@@ -222,7 +227,7 @@ export class VisionWorkerClient {
       throw new VisionWorkerError("Vision worker failed; call ensureReady() to retry.");
     }
     await this.ensureReady();
-    const response = (await this.send(request, options.onProgress)) as MlReadyResponse;
+    const response = (await this.send(request, options.onProgress, options.timeoutMs)) as MlReadyResponse;
     return { engine: response.engine, cached: response.cached };
   }
 
@@ -272,15 +277,39 @@ export class VisionWorkerClient {
     this.setStatus("failed");
   }
 
-  private send(request: VisionWorkerRequest, onProgress?: HealProgress): Promise<VisionWorkerResponse> {
+  private send(
+    request: VisionWorkerRequest,
+    onProgress?: HealProgress,
+    timeoutMs: number = this.timeoutMs,
+  ): Promise<VisionWorkerResponse> {
     const port = this.port;
     if (!port) return Promise.reject(new VisionWorkerError("Vision worker is not running."));
     return new Promise<VisionWorkerResponse>((resolve, reject) => {
+      const arm = () => {
+        const call = this.pending.get(request.id);
+        if (!call) return;
+        clearTimeout(call.timer);
+        call.timer = setTimeout(() => {
+          this.pending.delete(request.id);
+          reject(new VisionWorkerError(`Vision worker timed out after ${timeoutMs}ms.`));
+        }, timeoutMs);
+      };
       const timer = setTimeout(() => {
         this.pending.delete(request.id);
-        reject(new VisionWorkerError(`Vision worker timed out after ${this.timeoutMs}ms.`));
-      }, this.timeoutMs);
-      this.pending.set(request.id, { resolve, reject, timer, onProgress });
+        reject(new VisionWorkerError(`Vision worker timed out after ${timeoutMs}ms.`));
+      }, timeoutMs);
+      const wrappedProgress: HealProgress | undefined = onProgress
+        ? (fraction, stage) => {
+            try {
+              onProgress(fraction, stage);
+            } finally {
+              // Steady progress re-arms the ceiling (sliding window): long
+              // downloads and diffusion runs survive, true stalls still fail.
+              arm();
+            }
+          }
+        : undefined;
+      this.pending.set(request.id, { resolve, reject, timer, onProgress: wrappedProgress ?? onProgress });
       try {
         port.postMessage(request);
       } catch (error) {

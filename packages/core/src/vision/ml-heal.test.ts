@@ -9,6 +9,7 @@ import {
   downsampleMaskToLatent,
   formatMlCapabilities,
   makeSeededGaussian,
+  maskMlHealInputForEncode,
   mlHealEngineForQuality,
   mlHealWasmThreads,
   moebiusAlphasCumprod,
@@ -17,6 +18,7 @@ import {
   moebiusTimesteps,
   packMlHealInput,
   planMlHealRoi,
+  seedMoebiusLatents,
 } from "./ml-heal.js";
 
 function rectMask(width: number, height: number, x0: number, y0: number, x1: number, y1: number): RepairMask {
@@ -124,6 +126,14 @@ describe("moebius schedule", () => {
     expect(moebiusTimesteps(20, 0.99)).toHaveLength(19);
   });
 
+  it("matches the reference floor-grid schedule exactly", () => {
+    // floor(1000/20)=50 grid [0..950], reversed, strength-trimmed to 19.
+    expect(moebiusTimesteps(20, 0.99)).toEqual([
+      900, 850, 800, 750, 700, 650, 600, 550, 500, 450, 400, 350, 300, 250, 200, 150, 100, 50, 0,
+    ]);
+    expect(moebiusTimesteps(10, 0.99)).toEqual([800, 700, 600, 500, 400, 300, 200, 100, 0]);
+  });
+
   it("emits descending timesteps within the training range", () => {
     const steps = moebiusTimesteps();
     for (const t of steps) {
@@ -149,18 +159,48 @@ describe("moebius schedule", () => {
 });
 
 describe("downsampleMaskToLatent", () => {
-  it("marks latent cells whose 8x8 block has any fill", () => {
+  it("samples the top-left pixel of each 8x8 block (reference parity)", () => {
     const mask = new Float32Array(ML_HEAL_MODEL_SIZE * ML_HEAL_MODEL_SIZE);
     mask[100 * ML_HEAL_MODEL_SIZE + 100] = 1;
     const latent = downsampleMaskToLatent(mask);
     expect(latent.length).toBe(64 * 64);
-    expect(latent[(100 >> 3) * 64 + (100 >> 3)]).toBe(1);
+    // (100,100) is not a block top-left (96,96)..(103,103) → sampled at (96,96)? no:
+    // top-left sampling reads mask[ly*8*512 + lx*8]; pixel (100,100) is never read.
+    expect(latent[(100 >> 3) * 64 + (100 >> 3)]).toBe(0);
+    mask[96 * ML_HEAL_MODEL_SIZE + 96] = 1;
+    expect(downsampleMaskToLatent(mask)[12 * 64 + 12]).toBe(1);
     expect(latent[0]).toBe(0);
     expect(latent[63 * 64 + 63]).toBe(0);
   });
 
   it("throws on wrong input size", () => {
     expect(() => downsampleMaskToLatent(new Float32Array(4))).toThrow(RangeError);
+  });
+});
+
+describe("maskMlHealInputForEncode", () => {
+  it("zeroes the masked hole in [-1, 1] space and keeps context", () => {
+    const size = ML_HEAL_MODEL_SIZE;
+    const image = new Float32Array(3 * size * size).fill(1); // white → +1
+    const mask = new Float32Array(size * size);
+    mask[0] = 1;
+    const out = maskMlHealInputForEncode(image, mask);
+    expect(out[0]).toBe(0);
+    expect(out[size * size]).toBe(0);
+    expect(out[1]).toBe(1);
+    expect(() => maskMlHealInputForEncode(new Float32Array(4), mask)).toThrow(RangeError);
+  });
+});
+
+describe("seedMoebiusLatents", () => {
+  it("is deterministic with per-channel offsets", () => {
+    const a = seedMoebiusLatents(makeSeededGaussian, 0);
+    expect(a.length).toBe(4 * 64 * 64);
+    expect(Array.from(a)).toEqual(Array.from(seedMoebiusLatents(makeSeededGaussian, 0)));
+    expect(Array.from(a)).not.toEqual(Array.from(seedMoebiusLatents(makeSeededGaussian, 1)));
+    // Channel means differ by the small per-channel offset, not by whole sigmas.
+    const mean = (c: number) => a.slice(c * 4096, (c + 1) * 4096).reduce((s, v) => s + v, 0) / 4096;
+    for (let c = 0; c < 4; c += 1) expect(Math.abs(mean(c))).toBeLessThan(0.5);
   });
 });
 

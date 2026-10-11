@@ -8,9 +8,9 @@
 // - classic: no model; the caller runs exemplar heal instead. The pipeline
 //   throws MlHealUnavailableError so routing stays in one place.
 // - lama: single-pass LaMa fill (208MB). Fast, great texture.
-// - moebius: Moebius diffusion (UNet + VAE enc/dec, ~1.3GB, 19 DDIM steps
-//   with classifier-free guidance). Best removals; falls back to LaMa when
-//   diffusion cannot serve the job.
+// - moebius: Moebius diffusion (UNet + VAE enc/dec, ~1.3GB, preview DDIM
+//   steps with sequential classifier-free guidance). Best removals; falls
+//   back to LaMa when diffusion cannot serve the job.
 //
 // Design notes:
 // - WebGPU-first with WASM fallback: `["webgpu", "wasm"]` lets ORT pick the
@@ -33,14 +33,15 @@ import {
   ML_HEAL_MOEBIUS_FILE_SIZES,
   ML_HEAL_MODEL_SIZE,
   MOEBIUS_GUIDANCE,
-  MOEBIUS_INFERENCE_STEPS,
   MOEBIUS_LATENT_SIZE,
+  MOEBIUS_PREVIEW_INFERENCE_STEPS,
   MOEBIUS_SEED,
   MOEBIUS_STRENGTH,
   MOEBIUS_VAE_SCALE,
   compositeMlHealOutput,
   downsampleMaskToLatent,
   makeSeededGaussian,
+  maskMlHealInputForEncode,
   mlHealEngineForQuality,
   mlHealWasmThreads,
   moebiusAlphasCumprod,
@@ -48,6 +49,7 @@ import {
   moebiusTimesteps,
   packMlHealInput,
   planMlHealRoi,
+  seedMoebiusLatents,
   type HealProgress,
   type HealQuality,
   type MlCapabilities,
@@ -205,7 +207,10 @@ async function getSession(
   }
   onProgress?.(fraction, stage);
   try {
-    const session = await ort.InferenceSession.create(weights, { executionProviders: eps });
+    const session = await ort.InferenceSession.create(weights, {
+      executionProviders: eps,
+      graphOptimizationLevel: "all",
+    });
     sessions.set(url, session);
     return session;
   } catch (error) {
@@ -227,6 +232,33 @@ function errorMessage(error: unknown): string {
   const raw = error instanceof Error && error.message ? error.message : String(error);
   const flat = raw.replace(/\s+/g, " ").trim();
   return flat.length > 800 ? `${flat.slice(0, 800)}…` : flat;
+}
+
+/** Opt-in diffusion diagnostics via `?mldebug=1` (off by default). */
+function mlDebugEnabled(): boolean {
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? "").get("mldebug") === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** One-line min/max/mean for a tensor dump; debug only, never throws. */
+function debugStats(label: string, data: Float32Array | Float64Array): void {
+  try {
+    let min = Infinity;
+    let max = -Infinity;
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 1) {
+      const v = data[i] ?? 0;
+      if (v < min) min = v;
+      if (v > max) max = v;
+      sum += v;
+    }
+    console.debug(`[ml-heal debug] ${label}: n=${data.length} min=${min.toFixed(4)} max=${max.toFixed(4)} mean=${(sum / Math.max(1, data.length)).toFixed(4)}`);
+  } catch {
+    // Diagnostics must never break a heal.
+  }
 }
 
 /** Device capabilities that decide which engines can run. Worker-safe. */
@@ -486,9 +518,15 @@ async function runMoebius(
   const dec = await getSession(ort, decUrl, parts[2] as ArrayBuffer, "moebius", 0.66, "Loading Moebius decoder…", onProgress);
 
   const { image: packed, mask: maskPacked } = packMlHealInput(image, mask, roi);
-  // VAE encode in [-1, 1]; latent = mean channels x scale.
-  const vaeIn = new Float32Array(packed.length);
-  for (let i = 0; i < packed.length; i += 1) vaeIn[i] = (packed[i] ?? 0) * 2 - 1;
+  // Masked image for the encoder: hole → 0.0 in [-1, 1] (reference parity).
+  // The model must never see the object it has to remove.
+  const vaeIn = maskMlHealInputForEncode(packed, maskPacked);
+  if (mlDebugEnabled()) {
+    let filled = 0;
+    for (let i = 0; i < maskPacked.length; i += 1) filled += maskPacked[i] ?? 0;
+    console.debug(`[ml-heal debug] roi=${roi.x0},${roi.y0},${roi.size} mask512=${filled}/${maskPacked.length}`);
+    debugStats("vaeIn(masked)", vaeIn);
+  }
   onProgress?.(0.68, "Preparing image…");
   let maskedLatent: Float32Array;
   try {
@@ -505,19 +543,38 @@ async function runMoebius(
     throw new MlHealUnavailableError(`Moebius VAE encode failed: ${errorMessage(error)}`);
   }
   const fillLatent = downsampleMaskToLatent(maskPacked);
+  const debug = mlDebugEnabled();
+  if (debug) {
+    let fillCells = 0;
+    for (let i = 0; i < fillLatent.length; i += 1) fillCells += fillLatent[i] ?? 0;
+    console.debug(`[ml-heal debug] fill64=${fillCells}/${fillLatent.length}`);
+  }
   const alphas = moebiusAlphasCumprod(moebiusBetas());
-  const timesteps = moebiusTimesteps(MOEBIUS_INFERENCE_STEPS, MOEBIUS_STRENGTH);
-  const randn = makeSeededGaussian(MOEBIUS_SEED);
+  // Preview schedule: fewer DDIM steps so interactive heals finish in low
+  // minutes on integrated GPUs (each step is 2 sequential UNet passes).
+  const timesteps = moebiusTimesteps(MOEBIUS_PREVIEW_INFERENCE_STEPS, MOEBIUS_STRENGTH);
   const condIds = new ort.Tensor("int64", BigInt64Array.from({ length: 10 }, (_, i) => BigInt(i)), [1, 10]);
   const uncondIds = new ort.Tensor("int64", BigInt64Array.from({ length: 10 }, (_, i) => BigInt(10 + i)), [1, 10]);
-  // Seed the trajectory at the first timestep's noise level.
-  const t0 = timesteps[0] ?? 999;
-  const a0 = alphas[t0] ?? 1;
-  let latentF32 = new Float32Array(4 * latentN);
-  for (let i = 0; i < latentF32.length; i += 1) {
-    latentF32[i] = Math.sqrt(a0) * (maskedLatent[i] ?? 0) + Math.sqrt(1 - a0) * randn();
+  // Pure-noise start (+ per-channel offset); image latents play no role at
+  // strength≈1. Denoising runs freely — known regions are restored at
+  // composite time, never re-injected mid-loop (reference parity).
+  let latentF32 = seedMoebiusLatents(makeSeededGaussian, MOEBIUS_SEED);
+  if (debug) {
+    console.debug(`[ml-heal debug] steps=${timesteps.join(",")}`);
+    debugStats("maskedLatent", maskedLatent);
+    debugStats("latent0", latentF32);
   }
   const unetIn = new Float32Array(9 * latentN);
+  // Heartbeat: a single UNet pass can run minutes with no callbacks (first
+  // pass also compiles WebGPU shaders), so nudge progress on a timer capped
+  // below the next step boundary — the UI must never look dead.
+  let currentStage = `Healing 1 of ${timesteps.length}…`;
+  let shown = 0.7;
+  onProgress?.(0.7, "Compiling shaders — first run takes minutes…");
+  const pulse = setInterval(() => {
+    shown = Math.min(0.94, shown + 0.006);
+    onProgress?.(shown, currentStage);
+  }, 1000);
   try {
     for (let step = 0; step < timesteps.length; step += 1) {
       const t = timesteps[step] ?? 0;
@@ -528,18 +585,37 @@ async function runMoebius(
       unetIn.set(latentF32, 0);
       unetIn.set(fillLatent, 4 * latentN);
       unetIn.set(maskedLatent, 5 * latentN);
-      const base_feeds = {
-        latent: new ort.Tensor("float32", unetIn.slice(), [1, 9, latent, latent]),
-        timesteps: new ort.Tensor("int64", BigInt64Array.from([BigInt(t)]), [1]),
-      };
-      onProgress?.(0.7 + (0.25 * step) / timesteps.length, `Healing ${step + 1} of ${timesteps.length}…`);
-      const [condOut, uncondOut] = await Promise.all([
-        unet.run({ ...base_feeds, input_ids: condIds }),
-        unet.run({ ...base_feeds, input_ids: uncondIds }),
-      ]);
+      const latentPayload = unetIn.slice();
+      const tPayload = BigInt64Array.from([BigInt(t)]);
+      const stepBase = 0.7 + (0.25 * step) / timesteps.length;
+      const stepMid = 0.7 + (0.25 * (step + 0.5)) / timesteps.length;
+      currentStage = step === 0 ? "Compiling shaders — first run takes minutes…" : `Healing ${step + 1} of ${timesteps.length}…`;
+      shown = Math.max(shown, stepBase);
+      onProgress?.(stepBase, currentStage);
+      // Sequential CFG passes (not Promise.all): halves peak WebGPU memory
+      // on unified-memory devices where two concurrent 0.22B dispatches stall.
+      const condOut = await unet.run({
+        latent: new ort.Tensor("float32", latentPayload.slice(), [1, 9, latent, latent]),
+        timesteps: new ort.Tensor("int64", tPayload.slice(), [1]),
+        input_ids: condIds,
+      });
+      shown = Math.max(shown, stepMid);
+      onProgress?.(stepMid, `Healing ${step + 1} of ${timesteps.length}…`);
+      currentStage = `Healing ${step + 1} of ${timesteps.length}…`;
+      const uncondOut = await unet.run({
+        latent: new ort.Tensor("float32", latentPayload.slice(), [1, 9, latent, latent]),
+        timesteps: new ort.Tensor("int64", tPayload.slice(), [1]),
+        input_ids: uncondIds,
+      });
       const cond = firstTensor(condOut);
       const uncond = firstTensor(uncondOut);
-      // CFG + DDIM (eta 0), then re-inject known regions at the prev level.
+      if (debug && (step === 0 || step === timesteps.length - 1)) {
+        debugStats(`eps-cond step${step}`, cond);
+        debugStats(`eps-uncond step${step}`, uncond);
+      }
+      // CFG + DDIM (eta 0). No mid-loop re-injection: the loop denoises
+      // freely and known regions are restored at composite time (reference
+      // parity — paste-back via compositeMlHealOutput + feather blend).
       const sqrtAT = Math.sqrt(aT);
       const sqrt1mAT = Math.sqrt(Math.max(0, 1 - aT));
       const sqrtAPrev = Math.sqrt(aPrev);
@@ -550,23 +626,14 @@ async function runMoebius(
         const predX0 = ((latentF32[i] ?? 0) - sqrt1mAT * eps) / Math.max(1e-8, sqrtAT);
         next[i] = sqrtAPrev * predX0 + sqrt1mAPrev * eps;
       }
-      // Blend per channel: fill cells take the denoised value, known cells
-      // take the masked latent re-noised to the prev level (fresh noise keeps
-      // the trajectory stochastic only through the seeded stream).
-      for (let c = 0; c < 4; c += 1) {
-        for (let i = 0; i < latentN; i += 1) {
-          const fill = fillLatent[i] ?? 0;
-          const knownNoisy = sqrtAPrev * (maskedLatent[c * latentN + i] ?? 0) + sqrt1mAPrev * randn();
-          next[c * latentN + i] =
-            fill * (next[c * latentN + i] ?? 0) + (1 - fill) * knownNoisy;
-        }
-      }
       latentF32 = next;
     }
   } catch (error) {
     if (error instanceof MlHealUnavailableError) throw error;
     console.error("[ml-heal] Moebius diffusion failed:", error);
     throw new MlHealUnavailableError(`Moebius diffusion failed: ${errorMessage(error)}`);
+  } finally {
+    clearInterval(pulse);
   }
   onProgress?.(0.97, "Finishing…");
   try {
@@ -574,6 +641,7 @@ async function runMoebius(
     for (let i = 0; i < decoded.length; i += 1) decoded[i] = (latentF32[i] ?? 0) / MOEBIUS_VAE_SCALE;
     const decOut = await dec.run({ latent: new ort.Tensor("float32", decoded, [1, 4, latent, latent]) });
     const rgb = firstTensor(decOut);
+    if (debug) debugStats("decoded-rgb", rgb);
     const output = new Float32Array(3 * 512 * 512);
     for (let i = 0; i < output.length; i += 1) {
       output[i] = Math.max(0, Math.min(255, ((rgb[i] ?? 0) * 0.5 + 0.5) * 255));
@@ -626,6 +694,35 @@ export async function runMlHeal(
 }
 
 /**
+ * One throwaway UNet pass at real shapes so WebGPU shader compilation happens
+ * during warmup (tool open), not during the first stroke. Single conditional
+ * pass only — half the cost of a CFG pair, same kernels.
+ */
+async function precompileMoebiusUnet(ort: OrtModule, unet: OrtSession, onProgress?: HealProgress): Promise<void> {
+  onProgress?.(0.6, "Preparing engine — first run compiles shaders…");
+  let heartbeat = 0.6;
+  const pulse = setInterval(() => {
+    heartbeat = Math.min(0.94, heartbeat + 0.006);
+    onProgress?.(heartbeat, "Preparing engine — first run compiles shaders…");
+  }, 800);
+  try {
+    const latentN = MOEBIUS_LATENT_SIZE * MOEBIUS_LATENT_SIZE;
+    const result = await unet.run({
+      latent: new ort.Tensor("float32", new Float32Array(9 * latentN), [1, 9, MOEBIUS_LATENT_SIZE, MOEBIUS_LATENT_SIZE]),
+      timesteps: new ort.Tensor("int64", BigInt64Array.from([BigInt(999)]), [1]),
+      input_ids: new ort.Tensor("int64", BigInt64Array.from({ length: 10 }, (_, i) => BigInt(i)), [1, 10]),
+    });
+    firstTensor(result);
+    onProgress?.(0.95, "Engine ready — warming done");
+  } catch (error) {
+    console.error("[ml-heal] Moebius precompile failed:", error);
+    throw new MlHealUnavailableError(`Moebius engine check failed: ${errorMessage(error)}`);
+  } finally {
+    clearInterval(pulse);
+  }
+}
+
+/**
  * Prefetch weights + sessions for an engine without an image (called when the
  * Repair tool opens so the first stroke never waits on the download).
  */
@@ -642,9 +739,10 @@ export async function warmupMlHeal(
     const totalBytes = ML_HEAL_MOEBIUS_FILE_SIZES.reduce((sum, size) => sum + size, 0);
     let cursor = 0;
     let allCached = true;
+    let unet: OrtSession | null = null;
     for (let i = 0; i < ML_HEAL_MOEBIUS_FILES.length; i += 1) {
       const url = `${base}${ML_HEAL_MOEBIUS_FILES[i]}`;
-      const span = ((ML_HEAL_MOEBIUS_FILE_SIZES[i] ?? 0) / totalBytes) * 0.7;
+      const span = ((ML_HEAL_MOEBIUS_FILE_SIZES[i] ?? 0) / totalBytes) * 0.6;
       const { buffer, cached } = await fetchWeights(
         url,
         ML_HEAL_MOEBIUS_FILE_SIZES[i] ?? 0,
@@ -654,9 +752,13 @@ export async function warmupMlHeal(
         onProgress,
       );
       allCached = allCached && cached;
-      await getSession(ort, url, buffer, "moebius", cursor, `Loading Moebius model ${i + 1} of 3…`, onProgress);
+      const session = await getSession(ort, url, buffer, "moebius", cursor, `Loading Moebius model ${i + 1} of 3…`, onProgress);
+      if (i === 0) unet = session;
       cursor += span;
     }
+    // Shader precompile: one throwaway UNet pass now, so the first stroke
+    // diffuses immediately instead of stalling on WebGPU compilation.
+    if (unet) await precompileMoebiusUnet(ort, unet, onProgress);
     onProgress?.(1, "Moebius ready on this device");
     return { engine, cached: allCached };
   }

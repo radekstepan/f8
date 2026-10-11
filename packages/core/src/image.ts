@@ -179,6 +179,8 @@ export interface RunInpaintOptions {
   /** Number of repair areas covered by this run (for progress copy). */
   areas?: number;
   onProgress?: HealProgress;
+  /** Per-request ceiling in ms; steady progress re-arms it. */
+  timeoutMs?: number;
 }
 
 /**

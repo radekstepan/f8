@@ -88,6 +88,8 @@ export interface RepairAssist {
   mlEngine: MlHealEngine;
   /** True while the current tier is being prefetched; painting is gated. */
   mlWarming?: boolean;
+  /** Abort a hung heal/warmup and restart the worker. */
+  onCancelHeal?: () => void;
   onMethodChange: (method: InpaintMethod) => void;
   onQualityChange: (quality: HealQuality) => void;
   onSeamlessLightChange: (value: boolean) => void;
@@ -113,7 +115,7 @@ function isMlSteppedStage(stage: string): boolean {
   return /^Healing \d+ of \d+/.test(stage);
 }
 
-function MlProgressView({ progress }: { progress: NonNullable<RepairAssist['mlProgress']> }) {
+function MlProgressView({ progress, onCancel }: { progress: NonNullable<RepairAssist['mlProgress']>; onCancel?: () => void }) {
   const isError = isMlErrorStage(progress.stage);
   const isDone = isMlDoneStage(progress.stage, progress.fraction);
   const [, setTick] = useState(0);
@@ -143,6 +145,7 @@ function MlProgressView({ progress }: { progress: NonNullable<RepairAssist['mlPr
     <div className={`ml-progress-bar${!showPercent && !isError && !isDone ? ' is-indeterminate' : ''}`}>{showPercent || isError || isDone ? <span style={{ width: `${pct}%` }} /> : <span className="ml-progress-pulse" />}</div>
     <p className="inspector-note">{headline}</p>
     {areaNote && <p className="inspector-note ml-area-note">{areaNote}</p>}
+    {!isError && !isDone && onCancel && <button className="text-button" title="Stop this heal and restart the worker" onClick={onCancel}>Cancel heal</button>}
   </div>;
 }
 
@@ -180,7 +183,7 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
         <button className={assist.quality === 'best' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('best') : 'Best: widest search, slowest — for tricky removals'} onClick={() => assist.onQualityChange('best')}>Best</button>
       </div>
       {assist.method === 'ml-heal' && <p className="inspector-note" role="status">Engine: {engineInfo.label}{isReady ? ' · ready on this device.' : assist.mlWarming ? ' · loading…' : ` (${engineInfo.download}).`}</p>}
-      {progress && <MlProgressView progress={progress} />}
+      {progress && <MlProgressView progress={progress} onCancel={assist.onCancelHeal} />}
       {assist.method === 'ml-heal' && isError && <>
         {assist.mlEngine === 'moebius' && <button className="secondary-button full-width" title="Fall back to the one-pass neural engine" onClick={() => assist.onQualityChange('balanced')}>Try Balanced instead (~208MB)</button>}
         <button className="secondary-button full-width" title="Drop to the instant classic engine" onClick={() => assist.onQualityChange('fast')}>Use Fast instead (instant, no model)</button>

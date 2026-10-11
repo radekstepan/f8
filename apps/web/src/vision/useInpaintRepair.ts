@@ -11,6 +11,7 @@ import {
   BLEND_FEATHER_PX,
   HEAL_DEFAULT_QUALITY,
   INPAINT_DEFAULT_METHOD,
+  ML_HEAL_DIFFUSION_TIMEOUT_MS,
   mlHealEngineForQuality,
   type HealQuality,
   type InpaintMethod,
@@ -58,6 +59,8 @@ export interface InpaintRepairState {
   run: RunInpaint;
   /** Prefetch weights + sessions for the current tier (Repair tool opened). */
   warmup: () => Promise<{ engine: MlHealEngine; cached: boolean }>;
+  /** Abort a hung heal/warmup: restarts the worker, clears progress + readiness. */
+  cancelHeal: () => void;
   setMethod: (method: InpaintMethod) => void;
   setQuality: (quality: HealQuality) => void;
   setSeamlessLight: (value: boolean) => void;
@@ -80,6 +83,8 @@ export function useInpaintRepair(): InpaintRepairState {
   const [mlWarming, setMlWarming] = useState(false);
   const progressRef = useRef(mlProgress);
   progressRef.current = mlProgress;
+  /** Set before an intentional cancel so the rejection isn't recorded as a stall. */
+  const cancelledRef = useRef(false);
 
   useEffect(() => client.subscribe(setStatus), [client]);
 
@@ -118,15 +123,36 @@ export function useInpaintRepair(): InpaintRepairState {
     (image: PixelImage, mask: RepairMask, radius: number, next: InpaintMethod, options?: RunInpaintOptions) => {
       const callerProgress = options?.onProgress;
       const areas = typeof options?.areas === "number" ? options.areas : null;
-      return client.inpaint(image, mask, radius, next, {
-        ...options,
-        quality: options?.quality ?? quality,
-        seamlessLight: options?.seamlessLight ?? seamlessLight,
-        onProgress: (fraction, stage) => {
-          if (next === "ml-heal" || next === "heal") record(fraction, stage, "heal", areas);
-          callerProgress?.(fraction, stage);
-        },
-      });
+      const effectiveQuality = options?.quality ?? quality;
+      // Diffusion heals need a long ceiling; progress re-arms it per message.
+      const timeoutMs =
+        next === "ml-heal" && mlHealEngineForQuality(effectiveQuality) === "moebius"
+          ? (options?.timeoutMs ?? ML_HEAL_DIFFUSION_TIMEOUT_MS)
+          : options?.timeoutMs;
+      return client
+        .inpaint(image, mask, radius, next, {
+          ...options,
+          quality: effectiveQuality,
+          seamlessLight: options?.seamlessLight ?? seamlessLight,
+          timeoutMs,
+          onProgress: (fraction, stage) => {
+            if (next === "ml-heal" || next === "heal") record(fraction, stage, "heal", areas);
+            callerProgress?.(fraction, stage);
+          },
+        })
+        .catch((error: unknown) => {
+          if (cancelledRef.current) {
+            cancelledRef.current = false;
+            throw error;
+          }
+          // A hung/failed heal must surface instead of freezing the bar at
+          // the last step forever (blur fallback stays underneath).
+          if (next === "ml-heal") {
+            const detail = error instanceof Error ? error.message : String(error);
+            record(0, `Model unavailable: Healing stalled — ${detail} Try Balanced.`, "heal", areas);
+          }
+          throw error;
+        });
     },
     [client, quality, seamlessLight, record],
   );
@@ -136,7 +162,11 @@ export function useInpaintRepair(): InpaintRepairState {
     if (engine === "classic") return Promise.resolve({ engine, cached: true });
     setMlWarming(true);
     return client
-      .warmupMl(engine, { onProgress: (fraction, stage) => record(fraction, stage, "warmup", null) })
+      .warmupMl(engine, {
+        onProgress: (fraction, stage) => record(fraction, stage, "warmup", null),
+        // 1.3GB downloads + shader compile far exceed the 60s default.
+        timeoutMs: engine === "moebius" ? ML_HEAL_DIFFUSION_TIMEOUT_MS : undefined,
+      })
       .then((ready) => {
         setMlReady({ engine: ready.engine, cached: ready.cached, updatedAt: Date.now() });
         setMlWarming(false);
@@ -153,6 +183,16 @@ export function useInpaintRepair(): InpaintRepairState {
   }, [client, quality, record]);
 
   const mlEngine = mlHealEngineForQuality(quality);
+
+  const cancelHeal = useCallback(() => {
+    cancelledRef.current = true;
+    // Restart the worker: a hung diffusion loop can't poison later strokes.
+    // Sessions are rebuilt on the next warmup (weights stay cached).
+    client.terminate();
+    setMlProgress(null);
+    setMlWarming(false);
+    setMlReady((prev) => (prev?.engine === mlEngine ? null : prev));
+  }, [client, mlEngine]);
 
   // Switching tiers discards the previous tier's warmup error so a Moebius
   // failure never lingers under Balanced/Fast.
@@ -171,7 +211,7 @@ export function useInpaintRepair(): InpaintRepairState {
   );
 
   return useMemo(
-    () => ({ method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, setMethod, setQuality: setQualityAndClearStale, setSeamlessLight, setFeatherPx }),
-    [method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, setQualityAndClearStale],
+    () => ({ method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, cancelHeal, setMethod, setQuality: setQualityAndClearStale, setSeamlessLight, setFeatherPx }),
+    [method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, cancelHeal, setQualityAndClearStale],
   );
 }
