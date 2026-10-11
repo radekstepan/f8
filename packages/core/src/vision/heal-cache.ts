@@ -1,16 +1,19 @@
-// Incremental ml-heal cache: per-stroke-group healed patches.
+// Incremental heal cache: per-stroke-group healed patches.
 //
 // Full-pass healing re-runs every area when any stroke changes. ML models are
 // expensive (Moebius ~1.3GB, 19 diffusion steps), so the preview keeps one
-// cached patch per repair stroke group and only (re)heals new, changed, or
-// overlapping groups. Classic heal / Telea / NS keep the single full-pass
-// path: exemplar fill is cheap and already splits into components internally.
+// cached patch per repair stroke group and only heals groups with no saved
+// work. A finished group is immutable: its pixels are reused verbatim until
+// its stroke is deleted, regardless of the current method/quality/feather.
+// Those settings apply only to groups being healed right now, so one photo
+// can mix ML-healed and classically-healed areas. Classic heal shares the
+// same per-group path; Telea / NS keep the single full-pass path.
 //
 // A patch is the final blended RGBA cropped to the feathered mask bbox of
-// its group, composited over the clean (repair-free) base. Dirty groups must
-// always run against the clean base — never over other patches — so
-// non-overlapping results match a joint run. Groups whose feathered bboxes
-// intersect a dirty group's bbox are re-healed together (union).
+// its group, composited over the clean (repair-free) base. Dirty groups
+// always run against the clean base — never over other patches. Overlapping
+// groups are healed independently and composited with the newest on top;
+// saved work is never re-healed to match a joint run.
 
 import type { RetouchPoint } from "../types.js";
 import { groupRetouchStrokes, type RetouchStrokeGroup } from "../retouch.js";
@@ -30,7 +33,13 @@ import type { RunInpaint, RunInpaintOptions } from "../image.js";
 /** Upper bound for cached areas; oldest entries are evicted first. */
 export const HEAL_CACHE_MAX_AREAS = 20;
 
-/** Parameters that change the healed pixels and bust per-group signatures. */
+/**
+ * Parameters for healing. Only geometryKey affects reuse: a saved group is
+ * reused until its stroke is deleted or the photo geometry changes. Method,
+ * quality, seamlessLight, and featherPx are provenance only — they describe
+ * how a patch was built and are used for groups healing right now, never to
+ * invalidate finished work.
+ */
 export interface HealCacheParams {
   method: InpaintMethod;
   quality?: HealQuality;
@@ -82,9 +91,12 @@ export function signatureForHealGroupOnCanvas(
 }
 
 /**
- * Find the stored overlay reusable for one group: same stroke points and
- * heal params, same photo + geometry edits (crop/rotate/flip/straighten),
- * any canvas resolution. Returns null when the group must reheal.
+ * Find the stored overlay reusable for one group: same stroke points, same
+ * photo + geometry edits (crop/rotate/flip/straighten), any canvas
+ * resolution and any heal settings. Finished work is immutable: a settings
+ * change never invalidates it. Returns null only when there is no overlay,
+ * the geometry changed, or the stroke points changed (legacy signatures that
+ * predate immutable reuse are matched by their trailing points key).
  */
 export function reusableOverlayForGroup(
   overlays: readonly StoredHealPatch[],
@@ -94,7 +106,7 @@ export function reusableOverlayForGroup(
   const overlay = overlays.find((entry) => entry.groupId === group.id);
   if (!overlay) return null;
   if (geometryPrefixForKey(overlay.geometryKey) !== geometryPrefixForKey(params.geometryKey)) return null;
-  if (overlay.signature !== signatureForHealGroupOnCanvas(group, params, overlay.geometryKey)) return null;
+  if (pointsKeyFromSignature(overlay.signature) !== pointsKeyForGroup(group)) return null;
   return overlay;
 }
 
@@ -135,25 +147,41 @@ function round6(value: number): string {
   return Number.isFinite(value) ? value.toFixed(6) : "nan";
 }
 
-/** Stable signature for one group's healed output under the given params. */
-export function signatureForHealGroup(
-  group: RetouchStrokeGroup,
-  params: HealCacheParams,
-): string {
-  const points = group.points
+/** Stable points key for one group (resolution- and settings-independent). */
+export function pointsKeyForGroup(group: RetouchStrokeGroup): string {
+  return group.points
     .map(
       (p) =>
         `${round6(p.x)},${round6(p.y)},${round6(p.size)},${round6(p.strength)}`,
     )
     .join(";");
+}
+
+/**
+ * Extract the trailing points key from a signature. Legacy signatures
+ * (`id|m|q|s|f|g|p`) and current signatures (`id|g|p`) both end with
+ * `|p:<points>`, so old overlays saved before immutable reuse still match.
+ */
+export function pointsKeyFromSignature(signature: string): string {
+  const marker = "|p:";
+  const cut = signature.lastIndexOf(marker);
+  return cut < 0 ? signature : signature.slice(cut + marker.length);
+}
+
+/**
+ * Stable signature for one group's healed output. Deliberately excludes
+ * method/quality/seamlessLight/featherPx: those describe how a patch was
+ * built, never whether it is reusable. Only the stroke identity, the canvas
+ * geometry, and the points bust the cache.
+ */
+export function signatureForHealGroup(
+  group: RetouchStrokeGroup,
+  params: HealCacheParams,
+): string {
   return [
     `id:${group.id}`,
-    `m:${params.method}`,
-    `q:${params.quality ?? ""}`,
-    `s:${params.seamlessLight ? "1" : "0"}`,
-    `f:${params.featherPx ?? ""}`,
     `g:${params.geometryKey}`,
-    `p:${points}`,
+    `p:${pointsKeyForGroup(group)}`,
   ].join("|");
 }
 
@@ -193,30 +221,19 @@ export function featheredBboxForGroup(
   return bboxForMask(feathered);
 }
 
-function rectsIntersect(
-  a: { x0: number; y0: number; width: number; height: number },
-  b: { x0: number; y0: number; width: number; height: number },
-): boolean {
-  return (
-    a.x0 < b.x0 + b.width &&
-    b.x0 < a.x0 + a.width &&
-    a.y0 < b.y0 + b.height &&
-    b.y0 < a.y0 + a.height
-  );
-}
-
 /**
  * Split repair groups into cache-valid vs dirty. Stale ids (deleted strokes)
- * are evicted. Valid groups whose feathered bbox intersects a dirty group's
- * bbox are moved to dirty (re-heal union), transitively. The map is mutated
- * (eviction + recency refresh) and also returned for convenience.
+ * are evicted. A group is valid when its cached signature matches the
+ * current strokes and geometry — heal settings never bust it, and overlap
+ * with a dirty group never dirties it. The map is mutated (eviction +
+ * recency refresh) and also returned for convenience.
  */
 export function partitionHealGroups(
   repairs: readonly RetouchPoint[],
   cache: Map<number, CachedHealPatch>,
   params: HealCacheParams,
-  width: number,
-  height: number,
+  _width: number,
+  _height: number,
 ): HealCachePartition {
   const groups = groupRetouchStrokes(repairs).filter(
     (group) => group.kind === "repair",
@@ -229,50 +246,18 @@ export function partitionHealGroups(
   const dirty: RetouchStrokeGroup[] = [];
   for (const group of groups) {
     const entry = cache.get(group.id);
-    if (entry && entry.signature === signatureForHealGroup(group, params)) {
+    // The signature covers stroke identity, geometry, and points only, so a
+    // settings change never busts it. Entries are created fresh each session
+    // with this format; a stale format mismatches once and reheals once.
+    const matches =
+      entry && entry.signature === signatureForHealGroup(group, params);
+    if (matches) {
       valid.push(group);
       // Refresh LRU recency on hit.
       cache.delete(group.id);
       cache.set(group.id, entry);
     } else {
       dirty.push(group);
-    }
-  }
-  // Overlap union: a dirty group's influence region invalidates any valid
-  // group it touches. Bboxes already include the feather ramp, so rect
-  // intersection is the (conservative) overlap test. Fixpoint: newly
-  // dirtied groups can cascade to further valid groups.
-  const dirtyRects: { x0: number; y0: number; width: number; height: number }[] =
-    [];
-  for (const group of dirty) {
-    const bbox = featheredBboxForGroup(
-      group,
-      width,
-      height,
-      params.featherPx,
-    );
-    if (bbox) dirtyRects.push(bbox);
-  }
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (let i = valid.length - 1; i >= 0; i -= 1) {
-      const group = valid[i];
-      if (!group) continue;
-      const entry = cache.get(group.id);
-      if (!entry) {
-        valid.splice(i, 1);
-        dirty.push(group);
-        changed = true;
-        continue;
-      }
-      const rect = { x0: entry.x0, y0: entry.y0, width: entry.width, height: entry.height };
-      if (dirtyRects.some((dirtyRect) => rectsIntersect(rect, dirtyRect))) {
-        valid.splice(i, 1);
-        dirty.push(group);
-        dirtyRects.push(rect);
-        changed = true;
-      }
     }
   }
   return { valid, dirty };
@@ -371,8 +356,9 @@ export function pasteHealPatches(
 //
 // The preview cache is in-memory only, so every revisit re-ran inference.
 // Each finished group is PUT to the photo server right after it heals;
-// reopening seeds the cache from these records and only heals groups whose
-// strokes or params changed. Corrupt records are skipped, never fatal.
+// reopening seeds the cache from these records and only heals groups with
+// no saved overlay. Heal settings never invalidate saved work. Corrupt
+// records are skipped, never fatal.
 
 function b64ToData(b64: string): Uint8ClampedArray | null {
   try {

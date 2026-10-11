@@ -101,23 +101,45 @@ describe("partitionHealGroups", () => {
     expect(dirty.map((g) => g.id)).toEqual([2]);
   });
 
-  it("re-heals the union when a new stroke overlaps a cached area", () => {
+  it("keeps the cached area valid when a new overlapping stroke is added (never re-heals)", () => {
     const first = [repair(0.3, 0.3, 0.15, 1)];
     const { cache } = patch(1, first, 100, 80);
     const both = [...first, repair(0.34, 0.32, 0.15, 2)];
     const { valid, dirty } = partitionHealGroups(both, cache, params(), 100, 80);
-    expect(valid).toEqual([]);
-    expect(dirty.map((g) => g.id).sort()).toEqual([1, 2]);
+    expect(valid.map((g) => g.id)).toEqual([1]);
+    expect(dirty.map((g) => g.id)).toEqual([2]);
   });
 
-  it("busts signatures on quality/method/geometry change", () => {
+  it("keeps saved work across quality/method/feather changes; geometry still busts", () => {
     const points = [repair(0.2, 0.2, 0.1, 1)];
     const { cache } = patch(1, points, 100, 80);
-    expect(partitionHealGroups(points, new Map(cache), params({ quality: "best" }), 100, 80).dirty).toHaveLength(1);
-    expect(partitionHealGroups(points, new Map(cache), params({ method: "heal" }), 100, 80).dirty).toHaveLength(1);
+    expect(partitionHealGroups(points, new Map(cache), params({ quality: "best" }), 100, 80).dirty).toHaveLength(0);
+    expect(partitionHealGroups(points, new Map(cache), params({ method: "heal" }), 100, 80).dirty).toHaveLength(0);
+    expect(partitionHealGroups(points, new Map(cache), params({ featherPx: 8 }), 100, 80).dirty).toHaveLength(0);
     expect(
       partitionHealGroups(points, new Map(cache), params({ geometryKey: "other" }), 100, 80).dirty,
     ).toHaveLength(1);
+  });
+
+  it("reuses persisted overlays saved with the legacy method-scoped signature", async () => {
+    // Persisted overlays carry a separate geometryKey field, so reuse matches
+    // by points key and survives the migration; in-memory entries with a stale
+    // format simply reheal once.
+    const { reusableOverlayForGroup } = await import("./heal-cache.js");
+    const { groupRetouchStrokes } = await import("../retouch.js");
+    const points = [repair(0.2, 0.2, 0.1, 1)];
+    const p = params();
+    const group = groupRetouchStrokes(points).filter((g) => g.kind === "repair")[0]!;
+    const legacySig = `id:1|m:ml-heal|q:balanced|s:0|f:2|g:${p.geometryKey}|p:${points.map(() => "0.200000,0.200000,0.100000,100.000000").join(";")}`;
+    const overlay = {
+      groupId: 1,
+      signature: legacySig,
+      x0: 0, y0: 0, width: 2, height: 2,
+      geometryKey: p.geometryKey,
+      canvasWidth: 100, canvasHeight: 80,
+      data: new Uint8ClampedArray(16),
+    };
+    expect(reusableOverlayForGroup([overlay], group, params({ method: "heal", quality: "best" }))).not.toBeNull();
   });
 
   it("evicts deleted strokes", () => {
@@ -218,12 +240,14 @@ describe("reusableOverlayForGroup", () => {
     expect(reusableOverlayForGroup([overlay], group, exportParams)).not.toBeNull();
   });
 
-  it("rejects quality changes and geometry edits", () => {
+  it("reuses across method/quality/feather changes; rejects geometry edits and moved strokes", () => {
     const points = [repair(0.2, 0.2, 0.1, 1)];
     const p = params();
     const overlay = stored(points, 100, 80, p);
     const group = groupRetouchStrokes(points).filter((g) => g.kind === "repair")[0]!;
-    expect(reusableOverlayForGroup([overlay], group, params({ quality: "best" }))).toBeNull();
+    expect(reusableOverlayForGroup([overlay], group, params({ quality: "best" }))).not.toBeNull();
+    expect(reusableOverlayForGroup([overlay], group, params({ method: "heal" }))).not.toBeNull();
+    expect(reusableOverlayForGroup([overlay], group, params({ featherPx: 8 }))).not.toBeNull();
     expect(reusableOverlayForGroup([overlay], group, params({ geometryKey: "other|1x1" }))).toBeNull();
     const moved = [repair(0.6, 0.6, 0.1, 1)];
     const movedGroup = groupRetouchStrokes(moved).filter((g) => g.kind === "repair")[0]!;

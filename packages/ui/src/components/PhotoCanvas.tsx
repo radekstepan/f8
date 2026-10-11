@@ -58,10 +58,10 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const repairGeneration = useRef(0);
   const inpaintRun = useRef<RunInpaint | null>(null);
   inpaintRun.current = inpaintRepair?.run ?? null;
-  /** In-memory ml-heal patches per stroke group; cleared on photo change. */
+  /** In-memory heal patches per stroke group; cleared on photo change. */
   const healCache = useRef(new Map<number, CachedHealPatch>());
   const healCachePhoto = useRef<string | null>(null);
-  /** Serial ml-heal job queue: one group at a time, repeat clicks schedule follow-ups. */
+  /** Serial heal job queue: one group at a time, repeat clicks schedule follow-ups. */
   const healQueue = useRef<ReturnType<typeof createHealQueue> | null>(null);
   if (!healQueue.current) healQueue.current = createHealQueue();
   /** Persisted overlays fetched at photo open, plus every group saved since. */
@@ -90,6 +90,8 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   /** Repair stroke groups with a heal still in flight (clean canvas + red overlay, never blur). */
   const [pendingRepairIds, setPendingRepairIds] = useState<number[]>([]);
+  /** Bumped when persisted overlays arrive so late loads reseed without rehealing. */
+  const [overlayVersion, setOverlayVersion] = useState(0);
   const isBrush = tool === 'repair' || tool === 'clone';
 
   useEffect(() => {
@@ -103,7 +105,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => { setLoading(true); setError(''); cloneSource.current = null; setSourceSet(false); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); const myPhotoId = photo.id; let alive = true; void loadStoredHealOverlays(overlayClient, myPhotoId).then((patches) => { if (alive) overlayStore.current = patches; }); return () => { alive = false; healEpoch.current += 1; }; }, [photo.id, photo.src, retry]);
+  useEffect(() => { setLoading(true); setError(''); cloneSource.current = null; setSourceSet(false); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); const myPhotoId = photo.id; let alive = true; void loadStoredHealOverlays(overlayClient, myPhotoId).then((patches) => { if (!alive) return; overlayStore.current = patches; setOverlayVersion((v) => v + 1); }); return () => { alive = false; healEpoch.current += 1; }; }, [photo.id, photo.src, retry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,7 +181,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       // Dirty areas stay clean with a red mask until their group heals.
       // Pending ids drive the red overlay: dirty groups only, so finished
       // work is never covered while the queue drains.
-      if (method === 'ml-heal' && repairs.length && !paintingRepair && canvasRef.current) {
+      if ((method === 'ml-heal' || method === 'heal') && repairs.length && !paintingRepair && canvasRef.current) {
         try {
           if (healCachePhoto.current !== photo.src) {
             healCache.current.clear();
@@ -230,7 +232,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
           // Base canvas above is clean (no blur); leave it so areas stay
           // marked red instead of flashing a blurry placeholder.
         }
-      } else if (method !== 'ml-heal' && repairs.length && !paintingRepair && run && method) {
+      } else if (method !== 'ml-heal' && method !== 'heal' && repairs.length && !paintingRepair && run && method) {
         const allIds = [...new Set(repairs.map((point) => strokeIdForPoint(point)))];
         setPendingRepairIds((prev) => (prev.length === allIds.length && prev.every((id) => allIds.includes(id)) ? prev : allIds));
       } else if (!repairs.length || paintingRepair) {
@@ -241,15 +243,16 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         repairGeneration.current = generation;
         timer = window.setTimeout(() => {
           if (cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
-          // ml-heal heals each stroke group once, saves the overlay, and
-          // caches the patch, so adding another area only heals the new
-          // group. Jobs run strictly one at a time through the serial
+          // heal/ml-heal heals each stroke group once, saves the overlay,
+          // and caches the patch, so adding another area only heals the
+          // new group with the current settings — saved groups are never
+          // re-healed. Jobs run strictly one at a time through the serial
           // queue: repeat clicks schedule follow-up jobs (planned at start
           // time against the latest cache), never parallel inferences.
           // The running group is never cancelled; only a photo change or
-          // unmount aborts between groups. Other methods keep the single
-          // full-pass path (cheap).
-          if (method === 'ml-heal') {
+          // unmount aborts between groups. Telea/NS keep the single
+          // full-pass path.
+          if (method === 'ml-heal' || method === 'heal') {
             const methodAtEnqueue = method;
             const myPhotoId = photo.id;
             const myPhotoSrc = photo.src;
@@ -283,8 +286,10 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
                     geometryKey: geometryKeyForHealCache(myPhotoSrc, baseEdit, width, height),
                   };
                   // Seed from persisted overlays so reopening never reheals
-                  // saved work. Preview dims are stable per edit, so only
-                  // exact-size overlays seed here (export rescales instead).
+                  // saved work: reuse ignores heal settings, so a method
+                  // switch never invalidates finished groups. Preview dims
+                  // are stable per edit, so only exact-size overlays seed
+                  // here (export rescales instead).
                   const groups = groupRetouchStrokes(currentRepairs).filter((group) => group.kind === 'repair');
                   for (const group of groups) {
                     if (healCache.current.has(group.id)) continue;
@@ -385,7 +390,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       }
     }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setLoading(false); } });
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
-  }, [photo.src, edit, tool, activeStroke, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.seamlessLight, inpaintRepair?.featherPx, inpaintRepair?.status]);
+  }, [photo.src, edit, tool, activeStroke, onHistogram, retry, overlayVersion, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.seamlessLight, inpaintRepair?.featherPx, inpaintRepair?.status]);
 
   const fitWidth = Math.max(100, Math.min(stageSize.width - 64, (stageSize.height - 48) * aspect));
   const frameWidth = fitWidth * zoom;

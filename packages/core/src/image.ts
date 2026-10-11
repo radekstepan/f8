@@ -345,8 +345,10 @@ async function geometryForExport(
   );
   // Group-overlay path (heal + ml-heal): reusable saved patches composite
   // directly and only missing groups hit the transport — the same pixels as
-  // the preview, and reopened photos export without rehealing. Other methods
-  // keep the single full-pass path below.
+  // the preview, and reopened photos export without rehealing. Reuse ignores
+  // the current method/quality/feather so mixed-method photos export their
+  // saved pixels verbatim; only groups with no overlay heal now. Other
+  // methods keep the single full-pass path below.
   if ((method === 'heal' || method === 'ml-heal') && repair.healOverlays?.length) {
     try {
       const width = clean.width;

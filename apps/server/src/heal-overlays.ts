@@ -3,7 +3,9 @@
 // The preview keeps healed pixels in an in-memory Map that dies on photo
 // change/reload, so every revisit re-ran inference. Each finished group is
 // now PUT here right after it heals; reopening seeds the cache from these
-// files and only heals signature-mismatched groups. One JSON file per group
+// files and only heals groups with no saved overlay. Heal settings never
+// invalidate saved work: the signature covers stroke identity, geometry, and
+// points only. One JSON file per group
 // (metadata + base64 raw RGBA of the cropped patch) under
 // <dataDir>/heal-overlays/<photoId>/ — no extra deps, no DB bloat.
 
