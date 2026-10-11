@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star } from 'lucide-react';
 import { DEFAULT_EDIT } from '@photomator/core';
-import { applyInpaintRepair, drawEffects, geometryCanvas, loadImage, nextRetouchStrokeId, renderAdjustedCanvas, strokeIdForPoint } from '@photomator/core';
-import type { ChangeEdit, EditState, Photo, RepairInpaintBinding, RetouchPoint, RunInpaint, Tool } from '@photomator/core';
+import { applyInpaintRepair, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, healSingleGroup, loadImage, nextRetouchStrokeId, partitionHealGroups, pasteHealPatches, renderAdjustedCanvas, signatureForHealGroup, strokeIdForPoint } from '@photomator/core';
+import type { CachedHealPatch, ChangeEdit, EditState, Photo, RepairInpaintBinding, RetouchPoint, RunInpaint, Tool } from '@photomator/core';
 import { IconButton } from './EditorUI.js';
 
 export type HistogramData = { red: number[]; green: number[]; blue: number[] };
@@ -46,6 +46,9 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const repairGeneration = useRef(0);
   const inpaintRun = useRef<RunInpaint | null>(null);
   inpaintRun.current = inpaintRepair?.run ?? null;
+  /** In-memory ml-heal patches per stroke group; cleared on photo change. */
+  const healCache = useRef(new Map<number, CachedHealPatch>());
+  const healCachePhoto = useRef<string | null>(null);
   const [stageSize, setStageSize] = useState({ width: 800, height: 520 });
   const [aspect, setAspect] = useState(1200 / 627);
   const [loading, setLoading] = useState(true);
@@ -67,7 +70,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => { setLoading(true); setError(''); cloneSource.current = null; setSourceSet(false); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); }, [photo.src, retry]);
+  useEffect(() => { setLoading(true); setError(''); cloneSource.current = null; setSourceSet(false); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; }, [photo.src, retry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +138,61 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         repairGeneration.current = generation;
         timer = window.setTimeout(() => {
           if (cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
+          // ml-heal heals each stroke group once and caches the patch, so
+          // adding another area only runs the worker for the new group.
+          // Other methods keep the single full-pass path (cheap).
+          if (method === 'ml-heal') {
+            void (async () => {
+              const clean = geometryCanvas(image, { ...previewEdit, retouches: previewEdit.retouches.filter((point) => point.kind !== 'repair') });
+              const width = clean.width;
+              const height = clean.height;
+              if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return;
+              if (healCachePhoto.current !== photo.src) {
+                healCache.current.clear();
+                healCachePhoto.current = photo.src;
+              }
+              const cleanCtx = clean.getContext('2d')!;
+              const cleanPixels = cleanCtx.getImageData(0, 0, width, height);
+              const source = { width, height, data: new Uint8ClampedArray(cleanPixels.data) };
+              const cacheParams = {
+                method,
+                quality: inpaintRepair?.quality,
+                seamlessLight: inpaintRepair?.seamlessLight,
+                featherPx: inpaintRepair?.featherPx,
+                geometryKey: geometryKeyForHealCache(photo.src, previewEdit, width, height),
+              };
+              const { valid, dirty } = partitionHealGroups(repairs, healCache.current, cacheParams, width, height);
+              const validPatches = valid.flatMap((group) => {
+                const entry = healCache.current.get(group.id);
+                return entry ? [entry] : [];
+              });
+              const fresh: CachedHealPatch[] = [];
+              const groupOptions = { ...repairOptions, areas: dirty.length };
+              for (const group of dirty) {
+                if (cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
+                try {
+                  const patch = await healSingleGroup(source, group, method, run, groupOptions);
+                  if (cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
+                  if (patch) {
+                    patch.signature = signatureForHealGroup(group, cacheParams);
+                    healCache.current.set(group.id, patch);
+                    fresh.push(patch);
+                  }
+                } catch {
+                  // Keep the blur fallback for this group; others still upgrade.
+                }
+              }
+              enforceHealCacheLimit(healCache.current);
+              const patches = [...validPatches, ...fresh];
+              if (!patches.length || cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
+              const composited = pasteHealPatches(source, patches);
+              const bytes = new Uint8ClampedArray(composited.data.length);
+              bytes.set(composited.data);
+              cleanCtx.putImageData(new ImageData(bytes, width, height), 0, 0);
+              renderBase(clean);
+            })().catch(() => { /* Blur fallback already displayed. */ });
+            return;
+          }
           const clean = geometryCanvas(image, { ...previewEdit, retouches: previewEdit.retouches.filter((point) => point.kind !== 'repair') });
           void applyInpaintRepair(clean, repairs, method, run, repairOptions).then((applied) => {
             if (!applied || cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
