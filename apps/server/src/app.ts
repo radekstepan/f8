@@ -10,6 +10,13 @@ import type { EditState, LibraryPhoto } from "@photomator/core";
 import type { ServerConfig } from "./config.ts";
 import { getMlHealHealth, kickEngineReady, runRemoteHeal, validateRemoteBody } from "./ml-heal.ts";
 import type { RemoteHealEngine } from "./ml-heal.ts";
+import {
+  deleteHealOverlay,
+  listHealOverlays,
+  purgeHealOverlays,
+  saveHealOverlay,
+  validateOverlayBody,
+} from "./heal-overlays.ts";
 import { BrowseError, browse } from "./fs-browse.ts";
 import { ImportError, importUpload, scanPaths } from "./importer.ts";
 import type { ImportOutcome } from "./importer.ts";
@@ -341,6 +348,41 @@ export function createApp(ctx: AppContext): Hono {
     return c.json({ photo: toApiPhoto(row, edit) });
   });
 
+  app.get("/api/photos/:id/heal-overlays", async (c) => {
+    const found = photoOr404(c, c.req.param("id"));
+    if (found instanceof Response) return found;
+    return c.json({ patches: await listHealOverlays(config.dataDir, found.id) });
+  });
+
+  app.put("/api/photos/:id/heal-overlays/:groupId", async (c) => {
+    const found = photoOr404(c, c.req.param("id"));
+    if (found instanceof Response) return found;
+    const groupId = Number.parseInt(c.req.param("groupId"), 10);
+    if (!Number.isInteger(groupId)) return c.json({ error: "Invalid group." }, 400);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    try {
+      const overlay = validateOverlayBody(found.id, groupId, body);
+      await saveHealOverlay(config.dataDir, found.id, overlay);
+      return c.json({ patch: overlay });
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 400);
+      throw error;
+    }
+  });
+
+  app.delete("/api/photos/:id/heal-overlays/:groupId", async (c) => {
+    const found = photoOr404(c, c.req.param("id"));
+    if (found instanceof Response) return found;
+    const groupId = Number.parseInt(c.req.param("groupId"), 10);
+    if (!Number.isInteger(groupId)) return c.json({ error: "Invalid group." }, 400);
+    return c.json({ deleted: await deleteHealOverlay(config.dataDir, found.id, groupId) });
+  });
+
   app.delete("/api/photos/:id", async (c) => {
     const found = photoOr404(c, c.req.param("id"));
     if (found instanceof Response) return found;
@@ -349,6 +391,8 @@ export function createApp(ctx: AppContext): Hono {
     if (found.hash) {
       await fs.unlink(path.join(config.previewsDir, `${found.hash}.jpg`)).catch(() => undefined);
     }
+    // Heal overlays are a cache of inference output: drop them with the photo.
+    await purgeHealOverlays(config.dataDir, found.id);
     store.deletePhoto(found.id);
     return c.json({ deleted: true });
   });

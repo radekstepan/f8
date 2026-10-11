@@ -16,7 +16,7 @@ import type { RetouchPoint } from "../types.js";
 import { groupRetouchStrokes, type RetouchStrokeGroup } from "../retouch.js";
 import type { PixelImage } from "./analyze.js";
 import type { HealQuality } from "./heal.js";
-import {
+import type { HealOverlayBody, HealOverlayRecord, LibraryClient } from "../library.js";import {
   blendInpainted,
   featherRepairMask,
   inpaintRadiusForStrokes,
@@ -48,6 +48,54 @@ export interface CachedHealPatch {
   width: number;
   height: number;
   data: Uint8ClampedArray;
+}
+
+/**
+ * A patch persisted on the photo server (or passed to export): the cached
+ * pixels plus the canvas they were built at. Canvas dims travel along so a
+ * different-resolution consumer (export) can rescale instead of rehealing.
+ */
+export interface StoredHealPatch extends CachedHealPatch {
+  groupId: number;
+  geometryKey: string;
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
+/** Resolution-independent prefix of a geometry key (photo + geometry edits). */
+export function geometryPrefixForKey(key: string): string {
+  const cut = key.lastIndexOf("|");
+  return cut < 0 ? key : key.slice(0, cut);
+}
+
+/**
+ * Recompute a group's signature as if it lived on another canvas: same
+ * points/params, only the geometry key swapped. Used to test whether a
+ * stored overlay matches the current strokes regardless of resolution.
+ */
+export function signatureForHealGroupOnCanvas(
+  group: RetouchStrokeGroup,
+  params: HealCacheParams,
+  geometryKey: string,
+): string {
+  return signatureForHealGroup(group, { ...params, geometryKey });
+}
+
+/**
+ * Find the stored overlay reusable for one group: same stroke points and
+ * heal params, same photo + geometry edits (crop/rotate/flip/straighten),
+ * any canvas resolution. Returns null when the group must reheal.
+ */
+export function reusableOverlayForGroup(
+  overlays: readonly StoredHealPatch[],
+  group: RetouchStrokeGroup,
+  params: HealCacheParams,
+): StoredHealPatch | null {
+  const overlay = overlays.find((entry) => entry.groupId === group.id);
+  if (!overlay) return null;
+  if (geometryPrefixForKey(overlay.geometryKey) !== geometryPrefixForKey(params.geometryKey)) return null;
+  if (overlay.signature !== signatureForHealGroupOnCanvas(group, params, overlay.geometryKey)) return null;
+  return overlay;
 }
 
 export interface HealCachePartition {
@@ -317,4 +365,110 @@ export function pasteHealPatches(
     }
   }
   return { width: base.width, height: base.height, data: out };
+}
+
+// --- Persisted overlays --------------------------------------------------
+//
+// The preview cache is in-memory only, so every revisit re-ran inference.
+// Each finished group is PUT to the photo server right after it heals;
+// reopening seeds the cache from these records and only heals groups whose
+// strokes or params changed. Corrupt records are skipped, never fatal.
+
+function b64ToData(b64: string): Uint8ClampedArray | null {
+  try {
+    const binary = atob(b64);
+    const out = new Uint8ClampedArray(binary.length);
+    for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+function dataToB64(data: Uint8ClampedArray): string {
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < data.length; i += CHUNK) {
+    binary += String.fromCharCode(...data.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+/** Convert one server record to binary form; null when corrupt. */
+export function storedPatchFromRecord(record: HealOverlayRecord): StoredHealPatch | null {
+  if (
+    !Number.isInteger(record.groupId) ||
+    typeof record.signature !== "string" ||
+    !record.signature ||
+    !Number.isInteger(record.x0) ||
+    !Number.isInteger(record.y0) ||
+    !Number.isInteger(record.width) ||
+    !Number.isInteger(record.height) ||
+    !Number.isInteger(record.canvasWidth) ||
+    !Number.isInteger(record.canvasHeight) ||
+    typeof record.geometryKey !== "string" ||
+    !record.geometryKey
+  ) {
+    return null;
+  }
+  const data = b64ToData(record.dataB64);
+  if (!data || data.length !== record.width * record.height * 4) return null;
+  return {
+    groupId: record.groupId,
+    signature: record.signature,
+    x0: record.x0,
+    y0: record.y0,
+    width: record.width,
+    height: record.height,
+    geometryKey: record.geometryKey,
+    canvasWidth: record.canvasWidth,
+    canvasHeight: record.canvasHeight,
+    data,
+  };
+}
+
+export interface HealOverlayMeta {
+  geometryKey: string;
+  canvasWidth: number;
+  canvasHeight: number;
+  method: string;
+  quality?: string;
+  featherPx?: number;
+}
+
+/** Encode one healed patch for PUT (base64 raw RGBA). */
+export function overlayBodyFromPatch(patch: CachedHealPatch, meta: HealOverlayMeta): HealOverlayBody {
+  return {
+    signature: patch.signature,
+    x0: patch.x0,
+    y0: patch.y0,
+    width: patch.width,
+    height: patch.height,
+    canvasWidth: meta.canvasWidth,
+    canvasHeight: meta.canvasHeight,
+    method: meta.method,
+    ...(meta.quality === undefined ? {} : { quality: meta.quality }),
+    ...(meta.featherPx === undefined ? {} : { featherPx: meta.featherPx }),
+    geometryKey: meta.geometryKey,
+    dataB64: dataToB64(patch.data),
+  };
+}
+
+/**
+ * Load persisted overlays for a photo as binary patches. Never throws:
+ * missing photos, offline servers, and corrupt records all yield [].
+ */
+export async function loadStoredHealOverlays(
+  client: Pick<LibraryClient, "listHealOverlays">,
+  photoId: string,
+): Promise<StoredHealPatch[]> {
+  try {
+    const { patches } = await client.listHealOverlays(photoId);
+    return patches.flatMap((record) => {
+      const patch = storedPatchFromRecord(record);
+      return patch ? [patch] : [];
+    });
+  } catch {
+    return [];
+  }
 }

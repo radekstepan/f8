@@ -51,6 +51,30 @@ export interface PhotoPatch {
   albumId?: string;
 }
 
+/**
+ * One persisted heal overlay as served by GET heal-overlays: patch metadata
+ * plus base64 raw RGBA of the cropped blended patch. The web client converts
+ * these to StoredHealPatch (binary) before seeding the preview/export cache.
+ */
+export interface HealOverlayRecord {
+  groupId: number;
+  signature: string;
+  x0: number;
+  y0: number;
+  width: number;
+  height: number;
+  canvasWidth: number;
+  canvasHeight: number;
+  method: string;
+  quality?: string;
+  featherPx?: number;
+  geometryKey: string;
+  dataB64: string;
+  updatedAt: string;
+}
+
+export type HealOverlayBody = Omit<HealOverlayRecord, "groupId" | "updatedAt">;
+
 export class LibraryError extends Error {
   readonly status: number;
 
@@ -81,6 +105,9 @@ export interface LibraryClient {
   importByPath: (paths: string[], albumId?: string) => Promise<ImportReport>;
   updatePhoto: (id: string, patch: PhotoPatch) => Promise<{ photo: LibraryPhoto }>;
   saveEdit: (id: string, present: EditState) => Promise<{ photo: LibraryPhoto }>;
+  listHealOverlays: (id: string) => Promise<{ patches: HealOverlayRecord[] }>;
+  saveHealOverlay: (id: string, groupId: number, body: HealOverlayBody) => Promise<{ patch: HealOverlayRecord }>;
+  deleteHealOverlay: (id: string, groupId: number) => Promise<{ deleted: boolean }>;
   deletePhoto: (id: string) => Promise<{ deleted: boolean }>;
   createAlbum: (name: string, cover?: string) => Promise<{ album: Album }>;
   updateAlbum: (id: string, patch: { name?: string; cover?: string }) => Promise<{ album: Album }>;
@@ -123,6 +150,17 @@ export function createLibraryClient(baseUrl = ""): LibraryClient {
       request<{ photo: LibraryPhoto }>(url(`/api/photos/${encodeURIComponent(id)}/edit`), {
         ...json({ present }),
         method: "PUT",
+      }),
+    listHealOverlays: (id) =>
+      request<{ patches: HealOverlayRecord[] }>(url(`/api/photos/${encodeURIComponent(id)}/heal-overlays`)),
+    saveHealOverlay: (id, groupId, body) =>
+      request<{ patch: HealOverlayRecord }>(url(`/api/photos/${encodeURIComponent(id)}/heal-overlays/${groupId}`), {
+        ...json(body),
+        method: "PUT",
+      }),
+    deleteHealOverlay: (id, groupId) =>
+      request<{ deleted: boolean }>(url(`/api/photos/${encodeURIComponent(id)}/heal-overlays/${groupId}`), {
+        method: "DELETE",
       }),
     deletePhoto: (id) =>
       request<{ deleted: boolean }>(url(`/api/photos/${encodeURIComponent(id)}`), { method: "DELETE" }),

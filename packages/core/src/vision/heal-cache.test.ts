@@ -6,12 +6,15 @@ import {
   enforceHealCacheLimit,
   featheredBboxForGroup,
   geometryKeyForHealCache,
+  geometryPrefixForKey,
   healSingleGroup,
   pasteHealPatches,
   partitionHealGroups,
+  reusableOverlayForGroup,
   signatureForHealGroup,
   type CachedHealPatch,
   type HealCacheParams,
+  type StoredHealPatch,
 } from "./heal-cache.js";
 import { groupRetouchStrokes } from "../retouch.js";
 import type { RetouchPoint } from "../types.js";
@@ -185,5 +188,45 @@ describe("pasteHealPatches", () => {
     expect(out.data[(7 * 8 + 7) * 4]).toBe(1);
     // Inputs are not mutated.
     expect(base.data[0]).toBe(1);
+  });
+});
+
+describe("reusableOverlayForGroup", () => {
+  function stored(points: RetouchPoint[], width: number, height: number, p: HealCacheParams): StoredHealPatch {
+    const group = groupRetouchStrokes(points).filter((g) => g.kind === "repair")[0]!;
+    const bbox = featheredBboxForGroup(group, width, height, p.featherPx) ?? { x0: 0, y0: 0, width: 1, height: 1 };
+    return {
+      groupId: group.id,
+      signature: signatureForHealGroup(group, p),
+      x0: bbox.x0,
+      y0: bbox.y0,
+      width: bbox.width,
+      height: bbox.height,
+      geometryKey: p.geometryKey,
+      canvasWidth: width,
+      canvasHeight: height,
+      data: new Uint8ClampedArray(bbox.width * bbox.height * 4),
+    };
+  }
+
+  it("matches the same strokes at a different resolution (export rescale)", () => {
+    const points = [repair(0.2, 0.2, 0.1, 1)];
+    const preview = params();
+    const overlay = stored(points, 100, 80, preview);
+    const group = groupRetouchStrokes(points).filter((g) => g.kind === "repair")[0]!;
+    const exportParams = params({ geometryKey: `${geometryPrefixForKey(preview.geometryKey)}|200x160` });
+    expect(reusableOverlayForGroup([overlay], group, exportParams)).not.toBeNull();
+  });
+
+  it("rejects quality changes and geometry edits", () => {
+    const points = [repair(0.2, 0.2, 0.1, 1)];
+    const p = params();
+    const overlay = stored(points, 100, 80, p);
+    const group = groupRetouchStrokes(points).filter((g) => g.kind === "repair")[0]!;
+    expect(reusableOverlayForGroup([overlay], group, params({ quality: "best" }))).toBeNull();
+    expect(reusableOverlayForGroup([overlay], group, params({ geometryKey: "other|1x1" }))).toBeNull();
+    const moved = [repair(0.6, 0.6, 0.1, 1)];
+    const movedGroup = groupRetouchStrokes(moved).filter((g) => g.kind === "repair")[0]!;
+    expect(reusableOverlayForGroup([overlay], movedGroup, p)).toBeNull();
   });
 });

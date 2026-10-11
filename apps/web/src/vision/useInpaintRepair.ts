@@ -74,6 +74,27 @@ function isErrorStage(stage: string): boolean {
   return stage.startsWith("Model unavailable");
 }
 
+/**
+ * Map one group's transport progress onto a serial multi-group job: the bar
+ * advances monotonically across groups and only the last group may report
+ * terminal "Healing done". Without this, every group flashes "done" and the
+ * areas copy flickers while later groups are still healing.
+ */
+function mapAggregateProgress(
+  fraction: number,
+  stage: string,
+  aggregate: { index: number; total: number } | undefined,
+): [fraction: number, stage: string] {
+  if (!aggregate || aggregate.total <= 1) return [fraction, stage];
+  const { index, total } = aggregate;
+  const clamped = Math.max(0, Math.min(1, fraction));
+  if (clamped >= 1) {
+    if (index >= total - 1) return [1, "Healing done"];
+    return [(index + 1) / total, `Healing ${index + 1} of ${total}…`];
+  }
+  return [(index + clamped) / total, `Healing ${index + 1} of ${total}…`];
+}
+
 export function useInpaintRepair(): InpaintRepairState {
   const [client] = useState(getVisionWorkerClient);
   const [method, setMethod] = useState<InpaintMethod>(INPAINT_DEFAULT_METHOD);
@@ -92,7 +113,7 @@ export function useInpaintRepair(): InpaintRepairState {
   useEffect(() => client.subscribe(setStatus), [client]);
 
   const record = useCallback(
-    (fraction: number, stage: string, job: "heal" | "warmup", areas: number | null) => {
+    (fraction: number, stage: string, job: "heal" | "warmup", areas: number | null, qualityOverride?: HealQuality) => {
       const clamped = Math.max(0, Math.min(1, fraction));
       const prev = progressRef.current;
       // Warmup must never clobber an active heal job's stage/areas; errors
@@ -116,7 +137,7 @@ export function useInpaintRepair(): InpaintRepairState {
       // ready" note). Serving is only ever true after real readiness —
       // warmup sets it explicitly from the server poll.
       if (clamped >= 1 && !isErrorStage(stage)) {
-        const engine = mlHealEngineForQuality(quality);
+        const engine = mlHealEngineForQuality(qualityOverride ?? quality);
         setMlReady({ engine, cached: true, serving: true, updatedAt: Date.now() });
       }
     },
@@ -127,17 +148,22 @@ export function useInpaintRepair(): InpaintRepairState {
     (image: PixelImage, mask: RepairMask, radius: number, next: InpaintMethod, options?: RunInpaintOptions) => {
       const callerProgress = options?.onProgress;
       const areas = typeof options?.areas === "number" ? options.areas : null;
-      const effectiveQuality = options?.quality ?? quality;
+      const requestedQuality = options?.quality ?? quality;
+      // Fast is classic-heal only: an ml-heal call asking for it (legacy
+      // session) heals at Balanced instead of silently dropping to exemplar.
+      const effectiveQuality = next === "ml-heal" && requestedQuality === "fast" ? "balanced" : requestedQuality;
       // All ML tiers run on the photo server, never in the browser: the
       // in-browser paths hung multi-area jobs. Server-required, always up.
       if (next === "ml-heal" && mlHealEngineForQuality(effectiveQuality) !== "classic") {
         const engine = mlHealEngineForQuality(effectiveQuality);
         const timeoutMs = options?.timeoutMs ?? (engine === "lama" ? undefined : ML_HEAL_DIFFUSION_TIMEOUT_MS);
+        const aggregate = options?.aggregate;
         return runRemoteHeal(engine, image, mask, {
           ...(timeoutMs === undefined ? {} : { timeoutMs }),
           onProgress: (fraction, stage) => {
-            if (next === "ml-heal" || next === "heal") record(fraction, stage, "heal", areas);
-            callerProgress?.(fraction, stage);
+            const [mappedFraction, mappedStage] = mapAggregateProgress(fraction, stage, aggregate);
+            if (next === "ml-heal" || next === "heal") record(mappedFraction, mappedStage, "heal", areas, effectiveQuality);
+            callerProgress?.(mappedFraction, mappedStage);
           },
         }).catch((error: unknown) => {
           if (cancelledRef.current) {
@@ -151,6 +177,7 @@ export function useInpaintRepair(): InpaintRepairState {
       }
       // Diffusion heals need a long ceiling; progress re-arms it per message.
       const timeoutMs = options?.timeoutMs;
+      const aggregate = options?.aggregate;
       return client
         .inpaint(image, mask, radius, next, {
           ...options,
@@ -158,8 +185,9 @@ export function useInpaintRepair(): InpaintRepairState {
           seamlessLight: options?.seamlessLight ?? seamlessLight,
           timeoutMs,
           onProgress: (fraction, stage) => {
-            if (next === "ml-heal" || next === "heal") record(fraction, stage, "heal", areas);
-            callerProgress?.(fraction, stage);
+            const [mappedFraction, mappedStage] = mapAggregateProgress(fraction, stage, aggregate);
+            if (next === "ml-heal" || next === "heal") record(mappedFraction, mappedStage, "heal", areas, effectiveQuality);
+            callerProgress?.(mappedFraction, mappedStage);
           },
         })
         .catch((error: unknown) => {
@@ -180,13 +208,16 @@ export function useInpaintRepair(): InpaintRepairState {
   );
 
   const warmup = useCallback(() => {
-    const engine = mlHealEngineForQuality(quality);
+    // Warmup only runs for ML Heal (the app gates on method): Fast has no ML
+    // tier, so a legacy fast quality warms Balanced instead of no-op'ing.
+    const warmedQuality = quality === "fast" ? "balanced" : quality;
+    const engine = mlHealEngineForQuality(warmedQuality);
     if (engine === "classic") return Promise.resolve({ engine, cached: true, serving: true });
     // Every ML tier warms the photo server, never the browser worker: kick
     // provisioning and poll until it serves, with real download %.
     setMlWarming(true);
     return warmupRemoteHeal(engine, {
-      onProgress: (fraction, stage) => record(fraction, stage, "warmup", null),
+      onProgress: (fraction, stage) => record(fraction, stage, "warmup", null, warmedQuality),
     })
       .then((result) => {
         const ready = { engine, cached: true, serving: result.serving, updatedAt: Date.now() };
@@ -204,7 +235,10 @@ export function useInpaintRepair(): InpaintRepairState {
       });
   }, [quality, record]);
 
-  const mlEngine = mlHealEngineForQuality(quality);
+  // Fast has no ML tier: the exposed quality/engine always coerce fast to
+  // balanced under ml-heal so callers never see the legacy combination.
+  const exposedQuality: HealQuality = method === "ml-heal" && quality === "fast" ? "balanced" : quality;
+  const mlEngine = mlHealEngineForQuality(exposedQuality);
 
   const cancelHeal = useCallback(() => {
     cancelledRef.current = true;
@@ -217,23 +251,40 @@ export function useInpaintRepair(): InpaintRepairState {
   }, [client, mlEngine]);
 
   // Switching tiers discards the previous tier's warmup error so a Moebius
-  // failure never lingers under Balanced/Fast.
+  // failure never lingers under Balanced. Fast is classic-heal only and is
+  // never offered under ML Heal: requests for it coerce to Balanced.
   const setQualityAndClearStale = useCallback(
     (next: HealQuality) => {
+      const coerced = method === "ml-heal" && next === "fast" ? "balanced" : next;
       const prevEngine = mlHealEngineForQuality(quality);
-      const nextEngine = mlHealEngineForQuality(next);
+      const nextEngine = mlHealEngineForQuality(coerced);
       if (prevEngine !== nextEngine) {
         const cur = progressRef.current;
         if (cur && (isErrorStage(cur.stage) || cur.job === "warmup")) setMlProgress(null);
         setMlWarming(false);
       }
-      setQuality(next);
+      setQuality(coerced);
     },
-    [quality],
+    [quality, method],
+  );
+
+  // Entering ML Heal from classic Fast has no Fast tier: migrate to Balanced
+  // so the new method always resolves to a neural engine.
+  const setMethodAndMigrate = useCallback(
+    (next: InpaintMethod) => {
+      if (next === "ml-heal") {
+        setQuality((prev) => (prev === "fast" ? "balanced" : prev));
+        const cur = progressRef.current;
+        if (cur && (isErrorStage(cur.stage) || cur.job === "warmup")) setMlProgress(null);
+        setMlWarming(false);
+      }
+      setMethod(next);
+    },
+    [],
   );
 
   return useMemo(
-    () => ({ method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, cancelHeal, setMethod, setQuality: setQualityAndClearStale, setSeamlessLight, setFeatherPx }),
-    [method, quality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, cancelHeal, setQualityAndClearStale],
+    () => ({ method, quality: exposedQuality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, cancelHeal, setMethod: setMethodAndMigrate, setQuality: setQualityAndClearStale, setSeamlessLight, setFeatherPx }),
+    [method, exposedQuality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, cancelHeal, setQualityAndClearStale, setMethodAndMigrate],
   );
 }

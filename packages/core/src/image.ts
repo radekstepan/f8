@@ -7,6 +7,17 @@ import { INPAINT_DEFAULT_METHOD, INPAINT_DILATE_PX, blendInpainted, dilateRepair
 import type { InpaintMethod, RepairMask } from './vision/inpaint.js';
 import type { MlHealEngine } from './vision/ml-heal.js';
 import type { VisionWorkerStatus } from './vision/worker-client.js';
+import { groupRetouchStrokes } from './retouch.js';
+import {
+  geometryKeyForHealCache,
+  healSingleGroup,
+  partitionHealGroups,
+  pasteHealPatches,
+  reusableOverlayForGroup,
+  signatureForHealGroup,
+  type CachedHealPatch,
+  type StoredHealPatch,
+} from './vision/heal-cache.js';
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
@@ -178,6 +189,13 @@ export interface RunInpaintOptions {
   featherPx?: number;
   /** Number of repair areas covered by this run (for progress copy). */
   areas?: number;
+  /**
+   * Position of this call inside a serial multi-group job (0-based). When
+   * set with total > 1, the transport maps per-group fractions to aggregate
+   * progress and only the last group may report terminal "Healing done" —
+   * otherwise every group flashes "done" and the areas copy flickers.
+   */
+  aggregate?: { index: number; total: number };
   onProgress?: HealProgress;
   /** Per-request ceiling in ms; steady progress re-arms it. */
   timeoutMs?: number;
@@ -260,6 +278,50 @@ export interface ExportRepairOptions {
   seamlessLight?: boolean;
   /** Blend feather in px; omitted means the BLEND_FEATHER_PX default. */
   featherPx?: number;
+  /**
+   * Persisted per-group overlays (from GET heal-overlays). Reusable groups
+   * composite directly — even across export resolutions via rescaling — so
+   * export only heals groups with no valid overlay instead of everything.
+   */
+  healOverlays?: readonly StoredHealPatch[];
+}
+
+// Rebase a stored overlay onto a canvas of a different size: same blended
+// pixels, rescaled bbox. Exact-size overlays pass through with a fresh
+// signature; anything else needs DOM canvas scaling (null outside browsers
+// or when the overlay falls off-canvas after rounding).
+function rebaseOverlayToCanvas(
+  overlay: StoredHealPatch,
+  signature: string,
+  canvasWidth: number,
+  canvasHeight: number,
+): CachedHealPatch | null {
+  if (overlay.canvasWidth === canvasWidth && overlay.canvasHeight === canvasHeight) {
+    return { signature, x0: overlay.x0, y0: overlay.y0, width: overlay.width, height: overlay.height, data: overlay.data };
+  }
+  if (typeof document === "undefined") return null;
+  if (overlay.width <= 0 || overlay.height <= 0) return null;
+  const scaleX = canvasWidth / overlay.canvasWidth;
+  const scaleY = canvasHeight / overlay.canvasHeight;
+  const x0 = Math.round(overlay.x0 * scaleX);
+  const y0 = Math.round(overlay.y0 * scaleY);
+  const width = Math.max(1, Math.round(overlay.width * scaleX));
+  const height = Math.max(1, Math.round(overlay.height * scaleY));
+  if (x0 < 0 || y0 < 0 || x0 + width > canvasWidth || y0 + height > canvasHeight) return null;
+  try {
+    const src = document.createElement("canvas");
+    src.width = overlay.width;
+    src.height = overlay.height;
+    src.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(overlay.data), overlay.width, overlay.height), 0, 0);
+    const dst = document.createElement("canvas");
+    dst.width = width;
+    dst.height = height;
+    dst.getContext("2d")!.drawImage(src, 0, 0, width, height);
+    const scaled = dst.getContext("2d")!.getImageData(0, 0, width, height);
+    return { signature, x0, y0, width, height, data: new Uint8ClampedArray(scaled.data) };
+  } catch {
+    return null;
+  }
 }
 
 // Resolve the geometry canvas, preferring worker inpainting for repair
@@ -270,14 +332,75 @@ async function geometryForExport(
   edit: EditState,
   maxSize: number,
   repair?: ExportRepairOptions,
+  photoSrc?: string,
 ): Promise<HTMLCanvasElement> {
   const repairs = edit.retouches.filter((point) => point.kind === 'repair');
   if (!repairs.length || !repair?.runInpaint) return geometryCanvas(image, edit, maxSize);
+  const method = repair.method ?? INPAINT_DEFAULT_METHOD;
+  const runInpaint = repair.runInpaint;
   const clean = geometryCanvas(
     image,
     { ...edit, retouches: edit.retouches.filter((point) => point.kind === 'clone') },
     maxSize,
   );
+  // Group-overlay path (heal + ml-heal): reusable saved patches composite
+  // directly and only missing groups hit the transport — the same pixels as
+  // the preview, and reopened photos export without rehealing. Other methods
+  // keep the single full-pass path below.
+  if ((method === 'heal' || method === 'ml-heal') && repair.healOverlays?.length) {
+    try {
+      const width = clean.width;
+      const height = clean.height;
+      const cacheParams = {
+        method,
+        quality: repair.quality,
+        seamlessLight: repair.seamlessLight,
+        featherPx: repair.featherPx,
+        geometryKey: geometryKeyForHealCache(photoSrc ?? image.src, edit, width, height),
+      };
+      const groups = groupRetouchStrokes(repairs).filter((group) => group.kind === 'repair');
+      const cache = new Map<number, CachedHealPatch>();
+      for (const group of groups) {
+        const overlay = reusableOverlayForGroup(repair.healOverlays, group, cacheParams);
+        if (!overlay) continue;
+        const rebased = rebaseOverlayToCanvas(overlay, signatureForHealGroup(group, cacheParams), width, height);
+        if (rebased) cache.set(group.id, rebased);
+      }
+      if (cache.size) {
+        const { valid, dirty } = partitionHealGroups(repairs, cache, cacheParams, width, height);
+        const ctx = clean.getContext('2d')!;
+        const pixels = ctx.getImageData(0, 0, width, height);
+        const source = { width, height, data: new Uint8ClampedArray(pixels.data) };
+        const fresh: CachedHealPatch[] = [];
+        for (let dirtyIndex = 0; dirtyIndex < dirty.length; dirtyIndex += 1) {
+          const group = dirty[dirtyIndex]!;
+          try {
+            const patch = await healSingleGroup(source, group, method, runInpaint, {
+              quality: repair.quality,
+              seamlessLight: repair.seamlessLight,
+              featherPx: repair.featherPx,
+              areas: dirty.length,
+              aggregate: { index: dirtyIndex, total: dirty.length },
+            });
+            if (patch) fresh.push(patch);
+          } catch {
+            // This group keeps the blur fallback; others still upgrade.
+          }
+        }
+        const patches = [...valid.flatMap((group) => {
+          const entry = cache.get(group.id);
+          return entry ? [entry] : [];
+        }), ...fresh];
+        if (patches.length) {
+          const composited = pasteHealPatches(source, patches);
+          ctx.putImageData(new ImageData(new Uint8ClampedArray(composited.data), width, height), 0, 0);
+          return clean;
+        }
+      }
+    } catch {
+      // Fall through to the full-pass path below.
+    }
+  }
   try {
     const applied = await applyInpaintRepair(clean, repairs, repair.method ?? INPAINT_DEFAULT_METHOD, repair.runInpaint, { quality: repair.quality, seamlessLight: repair.seamlessLight, featherPx: repair.featherPx });
     return applied ? clean : geometryCanvas(image, edit, maxSize);
@@ -312,7 +435,7 @@ export function renderAdjustedCanvas(base: HTMLCanvasElement, edit: EditState): 
 
 export async function exportPhoto(src: string, edit: EditState, format: string, quality: number, maxSize: number, repair?: ExportRepairOptions): Promise<Blob> {
   const image = await loadImage(src);
-  const base = await geometryForExport(image, edit, maxSize, repair);
+  const base = await geometryForExport(image, edit, maxSize, repair, src);
   const output = renderAdjustedCanvas(base, edit);
   const ctx = output.getContext('2d')!;
   drawEffects(ctx, output.width, output.height, edit);

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Camera, Check, Download, Folder, FolderPlus, Info, Keyboard, MapPin, Save, Share } from 'lucide-react';
-import { downloadBlob, exportPhoto, getPhotoFilter } from '@photomator/core';
+import { downloadBlob, exportPhoto, getPhotoFilter, loadStoredHealOverlays, createLibraryClient } from '@photomator/core';
 import type { DialogType, EditState, Photo, RepairInpaintBinding } from '@photomator/core';
 import { BrandMark, Modal, RangeControl, SelectField } from './EditorUI.js';
 
@@ -28,7 +28,13 @@ function ExportDialog({ photo, edit, inpaintRepair, onClose, onToast }: Pick<Edi
     setExporting(true);
     setError('');
     try {
-      const blob = await exportPhoto(photo.src, edit, format, quality, Number(size), inpaintRepair ? { method: inpaintRepair.method, runInpaint: inpaintRepair.run, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx } : undefined);
+      // Reuse persisted per-group overlays so export matches the preview
+      // without rehealing saved work (rescaled when sizes differ); missing
+      // groups heal during export as before.
+      const healOverlays = inpaintRepair && (inpaintRepair.method === 'ml-heal' || inpaintRepair.method === 'heal') && edit.retouches.some((point) => point.kind === 'repair')
+        ? await loadStoredHealOverlays(createLibraryClient(), photo.id)
+        : undefined;
+      const blob = await exportPhoto(photo.src, edit, format, quality, Number(size), inpaintRepair ? { method: inpaintRepair.method, runInpaint: inpaintRepair.run, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, ...(healOverlays?.length ? { healOverlays } : {}) } : undefined);
       downloadBlob(blob, `${filename.trim().replace(/[\\/:*?"<>|]/g, '-')}.${format === 'jpeg' ? 'jpg' : format}`);
       onToast(`Your photo was exported as ${format.toUpperCase()}.`);
       onClose();

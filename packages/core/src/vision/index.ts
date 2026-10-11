@@ -3,6 +3,7 @@ export * from "./enhance.js";
 export * from "./fixtures.js";
 export * from "./heal.js";
 export * from "./heal-cache.js";
+export * from "./heal-queue.js";
 export * from "./ml-heal.js";
 export * from "./inpaint.js";
 export * from "./orientation.js";

@@ -152,7 +152,7 @@ function MlProgressView({ progress, onCancel }: { progress: NonNullable<RepairAs
 function RepairMethodControl({ assist }: { assist: RepairAssist }) {
   const engineInfo = ML_HEAL_ENGINE_INFO[assist.mlEngine];
   const methodBlurb = assist.method === 'ml-heal'
-    ? `ML heal picks its engine from quality: Fast runs ${ML_HEAL_ENGINE_INFO.classic.label} instantly (${ML_HEAL_ENGINE_INFO.classic.download}), Balanced runs ${ML_HEAL_ENGINE_INFO.lama.label} (${ML_HEAL_ENGINE_INFO.lama.download}), Best runs ${ML_HEAL_ENGINE_INFO.moebius.label} (${ML_HEAL_ENGINE_INFO.moebius.download}). Painting unlocks when the tier is ready; neural tiers need the photo server.`
+    ? `ML heal picks its engine from quality: Balanced runs ${ML_HEAL_ENGINE_INFO.lama.label} (${ML_HEAL_ENGINE_INFO.lama.download}), Best runs ${ML_HEAL_ENGINE_INFO.moebius.label} (${ML_HEAL_ENGINE_INFO.moebius.download}). Painting unlocks when the tier is ready; neural tiers need the photo server.`
     : assist.method === 'heal'
     ? 'Heal copies matching texture from nearby — best for most fixes.'
     : assist.method === 'telea'
@@ -167,13 +167,13 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
   const isError = progress?.stage.startsWith('Model unavailable') ?? false;
   const isReady = !isError && assist.mlReady?.engine === assist.mlEngine && assist.mlReady.cached;
   // Persistent, non-dismissing warning while the selected neural engine is
-  // known-not-serving (failed/downloadable states) — never shown for Fast.
+  // known-not-serving (failed/downloadable states).
   const showNotServing = assist.method === 'ml-heal' && assist.mlEngine !== 'classic'
     && assist.mlReady?.engine === assist.mlEngine && assist.mlReady.serving === false && !assist.mlWarming;
   return <>
     <h4>Reconstruction</h4>
     <div className="segmented-control" role="group" aria-label="Repair reconstruction method">
-      <button className={assist.method === 'ml-heal' ? 'is-active' : ''} title="ML heal: tiered engines by quality — Fast instant, Balanced neural, Best diffusion" onClick={() => assist.onMethodChange('ml-heal')}>ML Heal</button>
+      <button className={assist.method === 'ml-heal' ? 'is-active' : ''} title="ML heal: tiered engines by quality — Balanced neural, Best diffusion" onClick={() => assist.onMethodChange('ml-heal')}>ML Heal</button>
       <button className={assist.method === 'heal' ? 'is-active' : ''} title="Heal: copies matching texture from nearby — best for most fixes" onClick={() => assist.onMethodChange('heal')}>Heal</button>
       <button className={assist.method === 'telea' ? 'is-active' : ''} title="Smooth fill (Telea): fast, blur-like fill for tiny smooth blemishes" onClick={() => assist.onMethodChange('telea')}>Smooth</button>
       <button className={assist.method === 'ns' ? 'is-active' : ''} title="Detail fill (Navier–Stokes): slower, follows edges — try when Smooth looks smeary" onClick={() => assist.onMethodChange('ns')}>Detail</button>
@@ -182,7 +182,7 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
     {(assist.method === 'heal' || assist.method === 'ml-heal') && <>
       <h4>Heal Quality</h4>
       <div className="segmented-control" role="group" aria-label="Heal search effort">
-        <button className={assist.quality === 'fast' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('fast') : 'Fast: nearby donors only, best for small blemishes'} onClick={() => assist.onQualityChange('fast')}>Fast</button>
+        {assist.method !== 'ml-heal' && <button className={assist.quality === 'fast' ? 'is-active' : ''} title="Fast: nearby donors only, best for small blemishes" onClick={() => assist.onQualityChange('fast')}>Fast</button>}
         <button className={assist.quality === 'balanced' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('balanced') : 'Balanced: the default search reach and effort'} onClick={() => assist.onQualityChange('balanced')}>Balanced</button>
         <button className={assist.quality === 'best' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('best') : 'Best: widest search, slowest — for tricky removals'} onClick={() => assist.onQualityChange('best')}>Best</button>
       </div>
@@ -191,7 +191,7 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
       {progress && <MlProgressView progress={progress} onCancel={assist.onCancelHeal} />}
       {assist.method === 'ml-heal' && isError && <>
         {assist.mlEngine === 'moebius' && <button className="secondary-button full-width" title="Fall back to the one-pass neural engine" onClick={() => assist.onQualityChange('balanced')}>Try Balanced instead</button>}
-        <button className="secondary-button full-width" title="Drop to the instant classic engine" onClick={() => assist.onQualityChange('fast')}>Use Fast instead (instant, no model)</button>
+        <button className="secondary-button full-width" title="Drop to the instant classic engine" onClick={() => assist.onMethodChange('heal')}>Use classic Heal instead (instant, no model)</button>
       </>}
       {assist.method === 'heal' && <>
       <div className="repair-toggle-row"><span>Seamless light</span><Toggle checked={assist.seamlessLight} onChange={() => assist.onSeamlessLightChange(!assist.seamlessLight)} label="Seamless light adaptation" /></div>
