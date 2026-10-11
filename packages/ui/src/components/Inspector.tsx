@@ -84,6 +84,7 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
   return <>
     <h4>Reconstruction</h4>
     <div className="segmented-control" role="group" aria-label="Repair reconstruction method">
+      <button className={assist.method === 'heal' ? 'is-active' : ''} title="Heal: transplant matching texture from nearby, adapted to local light" onClick={() => assist.onMethodChange('heal')}>Heal</button>
       <button className={assist.method === 'telea' ? 'is-active' : ''} title="Telea's fast marching method: quick and smooth" onClick={() => assist.onMethodChange('telea')}>Telea</button>
       <button className={assist.method === 'ns' ? 'is-active' : ''} title="Navier-Stokes fluid dynamics: slower, sometimes crisper" onClick={() => assist.onMethodChange('ns')}>Navier–Stokes</button>
     </div>

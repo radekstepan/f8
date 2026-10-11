@@ -35,7 +35,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 - Per-photo undo/redo with up to fifty history entries. Consecutive slider changes are grouped into a single edit.
 - Draggable before/after comparison and hold-to-preview-original behavior.
 - Centered aspect-ratio cropping, rotation, flips, and straightening with automatic horizon detection, plus a rule-of-thirds overlay.
-- Browser-based repair brushes (OpenCV inpainting with a blur fallback) and clone stamping. Click to choose a clone source; Alt-click to choose another.
+- Browser-based repair brushes (texture-transplant Heal by default, OpenCV Telea/Navier-Stokes on request, blur fallback) and clone stamping. Click to choose a clone source; Alt-click to choose another.
 - Photo import using a file picker, drag and drop, or in-place folder import, including camera RAW files (rendered from the largest embedded JPEG preview, with the RAW file's orientation applied). When a RAW file and a JPEG share a filename, only the RAW is imported. Content hashing dedupes reimports and relinks moved files with their edits intact.
 - JPEG, PNG, and WebP export, configurable size and quality, plus JSON adjustment export.
 - Copy/paste adjustments between photographs, with each photograph's crop and retouching preserved.
@@ -131,7 +131,7 @@ Everything stays on your machine: the server binds to localhost, originals stay 
 
 - The Enhance control and per-section Auto buttons apply histogram-based adjustments; no machine-learning model is included.
 - Color adjustments are lightweight browser-filter approximations, not a color-managed RAW engine. Tone, clarity, and sharpness are simplified contrast mappings.
-- Repair reconstructs masked regions with OpenCV inpainting (Telea or Navier-Stokes) in a worker, falling back to a local blur when the vision engine is unavailable. Clone copies pixels from a source region.
+- Repair reconstructs masked regions in a worker — Heal transplants matching nearby texture adapted to local light (default), Telea or Navier-Stokes diffusion remain available — falling back to a local blur when the vision engine is unavailable. Clone copies pixels from a source region.
 - Crop supports centered ratios rather than a freely movable crop rectangle. The overlay is a rule-of-thirds framing guide.
 - Zoom percentages are relative to the fitted preview, not a one-to-one source-pixel scale.
 - Sample camera details are illustrative. Imported photos read real EXIF camera details when present. Export does not embed the sample metadata.

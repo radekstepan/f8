@@ -7,12 +7,15 @@
 // so there is no separate .wasm asset to serve.
 
 import {
+  INPAINT_DILATE_PX,
   STRAIGHTEN_CANNY_HIGH,
   STRAIGHTEN_CANNY_LOW,
   STRAIGHTEN_HOUGH_MAX_LINE_GAP,
   STRAIGHTEN_HOUGH_MIN_LINE_LENGTH,
   STRAIGHTEN_HOUGH_THRESHOLD,
   STRAIGHTEN_WORKING_WIDTH,
+  dilateRepairMask,
+  healRepair,
   inpaintWithCv,
   isVisionWorkerRequest,
   voteStraightenAngle,
@@ -199,12 +202,32 @@ function straighten(cv: OpenCvApi, request: StraightenRequest): VisionWorkerResp
 
 function inpaint(cv: OpenCvApi, request: InpaintRequest): VisionWorkerResponse {
   // Full caller resolution (preview or export): no downscaling, the mask
-  // already matches the pixels. Mat wrangling is shared with the Node
-  // golden tests through inpaintWithCv.
+  // already matches the pixels. Heal is pure TypeScript (no OpenCV) and
+  // fills the exact mask; diffusion dilates the fill region by the same
+  // amount the caller dilates its blend mask, so fringe reconstruction is
+  // kept. Mat wrangling is shared with the Node golden tests through
+  // inpaintWithCv.
+  if (request.method === "heal") {
+    const result = healRepair(
+      { width: request.width, height: request.height, data: request.data },
+      { width: request.width, height: request.height, data: request.mask },
+    );
+    return {
+      id: request.id,
+      kind: "inpaint",
+      width: result.width,
+      height: result.height,
+      data: result.data,
+    };
+  }
+  const fill = dilateRepairMask(
+    { width: request.width, height: request.height, data: request.mask },
+    INPAINT_DILATE_PX,
+  );
   const result = inpaintWithCv(
     cv,
     { width: request.width, height: request.height, data: request.data },
-    { width: request.width, height: request.height, data: request.mask },
+    fill,
     request.radius,
     request.method,
   );

@@ -127,7 +127,7 @@ export function createInpaintRequest(
   if (!Number.isFinite(radius) || radius <= 0) {
     throw new RangeError(`Expected a positive inpaint radius, got ${radius}.`);
   }
-  if (method !== "telea" && method !== "ns") {
+  if (method !== "telea" && method !== "ns" && method !== "heal") {
     throw new RangeError(`Unknown inpaint method: ${String(method)}.`);
   }
   return {
@@ -179,7 +179,7 @@ export function isVisionWorkerRequest(value: unknown): value is VisionWorkerRequ
       isImageRequest(value) &&
       isPixelBuffer(value.mask, (value.width as number) * (value.height as number)) &&
       isPositiveNumber(value.radius) &&
-      (value.method === "telea" || value.method === "ns")
+      (value.method === "telea" || value.method === "ns" || value.method === "heal")
     );
   }
   return false;

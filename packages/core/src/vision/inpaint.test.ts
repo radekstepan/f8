@@ -4,10 +4,13 @@ import type { RetouchPoint } from "../types.js";
 import { assertValidImage, type PixelImage } from "./analyze.js";
 import { goldenPhoto, solidColor } from "./fixtures.js";
 import {
+  INPAINT_DEFAULT_METHOD,
   INPAINT_RADIUS_MAX,
   INPAINT_RADIUS_MIN,
   assertValidMask,
   blendInpainted,
+  dilateRepairMask,
+  featherRepairMask,
   hasRepairStrokes,
   inpaintRadiusForBrush,
   inpaintRadiusForStrokes,
@@ -168,6 +171,111 @@ describe("inpaintRadiusForBrush", () => {
 
   it("rejects invalid widths", () => {
     expect(() => inpaintRadiusForBrush(0.05, 0)).toThrow(RangeError);
+  });
+});
+
+describe("INPAINT_DEFAULT_METHOD", () => {
+  it("heals by transplanting texture instead of smudging it", () => {
+    expect(INPAINT_DEFAULT_METHOD).toBe("heal");
+  });
+});
+
+describe("dilateRepairMask", () => {
+  it("grows a single pixel into a 3x3 block", () => {
+    const mask: RepairMask = { width: 5, height: 5, data: new Uint8ClampedArray(25) };
+    mask.data[2 * 5 + 2] = 255;
+    const out = dilateRepairMask(mask, 1);
+    expect(maskedPixels(out)).toEqual([
+      [1, 1, 255],
+      [2, 1, 255],
+      [3, 1, 255],
+      [1, 2, 255],
+      [2, 2, 255],
+      [3, 2, 255],
+      [1, 3, 255],
+      [2, 3, 255],
+      [3, 3, 255],
+    ]);
+  });
+
+  it("carries the strongest nearby strength outward", () => {
+    const mask: RepairMask = { width: 5, height: 1, data: new Uint8ClampedArray([0, 64, 0, 200, 0]) };
+    const out = dilateRepairMask(mask, 1);
+    expect(Array.from(out.data)).toEqual([64, 64, 200, 200, 200]);
+  });
+
+  it("copies at radius 0 without aliasing the input", () => {
+    const mask: RepairMask = { width: 3, height: 2, data: new Uint8ClampedArray([0, 9, 0, 0, 0, 7]) };
+    const out = dilateRepairMask(mask, 0);
+    expect(out.data).not.toBe(mask.data);
+    expect(Array.from(out.data)).toEqual([0, 9, 0, 0, 0, 7]);
+  });
+
+  it("rejects invalid radii and masks", () => {
+    const mask: RepairMask = { width: 2, height: 2, data: new Uint8ClampedArray(4) };
+    expect(() => dilateRepairMask(mask, -1)).toThrow(RangeError);
+    expect(() => dilateRepairMask(mask, 1.5)).toThrow(RangeError);
+    expect(() => dilateRepairMask({ width: 2, height: 2, data: new Uint8ClampedArray(3) }, 1)).toThrow(RangeError);
+  });
+});
+
+describe("featherRepairMask", () => {
+  it("ramps the edge over the feather radius and keeps the interior", () => {
+    const data = new Uint8ClampedArray(81);
+    for (let y = 2; y <= 6; y += 1) {
+      for (let x = 2; x <= 6; x += 1) {
+        data[y * 9 + x] = 255;
+      }
+    }
+    const out = featherRepairMask({ width: 9, height: 9, data }, 2);
+    // Adjacent to the outside: half strength; two pixels in: full.
+    expect(out.data[2 * 9 + 2]).toBe(128);
+    expect(out.data[2 * 9 + 4]).toBe(128);
+    expect(out.data[3 * 9 + 3]).toBe(255);
+    expect(out.data[4 * 9 + 4]).toBe(255);
+    expect(out.data[0]).toBe(0);
+    expect(out.data[1 * 9 + 4]).toBe(0);
+  });
+
+  it("scales partial strengths proportionally", () => {
+    const data = new Uint8ClampedArray(25);
+    for (let y = 1; y <= 3; y += 1) {
+      for (let x = 1; x <= 3; x += 1) {
+        data[y * 5 + x] = 100;
+      }
+    }
+    const out = featherRepairMask({ width: 5, height: 5, data }, 2);
+    expect(out.data[1 * 5 + 1]).toBe(50);
+    expect(out.data[2 * 5 + 2]).toBe(100);
+  });
+
+  it("leaves a mask with no outside at full strength", () => {
+    const out = featherRepairMask({ width: 2, height: 2, data: new Uint8ClampedArray([255, 128, 64, 32]) }, 2);
+    expect(Array.from(out.data)).toEqual([255, 128, 64, 32]);
+  });
+
+  it("copies at radius 0 and rejects invalid radii", () => {
+    const mask: RepairMask = { width: 2, height: 2, data: new Uint8ClampedArray([0, 9, 0, 7]) };
+    const out = featherRepairMask(mask, 0);
+    expect(out.data).not.toBe(mask.data);
+    expect(Array.from(out.data)).toEqual([0, 9, 0, 7]);
+    expect(() => featherRepairMask(mask, -2)).toThrow(RangeError);
+    expect(() => featherRepairMask(mask, NaN)).toThrow(RangeError);
+  });
+});
+
+describe("inpaintWithCv method guard", () => {
+  it("rejects heal before touching OpenCV", () => {
+    // Validation runs before any Mat is created, so no runtime is needed.
+    expect(() =>
+      inpaintWithCv(
+        {} as unknown as InpaintCvApi,
+        solidColor(4, 4, 10, 10, 10),
+        { width: 4, height: 4, data: new Uint8ClampedArray(16) },
+        3,
+        "heal",
+      ),
+    ).toThrow(RangeError);
   });
 });
 

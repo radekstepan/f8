@@ -10,16 +10,32 @@
 import type { RetouchPoint } from "../types.js";
 import { assertValidImage, type PixelImage } from "./analyze.js";
 
-/** cv.inpaint algorithm: Telea's fast marching method or Navier-Stokes. */
-export type InpaintMethod = "telea" | "ns";
+/**
+ * Repair reconstruction algorithm: exemplar heal (transplants matching
+ * texture, the default) or a cv.inpaint diffusion method (Telea's fast
+ * marching method, Navier-Stokes). Diffusion suits tiny smooth blemishes;
+ * heal preserves texture and grain on everything else.
+ */
+export type InpaintMethod = "telea" | "ns" | "heal";
 
-/** Default algorithm: Telea is faster and suits small photo blemishes. */
-export const INPAINT_DEFAULT_METHOD: InpaintMethod = "telea";
+/** Default algorithm: heal transplants real texture instead of smudging it. */
+export const INPAINT_DEFAULT_METHOD: InpaintMethod = "heal";
 
 /** Minimum inpaint radius: the OpenCV tutorial default. */
 export const INPAINT_RADIUS_MIN = 3;
 /** Maximum inpaint radius: caps the Telea/NS neighbourhood cost on big brushes. */
 export const INPAINT_RADIUS_MAX = 12;
+
+/**
+ * Pixels the diffusion fill region grows beyond the rasterized mask. Covers
+ * blemish fringe just outside the brush so it cannot leak into the Telea/NS
+ * neighbourhood; the blend mask is dilated by the same amount so the extra
+ * reconstruction is kept. Heal needs no dilation: its context ring already
+ * starts outside a gap.
+ */
+export const INPAINT_DILATE_PX = 1;
+/** Edge ramp width for compositing reconstructed pixels over the source. */
+export const BLEND_FEATHER_PX = 2;
 
 /** 8-bit single-channel mask: 0 is untouched, otherwise the max covering strength (1..255). */
 export interface RepairMask {
@@ -115,6 +131,94 @@ export function inpaintRadiusForStrokes(points: readonly RetouchPoint[], width: 
 }
 
 /**
+ * Grow the mask by max-filter dilation with a Chebyshev radius: each output
+ * pixel takes the maximum mask value within radiusPx. Carries per-stroke
+ * strength outward, so dilated fringe pixels blend at the neighbour stroke's
+ * strength. Returns a fresh mask; radius 0 copies.
+ */
+export function dilateRepairMask(mask: RepairMask, radiusPx: number): RepairMask {
+  assertValidMask(mask);
+  if (!Number.isInteger(radiusPx) || radiusPx < 0) {
+    throw new RangeError(`Expected a non-negative integer dilate radius, got ${radiusPx}.`);
+  }
+  const out = new Uint8ClampedArray(mask.data);
+  if (radiusPx === 0) return { width: mask.width, height: mask.height, data: out };
+  const { width, height, data } = mask;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let peak = 0;
+      const y0 = Math.max(0, y - radiusPx);
+      const y1 = Math.min(height - 1, y + radiusPx);
+      const x0 = Math.max(0, x - radiusPx);
+      const x1 = Math.min(width - 1, x + radiusPx);
+      for (let ny = y0; ny <= y1; ny += 1) {
+        for (let nx = x0; nx <= x1; nx += 1) {
+          const value = data[ny * width + nx] ?? 0;
+          if (value > peak) peak = value;
+          if (peak === 255) break;
+        }
+        if (peak === 255) break;
+      }
+      out[y * width + x] = peak;
+    }
+  }
+  return { width, height, data: out };
+}
+
+/**
+ * Ramp mask values near the region edge so compositing has no hard seam: a
+ * pixel adjacent to the outside keeps 1/radiusPx of its strength, scaling to
+ * full at radiusPx pixels inside. Interior strength is otherwise untouched,
+ * so per-stroke opacity still applies. Returns a fresh mask; radius 0 copies.
+ */
+export function featherRepairMask(mask: RepairMask, radiusPx: number): RepairMask {
+  assertValidMask(mask);
+  if (!Number.isInteger(radiusPx) || radiusPx < 0) {
+    throw new RangeError(`Expected a non-negative integer feather radius, got ${radiusPx}.`);
+  }
+  const out = new Uint8ClampedArray(mask.data);
+  if (radiusPx === 0) return { width: mask.width, height: mask.height, data: out };
+  const { width, height, data } = mask;
+  // Multi-source BFS from every zero pixel; dist holds steps to the nearest
+  // outside pixel, capped at radiusPx (interior beyond the ramp needs no more).
+  const dist = new Int16Array(width * height).fill(-1);
+  const queue: number[] = [];
+  for (let p = 0; p < data.length; p += 1) {
+    if ((data[p] ?? 0) === 0) {
+      dist[p] = 0;
+      queue.push(p);
+    }
+  }
+  for (let head = 0; head < queue.length; head += 1) {
+    const p = queue[head] ?? 0;
+    const depth = dist[p] ?? 0;
+    if (depth >= radiusPx) continue;
+    const x = p % width;
+    const y = (p - x) / width;
+    const neighbours: number[] = [];
+    if (x > 0) neighbours.push(p - 1);
+    if (x + 1 < width) neighbours.push(p + 1);
+    if (y > 0) neighbours.push(p - width);
+    if (y + 1 < height) neighbours.push(p + width);
+    for (const q of neighbours) {
+      if (dist[q] === -1) {
+        dist[q] = depth + 1;
+        queue.push(q);
+      }
+    }
+  }
+  for (let p = 0; p < data.length; p += 1) {
+    const value = data[p] ?? 0;
+    if (value === 0) continue;
+    const depth = dist[p] ?? -1;
+    // Unreached pixels (mask with no zero anywhere) are deep interior: full strength.
+    const scale = depth < 0 ? 1 : Math.min(1, depth / radiusPx);
+    out[p] = Math.round(value * scale);
+  }
+  return { width, height, data: out };
+}
+
+/**
  * Composite an inpainted image over its source, guided by the mask as
  * per-pixel alpha (mask value / 255). Outside the mask the source passes
  * through untouched; alpha always comes from the source. Returns a fresh
@@ -186,9 +290,11 @@ export interface InpaintCvApi {
 /**
  * Run cv.inpaint through an injected OpenCV runtime. Shared by the vision
  * worker and the Node golden tests so both exercise identical Mat wrangling.
- * cv.inpaint only accepts 1- or 3-channel input, so RGBA photos round-trip
- * through RGB and the original alpha channel is restored afterwards
- * (COLOR_RGB2RGBA fills alpha with 255). All Mats are deleted before return.
+ * Diffusion methods only; heal runs through healRepair and never touches
+ * OpenCV. cv.inpaint only accepts 1- or 3-channel input, so RGBA photos
+ * round-trip through RGB and the original alpha channel is restored
+ * afterwards (COLOR_RGB2RGBA fills alpha with 255). All Mats are deleted
+ * before return.
  */
 export function inpaintWithCv(
   cv: InpaintCvApi,
@@ -209,7 +315,9 @@ export function inpaintWithCv(
     throw new RangeError(`Expected a positive inpaint radius, got ${radius}.`);
   }
   if (method !== "telea" && method !== "ns") {
-    throw new RangeError(`Unknown inpaint method: ${String(method)}.`);
+    throw new RangeError(
+      `inpaintWithCv needs a diffusion method ("telea" or "ns"), got ${String(method)}. Heal runs through healRepair.`,
+    );
   }
   const mats: InpaintCvMat[] = [];
   try {

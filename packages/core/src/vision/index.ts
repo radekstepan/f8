@@ -1,6 +1,7 @@
 export * from "./analyze.js";
 export * from "./enhance.js";
 export * from "./fixtures.js";
+export * from "./heal.js";
 export * from "./inpaint.js";
 export * from "./orientation.js";
 export * from "./straighten.js";

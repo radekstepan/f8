@@ -89,6 +89,11 @@ describe("createInpaintRequest", () => {
     expect(() => createInpaintRequest(1, image, mask, NaN, "telea")).toThrow(RangeError);
   });
 
+  it("accepts the heal method", () => {
+    const image = solidColor(4, 4, 0, 0, 0);
+    expect(createInpaintRequest(2, image, testMask(4, 4), 3, "heal").method).toBe("heal");
+  });
+
   it("rejects unknown methods", () => {
     expect(() =>
       createInpaintRequest(1, solidColor(4, 4, 0, 0, 0), testMask(4, 4), 3, "patchmatch" as never),
@@ -136,6 +141,21 @@ describe("isVisionWorkerRequest", () => {
         mask: new Uint8ClampedArray(8 * 6),
         radius: 3,
         method: "telea",
+      }),
+    ).toBe(true);
+  });
+
+  it.each(["telea", "ns", "heal"] as const)("accepts the %s inpaint method", (method) => {
+    expect(
+      isVisionWorkerRequest({
+        id: 4,
+        kind: "inpaint",
+        width: 8,
+        height: 6,
+        data: new Uint8ClampedArray(8 * 6 * 4),
+        mask: new Uint8ClampedArray(8 * 6),
+        radius: 3,
+        method,
       }),
     ).toBe(true);
   });

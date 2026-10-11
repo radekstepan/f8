@@ -2,7 +2,7 @@ import { isNeutralEdit, renderAdjustedPixels } from './adjustments.js';
 import { CROP_RATIOS } from './data.js';
 import type { EditState, RetouchPoint } from './types.js';
 import type { PixelImage } from './vision/analyze.js';
-import { blendInpainted, hasRepairStrokes, inpaintRadiusForStrokes, rasterizeRepairMask } from './vision/inpaint.js';
+import { BLEND_FEATHER_PX, INPAINT_DEFAULT_METHOD, INPAINT_DILATE_PX, blendInpainted, dilateRepairMask, featherRepairMask, hasRepairStrokes, inpaintRadiusForStrokes, rasterizeRepairMask } from './vision/inpaint.js';
 import type { InpaintMethod, RepairMask } from './vision/inpaint.js';
 import type { VisionWorkerStatus } from './vision/worker-client.js';
 
@@ -187,10 +187,13 @@ export interface RepairInpaintBinding {
 }
 
 /**
- * Reconstruct the canvas's repair strokes with neighbourhood inpainting
- * instead of the blur fallback in geometryCanvas. Reads the canvas pixels,
- * rasterizes the repair mask at canvas resolution, runs the injected worker
- * call, and composites the result back honoring per-stroke strength.
+ * Reconstruct the canvas's repair strokes with worker reconstruction (heal
+ * by default, Telea/NS on request) instead of the blur fallback in
+ * geometryCanvas. Reads the canvas pixels, rasterizes the repair mask at
+ * canvas resolution, runs the injected worker call, and composites the
+ * result back honoring per-stroke strength. The composite mask is feathered
+ * so edges leave no seam; for diffusion methods it is also dilated by the
+ * same amount as the worker's fill region so fringe reconstruction is kept.
  * Clone strokes are ignored (the caller renders them via geometryCanvas).
  * Returns false when there is nothing to inpaint; transport errors propagate
  * so the caller can fall back to the blur repair.
@@ -211,7 +214,10 @@ export async function applyInpaintRepair(
   const pixels = ctx.getImageData(0, 0, width, height);
   const source: PixelImage = { width, height, data: pixels.data };
   const filled = await runInpaint(source, mask, inpaintRadiusForStrokes(points, width), method);
-  const blended = blendInpainted(source, filled, mask);
+  const blendMask = method === 'heal'
+    ? featherRepairMask(mask, BLEND_FEATHER_PX)
+    : featherRepairMask(dilateRepairMask(mask, INPAINT_DILATE_PX), BLEND_FEATHER_PX);
+  const blended = blendInpainted(source, filled, blendMask);
   ctx.putImageData(new ImageData(new Uint8ClampedArray(blended.data), width, height), 0, 0);
   return true;
 }
@@ -240,7 +246,7 @@ async function geometryForExport(
     maxSize,
   );
   try {
-    const applied = await applyInpaintRepair(clean, repairs, repair.method ?? 'telea', repair.runInpaint);
+    const applied = await applyInpaintRepair(clean, repairs, repair.method ?? INPAINT_DEFAULT_METHOD, repair.runInpaint);
     return applied ? clean : geometryCanvas(image, edit, maxSize);
   } catch {
     return geometryCanvas(image, edit, maxSize);
