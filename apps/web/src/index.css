@@ -171,7 +171,6 @@ img { display: block; }
 .crop-grid > i:nth-child(4) { top: 66.666%; }
 .brush-active { cursor: none; touch-action: none; }
 .brush-cursor { position: absolute; border: 1px solid white; box-shadow: 0 0 0 1px #0008; border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%); z-index: 6; }
-.brush-cursor.is-compare { opacity: .55; border-style: dashed; }
 .tool-hint { position: sticky; left: 0; bottom: 12px; width: fit-content; max-width: 90%; margin: -17px auto 0; font-size: 10px; color: #d4d0c7; background: #292824ed; border: 1px solid #4b463a; padding: 6px 10px; border-radius: 4px; z-index: 6; }
 .canvas-status { height: 34px; flex-shrink: 0; padding: 0 14px 0 20px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #252528; background: #1a1a1c; font-size: 9px; color: #898992; }
 .canvas-dimensions { display: flex; align-items: center; gap: 7px; font-size: 8.5px; white-space: nowrap; }
@@ -341,9 +340,6 @@ img { display: block; }
 .segmented-control { display: flex; padding: 3px; background: #1b1b1f; border-radius: 5px; border: 1px solid #38383e; margin-bottom: 26px; }
 .segmented-control > button { flex: 1; border-radius: 3px; height: 25px; font-size: 10px; color: #93939f; }
 .segmented-control > button.is-active { background: #444146; color: #e4d1ad; box-shadow: 0 1px 3px #0003; }
-.brush-preview { height: 135px; position: relative; display: grid; place-items: center; margin-top: 14px; border: 1px solid #3d3d44; border-radius: 5px; background: #1f1f23; }
-.brush-preview > span { border-radius: 50%; background: #d9c599; box-shadow: 0 0 13px 5px #b4a17b30; }
-.brush-preview > small { position: absolute; bottom: 11px; color: #797983; font-size: 8px; }
 .retouch-status { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; border-top: 1px solid #414147; padding-top: 10px; color: #9b9baa; font-size: 9px; }
 .repair-method-blurb { margin: -12px 0 20px; }
 .repair-toggle-row { display: flex; align-items: center; justify-content: space-between; margin: -8px 0 4px; font-size: 10px; color: #c2c2cb; }

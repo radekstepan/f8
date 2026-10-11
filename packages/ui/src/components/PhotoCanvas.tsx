@@ -88,6 +88,8 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const [split, setSplit] = useState(50);
   const [sourceSet, setSourceSet] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  /** Repair stroke groups with a heal still in flight (clean canvas + red overlay, never blur). */
+  const [pendingRepairIds, setPendingRepairIds] = useState<number[]>([]);
   const isBrush = tool === 'repair' || tool === 'clone';
 
   useEffect(() => {
@@ -101,7 +103,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => { setLoading(true); setError(''); cloneSource.current = null; setSourceSet(false); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); const myPhotoId = photo.id; let alive = true; void loadStoredHealOverlays(overlayClient, myPhotoId).then((patches) => { if (alive) overlayStore.current = patches; }); return () => { alive = false; healEpoch.current += 1; }; }, [photo.id, photo.src, retry]);
+  useEffect(() => { setLoading(true); setError(''); cloneSource.current = null; setSourceSet(false); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); const myPhotoId = photo.id; let alive = true; void loadStoredHealOverlays(overlayClient, myPhotoId).then((patches) => { if (alive) overlayStore.current = patches; }); return () => { alive = false; healEpoch.current += 1; }; }, [photo.id, photo.src, retry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,12 +137,17 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         }
         onHistogram(histogram);
       };
-      // While a repair stroke is being painted every repair stamp stays out
-      // of the canvas: the red mask overlay shows all repair areas live
-      // instead of the blur placeholder, which appears only after release
-      // (then inpainting upgrades it).
+      // While a repair stroke is being painted — and while its heal is still
+      // in flight after release — every repair stamp stays out of the
+      // canvas: the red mask overlay shows those areas instead of the blur
+      // placeholder. The canvas stays clean until inpainting composites the
+      // healed pixels; failures fall back to blur in the job catch below.
       const paintingRepair = tool === 'repair' && activeStroke !== null;
-      const previewEdit = paintingRepair ? { ...edit, retouches: edit.retouches.filter((point) => point.kind !== 'repair') } : edit;
+      const allRepairs = edit.retouches.filter((point) => point.kind === 'repair');
+      const pendingRun = inpaintRun.current;
+      const pendingMethod = inpaintRepair?.method;
+      const healingPlanned = !paintingRepair && allRepairs.length > 0 && Boolean(pendingRun) && Boolean(pendingMethod);
+      const previewEdit = (paintingRepair || healingPlanned) ? { ...edit, retouches: edit.retouches.filter((point) => point.kind !== 'repair') } : edit;
       renderBase(geometryCanvas(image, previewEdit));
       const original = geometryCanvas(image, { ...DEFAULT_EDIT, cropRatio: edit.cropRatio, rotation: edit.rotation, flipH: edit.flipH, flipV: edit.flipV, straighten: edit.straighten });
       originalRef.current.width = original.width;
@@ -148,13 +155,13 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       originalRef.current.getContext('2d')!.drawImage(original, 0, 0);
       setLoading(false);
 
-      // Upgrade repair strokes from the blur fallback to worker inpainting,
-      // debounced so a painting stroke doesn't flood the worker queue. While
-      // dragging, all repairs are excluded until release (the red mask shows
-      // instead). Failures keep the blur already displayed.
-      const repairs = previewEdit.retouches.filter((point) => point.kind === 'repair');
-      const run = inpaintRun.current;
-      const method = inpaintRepair?.method;
+      // Upgrade repair strokes with worker inpainting, debounced so a
+      // painting stroke doesn't flood the worker queue. While dragging or
+      // healing, repairs are excluded above (clean canvas + red mask);
+      // failures render the blur fallback in the catch below.
+      const repairs = allRepairs;
+      const run = pendingRun;
+      const method = pendingMethod;
       // Distinct heal groups (strokes) covered by this pass, for progress
       // copy ("Healing 3 areas…"). Points share a stroke id per drag.
       const areas = new Set(repairs.map((point) => strokeIdForPoint(point))).size;
@@ -166,11 +173,12 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       };
       // Finished groups must stay visibly healed while follow-up groups
       // wait in the serial queue (Best takes seconds per group) or heal:
-      // the blur preview above wipes them, and prepare() below only runs
+      // the clean base above wipes them, and prepare() below only runs
       // once the running job finishes. Recomposite whatever is already
       // cached, synchronously, so the canvas never drops finished work.
-      // Dirty areas briefly show the original instead of blur until their
-      // group heals — same as mid-job rendering after the first group.
+      // Dirty areas stay clean with a red mask until their group heals.
+      // Pending ids drive the red overlay: dirty groups only, so finished
+      // work is never covered while the queue drains.
       if (method === 'ml-heal' && repairs.length && !paintingRepair && canvasRef.current) {
         try {
           if (healCachePhoto.current !== photo.src) {
@@ -211,8 +219,22 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
               syncCtx.putImageData(new ImageData(bytes, syncWidth, syncHeight), 0, 0);
               renderBase(cleanSync);
             }
+            // Only still-dirty groups stay red; cached groups already show healed.
+            const dirtyIds = syncPart.dirty.map((group) => group.id);
+            setPendingRepairIds((prev) => (prev.length === dirtyIds.length && prev.every((id) => dirtyIds.includes(id)) ? prev : dirtyIds));
+          } else {
+            const fallbackIds = [...new Set(repairs.map((point) => strokeIdForPoint(point)))];
+            setPendingRepairIds((prev) => (prev.length === fallbackIds.length && prev.every((id) => fallbackIds.includes(id)) ? prev : fallbackIds));
           }
-        } catch { /* Blur fallback already displayed. */ }
+        } catch {
+          // Base canvas above is clean (no blur); leave it so areas stay
+          // marked red instead of flashing a blurry placeholder.
+        }
+      } else if (method !== 'ml-heal' && repairs.length && !paintingRepair && run && method) {
+        const allIds = [...new Set(repairs.map((point) => strokeIdForPoint(point)))];
+        setPendingRepairIds((prev) => (prev.length === allIds.length && prev.every((id) => allIds.includes(id)) ? prev : allIds));
+      } else if (!repairs.length || paintingRepair) {
+        setPendingRepairIds((prev) => (prev.length ? [] : prev));
       }
       if (repairs.length && run && method) {
         const generation = repairGeneration.current + 1;
@@ -301,7 +323,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
                     return null;
                   }
                   const fresh: CachedHealPatch[] = [];
-                  // The effect's blur preview (and a just-finished prior
+                  // The effect's clean base (and a just-finished prior
                   // job's stale render) both hide already-healed groups.
                   // Recomposite them now so the new job starts from
                   // finished work instead of flashing it away until the
@@ -318,11 +340,12 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
                       if (healEpoch.current !== myEpoch || photoIdRef.current !== myPhotoId) return;
                       // A stroke deleted mid-heal leaves no overlay behind.
                       const liveIds = new Set((latestHealState.current?.edit.retouches ?? []).map((point) => strokeIdForPoint(point)));
-                      if (!liveIds.has(group.id)) return;
+                      if (!liveIds.has(group.id)) { setPendingRepairIds((prev) => (prev.includes(group.id) ? prev.filter((id) => id !== group.id) : prev)); return; }
                       patch.signature = signatureForHealGroup(group, cacheParams);
                       healCache.current.set(group.id, patch);
                       fresh.push(patch);
                       renderPatches([...validPatches, ...fresh]);
+                      setPendingRepairIds((prev) => (prev.includes(group.id) ? prev.filter((id) => id !== group.id) : prev));
                       enforceHealCacheLimit(healCache.current);
                       overlayStore.current = overlayStore.current.filter((entry) => entry.groupId !== group.id && healCache.current.has(entry.groupId));
                       overlayStore.current.push({ ...patch, data: patch.data.slice(), groupId: group.id, geometryKey: cacheParams.geometryKey, canvasWidth: width, canvasHeight: height });
@@ -333,7 +356,16 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
                     },
                   };
                 },
-              }).catch(() => { /* Blur fallback already displayed. */ });
+              }).then(() => {
+                if (cancelled || repairGeneration.current !== generation) return;
+                setPendingRepairIds((prev) => (prev.length ? [] : prev));
+              }).catch(() => {
+                if (cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
+                // Heal failed: fall back to the blurry placeholder so the
+                // repair areas stay visibly marked.
+                try { renderBase(geometryCanvas(image, latestHealState.current?.edit ?? edit)); } catch { /* Keep clean canvas. */ }
+                setPendingRepairIds((prev) => (prev.length ? [] : prev));
+              });
             }, 300);
             return;
           }
@@ -341,7 +373,14 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
           void applyInpaintRepair(clean, repairs, method, run, repairOptions).then((applied) => {
             if (!applied || cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
             renderBase(clean);
-          }).catch(() => { /* Blur fallback already displayed. */ });
+            setPendingRepairIds((prev) => (prev.length ? [] : prev));
+          }).catch(() => {
+            if (cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
+            // Heal failed: fall back to the blurry placeholder so the repair
+            // areas stay visibly marked.
+            try { renderBase(geometryCanvas(image, latestHealState.current?.edit ?? edit)); } catch { /* Keep clean canvas. */ }
+            setPendingRepairIds((prev) => (prev.length ? [] : prev));
+          });
         }, 300);
       }
     }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setLoading(false); } });
@@ -448,15 +487,25 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   // strokes outright on a failed tier (user must pick a working tier first).
   const mlRepairBlocked = tool === 'repair' && inpaintRepair?.method === 'ml-heal' && (inpaintRepair.mlEngine ?? 'classic') !== 'classic' && inpaintRepair.mlReady === false;
   const mlRepairWarming = tool === 'repair' && inpaintRepair?.method === 'ml-heal' && (inpaintRepair.mlEngine ?? 'classic') !== 'classic' && inpaintRepair.mlReady === false && inpaintRepair.mlWarming === true;
-  const showBrushCursor = isBrush && cursor && !showOriginal && !mlRepairBlocked;
+  // Compare and healing are mutually exclusive on canvas: comparing shows
+  // the before/after slider with no heal cursor and no painting.
+  const showBrushCursor = isBrush && cursor && !compare && !showOriginal && !mlRepairBlocked;
   const draggingRepair = showOverlay && tool === 'repair' && activeStroke !== null;
   // While dragging, every repair area shows red — not just the new stroke —
-  // so the single worker pass over all areas is visible. Otherwise red
-  // appears only for the hovered heal group (canvas or inspector list):
-  // past work stays unobscured until inspected.
+  // so the single worker pass over all areas is visible. While healing,
+  // only still-pending groups stay red; healed groups already show their
+  // final pixels. Otherwise red appears only for the hovered heal group
+  // (canvas or inspector list): past work stays unobscured until inspected.
+  const healingRepair = showOverlay && tool === 'repair' && activeStroke === null && pendingRepairIds.length > 0;
+  const pendingSet = new Set(pendingRepairIds);
+  const pendingPoints = healingRepair
+    ? edit.retouches.filter((point) => point.kind === 'repair' && pendingSet.has(strokeIdForPoint(point)))
+    : [];
   const activePoints = draggingRepair
     ? edit.retouches.filter((point) => point.kind === 'repair')
-    : [];
+    : pendingPoints.length > 0 || healingRepair
+      ? (pendingPoints.length > 0 ? pendingPoints : edit.retouches.filter((point) => point.kind === 'repair'))
+      : [];
   const hoverPoints = showOverlay && activeStroke === null && highlightStroke !== null
     ? edit.retouches.filter((point) => strokeIdForPoint(point) === highlightStroke)
     : [];
@@ -464,7 +513,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     <circle key={key} cx={point.x * frameWidth} cy={point.y * frameHeight} r={Math.max(1, (point.size * frameWidth) / 2)} />
   );
 
-  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{edit.preset !== 'Original' && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton></div></div><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush ? 'brush-active' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onPointerMove={(event) => { if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
+  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{edit.preset !== 'Original' && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton></div></div><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onPointerMove={(event) => { if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
       <canvas className="edited-canvas" ref={canvasRef} role="img" aria-label={`${photo.title}, with current adjustments`} />
       <div className="original-layer" style={{ clipPath: `inset(0 ${showOriginal ? 0 : compare ? 100 - split : 100}% 0 0)` }}><canvas ref={originalRef} role="img" aria-label="Original photo" /></div>
       {loading && <div className="photo-loading"><span className="loading-spinner" /><span>Developing your photo...</span></div>}
@@ -472,7 +521,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       {compare && !showOriginal && !loading && <><span className="comparison-label original-label">Original</span><span className="comparison-label edited-label">Edited</span><div className="comparison-divider" role="slider" aria-label="Before and after comparison" aria-valuemin={2} aria-valuemax={98} aria-valuenow={Math.round(split)} tabIndex={0} style={{ left: `${split}%` }} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setSplit(Math.max(2, Math.min(98, position(event).x * 100))); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); setSplit((value) => Math.max(2, Math.min(98, value + (event.key === 'ArrowRight' ? 2 : -2)))); } }}><span><ChevronsLeftRight size={17} /></span></div></>}
       {showOriginal && <span className="comparison-label original-label">Original</span>}
       {tool === 'crop' && !loading && <div className="crop-grid" aria-hidden="true"><i /><i /><i /><i /></div>}
-      {showBrushCursor && <div className={`brush-cursor${compare ? ' is-compare' : ''}`} style={{ left: cursor!.x, top: cursor!.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
+      {showBrushCursor && <div className="brush-cursor" style={{ left: cursor!.x, top: cursor!.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
       {(activePoints.length > 0 || hoverPoints.length > 0) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}</svg>}
     </div></div>
       {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : compare ? 'Comparing — turn off Compare to keep repairing.' : mlRepairWarming ? 'Loading the ML engine… painting unlocks when ready.' : mlRepairBlocked ? 'This ML engine is unavailable — pick Balanced in the inspector.' : 'Click and drag to repair — hover a repair in the list to locate it.'}</div>}
