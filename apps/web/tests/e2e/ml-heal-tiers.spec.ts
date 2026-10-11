@@ -1,0 +1,134 @@
+// apps/web/tests/e2e/ml-heal-tiers.spec.ts
+//
+// Locks ML-heal tier behavior (core/ml-heal.ts, useInpaintRepair, Inspector):
+// Balanced runs LaMa, Best runs Moebius (mocked tints prove routing); Fast
+// is classic-only and coerced under ML Heal; tier switches clear stale
+// errors; server failures surface a persistent alert with classic fallbacks.
+//
+// The neural backend is fully mocked (heal-mocks.ts): no weights, no GPU,
+// deterministic pixels per engine.
+import { expect, test } from "@playwright/test";
+import { LAMA_TINT, MOEBIUS_TINT, mockMlHeal } from "./heal-mocks";
+import {
+  PHOTO_ID,
+  clearHealCalls,
+  getHealCalls,
+  gotoEditor,
+  healStroke,
+  paintStroke,
+  resetPhoto,
+  retouchGroupCount,
+  sampleCanvasPixel,
+  selectRepairMethod,
+  stubLibraryImages,
+  waitForHealingDone,
+  waitForHealingStart,
+} from "./helpers";
+
+const TINT_TOLERANCE = 40;
+
+function near(pixel: { r: number; g: number; b: number }, tint: { r: number; g: number; b: number }): boolean {
+  return (
+    Math.abs(pixel.r - tint.r) <= TINT_TOLERANCE &&
+    Math.abs(pixel.g - tint.g) <= TINT_TOLERANCE &&
+    Math.abs(pixel.b - tint.b) <= TINT_TOLERANCE
+  );
+}
+
+test.beforeEach(async ({ page }) => {
+  await stubLibraryImages(page);
+  await mockMlHeal(page);
+  await page.goto("/");
+  await resetPhoto(page, PHOTO_ID);
+  await gotoEditor(page);
+  await selectRepairMethod(page, "ml-heal");
+  await expect(page.getByTestId("ml-engine-note")).toContainText("server ready", {
+    timeout: 30_000,
+  });
+  await clearHealCalls(page);
+});
+
+test("balanced heals with lama, best with moebius", async ({ page }) => {
+  // Balanced is the default tier -> LaMa engine.
+  await expect(page.getByTestId("heal-quality-balanced")).toHaveClass(/is-active/);
+  await healStroke(page, { x: 0.2, y: 0.3 }, { x: 0.26, y: 0.36 });
+  expect(near(await sampleCanvasPixel(page, { x: 0.23, y: 0.33 }), LAMA_TINT)).toBe(true);
+
+  // Best -> Moebius diffusion tier, painted over a different area.
+  await page.getByTestId("heal-quality-best").click();
+  await healStroke(page, { x: 0.6, y: 0.6 }, { x: 0.66, y: 0.66 });
+  expect(near(await sampleCanvasPixel(page, { x: 0.63, y: 0.63 }), MOEBIUS_TINT)).toBe(true);
+
+  // The LaMa group kept its pixels: tiers never cross-heal finished work.
+  expect(near(await sampleCanvasPixel(page, { x: 0.23, y: 0.33 }), LAMA_TINT)).toBe(true);
+
+  const calls = await getHealCalls(page);
+  expect(calls.map((call) => call.quality)).toEqual(["balanced", "best"]);
+  expect(await retouchGroupCount(page)).toBe(2);
+});
+
+test("fast has no ml tier and coerces to balanced", async ({ page }) => {
+  // Fast is classic-only: hidden while ML Heal is selected...
+  await expect(page.getByTestId("heal-quality-fast")).toBeHidden();
+
+  // ...and entering ML Heal from classic Fast migrates to Balanced.
+  await selectRepairMethod(page, "heal");
+  await page.getByTestId("heal-quality-fast").click();
+  await selectRepairMethod(page, "ml-heal");
+  await expect(page.getByTestId("heal-quality-balanced")).toHaveClass(/is-active/);
+  await expect(page.getByTestId("ml-engine-note")).toContainText("LaMa neural fill");
+});
+
+test("failed tier surfaces a persistent error with fallbacks", async ({ page }) => {
+  await page.unroute("**/api/ml-heal/inpaint");
+  await mockMlHeal(page, { failing: ["moebius"] });
+  await page.getByTestId("heal-quality-best").click();
+
+  await paintStroke(page, { x: 0.3, y: 0.3 }, { x: 0.36, y: 0.36 });
+  await waitForHealingStart(page);
+  await waitForHealingDone(page);
+
+  // Errors never auto-dismiss: still visible well past the 4s success window.
+  const alert = page.getByTestId("ml-progress");
+  await expect(alert).toContainText("Model unavailable");
+  await page.waitForTimeout(5000);
+  await expect(alert).toContainText("Model unavailable");
+
+  // Recovery paths are offered in place.
+  await expect(page.getByRole("button", { name: "Try Balanced instead" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Use classic Heal instead (instant, no model)" }),
+  ).toBeVisible();
+
+  // Switching tiers clears the stale Moebius error; Balanced heals cleanly.
+  await page.getByRole("button", { name: "Try Balanced instead" }).click();
+  await expect(alert).toBeHidden({ timeout: 10_000 });
+  await waitForHealingDone(page);
+  expect(near(await sampleCanvasPixel(page, { x: 0.33, y: 0.33 }), LAMA_TINT)).toBe(true);
+});
+
+test("cancel heals clears progress and later strokes still heal", async ({ page }) => {
+  await page.unroute("**/api/ml-heal/inpaint");
+  await mockMlHeal(page, { delayMs: 6000 });
+
+  await paintStroke(page, { x: 0.25, y: 0.4 }, { x: 0.3, y: 0.45 });
+  await waitForHealingStart(page);
+  await expect(page.getByTestId("ml-cancel")).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("ml-cancel").click();
+  await expect(page.getByTestId("ml-progress")).toBeHidden({ timeout: 10_000 });
+
+  // Cancel restarts the worker and drops readiness: re-enter ML Heal to
+  // re-warm (same as a user recovering), with a fast backend this time.
+  // The cancelled job's late result still lands harmlessly in its own area.
+  await page.unroute("**/api/ml-heal/inpaint");
+  await mockMlHeal(page);
+  await selectRepairMethod(page, "heal");
+  await selectRepairMethod(page, "ml-heal");
+  await expect(page.getByTestId("ml-engine-note")).toContainText("server ready", {
+    timeout: 30_000,
+  });
+  await paintStroke(page, { x: 0.55, y: 0.55 }, { x: 0.6, y: 0.6 });
+  await waitForHealingStart(page);
+  await waitForHealingDone(page);
+  expect(near(await sampleCanvasPixel(page, { x: 0.575, y: 0.575 }), LAMA_TINT)).toBe(true);
+});

@@ -1,0 +1,45 @@
+// apps/web/tests/e2e/basic.spec.ts
+//
+// Smoke e2e for Photomator. Verifies that:
+//   - the Vite dev server boots and serves `/` against the isolated test API
+//   - the library gate clears once /api/library resolves (seeded .e2e data)
+//   - the editor mounts: toolbar, photo frame, inspector
+//   - the Repair tool opens the heal inspector with all four methods
+//
+// Intentionally minimal; heal behavior lives in heal-*.spec.ts. Seed images
+// are stubbed to a local SVG so no test needs the network or CORS-clean
+// remote pixels.
+import { expect, test } from "@playwright/test";
+import { gotoEditor, resetPhoto, stubLibraryImages, PHOTO_ID } from "./helpers";
+
+test("home page loads and renders the photo editor", async ({ page }) => {
+  await stubLibraryImages(page);
+  await gotoEditor(page);
+
+  // Toolbar (Topbar.tsx) renders one button per tool; Repair is the heal entry.
+  const toolbar = page.getByRole("toolbar", { name: "Editing tools" });
+  await expect(toolbar.getByRole("button", { name: "Repair", exact: true })).toBeVisible();
+  await expect(toolbar.getByRole("button", { name: "Adjust", exact: true })).toBeVisible();
+
+  // PhotoCanvas mounts with an empty retouch state on a fresh seed photo.
+  await expect(page.getByTestId("photo-frame")).toBeVisible();
+  await expect(page.getByTestId("edited-canvas")).toBeVisible();
+});
+
+test("repair tool opens the heal inspector", async ({ page }) => {
+  await stubLibraryImages(page);
+  await page.goto("/");
+  await resetPhoto(page, PHOTO_ID);
+  await gotoEditor(page);
+
+  await page.getByRole("toolbar", { name: "Editing tools" }).getByRole("button", { name: "Repair", exact: true }).click();
+
+  // Inspector repair section: all four reconstruction methods + quality tiers.
+  await expect(page.getByTestId("repair-method-ml-heal")).toBeVisible();
+  await expect(page.getByTestId("repair-method-heal")).toBeVisible();
+  await expect(page.getByTestId("repair-method-telea")).toBeVisible();
+  await expect(page.getByTestId("repair-method-ns")).toBeVisible();
+  await expect(page.getByTestId("heal-quality-balanced")).toBeVisible();
+  await expect(page.getByTestId("brush-size")).toBeVisible();
+  await expect(page.getByTestId("retouch-status")).toContainText("No retouching yet");
+});

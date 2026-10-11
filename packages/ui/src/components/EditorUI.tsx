@@ -16,6 +16,8 @@ export function BrandMark({ size = 24 }: { size?: number }) {
 interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string;
   active?: boolean;
+  /** Stable e2e selector; passed through to the button. */
+  'data-testid'?: string;
   children: ReactNode;
 }
 
@@ -38,10 +40,12 @@ interface RangeControlProps {
   signed?: boolean;
   color?: 'temperature' | 'tint' | 'hue';
   disabled?: boolean;
+  /** Stable selector for e2e; no visual or behavior change. */
+  testId?: string;
   onChange: (value: number) => void;
 }
 
-export function RangeControl({ label, value, min = -100, max = 100, step = 1, defaultValue = 0, suffix = '', signed = false, color, disabled, onChange }: RangeControlProps) {
+export function RangeControl({ label, value, min = -100, max = 100, step = 1, defaultValue = 0, suffix = '', signed = false, color, disabled, testId, onChange }: RangeControlProps) {
   const id = useId();
   const [draft, setDraft] = useState<string | null>(null);
   const digits = step < 1 ? 2 : 0;
@@ -50,7 +54,7 @@ export function RangeControl({ label, value, min = -100, max = 100, step = 1, de
   const center = (defaultValue - min) / (max - min) * 100;
   const style = { '--range-progress': `${progress}%`, '--range-center': `${center}%` } as CSSProperties;
   return (
-    <div className={`range-control ${disabled ? 'is-disabled' : ''}`}>
+    <div className={`range-control ${disabled ? 'is-disabled' : ''}`} {...(testId ? { 'data-testid': testId } : {})}>
       <div className="range-label">
         <label htmlFor={id}>{label}</label>
         <div className="range-value">

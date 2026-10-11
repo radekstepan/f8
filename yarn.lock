@@ -553,6 +553,7 @@ __metadata:
   dependencies:
     "@photomator/core": "workspace:*"
     "@photomator/ui": "workspace:*"
+    "@playwright/test": "npm:^1.61.1"
     "@tailwindcss/vite": "npm:4.1.17"
     "@techstark/opencv-js": "npm:^5.0.0-release.1"
     "@types/node": "npm:22.19.17"
@@ -568,6 +569,17 @@ __metadata:
     vite-plugin-singlefile: "npm:2.3.0"
   languageName: unknown
   linkType: soft
+
+"@playwright/test@npm:^1.61.1":
+  version: 1.64.0
+  resolution: "@playwright/test@npm:1.64.0"
+  dependencies:
+    playwright: "npm:1.64.0"
+  bin:
+    playwright: cli.js
+  checksum: 10c0/96db203daa9e5aa5fcbec3f8bc92074346334980961dcc2ef6e660add5ad4647037f98f3a84ba1ec431bfb6e6368df0fd53e7dbdd427560627deef978c762f0c
+  languageName: node
+  linkType: hard
 
 "@rolldown/pluginutils@npm:1.0.0-beta.47":
   version: 1.0.0-beta.47
@@ -1846,6 +1858,26 @@ __metadata:
   version: 4.0.7
   resolution: "picomatch@npm:4.0.7"
   checksum: 10c0/beb6ae02c43ae44e84883b90830196d9046b1726ead292adcf7f57945e0bb0d992d68563d87e03b484b6f3c9a5c6defda7523477f047d7f0e663f126cc01787f
+  languageName: node
+  linkType: hard
+
+"playwright-core@npm:1.64.0":
+  version: 1.64.0
+  resolution: "playwright-core@npm:1.64.0"
+  bin:
+    playwright-core: cli.js
+  checksum: 10c0/fe3237282ada99d634e4d002efd3db6aa51218f7f4f3b1bc31515d30fa6eec5ec940d425e035db2af4e2856d9cae30b7a27bd167870b3285d40bdffd399ab286
+  languageName: node
+  linkType: hard
+
+"playwright@npm:1.64.0":
+  version: 1.64.0
+  resolution: "playwright@npm:1.64.0"
+  dependencies:
+    playwright-core: "npm:1.64.0"
+  bin:
+    playwright: cli.js
+  checksum: 10c0/f1ee856c280af2ac256225a1cc5e957847f0d2c56a039c89f02e31b0c9928c44e04311923a1b315bea16e3b26e5124e7c296644ad3c05e4c0a6aaa9584009933
   languageName: node
   linkType: hard
 

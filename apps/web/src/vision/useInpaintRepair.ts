@@ -13,6 +13,7 @@ import {
   INPAINT_DEFAULT_METHOD,
   ML_HEAL_DIFFUSION_TIMEOUT_MS,
   mlHealEngineForQuality,
+  recordTestHealCall,
   type HealQuality,
   type InpaintMethod,
   type MlHealEngine,
@@ -152,6 +153,9 @@ export function useInpaintRepair(): InpaintRepairState {
       // Fast is classic-heal only: an ml-heal call asking for it (legacy
       // session) heals at Balanced instead of silently dropping to exemplar.
       const effectiveQuality = next === "ml-heal" && requestedQuality === "fast" ? "balanced" : requestedQuality;
+      // E2E observability: record the transport call before dispatch so specs
+      // can assert per-group method/quality/areas/aggregate without pixels.
+      recordTestHealCall({ method: next, quality: effectiveQuality, seamlessLight: options?.seamlessLight, featherPx: options?.featherPx, areas, aggregate: options?.aggregate });
       // All ML tiers run on the photo server, never in the browser: the
       // in-browser paths hung multi-area jobs. Server-required, always up.
       if (next === "ml-heal" && mlHealEngineForQuality(effectiveQuality) !== "classic") {

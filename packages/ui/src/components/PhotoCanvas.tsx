@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star } from 'lucide-react';
 import { DEFAULT_EDIT } from '@photomator/core';
-import { LibraryError, applyInpaintRepair, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewRenderKey, renderAdjustedCanvas, reusableOverlayForGroup, savePreviewRender, signatureForHealGroup, strokeIdForPoint } from '@photomator/core';
+import { LibraryError, applyInpaintRepair, clearTestHealCalls, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, reusableOverlayForGroup, savePreviewRender, signatureForHealGroup, strokeIdForPoint } from '@photomator/core';
 import type { CachedHealPatch, ChangeEdit, EditState, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RunInpaint, StoredHealPatch, Tool } from '@photomator/core';
 import { IconButton } from './EditorUI.js';
 
@@ -111,6 +111,22 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   /** Bumped on every canvas paint so the idle-save effect re-evaluates. */
   const [paintCount, setPaintCount] = useState(0);
   const isBrush = tool === 'repair' || tool === 'clone';
+  /** Mirror of pendingRepairIds for the read-only e2e hook (state is async). */
+  const pendingRef = useRef<number[]>([]);
+  pendingRef.current = pendingRepairIds;
+  // Read-only Playwright observability: queue depth, cached group ids,
+  // pending (still-healing) group ids, persisted overlay group ids, and the
+  // recorded transport calls. No behavior change; specs read, never write.
+  useEffect(() => {
+    (window as unknown as { __photomatorTest?: unknown }).__photomatorTest = {
+      healCalls: () => readTestHealCalls(),
+      clearHealCalls: () => clearTestHealCalls(),
+      queue: () => ({ active: healQueue.current?.active ?? false, pendingJobs: healQueue.current?.pendingJobs ?? 0 }),
+      cacheKeys: () => [...healCache.current.keys()],
+      pendingRepairIds: () => [...pendingRef.current],
+      overlayGroupIds: () => overlayStore.current.map((entry) => entry.groupId),
+    };
+  }, []);
 
   useEffect(() => {
     const node = stageRef.current;
@@ -671,8 +687,8 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     <circle key={key} cx={point.x * frameWidth} cy={point.y * frameHeight} r={Math.max(1, (point.size * frameWidth) / 2)} />
   );
 
-  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{edit.preset !== 'Original' && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton></div></div><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onPointerMove={(event) => { if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
-      <canvas className="edited-canvas" ref={canvasRef} role="img" aria-label={`${photo.title}, with current adjustments`} />
+  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{edit.preset !== 'Original' && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton></div></div><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} data-testid="photo-frame" style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onPointerMove={(event) => { if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
+      <canvas className="edited-canvas" ref={canvasRef} data-testid="edited-canvas" role="img" aria-label={`${photo.title}, with current adjustments`} />
       {previewUrl && <img className="cached-preview" src={previewUrl} alt="" aria-hidden="true" draggable={false} />}
       <div className="original-layer" style={{ clipPath: `inset(0 ${showOriginal ? 0 : compare ? 100 - split : 100}% 0 0)` }}><canvas ref={originalRef} role="img" aria-label="Original photo" /></div>
       {loading && <div className="photo-loading"><span className="loading-spinner" /><span>Developing your photo...</span></div>}

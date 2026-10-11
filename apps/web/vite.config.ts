@@ -25,7 +25,9 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      "/api": "http://127.0.0.1:5193",
+      // PHOTOMATOR_API lets Playwright e2e point the app at the isolated
+      // test server (127.0.0.1:5194); local dev keeps the default 5193.
+      "/api": process.env.PHOTOMATOR_API ?? "http://127.0.0.1:5193",
     },
   },
   build: {
