@@ -121,13 +121,18 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       const repairs = previewEdit.retouches.filter((point) => point.kind === 'repair');
       const run = inpaintRun.current;
       const method = inpaintRepair?.method;
+      const repairOptions = {
+        quality: inpaintRepair?.quality,
+        seamlessLight: inpaintRepair?.seamlessLight,
+        featherPx: inpaintRepair?.featherPx,
+      };
       if (repairs.length && run && method) {
         const generation = repairGeneration.current + 1;
         repairGeneration.current = generation;
         timer = window.setTimeout(() => {
           if (cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
-          const clean = geometryCanvas(image, { ...previewEdit, retouches: previewEdit.retouches.filter((point) => point.kind === 'clone') });
-          void applyInpaintRepair(clean, repairs, method, run).then((applied) => {
+          const clean = geometryCanvas(image, { ...previewEdit, retouches: previewEdit.retouches.filter((point) => point.kind !== 'repair') });
+          void applyInpaintRepair(clean, repairs, method, run, repairOptions).then((applied) => {
             if (!applied || cancelled || repairGeneration.current !== generation || !canvasRef.current) return;
             renderBase(clean);
           }).catch(() => { /* Blur fallback already displayed. */ });
@@ -135,7 +140,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       }
     }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setLoading(false); } });
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
-  }, [photo.src, edit, tool, activeStroke, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.status]);
+  }, [photo.src, edit, tool, activeStroke, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.seamlessLight, inpaintRepair?.featherPx, inpaintRepair?.status]);
 
   const fitWidth = Math.max(100, Math.min(stageSize.width - 64, (stageSize.height - 48) * aspect));
   const frameWidth = fitWidth * zoom;

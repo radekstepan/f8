@@ -345,6 +345,7 @@ img { display: block; }
 .brush-preview > small { position: absolute; bottom: 11px; color: #797983; font-size: 8px; }
 .retouch-status { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; border-top: 1px solid #414147; padding-top: 10px; color: #9b9baa; font-size: 9px; }
 .repair-method-blurb { margin: -12px 0 20px; }
+.repair-toggle-row { display: flex; align-items: center; justify-content: space-between; margin: -8px 0 4px; font-size: 10px; color: #c2c2cb; }
 .retouch-group-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 172px; overflow-y: auto; }
 .retouch-group { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border: 1px solid #3d3d44; border-radius: 5px; background: #1f1f23; font-size: 9.5px; color: #c2c2cb; }
 .retouch-group.is-highlighted { border-color: #a2544d; background: #2a2223; }

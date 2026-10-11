@@ -28,7 +28,7 @@ function ExportDialog({ photo, edit, inpaintRepair, onClose, onToast }: Pick<Edi
     setExporting(true);
     setError('');
     try {
-      const blob = await exportPhoto(photo.src, edit, format, quality, Number(size), inpaintRepair ? { method: inpaintRepair.method, runInpaint: inpaintRepair.run, quality: inpaintRepair.quality } : undefined);
+      const blob = await exportPhoto(photo.src, edit, format, quality, Number(size), inpaintRepair ? { method: inpaintRepair.method, runInpaint: inpaintRepair.run, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx } : undefined);
       downloadBlob(blob, `${filename.trim().replace(/[\\/:*?"<>|]/g, '-')}.${format === 'jpeg' ? 'jpg' : format}`);
       onToast(`Your photo was exported as ${format.toUpperCase()}.`);
       onClose();

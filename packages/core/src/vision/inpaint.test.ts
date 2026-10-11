@@ -4,6 +4,8 @@ import type { RetouchPoint } from "../types.js";
 import { assertValidImage, type PixelImage } from "./analyze.js";
 import { goldenPhoto, solidColor } from "./fixtures.js";
 import {
+  BLEND_FEATHER_MAX_PX,
+  BLEND_FEATHER_PX,
   INPAINT_DEFAULT_METHOD,
   INPAINT_RADIUS_MAX,
   INPAINT_RADIUS_MIN,
@@ -16,6 +18,7 @@ import {
   inpaintRadiusForStrokes,
   inpaintWithCv,
   rasterizeRepairMask,
+  resolveFeatherPx,
   type InpaintCvApi,
   type InpaintMethod,
   type RepairMask,
@@ -261,6 +264,25 @@ describe("featherRepairMask", () => {
     expect(Array.from(out.data)).toEqual([0, 9, 0, 7]);
     expect(() => featherRepairMask(mask, -2)).toThrow(RangeError);
     expect(() => featherRepairMask(mask, NaN)).toThrow(RangeError);
+  });
+});
+
+describe("resolveFeatherPx", () => {
+  it("passes the slider range through untouched", () => {
+    expect(resolveFeatherPx(0)).toBe(0);
+    expect(resolveFeatherPx(2)).toBe(2);
+    expect(resolveFeatherPx(8)).toBe(8);
+  });
+
+  it("falls back to the default for absent or non-finite input", () => {
+    expect(resolveFeatherPx()).toBe(BLEND_FEATHER_PX);
+    expect(resolveFeatherPx(NaN)).toBe(BLEND_FEATHER_PX);
+  });
+
+  it("clamps to the supported 0..MAX range", () => {
+    expect(resolveFeatherPx(-3)).toBe(0);
+    expect(resolveFeatherPx(40)).toBe(BLEND_FEATHER_MAX_PX);
+    expect(resolveFeatherPx(2.6)).toBe(3);
   });
 });
 

@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  BLEND_FEATHER_PX,
   HEAL_DEFAULT_QUALITY,
   INPAINT_DEFAULT_METHOD,
   type HealQuality,
@@ -22,29 +23,39 @@ import { getVisionWorkerClient } from "./visionClient";
 export interface InpaintRepairState {
   method: InpaintMethod;
   quality: HealQuality;
+  seamlessLight: boolean;
+  featherPx: number;
   status: VisionWorkerStatus;
   /** Stable worker transport for core's applyInpaintRepair/exportPhoto. */
   run: RunInpaint;
   setMethod: (method: InpaintMethod) => void;
   setQuality: (quality: HealQuality) => void;
+  setSeamlessLight: (value: boolean) => void;
+  setFeatherPx: (value: number) => void;
 }
 
 export function useInpaintRepair(): InpaintRepairState {
   const [client] = useState(getVisionWorkerClient);
   const [method, setMethod] = useState<InpaintMethod>(INPAINT_DEFAULT_METHOD);
   const [quality, setQuality] = useState<HealQuality>(HEAL_DEFAULT_QUALITY);
+  const [seamlessLight, setSeamlessLight] = useState(false);
+  const [featherPx, setFeatherPx] = useState(BLEND_FEATHER_PX);
   const [status, setStatus] = useState<VisionWorkerStatus>(client.status);
 
   useEffect(() => client.subscribe(setStatus), [client]);
 
   const run = useCallback<RunInpaint>(
     (image: PixelImage, mask: RepairMask, radius: number, next: InpaintMethod, options?: RunInpaintOptions) =>
-      client.inpaint(image, mask, radius, next, { ...options, quality: options?.quality ?? quality }),
-    [client, quality],
+      client.inpaint(image, mask, radius, next, {
+        ...options,
+        quality: options?.quality ?? quality,
+        seamlessLight: options?.seamlessLight ?? seamlessLight,
+      }),
+    [client, quality, seamlessLight],
   );
 
   return useMemo(
-    () => ({ method, quality, status, run, setMethod, setQuality }),
-    [method, quality, status, run],
+    () => ({ method, quality, seamlessLight, featherPx, status, run, setMethod, setQuality, setSeamlessLight, setFeatherPx }),
+    [method, quality, seamlessLight, featherPx, status, run],
   );
 }

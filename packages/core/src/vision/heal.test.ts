@@ -497,6 +497,66 @@ describe("healRepair progress", () => {
   });
 });
 
+describe("healRepair seamless light adaptation", () => {
+  it("reproduces the default output exactly when seamlessLight is false", () => {
+    const image = gradient(48, 32);
+    blemish(image, 20, 12, 27, 19);
+    const mask = rectMask(48, 32, 20, 12, 27, 19);
+    const implicit = healRepair(image, mask);
+    const explicit = healRepair(image, mask, { seamlessLight: false });
+    expect(Array.from(explicit.data)).toEqual(Array.from(implicit.data));
+  });
+
+  it("keeps the contract on a gradient: unmasked exact, alpha kept, deterministic", () => {
+    const image = gradient(48, 32);
+    blemish(image, 20, 12, 27, 19);
+    const mask = rectMask(48, 32, 20, 12, 27, 19);
+    const first = healRepair(image, mask, { seamlessLight: true });
+    const second = healRepair(image, mask, { seamlessLight: true });
+    expect(Array.from(first.data)).toEqual(Array.from(second.data));
+    for (let y = 0; y < 32; y += 1) {
+      for (let x = 0; x < 48; x += 1) {
+        const masked = x >= 20 && x <= 27 && y >= 12 && y <= 19;
+        if (!masked) expect(channel(first, x, y)).toEqual(channel(image, x, y));
+        expect(channel(first, x, y)[3]).toBe(channel(image, x, y)[3]);
+        const [r, g, b] = channel(first, x, y);
+        expect(Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)).toBe(true);
+      }
+    }
+  });
+
+  it("tracks a lighting gradient at least as closely as the flat shift", () => {
+    // A smooth horizontal gradient with a blemish: the harmonic field should
+    // follow the ramp across the hole, never doing worse than one average.
+    const image = gradient(64, 32);
+    blemish(image, 28, 12, 35, 19);
+    const mask = rectMask(64, 32, 28, 12, 35, 19);
+    const pristine = gradient(64, 32);
+    const seamOf = (healed: PixelImage): number => {
+      let worst = 0;
+      for (let y = 12; y <= 19; y += 1) {
+        for (let x = 28; x <= 35; x += 1) {
+          const i = (y * 64 + x) * 4;
+          worst = Math.max(worst, Math.abs((healed.data[i] ?? 0) - (pristine.data[i] ?? 0)));
+        }
+      }
+      return worst;
+    };
+    const flat = healRepair(image, mask);
+    const seamless = healRepair(image, mask, { seamlessLight: true });
+    expect(seamOf(seamless)).toBeLessThanOrEqual(seamOf(flat));
+  });
+
+  it("leaves large-hole exemplar routing untouched by the flag", () => {
+    const image = halves(96, 64);
+    blemish(image, 34, 18, 61, 45);
+    const mask = rectMask(96, 64, 34, 18, 61, 45);
+    const off = healRepair(image, mask);
+    const on = healRepair(image, mask, { seamlessLight: true });
+    expect(Array.from(on.data)).toEqual(Array.from(off.data));
+  });
+});
+
 describe("healRepair cropped working region", () => {
   it("heals a blemish in the image corner where the crop clamps to the edge", () => {
     const image = stripes(24, 24);

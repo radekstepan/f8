@@ -85,6 +85,8 @@ interface PendingCall {
 export interface InpaintOptions {
   /** Heal effort preset; omitted means "balanced". Diffusion ignores it. */
   quality?: HealQuality;
+  /** Harmonic light adaptation for single-offset heal; omitted means false. */
+  seamlessLight?: boolean;
   /** Progress callback for heal jobs; diffusion jobs never report progress. */
   onProgress?: HealProgress;
 }
@@ -188,7 +190,7 @@ export class VisionWorkerClient {
     // before any worker contact, like the other ops.
     const id = this.nextId;
     this.nextId += 1;
-    const request = createInpaintRequest(id, image, mask, radius, method, options.quality);
+    const request = createInpaintRequest(id, image, mask, radius, method, options.quality, options.seamlessLight);
     if (this.statusValue === "failed") {
       throw new VisionWorkerError("Vision worker failed; call ensureReady() to retry.");
     }

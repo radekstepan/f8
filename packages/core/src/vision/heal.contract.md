@@ -26,10 +26,15 @@ healRepair(image: PixelImage, mask: RepairMask, options?: HealOptions): PixelIma
 - `RepairMask`: `{ width, height, data: Uint8ClampedArray }` 8-bit; **any
   nonzero value is fill region** (strength is applied later at composite
   time, never here).
-- `HealOptions`: `{ quality?: HealQuality; onProgress?: HealProgress }`.
+- `HealOptions`: `{ quality?: HealQuality; onProgress?: HealProgress; seamlessLight?: boolean }`.
 - `HealQuality`: `"fast" | "balanced" | "best"`. Default `"balanced"`
   (`HEAL_DEFAULT_QUALITY`).
 - `HealProgress`: `(fraction: number, stage: string) => void`.
+- `seamlessLight`: opt-in harmonic (Poisson) light adaptation for
+  single-offset components. Default `false`, which reproduces the reference
+  output exactly; `true` replaces the flat mean shift with a per-pixel
+  lighting field on small blemishes only. Exemplar routing and all other
+  behavior are unchanged.
 
 ## Input validation (must throw `RangeError`)
 
@@ -43,7 +48,8 @@ healRepair(image: PixelImage, mask: RepairMask, options?: HealOptions): PixelIma
 - Mask is split into 4-connected components of nonzero pixels; each heals
   independently, so separate blemishes never share donors.
 - Components with max side `<= HEAL_SINGLE_OFFSET_MAX_DIM` (24) take the
-  **single-offset path** (one transplant per component, light-adapted).
+  **single-offset path** (one transplant per component, light-adapted: flat
+  mean shift by default, harmonic field when `seamlessLight` is set).
 - Larger components take the **per-patch exemplar path**. A reimplementation
   may change how the large-hole fill works internally, but must preserve the
   routing threshold and the per-component independence.

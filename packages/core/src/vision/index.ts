@@ -4,6 +4,7 @@ export * from "./fixtures.js";
 export * from "./heal.js";
 export * from "./inpaint.js";
 export * from "./orientation.js";
+export * from "./poisson.js";
 export * from "./straighten.js";
 export * from "./worker-client.js";
 export * from "./worker-protocol.js";

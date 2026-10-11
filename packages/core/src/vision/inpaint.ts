@@ -36,6 +36,17 @@ export const INPAINT_RADIUS_MAX = 12;
 export const INPAINT_DILATE_PX = 1;
 /** Edge ramp width for compositing reconstructed pixels over the source. */
 export const BLEND_FEATHER_PX = 2;
+/** Maximum caller-requested blend feather: caps the box-blur cost. */
+export const BLEND_FEATHER_MAX_PX = 8;
+
+/**
+ * Clamp a caller-requested blend feather to the supported 0..MAX range;
+ * non-finite or absent values fall back to the BLEND_FEATHER_PX default.
+ */
+export function resolveFeatherPx(value?: number): number {
+  if (!Number.isFinite(value)) return BLEND_FEATHER_PX;
+  return Math.min(BLEND_FEATHER_MAX_PX, Math.max(0, Math.round(value as number)));
+}
 
 /** 8-bit single-channel mask: 0 is untouched, otherwise the max covering strength (1..255). */
 export interface RepairMask {

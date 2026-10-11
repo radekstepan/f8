@@ -101,6 +101,22 @@ describe("createInpaintRequest", () => {
     expect("quality" in createInpaintRequest(2, image, mask, 3, "heal")).toBe(false);
   });
 
+  it("carries an explicit seamlessLight flag and omits the key otherwise", () => {
+    const image = solidColor(4, 4, 0, 0, 0);
+    const mask = testMask(4, 4);
+    expect(createInpaintRequest(2, image, mask, 3, "heal", "balanced", true)).toMatchObject({
+      seamlessLight: true,
+    });
+    expect("seamlessLight" in createInpaintRequest(2, image, mask, 3, "heal")).toBe(false);
+  });
+
+  it("rejects a non-boolean seamlessLight flag", () => {
+    const image = solidColor(4, 4, 0, 0, 0);
+    expect(() =>
+      createInpaintRequest(1, image, testMask(4, 4), 3, "heal", "balanced", "yes" as never),
+    ).toThrow(RangeError);
+  });
+
   it("rejects unknown methods", () => {
     expect(() =>
       createInpaintRequest(1, solidColor(4, 4, 0, 0, 0), testMask(4, 4), 3, "patchmatch" as never),

@@ -39,6 +39,7 @@
 
 import { assertValidImage, type PixelImage } from "./analyze.js";
 import { assertValidMask, type RepairMask } from "./inpaint.js";
+import { solveHarmonicLightingField } from "./poisson.js";
 
 /** Unmasked gap between the fill region and the context ring; keeps blemish fringe out of matching. */
 export const HEAL_RING_GAP = 1;
@@ -169,6 +170,14 @@ export type HealProgress = (fraction: number, stage: string) => void;
 export interface HealOptions {
   quality?: HealQuality;
   onProgress?: HealProgress;
+  /**
+   * Seamless light adaptation for single-offset blemishes: solve a harmonic
+   * (Poisson) lighting field over the hole instead of applying one flat
+   * mean shift. Renders gradients without a seam at a small solver cost.
+   * Defaults to false, which reproduces the original output exactly. The
+   * exemplar path never uses it: per-patch light shifts corrupt true edges.
+   */
+  seamlessLight?: boolean;
 }
 
 interface HealTuning {
@@ -450,6 +459,7 @@ function healSingleOffset(
   component: HealComponent,
   out: Uint8ClampedArray,
   tuning: HealTuning,
+  seamlessLight: boolean,
 ): void {
   let ring: number[] = [];
   for (let ringWidth = HEAL_RING_WIDTH; ringWidth <= HEAL_RING_WIDTH_MAX; ringWidth += 1) {
@@ -463,39 +473,91 @@ function healSingleOffset(
   // Per-channel light adaptation: shift the donor so its ring mean matches
   // the target ring mean. All sampled donor pixels are in bounds and
   // unmasked — findDonor guarantees it.
-  let targetR = 0;
-  let targetG = 0;
-  let targetB = 0;
-  let donorR = 0;
-  let donorG = 0;
-  let donorB = 0;
-  for (const p of sampled) {
-    const x = p % image.width;
-    const y = (p - x) / image.width;
-    const q = (y + donor.oy) * image.width + (x + donor.ox);
-    const pi = p * 4;
-    const qi = q * 4;
-    targetR += image.data[pi] ?? 0;
-    targetG += image.data[pi + 1] ?? 0;
-    targetB += image.data[pi + 2] ?? 0;
-    donorR += image.data[qi] ?? 0;
-    donorG += image.data[qi + 1] ?? 0;
-    donorB += image.data[qi + 2] ?? 0;
+  let shiftR = 0;
+  let shiftG = 0;
+  let shiftB = 0;
+  if (!seamlessLight) {
+    let targetR = 0;
+    let targetG = 0;
+    let targetB = 0;
+    let donorR = 0;
+    let donorG = 0;
+    let donorB = 0;
+    for (const p of sampled) {
+      const x = p % image.width;
+      const y = (p - x) / image.width;
+      const q = (y + donor.oy) * image.width + (x + donor.ox);
+      const pi = p * 4;
+      const qi = q * 4;
+      targetR += image.data[pi] ?? 0;
+      targetG += image.data[pi + 1] ?? 0;
+      targetB += image.data[pi + 2] ?? 0;
+      donorR += image.data[qi] ?? 0;
+      donorG += image.data[qi + 1] ?? 0;
+      donorB += image.data[qi + 2] ?? 0;
+    }
+    const n = sampled.length;
+    shiftR = Math.round((targetR - donorR) / n);
+    shiftG = Math.round((targetG - donorG) / n);
+    shiftB = Math.round((targetB - donorB) / n);
   }
-  const n = sampled.length;
-  const shiftR = Math.round((targetR - donorR) / n);
-  const shiftG = Math.round((targetG - donorG) / n);
-  const shiftB = Math.round((targetB - donorB) / n);
   // The donor bbox is fully in bounds and mask-free, so every shifted fill
   // pixel lands on a clean source pixel.
+  //
+  // Seamless mode replaces the flat shift with a harmonic lighting field:
+  // L solves Laplace(L) = 0 inside the hole with L = source - donor on the
+  // boundary, so the transplant tracks lighting gradients instead of one
+  // average level. Built over the crop grid this function already runs on.
+  let fieldR: Float32Array | null = null;
+  let fieldG: Float32Array | null = null;
+  let fieldB: Float32Array | null = null;
+  if (seamlessLight) {
+    // Built over the crop grid this function already runs on. The hole is
+    // this component's pixels exactly; any other masked pixels in the crop
+    // belong to neighbouring components and stay out of both the hole and
+    // the boundary (their blemish values must never seed the field).
+    const gridW = image.width;
+    const gridH = image.height;
+    const boundR = new Float32Array(gridW * gridH);
+    const boundG = new Float32Array(gridW * gridH);
+    const boundB = new Float32Array(gridW * gridH);
+    const hole = new Uint8Array(gridW * gridH);
+    for (const p of component.pixels) hole[p] = 1;
+    for (let ly = 0; ly < gridH; ly += 1) {
+      for (let lx = 0; lx < gridW; lx += 1) {
+        const idx = ly * gridW + lx;
+        if (hole[idx] === 1) continue;
+        if ((mask.data[idx] ?? 0) !== 0) continue;
+        const dx = lx + donor.ox;
+        const dy = ly + donor.oy;
+        if (dx < 0 || dy < 0 || dx >= gridW || dy >= gridH) continue;
+        if ((mask.data[dy * gridW + dx] ?? 0) !== 0) continue;
+        const si = idx * 4;
+        const di = (dy * gridW + dx) * 4;
+        boundR[idx] = (image.data[si] ?? 0) - (image.data[di] ?? 0);
+        boundG[idx] = (image.data[si + 1] ?? 0) - (image.data[di + 1] ?? 0);
+        boundB[idx] = (image.data[si + 2] ?? 0) - (image.data[di + 2] ?? 0);
+      }
+    }
+    const solved = solveHarmonicLightingField(hole, boundR, boundG, boundB, gridW, gridH);
+    fieldR = solved.fieldR;
+    fieldG = solved.fieldG;
+    fieldB = solved.fieldB;
+  }
   for (const p of component.pixels) {
     const x = p % image.width;
     const y = (p - x) / image.width;
     const qi = ((y + donor.oy) * image.width + (x + donor.ox)) * 4;
     const oi = p * 4;
-    out[oi] = (image.data[qi] ?? 0) + shiftR;
-    out[oi + 1] = (image.data[qi + 1] ?? 0) + shiftG;
-    out[oi + 2] = (image.data[qi + 2] ?? 0) + shiftB;
+    if (fieldR && fieldG && fieldB) {
+      out[oi] = (image.data[qi] ?? 0) + (fieldR[y * image.width + x] ?? 0);
+      out[oi + 1] = (image.data[qi + 1] ?? 0) + (fieldG[y * image.width + x] ?? 0);
+      out[oi + 2] = (image.data[qi + 2] ?? 0) + (fieldB[y * image.width + x] ?? 0);
+    } else {
+      out[oi] = (image.data[qi] ?? 0) + shiftR;
+      out[oi + 1] = (image.data[qi + 1] ?? 0) + shiftG;
+      out[oi + 2] = (image.data[qi + 2] ?? 0) + shiftB;
+    }
   }
 }
 
@@ -1323,6 +1385,8 @@ function cropComponent(image: PixelImage, mask: RepairMask, component: HealCompo
  * nondecreasing fractions in [0, 1] with stage labels, ending in exactly
  * (1, "Done"). No progress calls are made when the mask is empty. Unknown
  * quality values throw RangeError, like every other contract violation here.
+ * `seamlessLight` defaults to false, which reproduces the original output
+ * exactly; enabling it only changes single-offset components.
  */
 export function healRepair(image: PixelImage, mask: RepairMask, options: HealOptions = {}): PixelImage {
   assertValidImage(image);
@@ -1339,6 +1403,7 @@ export function healRepair(image: PixelImage, mask: RepairMask, options: HealOpt
     throw new RangeError(`Unknown heal quality: ${String(quality)}. Expected "fast", "balanced", or "best".`);
   }
   const onProgress = options.onProgress;
+  const seamlessLight = options.seamlessLight ?? false;
   const out = new Uint8ClampedArray(image.data);
   const components = findComponents(mask);
   if (components.length === 0) return { width: image.width, height: image.height, data: out };
@@ -1355,7 +1420,7 @@ export function healRepair(image: PixelImage, mask: RepairMask, options: HealOpt
         singleOffsetRadius(maxDim, tuning) + HEAL_RING_GAP + HEAL_RING_WIDTH_MAX;
       const crop = cropComponent(image, mask, component, expansion);
       const cropOut = new Uint8ClampedArray(crop.image.data);
-      healSingleOffset(crop.image, crop.mask, crop.sat, crop.component, cropOut, tuning);
+      healSingleOffset(crop.image, crop.mask, crop.sat, crop.component, cropOut, tuning, seamlessLight);
       scatterCrop(crop, component, image.width, cropOut, out);
     } else {
       // Donor patches reach the search radius plus one patch half-size from

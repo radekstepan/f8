@@ -3,7 +3,7 @@ import { CROP_RATIOS } from './data.js';
 import type { EditState, RetouchPoint } from './types.js';
 import type { PixelImage } from './vision/analyze.js';
 import type { HealProgress, HealQuality } from './vision/heal.js';
-import { BLEND_FEATHER_PX, INPAINT_DEFAULT_METHOD, INPAINT_DILATE_PX, blendInpainted, dilateRepairMask, featherRepairMask, hasRepairStrokes, inpaintRadiusForStrokes, rasterizeRepairMask } from './vision/inpaint.js';
+import { INPAINT_DEFAULT_METHOD, INPAINT_DILATE_PX, blendInpainted, dilateRepairMask, featherRepairMask, hasRepairStrokes, inpaintRadiusForStrokes, rasterizeRepairMask, resolveFeatherPx } from './vision/inpaint.js';
 import type { InpaintMethod, RepairMask } from './vision/inpaint.js';
 import type { VisionWorkerStatus } from './vision/worker-client.js';
 
@@ -172,6 +172,9 @@ export function drawEffects(ctx: CanvasRenderingContext2D, width: number, height
 /** Per-call options for repair inpainting; quality only affects heal. */
 export interface RunInpaintOptions {
   quality?: HealQuality;
+  seamlessLight?: boolean;
+  /** Blend feather in px; omitted means the BLEND_FEATHER_PX default. */
+  featherPx?: number;
   onProgress?: HealProgress;
 }
 
@@ -191,6 +194,8 @@ export type RunInpaint = (
 export interface RepairInpaintBinding {
   method: InpaintMethod;
   quality: HealQuality;
+  seamlessLight: boolean;
+  featherPx: number;
   status: VisionWorkerStatus;
   run: RunInpaint;
 }
@@ -224,9 +229,10 @@ export async function applyInpaintRepair(
   const pixels = ctx.getImageData(0, 0, width, height);
   const source: PixelImage = { width, height, data: pixels.data };
   const filled = await runInpaint(source, mask, inpaintRadiusForStrokes(points, width), method, options);
+  const featherPx = resolveFeatherPx(options?.featherPx);
   const blendMask = method === 'heal'
-    ? featherRepairMask(mask, BLEND_FEATHER_PX)
-    : featherRepairMask(dilateRepairMask(mask, INPAINT_DILATE_PX), BLEND_FEATHER_PX);
+    ? featherRepairMask(mask, featherPx)
+    : featherRepairMask(dilateRepairMask(mask, INPAINT_DILATE_PX), featherPx);
   const blended = blendInpainted(source, filled, blendMask);
   ctx.putImageData(new ImageData(new Uint8ClampedArray(blended.data), width, height), 0, 0);
   return true;
@@ -239,6 +245,10 @@ export interface ExportRepairOptions {
   runInpaint?: RunInpaint;
   /** Heal effort preset; omitted means "balanced". Diffusion ignores it. */
   quality?: HealQuality;
+  /** Harmonic light adaptation for single-offset heal; omitted means false. */
+  seamlessLight?: boolean;
+  /** Blend feather in px; omitted means the BLEND_FEATHER_PX default. */
+  featherPx?: number;
 }
 
 // Resolve the geometry canvas, preferring worker inpainting for repair
@@ -258,7 +268,7 @@ async function geometryForExport(
     maxSize,
   );
   try {
-    const applied = await applyInpaintRepair(clean, repairs, repair.method ?? INPAINT_DEFAULT_METHOD, repair.runInpaint, { quality: repair.quality });
+    const applied = await applyInpaintRepair(clean, repairs, repair.method ?? INPAINT_DEFAULT_METHOD, repair.runInpaint, { quality: repair.quality, seamlessLight: repair.seamlessLight, featherPx: repair.featherPx });
     return applied ? clean : geometryCanvas(image, edit, maxSize);
   } catch {
     return geometryCanvas(image, edit, maxSize);

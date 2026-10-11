@@ -51,6 +51,11 @@ export interface InpaintRequest {
    * it); absent means "balanced".
    */
   quality?: HealQuality;
+  /**
+   * Harmonic light adaptation for single-offset heal components; absent
+   * means false. Diffusion ignores it.
+   */
+  seamlessLight?: boolean;
 }
 
 export type VisionWorkerRequest = PingRequest | GrayscaleRequest | StraightenRequest | InpaintRequest;
@@ -137,6 +142,7 @@ export function createInpaintRequest(
   radius: number,
   method: InpaintMethod,
   quality?: HealQuality,
+  seamlessLight?: boolean,
 ): InpaintRequest {
   assertValidImage(image);
   assertValidMask(mask);
@@ -154,6 +160,9 @@ export function createInpaintRequest(
   if (quality !== undefined && quality !== "fast" && quality !== "balanced" && quality !== "best") {
     throw new RangeError(`Unknown heal quality: ${String(quality)}.`);
   }
+  if (seamlessLight !== undefined && typeof seamlessLight !== "boolean") {
+    throw new RangeError(`Expected a boolean seamlessLight flag, got ${String(seamlessLight)}.`);
+  }
   return {
     id,
     kind: "inpaint",
@@ -164,6 +173,7 @@ export function createInpaintRequest(
     radius,
     method,
     ...(quality === undefined ? {} : { quality }),
+    ...(seamlessLight === undefined ? {} : { seamlessLight }),
   };
 }
 
@@ -208,7 +218,8 @@ export function isVisionWorkerRequest(value: unknown): value is VisionWorkerRequ
       (value.quality === undefined ||
         value.quality === "fast" ||
         value.quality === "balanced" ||
-        value.quality === "best")
+        value.quality === "best") &&
+      (value.seamlessLight === undefined || typeof value.seamlessLight === "boolean")
     );
   }
   return false;

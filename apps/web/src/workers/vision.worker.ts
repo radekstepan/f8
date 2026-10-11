@@ -220,6 +220,7 @@ function inpaint(
       { width: request.width, height: request.height, data: request.mask },
       {
         quality: request.quality ?? "balanced",
+        seamlessLight: request.seamlessLight ?? false,
         onProgress: (fraction, stage) => {
           const now = performance.now();
           if (now - lastPost > 50 || fraction >= 1) {

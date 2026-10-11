@@ -77,9 +77,13 @@ function StraightenControl({ value, assist, onChange }: { value: number; assist:
 export interface RepairAssist {
   method: InpaintMethod;
   quality: HealQuality;
+  seamlessLight: boolean;
+  featherPx: number;
   status: VisionWorkerStatus;
   onMethodChange: (method: InpaintMethod) => void;
   onQualityChange: (quality: HealQuality) => void;
+  onSeamlessLightChange: (value: boolean) => void;
+  onFeatherChange: (value: number) => void;
 }
 
 function RepairMethodControl({ assist }: { assist: RepairAssist }) {
@@ -103,7 +107,11 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
         <button className={assist.quality === 'balanced' ? 'is-active' : ''} title="Balanced: the default search reach and effort" onClick={() => assist.onQualityChange('balanced')}>Balanced</button>
         <button className={assist.quality === 'best' ? 'is-active' : ''} title="Best: widest search, slowest — for tricky removals" onClick={() => assist.onQualityChange('best')}>Best</button>
       </div>
+      <div className="repair-toggle-row"><span>Seamless light</span><Toggle checked={assist.seamlessLight} onChange={() => assist.onSeamlessLightChange(!assist.seamlessLight)} label="Seamless light adaptation" /></div>
+      <p className="inspector-note">Seamless light adapts small repairs to lighting gradients instead of one flat level — slower, best for shaded skin and skies.</p>
     </>}
+    <RangeControl label="Blend Feather" value={assist.featherPx} min={0} max={8} step={1} defaultValue={2} suffix="px" onChange={assist.onFeatherChange} />
+    <p className="inspector-note">Blend feather softens the repair edge so it melts into the photo with no seam.</p>
     {assist.status === 'loading' && <p className="inspector-note" role="status">Loading enhanced repair…</p>}
     {assist.status === 'failed' && <p className="inspector-note" role="alert">Enhanced repair is unavailable — using soft retouch instead.</p>}
   </>;
