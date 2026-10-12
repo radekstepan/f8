@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeWhiteBalanceAuto, decodeDownsampled, isDefaultEdit, presetForPatch } from '@photomator/core';
+import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeWhiteBalanceAuto, decodeDownsampled, isDefaultEdit, isOriginalLook, presetForPatch } from '@photomator/core';
 import type { EditState, HistoryState, Preset } from '@photomator/core';
 
 const initialHistory = (_id?: string): HistoryState => ({
@@ -92,7 +92,12 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     lastChange.current = { key: mergeKey, photoId, time: now };
     setHistories((all) => {
       const current = all[photoId] || initialHistory(photoId);
-      const present = { ...current.present, ...patch, preset: presetForPatch(current.present.preset, patch) };
+      const next = { ...current.present, ...patch };
+      let preset = presetForPatch(current.present.preset, patch);
+      // Sliders dragged back to their defaults restore the Original label
+      // instead of stranding the photo on Custom.
+      if (patch.preset === undefined && preset === 'Custom' && isOriginalLook(next)) preset = 'Original';
+      const present = { ...next, preset };
       schedulePersist(photoId, present);
       return {
         ...all,

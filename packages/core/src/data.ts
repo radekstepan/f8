@@ -42,6 +42,20 @@ export function presetForPatch(current: string, patch: Partial<EditState>): stri
   return touchesColor ? 'Custom' : current;
 }
 
+/** Edit keys compared when deciding whether a recipe still shows Original. */
+const ORIGINAL_LOOK_KEYS = (Object.keys(DEFAULT_EDIT) as (keyof EditState)[]).filter(
+  (key) => key !== 'preset' && !PRESET_PRESERVING_KEYS.has(key),
+);
+
+/**
+ * True when the color look matches the Original preset exactly. Geometry and
+ * retouches are ignored — presets never touch them, so a cropped or healed
+ * photo with default sliders still shows Original, not Custom.
+ */
+export function isOriginalLook(edit: EditState): boolean {
+  return ORIGINAL_LOOK_KEYS.every((key) => edit[key] === DEFAULT_EDIT[key]);
+}
+
 const imageUrl = (id: number, thumbnail = false) =>
   `https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&${thumbnail ? 'dpr=1&fit=crop&h=200&w=280' : 'fit=crop&h=627&w=1200'}`;
 

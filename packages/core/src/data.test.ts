@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_EDIT, PRESETS, isDefaultEdit, presetForPatch } from "./data.js";
+import { DEFAULT_EDIT, INITIAL_EDIT, PRESETS, isDefaultEdit, isOriginalLook, presetForPatch } from "./data.js";
 import type { EditState } from "./types.js";
 
 const stroke = { x: 0.5, y: 0.5, size: 0.05, strength: 100, kind: "repair" } as const;
@@ -33,6 +33,32 @@ describe("presetForPatch", () => {
 
   it("marks mixed color + geometry patches as Custom", () => {
     expect(presetForPatch("Original", { exposure: 1, rotation: 90 })).toBe("Custom");
+  });
+});
+
+describe("isOriginalLook", () => {
+  it("matches the default recipe regardless of the preset label", () => {
+    expect(isOriginalLook({ ...DEFAULT_EDIT })).toBe(true);
+    expect(isOriginalLook({ ...DEFAULT_EDIT, preset: "Custom" })).toBe(true);
+  });
+
+  it("ignores geometry and retouches, which presets never touch", () => {
+    expect(isOriginalLook({ ...DEFAULT_EDIT, rotation: 90, cropRatio: "1:1", straighten: 1.5 })).toBe(true);
+    expect(isOriginalLook({ ...DEFAULT_EDIT, retouches: [{ ...stroke }] })).toBe(true);
+  });
+
+  it("rejects any color, flag, or enhance change", () => {
+    expect(isOriginalLook({ ...INITIAL_EDIT })).toBe(false);
+    const changed: Partial<EditState>[] = [
+      { exposure: 0.1 },
+      { temperature: 5800 },
+      { blackAndWhite: true },
+      { whiteBalanceEnabled: false },
+      { autoEnhanced: true },
+    ];
+    for (const patch of changed) {
+      expect(isOriginalLook({ ...DEFAULT_EDIT, ...patch })).toBe(false);
+    }
   });
 });
 

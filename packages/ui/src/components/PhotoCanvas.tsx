@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@photomator/core';
 import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@photomator/core';
@@ -7,6 +7,12 @@ import { IconButton } from './EditorUI.js';
 
 /** Same-origin library client for persisted heal overlays (fire-and-forget cache I/O). */
 const overlayClient = createLibraryClient();
+
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3;
+const ZOOM_STEPS = Array.from({ length: 11 }, (_, index) => 0.5 + index * 0.25);
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
 interface LatestHealState {
   edit: EditState;
@@ -889,6 +895,128 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     return () => window.clearTimeout(timer);
   }, [photo.id, photo.src, edit, loading, activeStroke, pendingRepairIds, paintCount]);
 
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const onZoomRef = useRef(onZoom);
+  onZoomRef.current = onZoom;
+  /** Cursor anchor for wheel zoom: the image point + viewport offset kept stable across the zoom. */
+  const zoomAnchor = useRef<{ fx: number; fy: number; cx: number; cy: number } | null>(null);
+  const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
+  const minimapBoxRef = useRef<HTMLDivElement>(null);
+  /** Visible viewport as frame fractions; null while the frame fits the stage. */
+  const [viewport, setViewport] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+
+  // Scroll-wheel zoom: the wheel never scrolls the stage — it zooms toward
+  // the hovered image point instead. Attached natively (non-passive) so the
+  // scroll can be suppressed; panning stays available via the scrollbars and
+  // the minimap below.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const frame = frameRef.current;
+      if (!frame) return;
+      const stageRect = stage.getBoundingClientRect();
+      const frameRect = frame.getBoundingClientRect();
+      if (!frameRect.width || !frameRect.height) return;
+      const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+      if (!delta) return;
+      const current = zoomRef.current;
+      const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(current * Math.exp(-delta * 0.0015) * 1000) / 1000));
+      if (next === current) return;
+      zoomAnchor.current = {
+        fx: clamp01((event.clientX - frameRect.left) / frameRect.width),
+        fy: clamp01((event.clientY - frameRect.top) / frameRect.height),
+        cx: event.clientX - stageRect.left,
+        cy: event.clientY - stageRect.top,
+      };
+      onZoomRef.current(next);
+    };
+    stage.addEventListener('wheel', onWheel, { passive: false });
+    return () => stage.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // After a wheel zoom re-renders the frame at its new size, shift the stage
+  // scroll so the anchored image point stays under the cursor. Button, menu,
+  // and keyboard zooms set no anchor and keep the default scroll behavior.
+  useLayoutEffect(() => {
+    const anchor = zoomAnchor.current;
+    const stage = stageRef.current;
+    const frame = frameRef.current;
+    if (!anchor || !stage || !frame) return;
+    zoomAnchor.current = null;
+    const stageRect = stage.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    const originX = frameRect.left - stageRect.left + stage.scrollLeft;
+    const originY = frameRect.top - stageRect.top + stage.scrollTop;
+    stage.scrollLeft = Math.max(0, originX + anchor.fx * frameRect.width - anchor.cx);
+    stage.scrollTop = Math.max(0, originY + anchor.fy * frameRect.height - anchor.cy);
+  }, [zoom]);
+
+  const updateViewport = useCallback(() => {
+    const stage = stageRef.current;
+    const frame = frameRef.current;
+    if (!stage || !frame || loading) { setViewport(null); return; }
+    const stageRect = stage.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    if (frameRect.width <= stageRect.width + 1 && frameRect.height <= stageRect.height + 1) { setViewport(null); return; }
+    const round3 = (value: number) => Math.round(value * 1000) / 1000;
+    const left = clamp01((stageRect.left - frameRect.left) / frameRect.width);
+    const top = clamp01((stageRect.top - frameRect.top) / frameRect.height);
+    const right = clamp01((stageRect.right - frameRect.left) / frameRect.width);
+    const bottom = clamp01((stageRect.bottom - frameRect.top) / frameRect.height);
+    const next = { left: round3(left), top: round3(top), width: round3(Math.max(0, right - left)), height: round3(Math.max(0, bottom - top)) };
+    setViewport((prev) => (prev && prev.left === next.left && prev.top === next.top && prev.width === next.width && prev.height === next.height ? prev : next));
+  }, [loading]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    let raf = 0;
+    const onScroll = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(updateViewport); };
+    stage.addEventListener('scroll', onScroll, { passive: true });
+    return () => { stage.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf); };
+  }, [updateViewport]);
+
+  useEffect(() => { updateViewport(); }, [updateViewport, zoom, stageSize, aspect, paintCount, photo.id]);
+
+  const viewportVisible = viewport !== null;
+
+  // The minimap mirrors the edited canvas (not the thumbnail), so crop,
+  // rotation, and straighten match the frame the viewport rect maps onto.
+  useEffect(() => {
+    if (!viewportVisible) return;
+    const mini = minimapCanvasRef.current;
+    const source = canvasRef.current;
+    if (!mini || !source || !source.width || !source.height) return;
+    const ctx = mini.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, mini.width, mini.height);
+    ctx.drawImage(source, 0, 0, mini.width, mini.height);
+  });
+
+  /** Center the stage on a frame-fraction point (minimap click/drag/keys). */
+  const jumpToFraction = useCallback((fx: number, fy: number) => {
+    const stage = stageRef.current;
+    const frame = frameRef.current;
+    if (!stage || !frame) return;
+    const stageRect = stage.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    const originX = frameRect.left - stageRect.left + stage.scrollLeft;
+    const originY = frameRect.top - stageRect.top + stage.scrollTop;
+    stage.scrollLeft = originX + clamp01(fx) * frameRect.width - stageRect.width / 2;
+    stage.scrollTop = originY + clamp01(fy) * frameRect.height - stageRect.height / 2;
+  }, []);
+
+  const jumpMinimap = useCallback((clientX: number, clientY: number) => {
+    const box = minimapBoxRef.current;
+    if (!box) return;
+    const boxRect = box.getBoundingClientRect();
+    if (!boxRect.width || !boxRect.height) return;
+    jumpToFraction((clientX - boxRect.left) / boxRect.width, (clientY - boxRect.top) / boxRect.height);
+  }, [jumpToFraction]);
+
   const fitWidth = Math.max(100, Math.min(stageSize.width - 64, (stageSize.height - 48) * aspect));
   const frameWidth = fitWidth * zoom;
 
@@ -1010,8 +1138,15 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const maskCircle = (point: RetouchPoint, key: string) => (
     <circle key={key} cx={point.x * frameWidth} cy={point.y * frameHeight} r={Math.max(1, (point.size * frameWidth) / 2)} />
   );
+  // Wheel zoom lands between the quarter stops, so the current value joins
+  // the menu instead of leaving the select blank.
+  const zoomOptions = ZOOM_STEPS.includes(zoom) ? ZOOM_STEPS : [...ZOOM_STEPS, zoom].sort((a, b) => a - b);
+  const zoomLabel = (value: number) => (value === 1 ? 'Fit' : `${Math.round(value * 100)}%`);
+  // Minimap footprint at the frame's aspect, capped for portrait frames.
+  const miniWidth = Math.round(Math.min(148, 104 * aspect));
+  const miniHeight = Math.round(Math.min(104, 148 / aspect));
 
-  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{!isDefaultEdit(edit) && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton></div></div><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} data-testid="photo-frame" style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onPointerMove={(event) => { if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
+  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{!isDefaultEdit(edit) && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton></div></div><div className="canvas-stage-wrap"><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} data-testid="photo-frame" style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onPointerMove={(event) => { if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
       <canvas className="edited-canvas" ref={canvasRef} data-testid="edited-canvas" role="img" aria-label={`${photo.title}, with current adjustments`} />
       {previewUrl && <img className="cached-preview" src={previewUrl} alt="" aria-hidden="true" draggable={false} />}
       <div className="original-layer" style={{ clipPath: `inset(0 ${showOriginal ? 0 : compare ? 100 - split : 100}% 0 0)` }}><canvas ref={originalRef} role="img" aria-label="Original photo" />{compare && !showOriginal && !loading && <span className="comparison-label original-label">Original</span>}</div>
@@ -1028,6 +1163,32 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     </div></div>
       {isBrush && <div className="tool-hint">{compare ? 'Comparing — turn off Compare to keep repairing.' : mlRepairWarming ? 'Loading the ML engine… painting unlocks when ready.' : mlRepairBlocked ? 'This ML engine is unavailable — pick Balanced in the inspector.' : 'Click and drag to repair — hover a repair in the list to locate it.'}</div>}
     </div>
+      {viewport && <div
+        className="minimap"
+        ref={minimapBoxRef}
+        data-testid="minimap"
+        role="group"
+        tabIndex={0}
+        aria-label="Minimap navigator: click or drag to move the visible area, arrow keys nudge it"
+        style={{ width: miniWidth, height: miniHeight }}
+        onPointerDown={(event) => { if (event.button !== 0) return; event.currentTarget.setPointerCapture(event.pointerId); jumpMinimap(event.clientX, event.clientY); }}
+        onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) jumpMinimap(event.clientX, event.clientY); }}
+        onKeyDown={(event) => {
+          const step = event.shiftKey ? 0.25 : 0.1;
+          const cx = viewport.left + viewport.width / 2;
+          const cy = viewport.top + viewport.height / 2;
+          // stopPropagation keeps the global photo-switching arrows (App.tsx)
+          // from firing while the minimap has focus.
+          if (event.key === 'ArrowLeft') { event.preventDefault(); event.stopPropagation(); jumpToFraction(cx - step, cy); }
+          else if (event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); jumpToFraction(cx + step, cy); }
+          else if (event.key === 'ArrowUp') { event.preventDefault(); event.stopPropagation(); jumpToFraction(cx, cy - step); }
+          else if (event.key === 'ArrowDown') { event.preventDefault(); event.stopPropagation(); jumpToFraction(cx, cy + step); }
+        }}
+      >
+        <canvas ref={minimapCanvasRef} width={miniWidth * 2} height={miniHeight * 2} aria-hidden="true" />
+        <span className="minimap-viewport" style={{ left: `${viewport.left * 100}%`, top: `${viewport.top * 100}%`, width: `${viewport.width * 100}%`, height: `${viewport.height * 100}%` }} aria-hidden="true" />
+      </div>}
+    </div>
     <div className="canvas-status">
       <button className="canvas-dimensions" onClick={onInfo} title="Photo information">
         <Info size={12} />
@@ -1038,11 +1199,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         <Columns2 size={14} /><span>Compare</span><kbd>B</kbd>
       </button>
       <div className="zoom-controls">
-        <IconButton label="Zoom out (-)" disabled={zoom <= 0.5} onClick={() => onZoom(Math.max(0.5, zoom - 0.25))}><Minus size={13} /></IconButton>
+        <IconButton label="Zoom out (-)" disabled={zoom <= ZOOM_MIN} onClick={() => onZoom(Math.max(ZOOM_MIN, Math.round((zoom - 0.25) * 1000) / 1000))}><Minus size={13} /></IconButton>
         <select aria-label="Zoom level" value={zoom} onChange={(event) => onZoom(Number(event.target.value))}>
-          {Array.from({ length: 11 }, (_, index) => 0.5 + index * 0.25).map((value) => <option key={value} value={value}>{value === 1 ? 'Fit' : `${value * 100}%`}</option>)}
+          {zoomOptions.map((value) => <option key={value} value={value}>{zoomLabel(value)}</option>)}
         </select>
-        <IconButton label="Zoom in (+)" disabled={zoom >= 3} onClick={() => onZoom(Math.min(3, zoom + 0.25))}><Plus size={13} /></IconButton>
+        <IconButton label="Zoom in (+)" disabled={zoom >= ZOOM_MAX} onClick={() => onZoom(Math.min(ZOOM_MAX, Math.round((zoom + 0.25) * 1000) / 1000))}><Plus size={13} /></IconButton>
         <IconButton label="Zoom to fit (0)" onClick={() => onZoom(1)}><Maximize size={13} /></IconButton>
       </div>
     </div>

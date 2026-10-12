@@ -115,11 +115,6 @@ export function Toolbar({ collectionName, count, tool, enhanced, compare, canUnd
   return (
     <header className="toolbar">
       <div className="window-toolbar">
-        <div className="traffic-lights">
-          <button className="traffic-close" aria-label="Return to photo browser" title="Return to photo browser" disabled={libraryView} onClick={() => onAction('grid')}><span /></button>
-          <button className="traffic-minimize" aria-label="Toggle library sidebar" title="Toggle library sidebar" onClick={() => onAction('sidebar')}><span /></button>
-          <button className="traffic-maximize" aria-label="Toggle focus mode" title="Toggle focus mode" onClick={() => onAction('fullscreen')}><span /></button>
-        </div>
         <IconButton label="Toggle library sidebar" onClick={() => onAction('sidebar')}><PanelLeft size={18} strokeWidth={1.6} /></IconButton>
       </div>
       <div className="main-toolbar">

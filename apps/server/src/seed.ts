@@ -1,9 +1,10 @@
-import { DEFAULT_EDIT, INITIAL_EDIT, SAMPLE_ALBUMS, SAMPLE_PHOTOS } from "@photomator/core";
+import { DEFAULT_EDIT, SAMPLE_ALBUMS, SAMPLE_PHOTOS } from "@photomator/core";
 import type { Store } from "./store.ts";
 
 // First-run seed: the sample library the browser demo ships with, stored as
 // URL-kind photos (no local bytes, never missing) so the app is useful before
-// the first import. photo-1 keeps its Natural starting look.
+// the first import. Every photo starts on the Original preset; looks like
+// Natural are one click away in the preset strip.
 export function seedIfNeeded(store: Store): boolean {
   if (store.getMeta("seeded") === "1") return false;
   const now = new Date().toISOString();
@@ -40,8 +41,7 @@ export function seedIfNeeded(store: Store): boolean {
       created_at: now,
       updated_at: now,
     });
-    // Mirror the demo's first-run state: photo-1 starts with Natural applied.
-    store.saveEdit(photo.id, photo.id === "photo-1" ? { ...INITIAL_EDIT } : { ...DEFAULT_EDIT });
+    store.saveEdit(photo.id, { ...DEFAULT_EDIT });
   }
   store.setMeta("seeded", "1");
   return true;

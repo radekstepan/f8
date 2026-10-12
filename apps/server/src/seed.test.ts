@@ -14,7 +14,7 @@ describe("seedIfNeeded", () => {
     ctx.close();
   });
 
-  it("seeds the sample library once, with photo-1 already developed", () => {
+  it("seeds the sample library once, every photo on Original", () => {
     expect(seedIfNeeded(ctx.store)).toBe(true);
 
     const photos = ctx.store.listPhotos();
@@ -22,14 +22,12 @@ describe("seedIfNeeded", () => {
     expect(photos.every((photo) => photo.kind === "url")).toBe(true);
     expect(ctx.store.listAlbums()).toHaveLength(3);
 
-    const first = ctx.store.getEdit("photo-1");
-    expect(first.edited).toBe(true);
-    expect(first.present.preset).toBe("Natural");
-    expect(first.present.exposure).toBe(0.15);
-
-    const second = ctx.store.getEdit("photo-2");
-    expect(second.edited).toBe(false);
-    expect(second.present.preset).toBe("Original");
+    for (const photo of photos) {
+      const edit = ctx.store.getEdit(photo.id);
+      expect(edit.edited).toBe(false);
+      expect(edit.present.preset).toBe("Original");
+    }
+    expect(ctx.store.getEdit("photo-1").present.exposure).toBe(0);
 
     expect(seedIfNeeded(ctx.store)).toBe(false);
     expect(ctx.store.listPhotos()).toHaveLength(12);

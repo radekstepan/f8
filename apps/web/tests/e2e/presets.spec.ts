@@ -78,3 +78,24 @@ test("repair keeps Original selected through paint, delete, and undo", async ({ 
   await expect(selected).toContainText("Original");
   await expect(page.locator(".edited-indicator")).toBeHidden();
 });
+
+test("sliders dragged back to defaults restore the Original label", async ({ page }) => {
+  await stubLibraryImages(page);
+  await page.goto("/");
+  await resetPhoto(page, PHOTO_ID);
+  await gotoEditor(page);
+
+  const selected = page.locator(".preset-item.is-selected");
+  await expect(selected).toContainText("Original");
+
+  // A color tweak leaves Original: no preset matches the Custom recipe.
+  const exposure = page.getByLabel("Exposure", { exact: true });
+  await exposure.fill("1");
+  await expect(selected).toHaveCount(0);
+  await expect(page.locator(".edited-indicator")).toBeVisible();
+
+  // Returning the slider to its default restores Original, not Custom.
+  await exposure.fill("0");
+  await expect(selected).toContainText("Original");
+  await expect(page.locator(".edited-indicator")).toBeHidden();
+});
