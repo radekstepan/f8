@@ -12,12 +12,10 @@ import {
 describe("branding", () => {
   it("uses the adopted product name", () => {
     expect(APP_NAME).toBe("f/8");
-    expect(APP_NAME).not.toContain("Photomator");
   });
 
-  it("keeps the retired product name out of all user-visible copy", () => {
+  it("keeps retired names out of all user-visible copy", () => {
     const copy = [APP_NAME, APP_EDITION, APP_EDITION_SHORT, APP_TAGLINE, APP_DESCRIPTION, ABOUT_DISCLAIMER].join("\n");
-    expect(copy).not.toMatch(/photomator/i);
     expect(copy).not.toMatch(/safelight/i);
   });
 
@@ -28,11 +26,10 @@ describe("branding", () => {
     expect(copy).not.toMatch(/interface study/i);
   });
 
-  it("disclaims affiliation without naming the retired product", () => {
+  it("disclaims affiliation", () => {
     expect(ABOUT_DISCLAIMER).toMatch(/not affiliated/i);
     expect(ABOUT_DISCLAIMER).toContain("Apple");
     expect(ABOUT_DISCLAIMER).toContain("Pixelmator");
-    expect(ABOUT_DISCLAIMER).not.toMatch(/photomator/i);
   });
 
   it("describes local-first processing accurately", () => {

@@ -1,5 +1,14 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { defaultMoebiusSteps, getMlHealHealth, resetHealProgress, runRemoteHeal, validateRemoteBody } from "./ml-heal.ts";
+import {
+  ML_HEAL_MODEL_DIR_SUFFIX,
+  defaultMoebiusSteps,
+  getMlHealHealth,
+  mlHealDir,
+  resetHealProgress,
+  runRemoteHeal,
+  validateRemoteBody,
+} from "./ml-heal.ts";
 import { createTestContext } from "./fixtures.ts";
 
 function b64(bytes: Uint8Array): string {
@@ -66,9 +75,17 @@ describe("defaultMoebiusSteps", () => {
     expect(defaultMoebiusSteps({ F8_ML_HEAL_STEPS: "fast" })).toBe(10);
   });
 
-  it("keeps the pre-rename PHOTOMATOR_ML_HEAL_STEPS as an alias", () => {
-    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "7" })).toBe(7);
-    expect(defaultMoebiusSteps({ F8_ML_HEAL_STEPS: "6", PHOTOMATOR_ML_HEAL_STEPS: "7" })).toBe(6);
+  it("trims whitespace around the value", () => {
+    expect(defaultMoebiusSteps({ F8_ML_HEAL_STEPS: "  12 " })).toBe(12);
+  });
+});
+
+describe("mlHealDir", () => {
+  it("defaults under the data dir and honors F8_ML_HEAL_DIR", () => {
+    expect(mlHealDir("/tmp/f8-data", {})).toBe(path.join("/tmp/f8-data", ML_HEAL_MODEL_DIR_SUFFIX));
+    expect(mlHealDir("/tmp/f8-data", { F8_ML_HEAL_DIR: "/tmp/custom-heal" })).toBe(
+      path.resolve("/tmp/custom-heal"),
+    );
   });
 });
 

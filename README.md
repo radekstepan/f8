@@ -72,7 +72,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 | `packages/core/src/image.ts` | Shared image loading, geometry, filter mapping, retouching, effects, and export. |
 | `packages/core/src/library.ts` | Library API contract and framework-free HTTP client. |
 | `packages/ui/src/hooks/useEditor.ts` | Non-destructive per-photo edits, grouped history, server persistence, and preset application. |
-| `packages/ui/src/hooks/useLibrary.ts` | Server library state: loading, uploads, folder import, metadata, and legacy migration. |
+| `packages/ui/src/hooks/useLibrary.ts` | Server library state: loading, uploads, folder import, and metadata. |
 | `packages/ui/src/components/EditorUI.tsx` | Reusable buttons, sliders, switches, selects, menus, and accessible dialogs. |
 | `packages/ui/src/components/Topbar.tsx` | Application menus, editing toolbar, and status bar. |
 | `packages/ui/src/components/Sidebar.tsx` | Library, album navigation, search, and import entry point. |
@@ -147,8 +147,6 @@ Configuration is all environment variables:
 | `F8_SUPERRES_OFFLINE` | unset | `1` disables the Real-ESRGAN download; 2x exports serve the classical Lanczos fallback instead. |
 | `F8_SUPERRES_DIR` | `<data>/models/superres` | Where the Real-ESRGAN weights are cached. |
 
-The pre-rename `PHOTOMATOR_*` names remain accepted as fallback aliases, and an existing pre-rename catalog (`photomator.db`) or upload folder (`~/Pictures/Photomator`) keeps being used when the new one is absent, so upgrades never orphan a library. Details live in [docs/tasks/01-rename-f8.md](docs/tasks/01-rename-f8.md).
-
 Best runs full diffusion on the server CPU (~45s per repair area on M1 Pro: ~4s VAE encode, ~3.7s per denoise step × 9, ~8s VAE decode). While it runs, the terminal shows per-stage timing (`[ml-heal] moebius step 3/9 …`) plus one line per API call, and the repair bar polls live step progress instead of sitting still.
 
 The API contract lives in `packages/core/src/library.ts` (`LibraryPhoto`, `LibrarySnapshot`, `createLibraryClient`), so scripts and alternative clients can share it.
@@ -159,7 +157,7 @@ The primary tokens are at the top of `apps/web/src/index.css`: `--accent`, `--ac
 
 ## Persistence and Privacy
 
-Photos, edits, favorites, ratings, albums, and custom presets live in the server's SQLite database; undo/redo history is session-only. The browser keeps no photo state — everything survives reloads, and edits reapply to the referenced originals every time. On the first run against a fresh database, any pre-server, pre-rename `photomator-demo-*-v1` localStorage state (sample edits, favorites, custom albums and presets) migrates into the library once, then clears.
+Photos, edits, favorites, ratings, albums, and custom presets live in the server's SQLite database; undo/redo history is session-only. The browser keeps no photo state — everything survives reloads, and edits reapply to the referenced originals every time.
 
 Everything stays on your machine: the server binds to localhost, originals stay in your folders, and nothing is uploaded anywhere. Remote sample images and the optional Inter font require an internet connection.
 

@@ -2,8 +2,7 @@
  *
  * Display name is `f/8`; identifier-safe contexts (npm scopes `@f8/*`,
  * `F8_*` env vars, `f8.*` storage keys) use `f8`. Only human-facing copy
- * lives here — legacy `Photomator`-era paths and keys survive solely as
- * read fallbacks so upgrades never orphan user data (see docs/tasks/01-rename-f8.md).
+ * lives here.
  */
 export const APP_NAME = "f/8";
 

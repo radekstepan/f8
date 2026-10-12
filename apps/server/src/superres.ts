@@ -113,19 +113,19 @@ export function superresDir(
   dataDir: string,
   env: Record<string, string | undefined> = process.env,
 ): string {
-  const override = env["F8_SUPERRES_DIR"] ?? env["PHOTOMATOR_SUPERRES_DIR"];
+  const override = env["F8_SUPERRES_DIR"];
   if (override && override.trim()) return path.resolve(override.trim());
   return path.join(dataDir, SUPERRES_MODEL_DIR_SUFFIX);
 }
 
 function superresUrl(env: Record<string, string | undefined> = process.env): string {
-  const override = env["F8_SUPERRES_URL"] ?? env["PHOTOMATOR_SUPERRES_URL"];
+  const override = env["F8_SUPERRES_URL"];
   if (override && override.trim()) return override.trim();
   return SUPERRES_DEFAULT_URL;
 }
 
 function superresOffline(): boolean {
-  return process.env["F8_SUPERRES_OFFLINE"] === "1" || process.env["PHOTOMATOR_SUPERRES_OFFLINE"] === "1";
+  return process.env["F8_SUPERRES_OFFLINE"] === "1";
 }
 
 function ortAvailable(): boolean {

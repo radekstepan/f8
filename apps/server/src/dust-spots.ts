@@ -63,11 +63,11 @@ export interface DustSpotsResult {
 }
 
 function dustSpotsOffline(env: Record<string, string | undefined> = process.env): boolean {
-  return env["F8_DUST_SPOTS_OFFLINE"] === "1" || env["PHOTOMATOR_DUST_SPOTS_OFFLINE"] === "1";
+  return env["F8_DUST_SPOTS_OFFLINE"] === "1";
 }
 
 function customWeightsPath(env: Record<string, string | undefined> = process.env): string | null {
-  const raw = env["F8_DUST_SPOTS_WEIGHTS"] ?? env["PHOTOMATOR_DUST_SPOTS_WEIGHTS"];
+  const raw = env["F8_DUST_SPOTS_WEIGHTS"];
   if (!raw || !raw.trim()) return null;
   return path.resolve(raw.trim());
 }

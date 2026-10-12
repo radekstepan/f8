@@ -89,19 +89,19 @@ export function selectiveMaskDir(
   dataDir: string,
   env: Record<string, string | undefined> = process.env,
 ): string {
-  const override = env["F8_SELECTIVE_MASK_DIR"] ?? env["PHOTOMATOR_SELECTIVE_MASK_DIR"];
+  const override = env["F8_SELECTIVE_MASK_DIR"];
   if (override && override.trim()) return path.resolve(override.trim());
   return path.join(dataDir, SELECTIVE_MASK_MODEL_DIR_SUFFIX);
 }
 
 function selectiveMaskUrl(env: Record<string, string | undefined> = process.env): string {
-  const override = env["F8_SELECTIVE_MASK_URL"] ?? env["PHOTOMATOR_SELECTIVE_MASK_URL"];
+  const override = env["F8_SELECTIVE_MASK_URL"];
   if (override && override.trim()) return override.trim();
   return SELECTIVE_MASK_DEFAULT_URL;
 }
 
 function segmentOffline(): boolean {
-  return process.env["F8_SELECTIVE_MASK_OFFLINE"] === "1" || process.env["PHOTOMATOR_SELECTIVE_MASK_OFFLINE"] === "1";
+  return process.env["F8_SELECTIVE_MASK_OFFLINE"] === "1";
 }
 
 function ortAvailable(): boolean {

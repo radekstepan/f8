@@ -75,19 +75,19 @@ export function denoiseDir(
   dataDir: string,
   env: Record<string, string | undefined> = process.env,
 ): string {
-  const override = env["F8_DENOISE_DIR"] ?? env["PHOTOMATOR_DENOISE_DIR"];
+  const override = env["F8_DENOISE_DIR"];
   if (override && override.trim()) return path.resolve(override.trim());
   return path.join(dataDir, DENOISE_MODEL_DIR_SUFFIX);
 }
 
 function denoiseUrl(env: Record<string, string | undefined> = process.env): string {
-  const override = env["F8_DENOISE_URL"] ?? env["PHOTOMATOR_DENOISE_URL"];
+  const override = env["F8_DENOISE_URL"];
   if (override && override.trim()) return override.trim();
   return DENOISE_DEFAULT_URL;
 }
 
 function denoiseOffline(): boolean {
-  return process.env["F8_DENOISE_OFFLINE"] === "1" || process.env["PHOTOMATOR_DENOISE_OFFLINE"] === "1";
+  return process.env["F8_DENOISE_OFFLINE"] === "1";
 }
 
 function ortAvailable(): boolean {

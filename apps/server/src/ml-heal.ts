@@ -89,7 +89,7 @@ export interface RemoteInpaintBody {
 }
 
 export function mlHealDir(dataDir: string, env: Record<string, string | undefined> = process.env): string {
-  const override = env["F8_ML_HEAL_DIR"] ?? env["PHOTOMATOR_ML_HEAL_DIR"];
+  const override = env["F8_ML_HEAL_DIR"];
   if (override && override.trim()) return path.resolve(override.trim());
   return path.join(dataDir, ML_HEAL_MODEL_DIR_SUFFIX);
 }
@@ -100,7 +100,7 @@ export function mlHealDir(dataDir: string, env: Record<string, string | undefine
  * quality cost. Out-of-range values fall back to the preview default.
  */
 export function defaultMoebiusSteps(env: Record<string, string | undefined> = process.env): number {
-  const raw = env["F8_ML_HEAL_STEPS"] ?? env["PHOTOMATOR_ML_HEAL_STEPS"];
+  const raw = env["F8_ML_HEAL_STEPS"];
   if (raw !== undefined && raw.trim() !== "") {
     const parsed = Number.parseInt(raw.trim(), 10);
     if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 50) return parsed;
@@ -115,7 +115,7 @@ export function defaultMoebiusSteps(env: Record<string, string | undefined> = pr
  * experiment on other machines.
  */
 function ortThreads(env: Record<string, string | undefined> = process.env): number | null {
-  const raw = env["F8_ML_THREADS"] ?? env["PHOTOMATOR_ML_THREADS"];
+  const raw = env["F8_ML_THREADS"];
   if (raw === undefined || raw.trim() === "") return null;
   const parsed = Number.parseInt(raw.trim(), 10);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 256) return null;
@@ -162,13 +162,13 @@ async function modelsPresent(dir: string): Promise<boolean> {
 }
 
 function moebiusBaseUrl(env: Record<string, string | undefined> = process.env): string {
-  const override = env["F8_ML_HEAL_MOEBIUS_BASE"] ?? env["PHOTOMATOR_ML_HEAL_MOEBIUS_BASE"];
+  const override = env["F8_ML_HEAL_MOEBIUS_BASE"];
   const base = override && override.trim() ? override.trim() : ML_HEAL_MOEBIUS_DEFAULT_BASE;
   return base.endsWith("/") ? base : `${base}/`;
 }
 
 function provisioningOffline(): boolean {
-  return process.env["F8_ML_HEAL_OFFLINE"] === "1" || process.env["PHOTOMATOR_ML_HEAL_OFFLINE"] === "1";
+  return process.env["F8_ML_HEAL_OFFLINE"] === "1";
 }
 
 /** Live download progress, shared by health polling and concurrent strokes. */
@@ -283,7 +283,7 @@ function expectedSizeOf(file: string): number {
 }
 
 function lamaUrl(env: Record<string, string | undefined> = process.env): string {
-  const override = env["F8_ML_HEAL_LAMA_URL"] ?? env["PHOTOMATOR_ML_HEAL_LAMA_URL"];
+  const override = env["F8_ML_HEAL_LAMA_URL"];
   if (override && override.trim()) return override.trim();
   return ML_HEAL_LAMA_DEFAULT_URL;
 }
@@ -496,7 +496,7 @@ const nodeSessions = new Map<string, { run(feeds: Record<string, unknown>): Prom
 let moebiusEPWinner: string[] | null = null;
 
 function moebiusProviders(): string[] {
-  if (process.env["F8_ML_EP"] === "coreml" || process.env["PHOTOMATOR_ML_EP"] === "coreml") return moebiusEPWinner ?? ["coreml", "cpu"];
+  if (process.env["F8_ML_EP"] === "coreml") return moebiusEPWinner ?? ["coreml", "cpu"];
   return ["cpu"];
 }
 

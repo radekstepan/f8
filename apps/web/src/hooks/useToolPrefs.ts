@@ -12,13 +12,11 @@ import {
 } from "@f8/core";
 
 export const TOOL_PREFS_KEY = "f8.tool-prefs-v1";
-/** Pre-rename prefs key; read once as a fallback, then migrated forward and cleared. */
-export const LEGACY_TOOL_PREFS_KEY = "photomator.tool-prefs-v2";
 
-/** Raw stored prefs object: the new key wins, the pre-rename key is a one-shot fallback. */
+/** Raw stored prefs object. */
 export function readToolPrefsRaw(): Record<string, unknown> {
   try {
-    const raw = localStorage.getItem(TOOL_PREFS_KEY) ?? localStorage.getItem(LEGACY_TOOL_PREFS_KEY);
+    const raw = localStorage.getItem(TOOL_PREFS_KEY);
     if (!raw) return {};
     return (JSON.parse(raw) as Record<string, unknown>) ?? {};
   } catch {
@@ -26,12 +24,11 @@ export function readToolPrefsRaw(): Record<string, unknown> {
   }
 }
 
-/** Merge a patch into the stored prefs, migrating any pre-rename entry forward. */
+/** Merge a patch into the stored prefs. */
 export function writeToolPrefsRaw(patch: Record<string, unknown>): void {
   try {
     const current = readToolPrefsRaw();
     localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify({ ...current, ...patch }));
-    localStorage.removeItem(LEGACY_TOOL_PREFS_KEY);
   } catch {
     /* Private mode / quota — prefs stay session-only. */
   }
@@ -113,7 +110,6 @@ export function readToolPrefs(): ToolPrefs {
 function writeToolPrefs(prefs: ToolPrefs): void {
   try {
     localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify(prefs));
-    localStorage.removeItem(LEGACY_TOOL_PREFS_KEY);
   } catch {
     /* Private mode / quota — prefs stay session-only. */
   }

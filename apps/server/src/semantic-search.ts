@@ -99,19 +99,19 @@ export function semanticSearchDir(
   dataDir: string,
   env: Record<string, string | undefined> = process.env,
 ): string {
-  const override = env["F8_SEMANTIC_SEARCH_DIR"] ?? env["PHOTOMATOR_SEMANTIC_SEARCH_DIR"];
+  const override = env["F8_SEMANTIC_SEARCH_DIR"];
   if (override && override.trim()) return path.resolve(override.trim());
   return path.join(dataDir, SEMANTIC_SEARCH_MODEL_DIR_SUFFIX);
 }
 
 function semanticSearchUrl(env: Record<string, string | undefined> = process.env): string {
-  const override = env["F8_SEMANTIC_SEARCH_URL"] ?? env["PHOTOMATOR_SEMANTIC_SEARCH_URL"];
+  const override = env["F8_SEMANTIC_SEARCH_URL"];
   if (override && override.trim()) return override.trim();
   return SEMANTIC_SEARCH_DEFAULT_URL;
 }
 
 export function semanticSearchOffline(): boolean {
-  return process.env["F8_SEMANTIC_SEARCH_OFFLINE"] === "1" || process.env["PHOTOMATOR_SEMANTIC_SEARCH_OFFLINE"] === "1";
+  return process.env["F8_SEMANTIC_SEARCH_OFFLINE"] === "1";
 }
 
 function ortAvailable(): boolean {

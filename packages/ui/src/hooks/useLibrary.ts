@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_EDIT,
   LibraryError,
   MAX_IMPORTS_PER_REQUEST,
   createLibraryClient,
@@ -12,10 +11,7 @@ import type {
   HistoryState,
   ImportProgress,
   ImportReport,
-  LibraryClient,
   LibraryPhoto,
-  LibrarySnapshot,
-  Photo,
   PhotoPatch,
   Preset,
 } from "@f8/core";
@@ -38,102 +34,6 @@ export interface UploadSummary {
 // photo would stutter through hundreds, while one giant flush would leave the
 // grid empty until the whole batch lands.
 const IMPORT_STATE_FLUSH_EVERY = 10;
-
-// Pre-rename localStorage keys from the browser-only demo. Read once during
-// the one-shot server migration, then cleared; kept so upgrades never lose
-// migrated edits, favorites, albums, or presets.
-const LEGACY_EDITS_KEY = "photomator-demo-edits-v1";
-const LEGACY_LIBRARY_KEY = "photomator-demo-library-v1";
-const LEGACY_ALBUMS_KEY = "photomator-demo-albums-v1";
-const LEGACY_PRESETS_KEY = "photomator-demo-presets-v1";
-const DEFAULT_EDIT_JSON = JSON.stringify(DEFAULT_EDIT);
-
-function readLegacy<T>(key: string): T | null {
-  try {
-    return (JSON.parse(localStorage.getItem(key) || "null") as T | null) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function isDefaultPresent(present: EditState): boolean {
-  return JSON.stringify({ ...DEFAULT_EDIT, ...present }) === DEFAULT_EDIT_JSON;
-}
-
-// One-shot migration from the pre-server browser demo: carry sample edits,
-// favorites, ratings, custom albums, and custom presets into the library,
-// then clear the legacy keys. Returns the fresh snapshot when it ran, or
-// null when there was nothing to migrate (the normal steady state).
-async function migrateLegacyState(client: LibraryClient): Promise<LibrarySnapshot | null> {
-  const edits = readLegacy<Record<string, { present?: EditState }>>(LEGACY_EDITS_KEY);
-  const presets = readLegacy<Preset[]>(LEGACY_PRESETS_KEY);
-  const albums = readLegacy<Album[]>(LEGACY_ALBUMS_KEY);
-  const library = readLegacy<Photo[]>(LEGACY_LIBRARY_KEY);
-  if (!edits && !presets?.length && !albums?.length && !library?.length) return null;
-  let snapshot: LibrarySnapshot;
-  try {
-    snapshot = await client.getLibrary();
-  } catch {
-    return null;
-  }
-  let migrated = false;
-  const byId = new Map(snapshot.photos.map((photo) => [photo.id, photo]));
-  if (edits) {
-    for (const [id, entry] of Object.entries(edits)) {
-      const photo = byId.get(id);
-      const present = entry?.present;
-      if (!photo || photo.edited || !present || isDefaultPresent(present)) continue;
-      await client.saveEdit(id, { ...DEFAULT_EDIT, ...present }).catch(() => undefined);
-      migrated = true;
-    }
-  }
-  if (presets?.length) {
-    for (const preset of presets) {
-      if (!preset?.name) continue;
-      await client.createPreset(preset.name, preset.values ?? {}).catch(() => undefined);
-      migrated = true;
-    }
-  }
-  const albumIdMap = new Map<string, string>();
-  if (albums?.length) {
-    const existing = new Set(snapshot.albums.map((album) => album.id));
-    for (const album of albums) {
-      if (!album?.id || !album.name || existing.has(album.id)) continue;
-      const created = await client.createAlbum(album.name, album.cover ?? "").catch(() => null);
-      if (created) {
-        albumIdMap.set(album.id, created.album.id);
-        migrated = true;
-      }
-    }
-  }
-  if (library?.length) {
-    for (const photo of library) {
-      const current = photo?.id ? byId.get(photo.id) : undefined;
-      if (!current) continue;
-      const patch: PhotoPatch = {};
-      if (typeof photo.favorite === "boolean" && photo.favorite !== current.favorite) {
-        patch.favorite = photo.favorite;
-      }
-      if (typeof photo.rating === "number" && photo.rating !== current.rating) {
-        patch.rating = photo.rating;
-      }
-      const target = photo.albumId ? albumIdMap.get(photo.albumId) : undefined;
-      if (target && current.albumId !== target) patch.albumId = target;
-      if (Object.keys(patch).length) {
-        await client.updatePhoto(current.id, patch).catch(() => undefined);
-        migrated = true;
-      }
-    }
-  }
-  for (const key of [LEGACY_EDITS_KEY, LEGACY_LIBRARY_KEY, LEGACY_ALBUMS_KEY, LEGACY_PRESETS_KEY]) {
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      // Legacy keys are best-effort; the library is already authoritative.
-    }
-  }
-  return migrated ? client.getLibrary().catch(() => snapshot) : snapshot;
-}
 
 export function useLibrary() {
   const client = useMemo(() => createLibraryClient(), []);
@@ -163,7 +63,7 @@ export function useLibrary() {
     setStatus((current) => (current === "ready" ? current : "loading"));
     setError("");
     try {
-      const snapshot = (await migrateLegacyState(client)) ?? (await client.getLibrary());
+      const snapshot = await client.getLibrary();
       if (generation.current !== ticket) return;
       setPhotos(snapshot.photos);
       setAlbums(snapshot.albums);

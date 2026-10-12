@@ -53,20 +53,20 @@ export function straightenMlDir(
   dataDir: string,
   env: Record<string, string | undefined> = process.env,
 ): string {
-  const override = env["F8_STRAIGHTEN_ML_DIR"] ?? env["PHOTOMATOR_STRAIGHTEN_ML_DIR"];
+  const override = env["F8_STRAIGHTEN_ML_DIR"];
   if (override && override.trim()) return path.resolve(override.trim());
   return path.join(dataDir, STRAIGHTEN_ML_MODEL_DIR_SUFFIX);
 }
 
 function straightenMlUrl(env: Record<string, string | undefined> = process.env): string | null {
-  const override = env["F8_STRAIGHTEN_ML_URL"] ?? env["PHOTOMATOR_STRAIGHTEN_ML_URL"];
+  const override = env["F8_STRAIGHTEN_ML_URL"];
   if (override !== undefined) return override.trim() ? override.trim() : null;
   // No published default yet: gradient fallback serves until weights land.
   return null;
 }
 
 function straightenOffline(): boolean {
-  return process.env["F8_STRAIGHTEN_ML_OFFLINE"] === "1" || process.env["PHOTOMATOR_STRAIGHTEN_ML_OFFLINE"] === "1";
+  return process.env["F8_STRAIGHTEN_ML_OFFLINE"] === "1";
 }
 
 function ortAvailable(): boolean {

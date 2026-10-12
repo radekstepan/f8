@@ -71,19 +71,19 @@ export function faceDetectDir(
   dataDir: string,
   env: Record<string, string | undefined> = process.env,
 ): string {
-  const override = env["F8_FACE_DETECT_DIR"] ?? env["PHOTOMATOR_FACE_DETECT_DIR"];
+  const override = env["F8_FACE_DETECT_DIR"];
   if (override && override.trim()) return path.resolve(override.trim());
   return path.join(dataDir, FACE_DETECT_MODEL_DIR_SUFFIX);
 }
 
 function faceDetectUrl(env: Record<string, string | undefined> = process.env): string {
-  const override = env["F8_FACE_DETECT_URL"] ?? env["PHOTOMATOR_FACE_DETECT_URL"];
+  const override = env["F8_FACE_DETECT_URL"];
   if (override && override.trim()) return override.trim();
   return FACE_DETECT_DEFAULT_URL;
 }
 
 function detectOffline(): boolean {
-  return process.env["F8_FACE_DETECT_OFFLINE"] === "1" || process.env["PHOTOMATOR_FACE_DETECT_OFFLINE"] === "1";
+  return process.env["F8_FACE_DETECT_OFFLINE"] === "1";
 }
 
 function ortAvailable(): boolean {

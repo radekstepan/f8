@@ -27,8 +27,7 @@ export default defineConfig({
     proxy: {
       // F8_API lets Playwright e2e point the app at the isolated
       // test server (127.0.0.1:5194); local dev keeps the default 5193.
-      // PHOTOMATOR_API stays as a pre-rename alias.
-      "/api": process.env.F8_API ?? process.env.PHOTOMATOR_API ?? "http://127.0.0.1:5193",
+      "/api": process.env.F8_API ?? "http://127.0.0.1:5193",
     },
   },
   build: {
