@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Camera, Check, Download, Folder, FolderPlus, Info, Keyboard, MapPin, Save, Share, Trash2 } from 'lucide-react';
-import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_EDITION, APP_NAME, APP_TAGLINE, EXTENSION_POINTS, downloadBlob, exportPhoto, getPhotoFilter, isDefaultEdit, loadStoredHealOverlays, createLibraryClient } from '@f8/core';
+import { Camera, Check, Download, Folder, FolderPlus, Info, Keyboard, MapPin, Save, Share, Tag, Trash2, X } from 'lucide-react';
+import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_EDITION, APP_NAME, APP_TAGLINE, EXTENSION_POINTS, SEMANTIC_CONCEPT_VOCAB, downloadBlob, exportPhoto, getPhotoFilter, isDefaultEdit, loadStoredHealOverlays, createLibraryClient } from '@f8/core';
 import type { DialogType, EditState, Photo, RepairInpaintBinding } from '@f8/core';
 
 export interface RemoveAlbumTarget {
@@ -25,6 +25,23 @@ interface EditorDialogsProps {
   /** Album awaiting delete confirmation; the dialog only renders when set. */
   removeAlbum?: RemoveAlbumTarget | null;
   onRemoveAlbum?: (id: string) => void;
+  /** Add a hand-written label; omit to hide label management. */
+  onAddLabel?: (photoId: string, label: string) => void;
+  /** Remove any label (ML or hand-written). */
+  onRemoveLabel?: (photoId: string, label: string) => void;
+  /** Search the library for a label (label chips double as smart albums). */
+  onSearchLabel?: (label: string) => void;
+}
+
+function PhotoLabelsSection({ photo, onAddLabel, onRemoveLabel, onSearchLabel }: Pick<EditorDialogsProps, 'photo' | 'onAddLabel' | 'onRemoveLabel' | 'onSearchLabel'>) {
+  const [draft, setDraft] = useState('');
+  const labels = photo.labels ?? [];
+  const submit = () => {
+    if (!draft.trim() || !onAddLabel) return;
+    onAddLabel(photo.id, draft.trim());
+    setDraft('');
+  };
+  return <div className="photo-info-section" data-testid="photo-labels"><h4><Tag size={14} />Labels</h4>{labels.length ? <ul className="photo-label-list">{labels.map((entry) => <li key={entry.label} className={`photo-label${entry.source === 'ml' ? ' is-ml' : ''}`}><button type="button" className="photo-label-name" title={onSearchLabel ? `Show photos labeled "${entry.label}"` : entry.label} onClick={() => onSearchLabel?.(entry.label)}>{entry.label}</button>{entry.source === 'ml' && <span className="ml-badge" title="Labeled by a machine-learning model on the photo server">ML</span>}{onRemoveLabel && <button type="button" className="photo-label-remove" aria-label={`Remove label "${entry.label}"`} onClick={() => onRemoveLabel(photo.id, entry.label)}><X size={11} /></button>}</li>)}</ul> : <p className="inspector-note">No labels yet — label this album from its menu to add ML labels, or add your own below.</p>}{onAddLabel && <form className="photo-label-add" onSubmit={(event) => { event.preventDefault(); submit(); }}><input value={draft} maxLength={32} placeholder="Add a label" aria-label="Add a label" list="f8-label-vocab" onChange={(event) => setDraft(event.target.value)} /><datalist id="f8-label-vocab">{SEMANTIC_CONCEPT_VOCAB.map((word) => <option key={word} value={word} />)}</datalist><button type="submit" className="secondary-button" disabled={!draft.trim()}>Add</button></form>}</div>;
 }
 
 function ExportDialog({ photo, edit, inpaintRepair, onClose, onToast }: Pick<EditorDialogsProps, 'photo' | 'edit' | 'inpaintRepair' | 'onClose' | 'onToast'>) {
@@ -93,7 +110,7 @@ export function EditorDialogs(props: EditorDialogsProps) {
   if (dialog === 'export') return <ExportDialog {...props} />;
   if (dialog === 'album') return <AlbumDialog {...props} />;
   if (dialog === 'preset') return <PresetDialog {...props} />;
-  if (dialog === 'info') return <Modal title="Photo Information" subtitle={photo.title} onClose={onClose} className="info-modal"><img className="info-photo" src={photo.src} alt={photo.title} /><div className="info-filename"><h3>{photo.name}</h3><span className="file-type">{photo.raw ? 'RAW' : 'IMAGE'}</span></div><div className="photo-info-section"><h4><Camera size={14} />Camera</h4><strong>{photo.camera}</strong><p>{photo.lens}</p><div className="photo-info-grid"><div><small>ISO</small><span>{photo.iso || 'Not available'}</span></div><div><small>Aperture</small><span>{photo.aperture}</span></div><div><small>Shutter Speed</small><span>{photo.shutter}</span></div><div><small>Focal Length</small><span>{photo.focalLength}</span></div><div><small>Dimensions</small><span>{photo.width.toLocaleString()} x {photo.height.toLocaleString()}</span></div><div><small>Date Taken</small><span>{new Date(photo.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></div></div></div>{photo.location && <div className="photo-info-location"><MapPin size={15} />{photo.location}</div>}{photo.path && <div className="photo-info-location" title={photo.path}><Folder size={15} /><span className="photo-info-path">{photo.path}</span></div>}{photo.missing && <p className="form-error" role="alert">The original file is missing. Reimport it from its new location to relink your edits.</p>}{photo.photographer && <p className="photo-credit">Photo by {photo.photographer} / Pexels<br /><span>Camera details are illustrative sample data.</span></p>}</Modal>;
+  if (dialog === 'info') return <Modal title="Photo Information" subtitle={photo.title} onClose={onClose} className="info-modal"><img className="info-photo" src={photo.src} alt={photo.title} /><div className="info-filename"><h3>{photo.name}</h3><span className="file-type">{photo.raw ? 'RAW' : 'IMAGE'}</span></div><div className="photo-info-section"><h4><Camera size={14} />Camera</h4><strong>{photo.camera}</strong><p>{photo.lens}</p><div className="photo-info-grid"><div><small>ISO</small><span>{photo.iso || 'Not available'}</span></div><div><small>Aperture</small><span>{photo.aperture}</span></div><div><small>Shutter Speed</small><span>{photo.shutter}</span></div><div><small>Focal Length</small><span>{photo.focalLength}</span></div><div><small>Dimensions</small><span>{photo.width.toLocaleString()} x {photo.height.toLocaleString()}</span></div><div><small>Date Taken</small><span>{new Date(photo.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></div></div></div><PhotoLabelsSection photo={photo} onAddLabel={props.onAddLabel} onRemoveLabel={props.onRemoveLabel} onSearchLabel={props.onSearchLabel} />{photo.location && <div className="photo-info-location"><MapPin size={15} />{photo.location}</div>}{photo.path && <div className="photo-info-location" title={photo.path}><Folder size={15} /><span className="photo-info-path">{photo.path}</span></div>}{photo.missing && <p className="form-error" role="alert">The original file is missing. Reimport it from its new location to relink your edits.</p>}{photo.photographer && <p className="photo-credit">Photo by {photo.photographer} / Pexels<br /><span>Camera details are illustrative sample data.</span></p>}</Modal>;
   if (dialog === 'shortcuts') return <Modal title="A faster way to create." subtitle="Keep your hands on the keyboard, and your eyes on the photo." onClose={onClose} className="shortcuts-modal"><div className="shortcuts-symbol"><Keyboard size={27} strokeWidth={1.4} /></div><div className="shortcuts-grid">{shortcuts.map(([name, items]) => <section key={name}><h3>{name}</h3>{items.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</section>)}</div></Modal>;
   return <Modal title={`About ${APP_NAME}`} onClose={onClose} className="about-modal"><div className="about-brand"><BrandMark size={64} /><h2>{APP_NAME}</h2><span>{APP_EDITION}</span><p>{APP_TAGLINE}</p></div><p className="about-copy">{APP_DESCRIPTION}</p><div className="extension-points"><h3>Built to be extended.</h3>{EXTENSION_POINTS.map((entry) => <p key={entry.path}><code>{entry.path}</code><span>{entry.label}</span></p>)}</div><p className="about-disclaimer">{ABOUT_DISCLAIMER}</p><button className="primary-button full-width" onClick={onClose}>Back to creating</button></Modal>;
 }

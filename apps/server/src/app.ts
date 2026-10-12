@@ -5,8 +5,8 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { DEFAULT_EDIT } from "@f8/core";
-import type { EditState, LibraryPhoto } from "@f8/core";
+import { DEFAULT_EDIT, normalizeUserLabel } from "@f8/core";
+import type { EditState, LibraryPhoto, PhotoLabel } from "@f8/core";
 import type { ServerConfig } from "./config.ts";
 import { getHealProgress, getMlHealHealth, kickEngineReady, runRemoteHeal, validateRemoteBody } from "./ml-heal.ts";
 import type { RemoteHealEngine } from "./ml-heal.ts";
@@ -15,6 +15,16 @@ import { getObjectDetectHealth, kickObjectDetectReady, runObjectDetect, validate
 import { getDustSpotsHealth, runDustSpotsDetect, validateDustSpotsBody } from "./dust-spots.ts";
 import { getFaceDetectHealth, kickFaceDetectReady, runFaceDetect, validateFaceDetectBody } from "./face-detect.ts";
 import { getSelectiveMaskHealth, kickSelectiveMaskReady, runSelectiveMaskDetect, validateSelectiveMaskBody } from "./selective-mask.ts";
+import {
+  SemanticWeightsMissingError,
+  createSemanticQueue,
+  getSemanticSearchHealth,
+  kickSemanticSearchReady,
+  labelAlbum,
+  runSemanticSearch,
+  validateLabelBody,
+  validateSearchBody,
+} from "./semantic-search.ts";
 import {
   deleteHealOverlay,
   listHealOverlays,
@@ -39,6 +49,9 @@ export interface AppContext {
   decodeRaw?: DecodeRawFullRes;
   // Encoder toolchain for rendered-image thumbnails; same deal as decodeRaw.
   thumbDeps?: RawDecodeDeps;
+  // Import-time semantic embedding hook; defaults to the background queue.
+  // Tests inject a spy so imports never spin the real embedder.
+  semanticEnqueue?: (photoId: string) => void;
 }
 
 const IMAGE_MIME: Record<string, string> = {
@@ -80,7 +93,7 @@ function isMissing(row: PhotoRow): boolean {
   return row.kind === "file" && (!row.path || !existsSync(row.path));
 }
 
-function toApiPhoto(row: PhotoRow, edit: StoredEdit): LibraryPhoto {
+function toApiPhoto(row: PhotoRow, edit: StoredEdit, labels: PhotoLabel[] = []): LibraryPhoto {
   const file = row.kind === "file";
   const endpoint = `/api/photos/${row.id}/file`;
   return {
@@ -117,11 +130,12 @@ function toApiPhoto(row: PhotoRow, edit: StoredEdit): LibraryPhoto {
     hash: row.hash,
     path: file ? row.path : null,
     importedAt: row.created_at,
+    labels,
   };
 }
 
-function withEdit(store: Store, row: PhotoRow): LibraryPhoto {
-  return toApiPhoto(row, store.getEdit(row.id));
+function withEdit(store: Store, row: PhotoRow, labels?: PhotoLabel[]): LibraryPhoto {
+  return toApiPhoto(row, store.getEdit(row.id), labels ?? store.getLabels(row.id));
 }
 
 async function sendFile(
@@ -153,6 +167,16 @@ async function readJson(c: Context): Promise<{ ok: true; value: Record<string, u
 export function createApp(ctx: AppContext): Hono {
   const { config, store, roots } = ctx;
   const app = new Hono();
+  // Import-time semantic embedding: fire-and-forget background queue unless
+  // the caller injected its own hook (tests spy on imports this way).
+  const semanticQueue = ctx.semanticEnqueue ? null : createSemanticQueue({
+    dataDir: config.dataDir,
+    previewsDir: config.previewsDir,
+    tmpDir: config.tmpDir,
+    store,
+    thumbDeps: ctx.thumbDeps,
+  });
+  const enqueueSemantic = ctx.semanticEnqueue ?? ((photoId: string): void => semanticQueue?.enqueue(photoId));
 
   app.onError((error, c) => {
     console.error(error);
@@ -363,8 +387,73 @@ export function createApp(ctx: AppContext): Hono {
     }
   });
 
+  app.get("/api/semantic-search/health", async (c) => c.json(await getSemanticSearchHealth(config.dataDir, {
+    photos: store.listPhotos().length,
+    embedded: store.countEmbeddings(),
+    mlLabeled: store.countMlLabeled(),
+  })));
+
+  app.post("/api/semantic-search/warmup", async (c) => {
+    // Kick provisioning into the background and return immediately: the
+    // client polls health for download/session progress, like ml-heal.
+    // First use downloads ~89MB once; search serves in keyword mode until
+    // then, and labeling reports needsDownload honestly.
+    kickSemanticSearchReady(config.dataDir);
+    return c.json(await getSemanticSearchHealth(config.dataDir, {
+      photos: store.listPhotos().length,
+      embedded: store.countEmbeddings(),
+      mlLabeled: store.countMlLabeled(),
+    }));
+  });
+
+  app.post("/api/semantic-search/search", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    const parsed = validateSearchBody(body);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    try {
+      return c.json(runSemanticSearch(store, parsed.value));
+    } catch (error) {
+      console.error(error);
+      return c.json({ error: "Search failed." }, 500);
+    }
+  });
+
+  app.post("/api/semantic-search/label", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    const parsed = validateLabelBody(body);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    try {
+      return c.json(await labelAlbum({
+        dataDir: config.dataDir,
+        previewsDir: config.previewsDir,
+        tmpDir: config.tmpDir,
+        store,
+        thumbDeps: ctx.thumbDeps,
+      }, parsed.value.albumId));
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 404);
+      if (error instanceof SemanticWeightsMissingError) {
+        return c.json({ error: error.message, needsDownload: true, weightsReady: false }, 503);
+      }
+      console.error(error);
+      return c.json({ error: "Labeling failed." }, 500);
+    }
+  });
+
   app.get("/api/library", (c) => {
-    const photos = store.listPhotos().map((row) => withEdit(store, row));
+    const rows = store.listPhotos();
+    const labels = store.getLabelsBatch(rows.map((row) => row.id));
+    const photos = rows.map((row) => withEdit(store, row, labels.get(row.id) ?? []));
     return c.json({ photos, albums: store.listAlbums(), presets: store.listPresets() });
   });
 
@@ -390,8 +479,11 @@ export function createApp(ctx: AppContext): Hono {
         return c.json({ error: "Empty upload." }, 400);
       }
       const outcome = await importUpload(store, config, tmpPath, filename, { albumId, decodeRaw: ctx.decodeRaw });
+      // Fresh bytes queue a background CLIP embedding (amortized, skippable
+      // offline); duplicates and relinks keep their existing catalog rows.
+      if (outcome.status === "imported") enqueueSemantic(outcome.row.id);
       return c.json({
-        photo: toApiPhoto(outcome.row, outcome.edit),
+        photo: toApiPhoto(outcome.row, outcome.edit, store.getLabels(outcome.row.id)),
         deduplicated: outcome.status !== "imported",
       });
     } catch (error) {
@@ -415,8 +507,11 @@ export function createApp(ctx: AppContext): Hono {
       return c.json({ error: "Invalid album." }, 400);
     }
     const report = await scanPaths(store, config, roots, paths, { albumId, decodeRaw: ctx.decodeRaw });
+    for (const outcome of report.outcomes) {
+      if (outcome.status === "imported") enqueueSemantic(outcome.row.id);
+    }
     const photos = (outcomes: ImportOutcome[]): LibraryPhoto[] =>
-      outcomes.map((outcome) => toApiPhoto(outcome.row, outcome.edit));
+      outcomes.map((outcome) => toApiPhoto(outcome.row, outcome.edit, store.getLabels(outcome.row.id)));
     return c.json({
       imported: photos(report.outcomes.filter((outcome) => outcome.status === "imported")),
       relinked: photos(report.outcomes.filter((outcome) => outcome.status === "relinked")),
@@ -558,7 +653,33 @@ export function createApp(ctx: AppContext): Hono {
     const edit = store.saveEdit(found.id, { ...DEFAULT_EDIT, ...(present as Partial<EditState>) });
     const row = store.getPhoto(found.id);
     if (!row) return c.json({ error: "Photo not found." }, 404);
-    return c.json({ photo: toApiPhoto(row, edit) });
+    return c.json({ photo: toApiPhoto(row, edit, store.getLabels(row.id)) });
+  });
+
+  app.patch("/api/photos/:id/labels", async (c) => {
+    const found = photoOr404(c, c.req.param("id"));
+    if (found instanceof Response) return found;
+    const parsed = await readJson(c);
+    if (!parsed.ok) return c.json({ error: "Invalid request." }, 400);
+    const { add, remove } = parsed.value;
+    if (add !== undefined && (!Array.isArray(add) || !add.every((entry): entry is string => typeof entry === "string"))) {
+      return c.json({ error: "Invalid labels to add." }, 400);
+    }
+    if (remove !== undefined && (!Array.isArray(remove) || !remove.every((entry): entry is string => typeof entry === "string"))) {
+      return c.json({ error: "Invalid labels to remove." }, 400);
+    }
+    if (add === undefined && remove === undefined) return c.json({ error: "Nothing to change." }, 400);
+    for (const entry of (add ?? []) as string[]) {
+      const clean = normalizeUserLabel(entry);
+      if (!clean) return c.json({ error: `Invalid label "${entry.slice(0, 40)}". Use letters, digits, spaces, and dashes (up to 32 characters).` }, 400);
+      store.addUserLabel(found.id, clean);
+    }
+    for (const entry of (remove ?? []) as string[]) {
+      store.removeLabel(found.id, entry.trim().toLowerCase());
+    }
+    const row = store.getPhoto(found.id);
+    if (!row) return c.json({ error: "Photo not found." }, 404);
+    return c.json({ photo: withEdit(store, row) });
   });
 
   app.get("/api/photos/:id/heal-overlays", async (c) => {

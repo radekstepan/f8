@@ -13,6 +13,8 @@ export * from "./orientation.js";
 export * from "./poisson.js";
 export * from "./scene-enhance.js";
 export * from "./selective-mask.js";
+export * from "./semantic-concepts.js";
+export * from "./semantic-search.js";
 export * from "./preview-render-cache.js";
 export * from "./straighten.js";
 export * from "./straighten-ml.js";

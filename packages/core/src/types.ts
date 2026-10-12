@@ -29,6 +29,8 @@ export interface Photo {
   path?: string | null;
   /** Server library only: ISO timestamp of the import (`created_at`). Absent on demo/legacy records. */
   importedAt?: string | null;
+  /** Server library only: semantic-search labels (ML + hand-added). Absent on demo/legacy records. */
+  labels?: PhotoLabel[];
 }
 
 export interface Album {
@@ -69,6 +71,16 @@ export interface RedEyeSpot {
   x: number;
   y: number;
   radius: number;
+}
+
+/** One semantic-search label on a photo: ML zero-shot or hand-added. */
+export interface PhotoLabel {
+  /** Lowercase label text (vocabulary word for ML labels, free text for user labels). */
+  label: string;
+  /** Confidence 0..1 (softmax probability for ML labels, 1 for user labels). */
+  score: number;
+  /** 'ml' when CLIP assigned it, 'user' when hand-added. */
+  source: 'ml' | 'user';
 }
 
 /** Which detector served the faces: neural weights or the classical fallback. */

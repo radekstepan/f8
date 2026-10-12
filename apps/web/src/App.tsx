@@ -16,6 +16,7 @@ import { useObjectRemoval } from './vision/useObjectRemoval';
 import { useDustSpots } from './vision/useDustSpots';
 import { useFaceEnhance } from './vision/useFaceEnhance';
 import { useSelectiveMask } from './vision/useSelectiveMask';
+import { useSemanticSearch } from './vision/useSemanticSearch';
 import type { SelectiveMaskDraft } from '@f8/ui';
 import { useInpaintRepair } from './vision/useInpaintRepair';
 import { FsBrowser } from './components/FsBrowser';
@@ -131,6 +132,7 @@ export default function App() {
   const dustSpots = useDustSpots(photo?.id ?? selectedId);
   const faceEnhance = useFaceEnhance(photo?.id ?? selectedId);
   const selectiveMask = useSelectiveMask(photo?.id ?? selectedId);
+  const semantic = useSemanticSearch();
   const inpaintRepair = useInpaintRepair();
   // Canvas binding: ML strokes are gated until the tier is warmed, so the
   // brush cursor stays hidden and painting is ignored while loading.
@@ -268,6 +270,11 @@ export default function App() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
 
+  // Server search rank for the current query (stale ranks never apply: the
+  // hook tags every rank with its query, and anything else falls back to the
+  // client-side substring filter over the loaded library).
+  const trimmedSearch = search.trim();
+  const searchRank = trimmedSearch && semantic.rank && semantic.rank.query === trimmedSearch ? semantic.rank : null;
   const filteredPhotos = useMemo(() => {
     let items = photos.filter((item) => {
       if (search) return true;
@@ -276,16 +283,30 @@ export default function App() {
       if (collection === 'edited') return isRecentlyEdited(item);
       return item.albumId === collection;
     });
-    if (search) {
+    if (searchRank) {
+      const byId = new Map(items.map((item) => [item.id, item]));
+      items = searchRank.ids.map((id) => byId.get(id)).filter((item): item is (typeof items)[number] => Boolean(item));
+    } else if (search) {
       const query = search.toLowerCase();
-      items = items.filter((item) => `${item.name} ${item.title} ${item.location} ${item.camera}`.toLowerCase().includes(query));
+      items = items.filter((item) => `${item.name} ${item.title} ${item.location} ${item.camera} ${(item.labels ?? []).map((entry) => entry.label).join(' ')}`.toLowerCase().includes(query));
     }
     if (editedFilter === 'edited') items = items.filter((item) => Boolean(item.edited));
     else if (editedFilter === 'unedited') items = items.filter((item) => !item.edited);
     if (favoriteFilter === 'favorited') items = items.filter((item) => item.favorite);
     else if (favoriteFilter === 'not') items = items.filter((item) => !item.favorite);
+    // Semantic ranks carry their own relevance order; everything else sorts.
+    if (searchRank?.mode === 'semantic') return items;
     return sortAlbumPhotos(items, sortKey, sortDir);
-  }, [photos, collection, search, sortKey, sortDir, editedFilter, favoriteFilter]);
+  }, [photos, collection, search, searchRank, sortKey, sortDir, editedFilter, favoriteFilter]);
+  const searchNote = searchRank?.mode === 'semantic'
+    ? `Semantic matches${searchRank.matched.length ? ` for “${searchRank.matched.join(', ')}”` : ''} · ML`
+    : null;
+
+  // Search text feeds both the client filter and the debounced server rank.
+  const updateSearch = useCallback((value: string) => {
+    setSearch(value);
+    semantic.search(value);
+  }, [semantic]);
 
   const selectPhoto = useCallback((id: string) => {
     setSelectedId(id);
@@ -294,10 +315,11 @@ export default function App() {
     // context is its collection, so the filmstrip below agrees with the
     // sidebar. Chip filters persist (grid and filmstrip share them).
     setSearch('');
+    semantic.search('');
     setZoom(1);
     setShowOriginal(false);
     setHighlightStroke(null);
-  }, []);
+  }, [semantic]);
 
   // Library shortcuts turn on the same chip filters used within each
   // album, so the grid always shows why it is narrowed. Recently Edited
@@ -305,6 +327,7 @@ export default function App() {
   const selectCollection = (id: string) => {
     setCollection(id);
     setSearch('');
+    semantic.search('');
     setEditedFilter(id === 'edited' ? 'edited' : 'all');
     setFavoriteFilter(id === 'favorites' ? 'favorited' : 'all');
     setView('library');
@@ -379,6 +402,29 @@ export default function App() {
       (reason: unknown) => notifyError(reason, 'Could not delete the album.'),
     );
   }, [albums, photos, library, notify, notifyError]);
+
+  // Album ML labeling: embeds + labels every photo that lacks ML labels
+  // yet (the hook downloads the weights once on first use, with progress).
+  // The library reloads afterwards so the new labels land everywhere.
+  const labelAlbumPhotos = useCallback((albumId: string) => {
+    const album = albums.find((entry) => entry.id === albumId);
+    void (async () => {
+      try {
+        const report = await semantic.labelAlbum(albumId);
+        await library.retry();
+        const name = album ? `"${album.name}"` : 'Album';
+        const notes = [
+          report.labeled.length ? `${name}: labeled ${report.labeled.length} ${report.labeled.length === 1 ? 'photo' : 'photos'} with ML.` : `${name}: everything already labeled.`,
+          report.alreadyLabeled.length > 0 && report.labeled.length > 0 ? `${report.alreadyLabeled.length} already labeled.` : '',
+          report.skipped.length ? `${report.skipped.length} skipped.` : '',
+          report.failed.length ? `${report.failed.length} failed.` : '',
+        ];
+        notify(notes.filter(Boolean).join(' '));
+      } catch (reason) {
+        notifyError(reason, 'Could not label the album.');
+      }
+    })();
+  }, [albums, library, notify, notifyError, semantic]);
 
   const confirmRemovePhoto = useCallback((id: string) => {
     const list = filteredPhotos.some((item) => item.id === id) ? filteredPhotos : photos;
@@ -587,6 +633,7 @@ export default function App() {
     if (summary.firstId) {
       setCollection(albumId);
       setSearch('');
+      semantic.search('');
       selectPhoto(summary.firstId);
     }
     notify(formatUploadSummary(summary));
@@ -609,6 +656,7 @@ export default function App() {
           setCollection(albumId);
         }
         setSearch('');
+        semantic.search('');
         selectPhoto(first.id);
       }
       if (locating) {
@@ -834,10 +882,10 @@ export default function App() {
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} presetsOpen={presetsOpen} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
-      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} />}
+      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (
@@ -899,7 +947,7 @@ export default function App() {
       }}
     />
     <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
-    <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : photo} edit={editor.edit} inpaintRepair={canvasRepairBinding} onClose={() => { setDialog(null); setRemoveTargetId(null); setRemoveAlbumTargetId(null); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} removeAlbum={removeAlbumTarget} onRemoveAlbum={confirmRemoveAlbum} />
+    <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : photo} edit={editor.edit} inpaintRepair={canvasRepairBinding} onClose={() => { setDialog(null); setRemoveTargetId(null); setRemoveAlbumTargetId(null); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} removeAlbum={removeAlbumTarget} onRemoveAlbum={confirmRemoveAlbum} onAddLabel={(photoId, label) => { void library.updateLabels(photoId, { add: [label] }).then(() => notify(`Labeled “${label}”.`), (reason: unknown) => notifyError(reason, 'Could not add the label.')); }} onRemoveLabel={(photoId, label) => { void library.updateLabels(photoId, { remove: [label] }).catch((reason: unknown) => notifyError(reason, 'Could not remove the label.')); }} onSearchLabel={(label) => { setDialog(null); setCollection('all'); clearFilters(); updateSearch(label); setView('library'); }} />
     {folderDialog && <FsBrowser
       title={folderDialog.mode === 'locate' ? 'Locate original' : 'Import from folder'}
       subtitle={folderDialog.mode === 'locate' ? 'Find the file in its new home.' : 'Referenced in place — nothing is copied.'}
@@ -909,6 +957,7 @@ export default function App() {
     />}
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
     {importProgress && <ImportProgressToast status={importProgress} />}
+    {semantic.labeling && <ImportProgressToast status={{ done: 0, total: 0, label: semantic.labelProgress?.stage ?? 'Labeling album…' }} />}
     {dragging && <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos anywhere to start creating.</p><span>JPEG, PNG, WebP, RAW and more</span></div></div>}
   </div>;
 }

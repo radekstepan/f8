@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { DEFAULT_EDIT } from "@f8/core";
-import type { Album, EditState, Preset } from "@f8/core";
+import type { Album, EditState, PhotoLabel, Preset } from "@f8/core";
 
 export interface PhotoRow {
   id: string;
@@ -49,6 +49,55 @@ interface PresetRow {
   id: string;
   name: string;
   values_json: string;
+}
+
+export interface StoredEmbedding {
+  photoId: string;
+  model: string;
+  version: string;
+  dim: number;
+  /** L2-normalized unit vector (decoded from the float32 LE blob). */
+  embedding: Float32Array;
+  updatedAt: string;
+}
+
+interface EmbeddingRow {
+  photo_id: string;
+  model: string;
+  version: string;
+  dim: number;
+  embedding: Uint8Array;
+  updated_at: string;
+}
+
+interface LabelRow {
+  photo_id: string;
+  label: string;
+  score: number;
+  source: string;
+}
+
+function embeddingRowToStored(row: EmbeddingRow): StoredEmbedding | undefined {
+  const bytes = row.embedding instanceof Uint8Array ? row.embedding : new Uint8Array(0);
+  if (bytes.length !== row.dim * 4) return undefined;
+  const embedding = new Float32Array(row.dim);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let i = 0; i < row.dim; i++) {
+    const value = view.getFloat32(i * 4, true);
+    embedding[i] = Number.isFinite(value) ? value : 0;
+  }
+  return {
+    photoId: row.photo_id,
+    model: row.model,
+    version: row.version,
+    dim: row.dim,
+    embedding,
+    updatedAt: row.updated_at,
+  };
+}
+
+function labelRowToPhotoLabel(row: { label: string; score: number; source: string }): PhotoLabel {
+  return { label: row.label, score: row.score, source: row.source === "user" ? "user" : "ml" };
 }
 
 const DEFAULT_EDIT_JSON = JSON.stringify(DEFAULT_EDIT);
@@ -212,6 +261,106 @@ export function createStore(db: DatabaseSync) {
     deletePreset: (id: string): void => {
       db.prepare("DELETE FROM presets WHERE id = ?").run(id);
     },
+
+    getEmbedding: (photoId: string): StoredEmbedding | undefined => {
+      const row = db
+        .prepare("SELECT photo_id, model, version, dim, embedding, updated_at FROM photo_embeddings WHERE photo_id = ?")
+        .get(photoId) as EmbeddingRow | undefined;
+      return row ? embeddingRowToStored(row) : undefined;
+    },
+
+    listEmbeddings: (): StoredEmbedding[] =>
+      (db.prepare(
+        "SELECT photo_id, model, version, dim, embedding, updated_at FROM photo_embeddings",
+      ).all() as unknown as EmbeddingRow[])
+        .map(embeddingRowToStored)
+        .filter((entry): entry is StoredEmbedding => entry !== undefined),
+
+    saveEmbedding: (photoId: string, model: string, version: string, embedding: Float32Array): void => {
+      const buffer = Buffer.alloc(embedding.length * 4);
+      for (let i = 0; i < embedding.length; i++) buffer.writeFloatLE(embedding[i] ?? 0, i * 4);
+      db.prepare(
+        `INSERT INTO photo_embeddings (photo_id, model, version, dim, embedding, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (photo_id) DO UPDATE SET model = excluded.model, version = excluded.version,
+           dim = excluded.dim, embedding = excluded.embedding, updated_at = excluded.updated_at`,
+      ).run(photoId, model, version, embedding.length, buffer, now());
+    },
+
+    countEmbeddings: (): number =>
+      (db.prepare("SELECT COUNT(*) AS n FROM photo_embeddings").get() as { n: number }).n,
+
+    getLabels: (photoId: string): PhotoLabel[] =>
+      (db.prepare("SELECT label, score, source FROM photo_labels WHERE photo_id = ? ORDER BY score DESC, label").all(
+        photoId,
+      ) as unknown as LabelRow[]).map(labelRowToPhotoLabel),
+
+    getLabelsBatch: (photoIds: string[]): Map<string, PhotoLabel[]> => {
+      const map = new Map<string, PhotoLabel[]>();
+      for (const id of photoIds) map.set(id, []);
+      if (!photoIds.length) return map;
+      // Chunked IN-list: a 10k-photo library would blow the variable limit.
+      for (let i = 0; i < photoIds.length; i += 500) {
+        const chunk = photoIds.slice(i, i + 500);
+        const rows = db.prepare(
+          `SELECT photo_id, label, score, source FROM photo_labels WHERE photo_id IN (${chunk.map(() => "?").join(", ")}) ORDER BY score DESC, label`,
+        ).all(...chunk) as unknown as LabelRow[];
+        for (const row of rows) map.get(row.photo_id)?.push(labelRowToPhotoLabel(row));
+      }
+      return map;
+    },
+
+    /** Replace the ML labels on a photo (user labels are never touched). */
+    setMlLabels: (photoId: string, labels: PhotoLabel[]): void => {
+      const stamp = now();
+      const remove = db.prepare("DELETE FROM photo_labels WHERE photo_id = ? AND source = 'ml'");
+      // ML rows were just deleted, so any conflict is a user label with the
+      // same text — the user's claim wins and the insert stands down.
+      const insert = db.prepare(
+        "INSERT INTO photo_labels (photo_id, label, score, source, updated_at) VALUES (?, ?, ?, 'ml', ?) " +
+          "ON CONFLICT (photo_id, label) DO NOTHING",
+      );
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        remove.run(photoId);
+        for (const entry of labels) insert.run(photoId, entry.label, entry.score, stamp);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+
+    /** Hand-added label (score 1); re-adding an ML label converts it to the user's. */
+    addUserLabel: (photoId: string, label: string): PhotoLabel => {
+      db.prepare(
+        "INSERT INTO photo_labels (photo_id, label, score, source, updated_at) VALUES (?, ?, 1, 'user', ?) " +
+          "ON CONFLICT (photo_id, label) DO UPDATE SET score = 1, source = 'user', updated_at = excluded.updated_at",
+      ).run(photoId, label, now());
+      return { label, score: 1, source: "user" };
+    },
+
+    removeLabel: (photoId: string, label: string): boolean => {
+      const result = db.prepare("DELETE FROM photo_labels WHERE photo_id = ? AND label = ?").run(photoId, label);
+      return result.changes > 0;
+    },
+
+    /** Photo ids (of the given set) carrying no ML labels yet. */
+    listUnlabeledMl: (photoIds: string[]): string[] => {
+      if (!photoIds.length) return [];
+      const labeled = new Set<string>();
+      for (let i = 0; i < photoIds.length; i += 500) {
+        const chunk = photoIds.slice(i, i + 500);
+        const rows = db.prepare(
+          `SELECT DISTINCT photo_id FROM photo_labels WHERE source = 'ml' AND photo_id IN (${chunk.map(() => "?").join(", ")})`,
+        ).all(...chunk) as unknown as { photo_id: string }[];
+        for (const row of rows) labeled.add(row.photo_id);
+      }
+      return photoIds.filter((id) => !labeled.has(id));
+    },
+
+    countMlLabeled: (): number =>
+      (db.prepare("SELECT COUNT(DISTINCT photo_id) AS n FROM photo_labels WHERE source = 'ml'").get() as { n: number }).n,
 
     getMeta: (key: string): string | undefined => {
       const row = db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as { value: string } | undefined;

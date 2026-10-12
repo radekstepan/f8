@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 // The schema lives here as a string (rather than a .sql asset) so `tsc`
 // emits a self-contained dist with no asset copying.
@@ -62,6 +62,29 @@ CREATE INDEX IF NOT EXISTS idx_photos_hash ON photos (hash);
 CREATE INDEX IF NOT EXISTS idx_photos_album ON photos (album_id);
 `;
 
+// Local semantic search (task 14): CLIP-image embeddings (512-d float32 LE
+// blob, 2KB per photo) plus zero-shot/hand-added labels. Model + version
+// stamp every embedding so a model swap re-embeds instead of mixing spaces.
+const MIGRATION_2 = `
+CREATE TABLE IF NOT EXISTS photo_embeddings (
+  photo_id TEXT PRIMARY KEY REFERENCES photos (id) ON DELETE CASCADE,
+  model TEXT NOT NULL,
+  version TEXT NOT NULL,
+  dim INTEGER NOT NULL,
+  embedding BLOB NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS photo_labels (
+  photo_id TEXT NOT NULL REFERENCES photos (id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  score REAL NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('ml', 'user')),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (photo_id, label)
+);
+CREATE INDEX IF NOT EXISTS idx_photo_labels_label ON photo_labels (label);
+`;
+
 function currentVersion(db: DatabaseSync): number {
   const row = db
     .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
@@ -71,14 +94,22 @@ function currentVersion(db: DatabaseSync): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 }
 
+function setVersion(db: DatabaseSync, version: number): void {
+  db.prepare(
+    "INSERT INTO meta (key, value) VALUES ('schema_version', ?) " +
+      "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+  ).run(String(version));
+}
+
 function migrate(db: DatabaseSync): void {
   db.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);");
   if (currentVersion(db) < 1) {
     db.exec(MIGRATION_1);
-    db.prepare(
-      "INSERT INTO meta (key, value) VALUES ('schema_version', '1') " +
-        "ON CONFLICT (key) DO UPDATE SET value = '1'",
-    ).run();
+    setVersion(db, 1);
+  }
+  if (currentVersion(db) < 2) {
+    db.exec(MIGRATION_2);
+    setVersion(db, 2);
   }
 }
 

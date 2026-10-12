@@ -490,6 +490,18 @@ img { display: block; }
 .photo-info-grid small { color: #858593; font-size: 8px; }
 .photo-info-grid span { color: #c3c3ce; font-size: 10px; }
 .photo-info-location { display: flex; align-items: center; gap: 8px; border-top: 1px solid #47474f; padding-top: 17px; font-size: 11px; color: #b6ac98; }
+.photo-label-list { display: flex; flex-wrap: wrap; gap: 7px; list-style: none; margin: 0 0 4px; padding: 0; }
+.photo-label { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #54525a; background: #353539; border-radius: 999px; padding: 3px 6px 3px 11px; }
+.photo-label.is-ml { border-color: #8b7650; }
+.photo-label-name { font-size: 9px; color: #dfd8c7; }
+.photo-label-name:hover { color: #f3d492; }
+.photo-label .ml-badge { margin-left: 0; }
+.photo-label-remove { display: inline-flex; color: #8e8e9b; border-radius: 50%; padding: 2px; }
+.photo-label-remove:hover { color: #df9a94; }
+.photo-label-add { display: flex; gap: 8px; margin-top: 12px; }
+.photo-label-add > input { flex: 1; min-width: 0; height: 28px; border: 1px solid #54525a; background: #2b2b30; border-radius: 5px; padding: 0 10px; font-size: 10px; color: #e1e1e8; }
+.photo-label-add > input::placeholder { color: #7e7e8d; }
+.browser-search-note { font-size: 9px; color: #bfa97d; margin-top: 6px; }
 .photo-credit { font-size: 9px; line-height: 1.9; color: #a4a4b0; margin-top: 18px; }
 .photo-credit > span { font-size: 8px; color: #7e7e8d; }
 .shortcuts-modal { width: 630px; }

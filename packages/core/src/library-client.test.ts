@@ -41,3 +41,43 @@ describe("library client deletePhoto", () => {
     expect((failure as LibraryError).status).toBe(0);
   });
 });
+
+describe("library client semantic search", () => {
+  it("searches, labels, and manages labels against the semantic endpoints", async () => {
+    const fetch = vi.fn(async (input: string) => {
+      if (input === "/api/semantic-search/search") {
+        return jsonResponse({ mode: "semantic", matched: ["beach"], results: [{ photoId: "p1", score: 0.3, labelMatch: true }] });
+      }
+      if (input === "/api/semantic-search/label") {
+        return jsonResponse({ albumId: "a1", labeled: ["p1"], alreadyLabeled: [], skipped: [], failed: [] });
+      }
+      return jsonResponse({ photo: { id: "p1" } });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const client = createLibraryClient();
+    const search = await client.semanticSearch("beach");
+    expect(search.mode).toBe("semantic");
+    expect(search.results).toHaveLength(1);
+    const [, searchInit] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(searchInit?.method).toBe("POST");
+    expect(searchInit?.body).toContain("beach");
+    const report = await client.labelAlbum("a1");
+    expect(report.labeled).toEqual(["p1"]);
+    await client.updateLabels("p1", { add: ["sunset"], remove: ["beach"] });
+    const [labelInput, labelInit] = fetch.mock.calls[2] as unknown as [string, RequestInit];
+    expect(labelInput).toBe("/api/photos/p1/labels");
+    expect(labelInit?.method).toBe("PATCH");
+  });
+
+  it("reads semantic health and kicks warmup", async () => {
+    const health = { ok: true, ready: false, weightsReady: false };
+    const fetch = vi.fn(async () => jsonResponse(health));
+    vi.stubGlobal("fetch", fetch);
+    const client = createLibraryClient();
+    expect(await client.semanticHealth()).toEqual(health);
+    expect(await client.semanticWarmup()).toEqual(health);
+    const [warmInput, warmInit] = fetch.mock.calls[1] as unknown as [string, RequestInit];
+    expect(warmInput).toBe("/api/semantic-search/warmup");
+    expect(warmInit?.method).toBe("POST");
+  });
+});

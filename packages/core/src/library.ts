@@ -1,4 +1,4 @@
-import type { Album, EditState, Photo, Preset } from "./types.js";
+import type { Album, EditState, Photo, PhotoLabel, Preset } from "./types.js";
 
 // A photo record served by the library server: the shared Photo shape plus
 // the stored edit recipe and library bookkeeping. `src`/`thumbnail` are
@@ -14,6 +14,8 @@ export interface LibraryPhoto extends Photo {
   hash: string | null;
   /** Server-local absolute path of a referenced original; null for URL photos. */
   path: string | null;
+  /** Semantic-search labels (ML zero-shot + hand-added); empty when unlabeled. */
+  labels: PhotoLabel[];
 }
 
 export interface LibrarySnapshot {
@@ -79,6 +81,44 @@ export interface HealOverlayRecord {
 
 export type HealOverlayBody = Omit<HealOverlayRecord, "groupId" | "updatedAt">;
 
+/** One ranked semantic-search hit, as served by POST /api/semantic-search/search. */
+export interface SemanticSearchHit {
+  photoId: string;
+  score: number;
+  labelMatch: boolean;
+}
+
+/** Search response: semantic ranking or keyword fallback, never an error when offline from ML. */
+export interface SemanticSearchResponse {
+  mode: "semantic" | "keyword";
+  /** Vocabulary labels the query mapped onto (empty in keyword mode). */
+  matched: string[];
+  results: SemanticSearchHit[];
+}
+
+/** Album labeling report, as served by POST /api/semantic-search/label. */
+export interface LabelAlbumReport {
+  albumId: string;
+  labeled: string[];
+  alreadyLabeled: string[];
+  skipped: { photoId: string; reason: string }[];
+  failed: { photoId: string; error: string }[];
+}
+
+/** Labeling health: labeling readiness plus catalog coverage counts. */
+export interface SemanticSearchHealth {
+  ok: boolean;
+  ready: boolean;
+  serving: boolean;
+  weightsReady: boolean;
+  sessionsWarm: boolean;
+  downloading: boolean;
+  downloadPct: number;
+  catalog: { photos: number; embedded: number; mlLabeled: number };
+  model: { file: string; bytes: number; license: string; url: string };
+  error: string | null;
+}
+
 export class LibraryError extends Error {
   readonly status: number;
 
@@ -108,7 +148,12 @@ export interface LibraryClient {
   upload: (file: Blob, filename: string, albumId?: string) => Promise<{ photo: LibraryPhoto; deduplicated: boolean }>;
   importByPath: (paths: string[], albumId?: string) => Promise<ImportReport>;
   updatePhoto: (id: string, patch: PhotoPatch) => Promise<{ photo: LibraryPhoto }>;
+  updateLabels: (id: string, patch: { add?: string[]; remove?: string[] }) => Promise<{ photo: LibraryPhoto }>;
   saveEdit: (id: string, present: EditState) => Promise<{ photo: LibraryPhoto }>;
+  semanticSearch: (q: string, limit?: number) => Promise<SemanticSearchResponse>;
+  labelAlbum: (albumId: string) => Promise<LabelAlbumReport>;
+  semanticHealth: () => Promise<SemanticSearchHealth>;
+  semanticWarmup: () => Promise<SemanticSearchHealth>;
   listHealOverlays: (id: string) => Promise<{ patches: HealOverlayRecord[] }>;
   saveHealOverlay: (id: string, groupId: number, body: HealOverlayBody) => Promise<{ patch: HealOverlayRecord }>;
   deleteHealOverlay: (id: string, groupId: number) => Promise<{ deleted: boolean }>;
@@ -154,6 +199,22 @@ export function createLibraryClient(baseUrl = ""): LibraryClient {
       request<{ photo: LibraryPhoto }>(url(`/api/photos/${encodeURIComponent(id)}/edit`), {
         ...json({ present }),
         method: "PUT",
+      }),
+    updateLabels: (id, patch) =>
+      request<{ photo: LibraryPhoto }>(url(`/api/photos/${encodeURIComponent(id)}/labels`), {
+        ...json(patch),
+        method: "PATCH",
+      }),
+    semanticSearch: (q, limit) =>
+      request<SemanticSearchResponse>(url("/api/semantic-search/search"), json({ q, limit })),
+    labelAlbum: (albumId) =>
+      request<LabelAlbumReport>(url("/api/semantic-search/label"), json({ albumId })),
+    semanticHealth: () => request<SemanticSearchHealth>(url("/api/semantic-search/health")),
+    semanticWarmup: () =>
+      request<SemanticSearchHealth>(url("/api/semantic-search/warmup"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
       }),
     listHealOverlays: (id) =>
       request<{ patches: HealOverlayRecord[] }>(url(`/api/photos/${encodeURIComponent(id)}/heal-overlays`)),

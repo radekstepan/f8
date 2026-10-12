@@ -109,7 +109,9 @@ export function stubRawDecode(width = 61, height = 41): DecodeRawFullRes {
   };
 }
 
-export function createTestContext(overrides: { decodeRaw?: DecodeRawFullRes; thumbDeps?: RawDecodeDeps } = {}): TestContext {
+export function createTestContext(
+  overrides: { decodeRaw?: DecodeRawFullRes; thumbDeps?: RawDecodeDeps; semanticEnqueue?: (photoId: string) => void } = {},
+): TestContext {
   // realpath: tmpdir can sit behind a symlink (/var -> /private/var), and
   // root confinement compares real paths.
   const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "f8-test-")));
@@ -133,6 +135,9 @@ export function createTestContext(overrides: { decodeRaw?: DecodeRawFullRes; thu
     // Route tests never touch the real encoder toolchain either: rendered
     // thumbs fall back to the original unless a test injects thumbDeps.
     thumbDeps: overrides.thumbDeps ?? { which: async () => null, run: async () => ({ status: 1, stderr: "no encoder" }) },
+    // ...nor the background embedder: imports enqueue into the void unless a
+    // test injects its own hook (the queue itself is tested directly).
+    semanticEnqueue: overrides.semanticEnqueue ?? (() => {}),
   });
   return {
     dir,

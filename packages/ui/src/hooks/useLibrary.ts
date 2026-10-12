@@ -255,6 +255,19 @@ export function useLibrary() {
     [client, markOfflineIfDown, upsertPhotos],
   );
 
+  const updateLabels = useCallback(
+    async (id: string, patch: { add?: string[]; remove?: string[] }) => {
+      try {
+        const { photo } = await client.updateLabels(id, patch);
+        upsertPhotos([photo]);
+      } catch (reason) {
+        markOfflineIfDown(reason);
+        throw reason;
+      }
+    },
+    [client, markOfflineIfDown, upsertPhotos],
+  );
+
   const removePhoto = useCallback(
     async (id: string) => {
       try {
@@ -332,6 +345,7 @@ export function useLibrary() {
     uploadFiles,
     importPaths,
     updatePhoto,
+    updateLabels,
     removePhoto,
     saveEdit,
     createAlbum,
