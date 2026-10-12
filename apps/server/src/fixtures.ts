@@ -4,6 +4,7 @@ import path from "node:path";
 import { createApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
+import type { DecodeRawFullRes } from "./raw-decode.ts";
 import { createStore } from "./store.ts";
 import type { Store } from "./store.ts";
 
@@ -89,7 +90,16 @@ export interface TestContext {
   close: () => void;
 }
 
-export function createTestContext(): TestContext {
+// Route tests never touch the real LibRaw toolchain: RAW imports decode to
+// a fixed full-res stub unless the test overrides it (e.g. with a failure).
+export function stubRawDecode(width = 61, height = 41): DecodeRawFullRes {
+  return async () => {
+    const bytes = makeJpeg(width, height);
+    return { bytes, width, height };
+  };
+}
+
+export function createTestContext(overrides: { decodeRaw?: DecodeRawFullRes } = {}): TestContext {
   // realpath: tmpdir can sit behind a symlink (/var -> /private/var), and
   // root confinement compares real paths.
   const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "photomator-test-")));
@@ -105,7 +115,7 @@ export function createTestContext(): TestContext {
   };
   const db = openDatabase(config.dbPath);
   const store = createStore(db);
-  const app = createApp({ config, store, roots: [dir] });
+  const app = createApp({ config, store, roots: [dir], decodeRaw: overrides.decodeRaw ?? stubRawDecode() });
   return {
     dir,
     store,

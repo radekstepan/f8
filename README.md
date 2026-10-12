@@ -37,7 +37,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 - Draggable before/after comparison and hold-to-preview-original behavior.
 - Centered aspect-ratio cropping, rotation, flips, and straightening with automatic horizon detection, plus a rule-of-thirds overlay.
 - Browser-based repair brushes (texture-transplant Heal by default with Fast/Balanced/Best search effort, tiered on-device ML Heal — Fast reuses classic Heal instantly, Balanced runs LaMa neural fill, Best runs Moebius diffusion with automatic fallback — OpenCV Telea/Navier-Stokes on request, blur fallback) and clone stamping. Click to choose a clone source; Alt-click to choose another.
-- Photo import using a file picker, drag and drop, or in-place folder import, including camera RAW files (rendered from the largest embedded JPEG preview, with the RAW file's orientation applied). When a RAW file and a JPEG share a filename, only the RAW is imported. Content hashing dedupes reimports and relinks moved files with their edits intact.
+- Photo import using a file picker, drag and drop, or in-place folder import, including camera RAW files (decoded at full sensor resolution on the server via LibRaw — there is no low-res fallback, so a file that cannot be decoded fails its import with the reason instead of entering the library). When a RAW file and a JPEG share a filename, only the RAW is imported. Content hashing dedupes reimports and relinks moved files with their edits intact.
 - JPEG, PNG, and WebP export, configurable size and quality, plus JSON adjustment export.
 - Copy/paste adjustments between photographs, with each photograph's crop and retouching preserved.
 - Functional application menus, keyboard shortcuts, photo information, album creation, preset creation, and help dialogs.
@@ -58,7 +58,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 | `apps/web/src/components/FsBrowser.tsx` | Server-folder browser for in-place import and missing-file relinking. |
 | `apps/web/src/index.css` | Visual tokens, native-style controls, responsive layout, and motion. |
 | `apps/server/src/app.ts` | HTTP API: library, imports, edits, albums, presets, folder browsing, and static serving. |
-| `apps/server/src/importer.ts` | Hashing, EXIF metadata, RAW preview extraction, dedupe/relink, and folder scanning. |
+| `apps/server/src/importer.ts` | Hashing, EXIF metadata, full-res RAW decoding via LibRaw, dedupe/relink, and folder scanning. |
 | `apps/server/src/store.ts` | Typed SQLite access: photos, edits, albums, presets. |
 | `apps/server/src/db.ts` | Database open, WAL mode, and schema migrations. |
 | `packages/core/src/types.ts` | Typed photo, album, preset, adjustment, and history models. |
@@ -104,6 +104,7 @@ Extend the `Tool` or `DialogType` union in `packages/core/src/types.ts`, add the
 - **Hash identity.** Every original is SHA-256 hashed at import. Reimporting a moved file relinks it to its record (edits intact); reimporting the same bytes anywhere reports a duplicate instead of a second record.
 - **Missing files.** A photo whose file is gone shows a Missing badge; opening it offers to locate the original, and any folder import that finds the bytes heals it automatically.
 - **Non-destructive edits.** The original is never written to. Each photo keeps one edit recipe in SQLite, saved ~500ms after each change; undo/redo stacks stay session-only.
+- **RAW decoding.** Camera RAW files are decoded at full sensor resolution at import (LibRaw with camera white balance, sRGB output, JPEG quality 92), so the library shows and edits true RAW dimensions — e.g. a 24MP Sony ARW imports as 4024×6024. Requires `dcraw_emu` (`brew install libraw`, or `apt install libraw-bin` on Linux) plus a JPEG encoder (`magick`, `convert`, or macOS `sips`). A file that cannot be decoded fails its import with the reason (missing toolchain, corrupt file, timeout) instead of entering the library as a low-res preview.
 - **Samples.** The first boot seeds the twelve sample photos as URL records (no local bytes, never missing), with photo-1 starting on the Natural preset.
 
 Configuration is all environment variables:

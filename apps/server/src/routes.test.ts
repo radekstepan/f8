@@ -5,6 +5,7 @@ import { DEFAULT_EDIT } from "@photomator/core";
 import type { ImportReport, LibraryPhoto, LibrarySnapshot } from "@photomator/core";
 import { createTestContext, makeBmp, makeJpeg, makeTiffWithJpeg } from "./fixtures.ts";
 import type { TestContext } from "./fixtures.ts";
+import { RawDecodeError } from "./raw-decode.ts";
 
 async function json<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
@@ -171,6 +172,30 @@ describe("routes", () => {
     expect((await json<{ missing: boolean }>(gone)).missing).toBe(true);
 
     expect((await ctx.app.request("/api/photos/does-not-exist/file")).status).toBe(404);
+  });
+
+  it("fails RAW imports loudly when the decoder cannot run", async () => {
+    const failing = createTestContext({
+      decodeRaw: async () => {
+        throw new RawDecodeError("LibRaw is not installed (dcraw_emu was not found).");
+      },
+    });
+    try {
+      const file = path.join(failing.dir, "frame.CR2");
+      await fs.writeFile(file, makeTiffWithJpeg(17, 12));
+      const report = await json<ImportReport>(
+        await failing.app.request("/api/imports/by-path", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paths: [file] }),
+        }),
+      );
+      expect(report.imported).toHaveLength(0);
+      expect(report.skipped).toHaveLength(1);
+      expect(report.skipped[0]?.reason).toContain("LibRaw is not installed");
+    } finally {
+      failing.close();
+    }
   });
 
   it("updates photo metadata and validates input", async () => {

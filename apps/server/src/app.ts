@@ -22,11 +22,15 @@ import { BrowseError, browse } from "./fs-browse.ts";
 import { ImportError, importUpload, scanPaths } from "./importer.ts";
 import type { ImportOutcome } from "./importer.ts";
 import type { PhotoRow, Store, StoredEdit } from "./store.ts";
+import type { DecodeRawFullRes } from "./raw-decode.ts";
 
 export interface AppContext {
   config: ServerConfig;
   store: Store;
   roots: string[];
+  // Full-res RAW decode override; undefined means the LibRaw toolchain.
+  // Tests inject a stub so route tests never depend on system binaries.
+  decodeRaw?: DecodeRawFullRes;
 }
 
 const IMAGE_MIME: Record<string, string> = {
@@ -262,7 +266,7 @@ export function createApp(ctx: AppContext): Hono {
         await fs.unlink(tmpPath).catch(() => undefined);
         return c.json({ error: "Empty upload." }, 400);
       }
-      const outcome = await importUpload(store, config, tmpPath, filename, { albumId });
+      const outcome = await importUpload(store, config, tmpPath, filename, { albumId, decodeRaw: ctx.decodeRaw });
       return c.json({
         photo: toApiPhoto(outcome.row, outcome.edit),
         deduplicated: outcome.status !== "imported",
@@ -287,7 +291,7 @@ export function createApp(ctx: AppContext): Hono {
     if (albumId !== undefined && typeof albumId !== "string") {
       return c.json({ error: "Invalid album." }, 400);
     }
-    const report = await scanPaths(store, config, roots, paths, { albumId });
+    const report = await scanPaths(store, config, roots, paths, { albumId, decodeRaw: ctx.decodeRaw });
     const photos = (outcomes: ImportOutcome[]): LibraryPhoto[] =>
       outcomes.map((outcome) => toApiPhoto(outcome.row, outcome.edit));
     return c.json({

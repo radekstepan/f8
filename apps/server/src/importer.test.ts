@@ -6,6 +6,7 @@ import { loadConfig } from "./config.ts";
 import { createTestContext, makeBmp, makeJpeg, makeJpegWithOrientation, makeTiffWithJpeg } from "./fixtures.ts";
 import type { TestContext } from "./fixtures.ts";
 import { importFileAtPath, importUpload, scanPaths } from "./importer.ts";
+import { RawDecodeError } from "./raw-decode.ts";
 
 describe("importFileAtPath", () => {
   let ctx: TestContext;
@@ -85,21 +86,40 @@ describe("importFileAtPath", () => {
     expect(outcome.row.height).toBe(8);
   });
 
-  it("extracts a RAW preview and reads dimensions from it", async () => {
+  it("decodes a RAW file at full resolution and reads dimensions from it", async () => {
+    const file = path.join(ctx.dir, "frame.CR2");
+    await fs.writeFile(file, makeTiffWithJpeg(17, 12));
+    const previewsDir = path.join(ctx.dir, "data", "previews");
+    const config = { ...loadConfig({}), previewsDir };
+    const decoded = makeJpeg(61, 41);
+
+    const outcome = await importFileAtPath(ctx.store, config, file, {
+      decodeRaw: async () => ({ bytes: decoded, width: 61, height: 41 }),
+    });
+
+    expect(outcome.status).toBe("imported");
+    expect(outcome.row.raw).toBe(1);
+    expect(outcome.row.width).toBe(61);
+    expect(outcome.row.height).toBe(41);
+    const preview = await fs.readFile(path.join(previewsDir, `${outcome.row.hash}.jpg`));
+    expect(preview).toEqual(decoded);
+  });
+
+  it("fails a RAW import loudly when the decode fails", async () => {
     const file = path.join(ctx.dir, "frame.CR2");
     await fs.writeFile(file, makeTiffWithJpeg(17, 12));
     const previewsDir = path.join(ctx.dir, "data", "previews");
     const config = { ...loadConfig({}), previewsDir };
 
-    const outcome = await importFileAtPath(ctx.store, config, file);
-
-    expect(outcome.status).toBe("imported");
-    expect(outcome.row.raw).toBe(1);
-    expect(outcome.row.width).toBe(17);
-    expect(outcome.row.height).toBe(12);
-    const preview = await fs.readFile(path.join(previewsDir, `${outcome.row.hash}.jpg`));
-    expect(preview[0]).toBe(0xff);
-    expect(preview[1]).toBe(0xd8);
+    await expect(
+      importFileAtPath(ctx.store, config, file, {
+        decodeRaw: async () => {
+          throw new RawDecodeError("LibRaw is not installed (dcraw_emu was not found).");
+        },
+      }),
+    ).rejects.toThrow("LibRaw is not installed");
+    expect(ctx.store.listPhotos()).toHaveLength(0);
+    expect(await fs.readdir(previewsDir).catch(() => [])).toEqual([]);
   });
 
   it("rejects files it cannot decode or does not accept", async () => {
@@ -189,7 +209,13 @@ describe("scanPaths", () => {
     await fs.writeFile(path.join(inbox, ".hidden.bmp"), makeBmp(2, 2));
     const config = { ...loadConfig({}), previewsDir: path.join(ctx.dir, "data", "previews") };
 
-    const report = await scanPaths(ctx.store, config, [ctx.dir], [inbox]);
+    const report = await scanPaths(
+      ctx.store,
+      config,
+      [ctx.dir],
+      [inbox],
+      { decodeRaw: async () => ({ bytes: makeJpeg(61, 41), width: 61, height: 41 }) },
+    );
 
     expect(report.outcomes.map((outcome) => outcome.row.filename).sort()).toEqual(["deep.bmp", "shot.CR2"]);
     expect(report.suppressedSidecars).toBe(1);

@@ -1,13 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
-import { imageSize } from "image-size";
 import { imageSizeFromFile } from "image-size/fromFile";
 import {
   DEFAULT_EDIT,
-  extractRawPreview,
-  findJpegPreviews,
-  injectExifOrientation,
   isImportableFilename,
   isRawFilename,
   readOrientation,
@@ -16,6 +12,8 @@ import {
 } from "@photomator/core";
 import type { ServerConfig } from "./config.ts";
 import { resolveWithinRoots } from "./fs-browse.ts";
+import { RawDecodeError, decodeRawFullRes } from "./raw-decode.ts";
+import type { DecodeRawFullRes } from "./raw-decode.ts";
 import type { PhotoRow, Store, StoredEdit } from "./store.ts";
 
 export class ImportError extends Error {
@@ -63,38 +61,12 @@ async function readHead(absPath: string, fileSize: number): Promise<Buffer> {
   }
 }
 
-// Extract the largest embedded JPEG preview with bounded memory: the TIFF
-// structure is scanned from a 1MB head and only the winning slice is read.
-// Layouts the scan cannot reach fall back to core's whole-file scan plus
-// exifr's IFD1 thumbnail.
-async function extractPreview(absPath: string, fileSize: number, orientation: number): Promise<Uint8Array> {
-  const head = await readHead(absPath, fileSize);
-  const handle = await fs.open(absPath, "r");
-  try {
-    for (const candidate of findJpegPreviews(head, fileSize)) {
-      if (candidate.offset + candidate.length > fileSize || candidate.length < 2) continue;
-      const slice = Buffer.alloc(candidate.length);
-      const { bytesRead } = await handle.read(slice, 0, slice.length, candidate.offset);
-      if (bytesRead !== slice.length) continue;
-      if (slice[0] !== 0xff || slice[1] !== 0xd8) continue;
-      return injectExifOrientation(slice, orientation);
-    }
-  } finally {
-    await handle.close();
-  }
-  try {
-    const whole = new Uint8Array(await fs.readFile(absPath));
-    const preview = await extractRawPreview(whole);
-    return injectExifOrientation(new Uint8Array(await preview.arrayBuffer()), orientation);
-  } catch {
-    throw new ImportError("This RAW file has no embedded preview the library can read.");
-  }
-}
-
 export interface ImportFileOptions {
   albumId?: string;
   location?: string;
   knownHash?: string;
+  // Full-res RAW decode; defaults to the LibRaw toolchain. Tests inject a stub.
+  decodeRaw?: DecodeRawFullRes;
 }
 
 // Import a file by reading it in place: the bytes are hashed for identity,
@@ -132,16 +104,22 @@ export async function importFileAtPath(
   let width = 0;
   let height = 0;
   if (raw) {
-    const preview = await extractPreview(absPath, stat.size, orientation);
-    await fs.mkdir(config.previewsDir, { recursive: true });
-    await fs.writeFile(path.join(config.previewsDir, `${hash}.jpg`), preview);
+    // RAW or nothing: a failed decode is a per-file import failure, never
+    // a silent low-res preview.
+    const decode = opts.decodeRaw ?? ((file) => decodeRawFullRes(file, config.tmpDir));
+    let fullRes;
     try {
-      const dims = imageSize(preview);
-      width = dims.width;
-      height = dims.height;
-    } catch {
-      throw new ImportError("The embedded preview could not be decoded.");
+      fullRes = await decode(absPath);
+    } catch (error) {
+      throw new ImportError(
+        error instanceof RawDecodeError ? error.message : "This RAW file could not be decoded.",
+      );
     }
+    await fs.mkdir(config.previewsDir, { recursive: true });
+    await fs.writeFile(path.join(config.previewsDir, `${hash}.jpg`), fullRes.bytes);
+    // Decodes arrive upright with no orientation tag: store as-is.
+    width = fullRes.width;
+    height = fullRes.height;
   } else {
     try {
       const dims = await imageSizeFromFile(absPath);
@@ -150,13 +128,13 @@ export async function importFileAtPath(
     } catch {
       throw new ImportError("This file could not be decoded. Try JPEG, PNG, or WebP.");
     }
-  }
-  // Recorded dimensions are upright (orientation 1), matching the browser
-  // pipeline: EXIF-aware display must not rotate for EXIF again.
-  if (orientation >= 5) {
-    const swapped = width;
-    width = height;
-    height = swapped;
+    // Recorded dimensions are upright (orientation 1), matching the browser
+    // pipeline: EXIF-aware display must not rotate for EXIF again.
+    if (orientation >= 5) {
+      const swapped = width;
+      width = height;
+      height = swapped;
+    }
   }
   const metaInput = stat.size <= FULL_META_BYTES ? new Uint8Array(await fs.readFile(absPath)) : head;
   const meta = await readRawMetadata(metaInput, raw ? "Imported RAW image" : "Imported image");
@@ -231,7 +209,7 @@ export async function importUpload(
   config: ServerConfig,
   tmpPath: string,
   filename: string,
-  opts: { albumId?: string } = {},
+  opts: { albumId?: string; decodeRaw?: DecodeRawFullRes } = {},
 ): Promise<ImportOutcome> {
   const safe = sanitizeFilename(filename);
   if (!isImportableFilename(safe)) {
@@ -252,6 +230,7 @@ export async function importUpload(
   return importFileAtPath(store, config, dest, {
     albumId: opts.albumId,
     knownHash: hash,
+    decodeRaw: opts.decodeRaw,
   });
 }
 
@@ -287,7 +266,7 @@ export async function scanPaths(
   config: ServerConfig,
   roots: string[],
   paths: string[],
-  opts: { albumId?: string } = {},
+  opts: { albumId?: string; decodeRaw?: DecodeRawFullRes } = {},
 ): Promise<ScanReport> {
   const expanded: string[] = [];
   const skipped: { path: string; reason: string }[] = [];
@@ -326,7 +305,9 @@ export async function scanPaths(
   truncated = truncated || selected.length > MAX_IMPORTS_PER_REQUEST;
   for (const shim of selected.slice(0, MAX_IMPORTS_PER_REQUEST)) {
     try {
-      outcomes.push(await importFileAtPath(store, config, shim.file, { albumId: opts.albumId }));
+      outcomes.push(
+        await importFileAtPath(store, config, shim.file, { albumId: opts.albumId, decodeRaw: opts.decodeRaw }),
+      );
     } catch (error) {
       skipped.push({
         path: shim.file,
