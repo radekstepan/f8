@@ -1,8 +1,8 @@
 // Server-side import-time cull assist: assess once per content hash, label
 // once per photo, group over the whole album.
 //
-// Blur (classical Laplacian variance), near-duplicates (DCT perceptual hash),
-// and keeper scores (a tiny logistic scorer) are computed here over the
+// Blur (classical Laplacian variance) and near-duplicates (DCT perceptual
+// hash, ranked by a tiny logistic quality score) are computed here over the
 // cached grid thumbs — the same pixel source as semantic search — and cached
 // in the SQLite catalog (photo_cull, keyed by content hash). A file is never
 // re-detected: fresh imports assess in a fire-and-forget background queue,
@@ -19,7 +19,6 @@
 import {
   CULL_ASSIST_VERSION,
   CULL_LABEL_BLURRY,
-  CULL_LABEL_KEEPER,
   CULL_LABELS,
   assignCullLabels,
   assessPixels,
@@ -110,8 +109,8 @@ export async function assessPhoto(
 }
 
 export interface CullGroup {
-  /** Group best (the one to keep); may itself carry no flag when soft. */
-  keeper: string;
+  /** Group best (spared the duplicate flag); may itself be flagged blurry. */
+  best: string;
   members: string[];
 }
 
@@ -127,8 +126,6 @@ export interface CullAlbumReport {
   alreadyLabeled: string[];
   /** Labeled blurry by this run. */
   blurry: string[];
-  /** Labeled keeper by this run. */
-  keepers: string[];
   /** Near-duplicate groups across the album's assessed photos. */
   groups: CullGroup[];
   /** Attempted but skipped (not a file, no pixels). */
@@ -161,7 +158,7 @@ function reportGroups(
 ): CullGroup[] {
   const byId = new Map(metrics.map((entry) => [entry.id, entry]));
   return groupNearDuplicates(metrics.map((entry) => ({ id: entry.id, phash: entry.phash }))).map((members) => ({
-    keeper: pickGroupBest(
+    best: pickGroupBest(
       members.map((id) => {
         const entry = byId.get(id);
         return { id, aesthetic: entry?.aesthetic ?? 0, blur: entry?.blur ?? 0 };
@@ -188,7 +185,6 @@ export async function cullAlbum(ctx: CullContext, albumId: string): Promise<Cull
     labeled: [],
     alreadyLabeled: [],
     blurry: [],
-    keepers: [],
     groups: [],
     skipped: [],
     failed: [],
@@ -236,7 +232,6 @@ export async function cullAlbum(ctx: CullContext, albumId: string): Promise<Cull
     if (labels.length) {
       ctx.store.setMlLabels(photoId, labels, { only: [...CULL_LABELS] });
       if (labels.some((entry) => entry.label === CULL_LABEL_BLURRY)) report.blurry.push(photoId);
-      if (labels.some((entry) => entry.label === CULL_LABEL_KEEPER)) report.keepers.push(photoId);
     }
     ctx.store.markCullLabeled(photoId);
     report.labeled.push(photoId);
@@ -257,8 +252,8 @@ export interface CullQueue {
  * so reimports are free) and assigns that photo's flags from the
  * album-so-far. Early in a bulk import the group context is partial, so
  * duplicate flags are best-effort until the album menu pass labels the
- * stragglers — blurry and keeper flags never depend on grouping. Every
- * failure is per-photo: the queue always moves on.
+ * stragglers — blurry flags never depend on grouping. Every failure is
+ * per-photo: the queue always moves on.
  */
 export function createCullQueue(ctx: CullContext): CullQueue {
   const pending: string[] = [];

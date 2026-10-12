@@ -57,7 +57,7 @@ function initialUrl(): InitialUrl {
 
 export type EditedFilter = 'all' | 'edited' | 'unedited';
 export type FavoriteFilter = 'all' | 'favorited' | 'not';
-export type CullFilter = 'all' | 'blurry' | 'keepers';
+export type CullFilter = 'all' | 'blurry';
 
 // Live import status: determinate file counts for dropped/picked files, or a
 // bare label (total 0) for folder scans, which resolve to one long request.
@@ -303,7 +303,6 @@ export default function App() {
     else if (favoriteFilter === 'not') items = items.filter((item) => !item.favorite);
     // Cull flags ride the shared labels (ML-assigned or hand-added alike).
     if (cullFilter === 'blurry') items = items.filter((item) => (item.labels ?? []).some((entry) => entry.label === 'blurry'));
-    else if (cullFilter === 'keepers') items = items.filter((item) => (item.labels ?? []).some((entry) => entry.label === 'keeper'));
     // Semantic ranks carry their own relevance order; everything else sorts.
     if (searchRank?.mode === 'semantic') return items;
     return sortAlbumPhotos(items, sortKey, sortDir);
@@ -444,9 +443,9 @@ export default function App() {
     })();
   }, [albums, library, notify, notifyError, semantic]);
 
-  // Album ML cull assist: flags blurry photos, near-duplicate groups, and
-  // keepers (files the server already assessed are never re-detected). The
-  // library reloads afterwards so the new flags land everywhere.
+  // Album ML cull assist: flags blurry photos and near-duplicate groups
+  // (files the server already assessed are never re-detected). The library
+  // reloads afterwards so the new flags land everywhere.
   const cullAlbumPhotos = useCallback((albumId: string) => {
     const album = albums.find((entry) => entry.id === albumId);
     void (async () => {
@@ -457,7 +456,7 @@ export default function App() {
         const duplicates = report.groups.reduce((total, group) => total + group.members.length - 1, 0);
         const checked = report.labeled.length;
         const head = checked
-          ? `${name}: checked ${checked} ${checked === 1 ? 'photo' : 'photos'} with ML — ${report.blurry.length} blurry, ${duplicates} ${duplicates === 1 ? 'duplicate' : 'duplicates'}, ${report.keepers.length} ${report.keepers.length === 1 ? 'keeper' : 'keepers'}.`
+          ? `${name}: checked ${checked} ${checked === 1 ? 'photo' : 'photos'} with ML — ${report.blurry.length} blurry, ${duplicates} ${duplicates === 1 ? 'duplicate' : 'duplicates'}.`
           : `${name}: everything already checked.`;
         const notes = [
           head,

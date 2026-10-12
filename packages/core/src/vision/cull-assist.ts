@@ -1,19 +1,18 @@
-// Import-time cull assist: blur detection, near-duplicate grouping, keeper scoring.
+// Import-time cull assist: blur detection and near-duplicate grouping.
 //
 // Pure, dependency-free helpers shared by the photo server (which runs them
 // over cached grid thumbs at import and from the album menu) and the tests.
-// Inputs are never mutated.
+// Inputs are never mutated. Only problems are reported — sharp photos carry
+// no flag (there is no positive state).
 //
 // - Blur is classical first, per the task: variance of the 4-neighborhood
 //   Laplacian over luma. Flat/defocused frames score near zero; textured
 //   sharp frames score in the hundreds on grid thumbs.
 // - Near-duplicates group by 64-bit DCT perceptual hash (32x32 luma,
 //   top-left 8x8 low frequencies, median threshold), union-find merged at a
-//   hamming radius.
-// - Keepers come from a tiny logistic aesthetic scorer over three
-//   handcrafted features (sharpness, exposure, contrast). Like the scene
-//   classifier, its coefficients are set by inspection rather than fitted —
-//   the honest v1 until a learned scorer lands.
+//   hamming radius. Each group's best (by a tiny logistic quality rank over
+//   sharpness, exposure, contrast — coefficients set by inspection, like the
+//   scene classifier) is spared the duplicate flag.
 //
 // Assessments cache in SQLite keyed by content hash, so a file is never
 // re-detected; labels ride the shared photo_labels table with source "ml".
@@ -24,8 +23,7 @@ import { assertValidImage, type PixelImage } from "./analyze.js";
 /** ML cull flags, stored as photo labels with source "ml". */
 export const CULL_LABEL_BLURRY = "blurry";
 export const CULL_LABEL_DUPLICATE = "duplicate";
-export const CULL_LABEL_KEEPER = "keeper";
-export const CULL_LABELS = [CULL_LABEL_BLURRY, CULL_LABEL_DUPLICATE, CULL_LABEL_KEEPER] as const;
+export const CULL_LABELS = [CULL_LABEL_BLURRY, CULL_LABEL_DUPLICATE] as const;
 export type CullLabel = (typeof CULL_LABELS)[number];
 
 /**
@@ -52,13 +50,6 @@ export const CULL_BLUR_THRESHOLD = 90;
  * burst differences with a 2x margin against false merges.
  */
 export const CULL_DUPLICATE_HAMMING = 8;
-
-/**
- * Keeper score at or above this flags a sharp, non-duplicate photo as a
- * keeper. Keeper requires sharpness separately, so this only ranks how
- * good a sharp photo looks.
- */
-export const CULL_KEEPER_THRESHOLD = 0.6;
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -158,7 +149,7 @@ export interface AestheticFeatures {
   contrast: number;
 }
 
-/** Handcrafted 0..1 features for the tiny keeper scorer. */
+/** Handcrafted 0..1 features for the tiny group-best ranker. */
 export function aestheticFeatures(blur: number, stats: LumaStats): AestheticFeatures {
   return {
     sharp: clamp01(blur / (3 * CULL_BLUR_THRESHOLD)),
@@ -168,14 +159,15 @@ export function aestheticFeatures(blur: number, stats: LumaStats): AestheticFeat
 }
 
 /**
- * Tiny logistic keeper scorer: sigmoid(w·features + bias). Coefficients set
+ * Tiny logistic quality rank: sigmoid(w·features + bias). Coefficients set
  * by inspection (sharpness dominates; exposure and contrast nudge), like the
  * scene classifier — no fitted weights, no download, no separate license.
+ * Only used to pick each duplicate group's best; it never becomes a label.
  */
 export const CULL_AESTHETIC_WEIGHTS = { sharp: 2.4, exposure: 1.1, contrast: 0.9, bias: -2.1 } as const;
 export type CullAestheticWeights = { sharp: number; exposure: number; contrast: number; bias: number };
 
-/** Keeper score 0..1 for one feature vector. */
+/** Quality rank 0..1 for one feature vector. */
 export function aestheticScore(
   features: AestheticFeatures,
   weights: CullAestheticWeights = CULL_AESTHETIC_WEIGHTS,
@@ -361,7 +353,7 @@ export interface CullGroupMember {
 }
 
 /**
- * Group keeper: highest aesthetic wins, ties break toward sharper, then
+ * Group best: highest aesthetic wins, ties break toward sharper, then
  * toward the lowest id — deterministic whatever the input order.
  */
 export function pickGroupBest(members: readonly CullGroupMember[]): string {
@@ -388,8 +380,8 @@ export interface CullPhotoMetrics {
  *   the score nears it).
  * - duplicate: a group member that is not the group best (score is the
  *   similarity to the best, near 1 by construction).
- * - keeper: sharp, not a duplicate, and at/above the keeper threshold
- *   (score is the aesthetic score).
+ *
+ * Sharp, unique photos get no label — there is no positive state.
  */
 export function assignCullLabels(
   items: readonly { id: string; metrics: CullPhotoMetrics }[],
@@ -422,9 +414,6 @@ export function assignCullLabels(
       const distance = hammingDistance(hashes.get(id) ?? 0n, hashes.get(best) ?? 0n);
       flagged.push({ label: CULL_LABEL_DUPLICATE, score: 1 - distance / 64, source: "ml" });
     }
-    if (!blurry && !duplicate && Number.isFinite(metrics.aesthetic) && metrics.aesthetic >= CULL_KEEPER_THRESHOLD) {
-      flagged.push({ label: CULL_LABEL_KEEPER, score: clamp01(metrics.aesthetic), source: "ml" });
-    }
     if (flagged.length) labels.set(id, flagged);
   }
   return labels;
@@ -436,11 +425,11 @@ export interface CullAssessment {
   blurry: boolean;
   /** Canonical 16-char pHash hex. */
   phash: string;
-  /** Keeper score 0..1. */
+  /** Quality rank 0..1 (group-best picking only, never labeled). */
   aesthetic: number;
 }
 
-/** Full one-photo assessment: blur + perceptual hash + keeper score. */
+/** Full one-photo assessment: blur + perceptual hash + quality rank. */
 export function assessPixels(image: PixelImage): CullAssessment {
   assertValidImage(image);
   const gray = grayLuma(image);

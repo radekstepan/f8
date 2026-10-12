@@ -1,6 +1,6 @@
 // Remote import-time cull assist: one POST per album, the server assesses
-// blur, near-duplicates, and keeper scores over its cached thumbs and
-// answers with the cull report.
+// blur and near-duplicates over its cached thumbs and answers with the
+// cull report.
 //
 // Unlike the semantic transport there are no pixels on the wire and no
 // weights to provision — the pass is classical plus embedded coefficients,

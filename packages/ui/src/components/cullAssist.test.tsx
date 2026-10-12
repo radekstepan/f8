@@ -78,7 +78,7 @@ describe('cull assist', () => {
     );
     expect(html).toContain('Cull status');
     expect(html).toContain('Show only photos flagged blurry by ML cull assist');
-    expect(html).toContain('Show only photos flagged as keepers by ML cull assist');
+    expect(html).not.toContain('Keepers');
     expect(html).toContain('filter-chip is-active');
     expect(html).toContain('filter-clear');
     const bare = renderToStaticMarkup(
@@ -95,16 +95,23 @@ describe('cull assist', () => {
         { label: 'duplicate', score: 0.95, source: 'ml' },
       ],
     });
-    const keeper = makePhoto({ id: 'p-keeper', labels: [{ label: 'keeper', score: 0.9, source: 'ml' }] });
     const html = renderToStaticMarkup(
-      <PhotoBrowser photos={[flagged, keeper, makePhoto({ id: 'p-clean' })]} title="Road Trip" search="" album={makeAlbum()} onSelect={noop} onFavorite={noop} onImport={noop} />,
+      <PhotoBrowser photos={[flagged, makePhoto({ id: 'p-clean' })]} title="Road Trip" search="" album={makeAlbum()} onSelect={noop} onFavorite={noop} onImport={noop} />,
     );
     expect(html).toContain('thumb-cull-badges');
     expect(html).toContain('Blurry · ML');
     expect(html).toContain('Duplicate · ML');
-    expect(html).toContain('Keeper · ML');
     expect(html).toContain('Flagged blurry by ML cull assist');
-    expect(html.match(/thumb-cull-badges/g)).toHaveLength(2);
+    expect(html.match(/thumb-cull-badges/g)).toHaveLength(1);
+  });
+
+  it('never badges a positive state, even for a stale keeper label', () => {
+    const stale = makePhoto({ id: 'p-stale', labels: [{ label: 'keeper', score: 0.9, source: 'ml' }] });
+    const html = renderToStaticMarkup(
+      <PhotoBrowser photos={[stale]} title="Road Trip" search="" album={makeAlbum()} onSelect={noop} onFavorite={noop} onImport={noop} />,
+    );
+    expect(html).not.toContain('thumb-cull-badges');
+    expect(html).not.toContain('Keeper · ML');
   });
 
   it('suggests cull flags in the label add field', () => {
@@ -113,7 +120,7 @@ describe('cull assist', () => {
     );
     expect(html).toContain('value="blurry"');
     expect(html).toContain('value="duplicate"');
-    expect(html).toContain('value="keeper"');
+    expect(html).not.toContain('value="keeper"');
   });
 
   it('styles the cull badge stack', () => {
@@ -121,6 +128,6 @@ describe('cull assist', () => {
     expect(cssRule('.thumb-cull-badges')).toMatch(/flex-direction\s*:\s*column/);
     expect(cssRule('.thumb-cull.is-blurry')).toMatch(/background\s*:/);
     expect(cssRule('.thumb-cull.is-duplicate')).toMatch(/background\s*:/);
-    expect(cssRule('.thumb-cull.is-keeper')).toMatch(/background\s*:/);
+    expect(cssRule('.thumb-cull.is-keeper')).toBe('');
   });
 });

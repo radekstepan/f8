@@ -64,7 +64,7 @@ function testPixels(width: number, height: number, fill: (x: number, y: number) 
   return { width, height, data };
 }
 
-/** Sharp textured pixels (high Laplacian, keeper-grade aesthetic). */
+/** Sharp textured pixels (high Laplacian, top quality rank). */
 const sharpPixels = (): PixelImage =>
   testPixels(32, 32, (x, y) => ((Math.floor(x / 2) + Math.floor(y / 2)) % 2 === 0 ? 0 : 255));
 
@@ -127,7 +127,7 @@ describe("cull assist", () => {
     return row;
   }
 
-  it("migrates a v2 catalog to v3 without losing photos", async () => {
+  it("migrates a v2 catalog to v4 without losing photos", async () => {
     const row = photoRow({ id: "keep-me" });
     ctx.store.insertPhoto(row);
     const dbPath = path.join(ctx.dir, "data", "f8.db");
@@ -142,10 +142,44 @@ describe("cull assist", () => {
     const reopened = openDatabase(dbPath);
     try {
       const version = (reopened.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }).value;
-      expect(version).toBe("3");
+      expect(version).toBe("4");
       const tables = (reopened.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('photo_cull', 'photo_cull_labels')").all() as { name: string }[]).map((entry) => entry.name).sort();
       expect(tables).toEqual(["photo_cull", "photo_cull_labels"]);
       expect((reopened.prepare("SELECT id FROM photos WHERE id = 'keep-me'").get() as { id: string }).id).toBe("keep-me");
+    } finally {
+      reopened.close();
+    }
+  });
+
+  it("migration v4 drops retired ML keeper flags but keeps the user's own", async () => {
+    const ml = photoRow({ id: "ml-flagged" });
+    const user = photoRow({ id: "user-flagged" });
+    ctx.store.insertPhoto(ml);
+    ctx.store.insertPhoto(user);
+    ctx.store.setMlLabels("ml-flagged", [
+      { label: "keeper", score: 0.9, source: "ml" },
+      { label: "beach", score: 0.8, source: "ml" },
+    ]);
+    ctx.store.addUserLabel("user-flagged", "keeper");
+    const dbPath = path.join(ctx.dir, "data", "f8.db");
+    const { DatabaseSync } = await import("node:sqlite");
+    const raw = new DatabaseSync(dbPath);
+    try {
+      raw.exec("UPDATE meta SET value = '3' WHERE key = 'schema_version';");
+    } finally {
+      raw.close();
+    }
+    const reopened = openDatabase(dbPath);
+    try {
+      const version = (reopened.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }).value;
+      expect(version).toBe("4");
+      const rows = reopened.prepare("SELECT photo_id AS photoId, label, source FROM photo_labels ORDER BY photo_id, label").all() as {
+        photoId: string; label: string; source: string;
+      }[];
+      expect(rows).toEqual([
+        { photoId: "ml-flagged", label: "beach", source: "ml" },
+        { photoId: "user-flagged", label: "keeper", source: "user" },
+      ]);
     } finally {
       reopened.close();
     }
@@ -244,7 +278,7 @@ describe("cull assist", () => {
     }
   });
 
-  it("culls an album end to end: blur, duplicates, keepers", async () => {
+  it("culls an album end to end: blur and duplicates, no positive state", async () => {
     ctx.store.insertAlbum({ id: "a1", name: "Trip", cover: "", sort: 0 });
     const pixelsById = new Map<string, PixelImage>();
     // Identical sharp pixels: same hash, one near-duplicate group.
@@ -262,13 +296,13 @@ describe("cull assist", () => {
     expect(report.alreadyAssessed).toEqual([]);
     expect(report.labeled.sort()).toEqual(["dup-a", "dup-b", "soft-1"]);
     expect(report.blurry).toEqual(["soft-1"]);
-    // Identical metrics: the lowest id wins the group and keeps.
-    expect(report.groups).toEqual([{ keeper: "dup-a", members: ["dup-a", "dup-b"] }]);
-    expect(report.keepers).toEqual(["dup-a"]);
+    // Identical metrics: the lowest id wins the group and stays unflagged.
+    expect(report.groups).toEqual([{ best: "dup-a", members: ["dup-a", "dup-b"] }]);
+    expect(report).not.toHaveProperty("keepers");
     expect(report.skipped).toEqual([]);
     expect(report.failed).toEqual([]);
     expect(calls).toBe(3);
-    expect(ctx.store.getLabels("dup-a")).toEqual([{ label: "keeper", score: expect.any(Number), source: "ml" }]);
+    expect(ctx.store.getLabels("dup-a")).toEqual([]);
     expect(ctx.store.getLabels("dup-b").map((entry) => entry.label)).toEqual(["duplicate"]);
     expect(ctx.store.getLabels("soft-1").map((entry) => entry.label)).toEqual(["blurry"]);
 
@@ -328,10 +362,11 @@ describe("cull assist", () => {
       body: JSON.stringify({ albumId: "a1" }),
     });
     expect(response.status).toBe(200);
-    const report = await json<{ assessed: string[]; labeled: string[]; keepers: string[] }>(response);
+    const report = await json<{ assessed: string[]; labeled: string[]; blurry: string[] }>(response);
     expect(report.assessed).toEqual(["http-1"]);
     expect(report.labeled).toEqual(["http-1"]);
-    expect(report.keepers).toEqual(["http-1"]);
+    expect(report.blurry).toEqual([]);
+    expect(report).not.toHaveProperty("keepers");
     const bad = await ctx.app.request("/api/cull-assist/cull", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

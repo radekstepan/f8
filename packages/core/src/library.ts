@@ -109,7 +109,7 @@ export interface LabelAlbumReport {
 
 /** One near-duplicate group: the group best plus every member id. */
 export interface CullGroup {
-  keeper: string;
+  best: string;
   members: string[];
 }
 
@@ -126,8 +126,6 @@ export interface CullAlbumReport {
   alreadyLabeled: string[];
   /** Labeled blurry by this run. */
   blurry: string[];
-  /** Labeled keeper by this run. */
-  keepers: string[];
   /** Near-duplicate groups across the album's assessed photos. */
   groups: CullGroup[];
   skipped: { photoId: string; reason: string }[];

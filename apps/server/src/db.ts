@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 // The schema lives here as a string (rather than a .sql asset) so `tsc`
 // emits a self-contained dist with no asset copying.
@@ -86,7 +86,7 @@ CREATE INDEX IF NOT EXISTS idx_photo_labels_label ON photo_labels (label);
 `;
 
 // Import-time cull assist (task 15): one assessment row per content hash —
-// blur score, perceptual hash, keeper score — plus a per-photo marker for
+// blur score, perceptual hash, quality rank — plus a per-photo marker for
 // "cull labels assigned". Metrics cache by hash so a file is never
 // re-detected (even across delete + reimport); the marker is per photo so a
 // fresh row still gets its labels from the cache while a user's hand-removed
@@ -105,6 +105,13 @@ CREATE TABLE IF NOT EXISTS photo_cull_labels (
   photo_id TEXT PRIMARY KEY REFERENCES photos (id) ON DELETE CASCADE,
   updated_at TEXT NOT NULL
 );
+`;
+
+// Cull assist reports no positive state: drop the retired ML "keeper"
+// flags. Hand-added "keeper" labels (source 'user') are the user's own
+// words and stay untouched.
+const MIGRATION_4 = `
+DELETE FROM photo_labels WHERE label = 'keeper' AND source = 'ml';
 `;
 
 function currentVersion(db: DatabaseSync): number {
@@ -136,6 +143,10 @@ function migrate(db: DatabaseSync): void {
   if (currentVersion(db) < 3) {
     db.exec(MIGRATION_3);
     setVersion(db, 3);
+  }
+  if (currentVersion(db) < 4) {
+    db.exec(MIGRATION_4);
+    setVersion(db, 4);
   }
 }
 

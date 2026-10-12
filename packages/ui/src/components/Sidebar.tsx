@@ -62,7 +62,7 @@ function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, onLabelAlbu
       {showMenu && open && (
         <div className="dropdown-menu album-menu" role="menu" aria-label={`Album actions for ${album.name}`}>
           {onLabelAlbum && <MenuItem onClick={() => { setOpen(false); onLabelAlbum(album.id); }}><span>Label unlabeled photos <span className="ml-badge" title="Photos are labeled by a machine-learning model on the photo server">ML</span></span></MenuItem>}
-          {onCullAlbum && <MenuItem onClick={() => { setOpen(false); onCullAlbum(album.id); }}><span>Find blurry photos <span className="ml-badge" title="Blurry photos, near-duplicates, and keepers are flagged by ML cull assist on the photo server">ML</span></span></MenuItem>}
+          {onCullAlbum && <MenuItem onClick={() => { setOpen(false); onCullAlbum(album.id); }}><span>Find blurry photos <span className="ml-badge" title="Blurry photos and near-duplicates are flagged by ML cull assist on the photo server">ML</span></span></MenuItem>}
           {(onLabelAlbum || onCullAlbum) && onRemoveAlbum && <div className="menu-separator" role="separator" />}
           {onRemoveAlbum && <MenuItem danger onClick={() => { setOpen(false); onRemoveAlbum(album.id); }}>Delete album…</MenuItem>}
         </div>

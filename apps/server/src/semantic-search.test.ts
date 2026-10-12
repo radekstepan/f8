@@ -109,7 +109,8 @@ describe("semantic search", () => {
     const dbPath = path.join(ctx.dir, "data", "f8.db");
     // Downgrade in place: drop the v2 tables, stamp version 1, reopen. The
     // reopen runs every later migration (v2 semantic tables, v3 cull
-    // tables), so the version and table asserts track the latest schema.
+    // tables, v4 keeper-flag cleanup), so the version and table asserts
+    // track the latest schema.
     const { DatabaseSync } = await import("node:sqlite");
     const raw = new DatabaseSync(dbPath);
     try {
@@ -120,7 +121,7 @@ describe("semantic search", () => {
     const reopened = openDatabase(dbPath);
     try {
       const version = (reopened.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }).value;
-      expect(version).toBe("3");
+      expect(version).toBe("4");
       const tables = (reopened.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('photo_embeddings', 'photo_labels', 'photo_cull', 'photo_cull_labels')").all() as { name: string }[]).map((entry) => entry.name).sort();
       expect(tables).toEqual(["photo_cull", "photo_cull_labels", "photo_embeddings", "photo_labels"]);
       expect((reopened.prepare("SELECT id FROM photos WHERE id = 'keep-me'").get() as { id: string }).id).toBe("keep-me");
