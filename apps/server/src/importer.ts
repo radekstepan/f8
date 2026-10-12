@@ -179,7 +179,7 @@ export async function importFileAtPath(
     shutter: meta.shutter,
     focal_length: meta.focalLength,
     date_taken: meta.date ?? new Date(stat.mtimeMs).toISOString(),
-    location: opts.location ?? `Imported from ${path.basename(path.dirname(absPath)) || "this device"}`,
+    location: opts.location ?? "",
     raw: raw ? 1 : 0,
     favorite: 0,
     rating: 0,
@@ -251,7 +251,6 @@ export async function importUpload(
   await moveFile(tmpPath, dest);
   return importFileAtPath(store, config, dest, {
     albumId: opts.albumId,
-    location: "Imported from this device",
     knownHash: hash,
   });
 }

@@ -35,7 +35,7 @@ describe("importFileAtPath", () => {
     expect(outcome.row.height).toBe(7);
     expect(outcome.row.hash).toMatch(/^[0-9a-f]{64}$/);
     expect(outcome.row.album_id).toBe("imports");
-    expect(outcome.row.location).toContain(path.basename(ctx.dir));
+    expect(outcome.row.location).toBe("");
     expect(outcome.edit.edited).toBe(false);
     expect(outcome.edit.present).toEqual(DEFAULT_EDIT);
     expect(await fs.readFile(file)).toEqual(bytes);
@@ -143,7 +143,7 @@ describe("importUpload", () => {
 
     expect(outcome.status).toBe("imported");
     expect(outcome.row.path ?? "").toContain(path.join("library"));
-    expect(outcome.row.location).toBe("Imported from this device");
+    expect(outcome.row.location).toBe("");
     expect(await fs.stat(outcome.row.path as string)).toBeTruthy();
   });
 

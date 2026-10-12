@@ -114,12 +114,6 @@ img { display: block; }
 .import-button:hover { background: #363639; border-color: #676153; }
 .import-button > svg { color: #9e9ea7; }
 .import-button > span { margin-left: auto; color: #7e7e89; font-size: 13px; }
-.sync-status { display: flex; gap: 9px; align-items: center; padding-top: 19px; margin-top: 20px; border-top: 1px solid #36363b; color: #92929d; }
-.sync-status > div { display: flex; flex-direction: column; gap: 4px; }
-.sync-status > div > span { font-size: 10px; color: #b3b3bc; }
-.sync-status small { font-size: 8px; color: #777780; letter-spacing: -.15px; }
-.status-dot { width: 4px; height: 4px; border-radius: 50%; background: #87a98e; flex-shrink: 0; margin-left: auto; margin-top: -10px; }
-.workspace-label { display: flex; align-items: center; gap: 6px; color: #686871; margin-top: 17px; font-size: 8px; letter-spacing: .12px; }
 
 .editor-column { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #151517; overflow: hidden; }
 .photo-workspace { display: flex; flex-direction: column; flex: 1; min-height: 170px; }
@@ -366,8 +360,6 @@ img { display: block; }
 .app-status { height: 23px; flex-shrink: 0; background: #242426; border-top: 1px solid #36363b; padding: 0 17px; display: flex; align-items: center; justify-content: space-between; font-size: 8px; color: #85858f; position: relative; }
 .status-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; font-size: 7.5px; color: #74747e; gap: 8px; }
 .status-divider { height: 8px; width: 1px; background: #48484d; }
-.saved-status { display: flex; align-items: center; gap: 5px; font-size: 8px; }
-.saved-status > svg { color: #9caf91; }
 .vision-activate { padding: 0; }
 .vision-activate:hover { color: #b5b5bd; text-decoration: underline; text-underline-offset: 2px; }
 
@@ -515,7 +507,6 @@ img { display: block; }
   .toolbar-actions { gap: 8px; padding: 0 18px; }
   .sidebar-item { font-size: 10px; gap: 8px; }
   .sidebar-item .item-count { font-size: 8px; }
-  .sync-status small { font-size: 7px; }
   .preset-item { flex-basis: 64px; }
   .presets-list { gap: 7px; }
   .preset-tabs { gap: 1px; }
@@ -608,7 +599,6 @@ img { display: block; }
   .compare-button > span { display: block; }
   .zoom-controls .icon-button { width: 21px; }
   .app-status { padding-inline: 13px; font-size: 7.5px; }
-  .saved-status { font-size: 7.5px; }
   .photo-browser { padding: 25px 20px; }
   .photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 23px 13px; }
   .browser-view-control { display: none; }
@@ -659,8 +649,6 @@ img { display: block; }
   .filmstrip-image { height: 52px; }
   .photo-heading { height: 35px; }
   .sidebar-bottom { padding-top: 16px; }
-  .workspace-label { display: none; }
-  .sync-status { margin-top: 13px; padding-top: 13px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

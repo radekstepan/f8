@@ -78,7 +78,9 @@ function toApiPhoto(row: PhotoRow, edit: StoredEdit): LibraryPhoto {
     src: file ? endpoint : (row.url ?? ""),
     thumbnail: file ? endpoint : (row.thumbnail_url ?? row.url ?? ""),
     albumId: row.album_id,
-    location: row.location,
+    // Legacy rows stored auto-generated "Imported from ..." provenance here;
+    // everything comes from this device, so only real locations are served.
+    location: row.location.startsWith("Imported from") ? "" : row.location,
     date: row.date_taken,
     width: row.width,
     height: row.height,

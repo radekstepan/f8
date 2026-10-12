@@ -54,6 +54,34 @@ describe("routes", () => {
     expect((await json<LibrarySnapshot>(await ctx.app.request("/api/library"))).photos).toHaveLength(1);
   });
 
+  it("serves no import provenance as the photo location", async () => {
+    const uploaded = await json<{ photo: LibraryPhoto; deduplicated: boolean }>(
+      await ctx.app.request("/api/imports/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream", "X-Filename": "drop.bmp" },
+        body: makeBmp(11, 7),
+      }),
+    );
+    expect(uploaded.photo.location).toBe("");
+
+    // Legacy rows stored auto-generated "Imported from ..." provenance; the
+    // API hides it while genuine locations still pass through.
+    const stamp = new Date().toISOString();
+    const legacy = {
+      hash: null, kind: "url", path: null, url: "https://example.com/legacy.jpg", thumbnail_url: null,
+      filename: "legacy.jpg", title: "legacy", width: 8, height: 6,
+      camera: "Camera", lens: "Lens", iso: 100, aperture: "f/2",
+      shutter: "1/60", focal_length: "35mm", date_taken: stamp,
+      raw: 0, favorite: 0, rating: 0, album_id: "all", photographer: null,
+      file_size: 0, mtime: 0, created_at: stamp, updated_at: stamp,
+    } as const;
+    ctx.store.insertPhoto({ ...legacy, id: "legacy-provenance", location: "Imported from this device" });
+    ctx.store.insertPhoto({ ...legacy, id: "genuine-place", location: "Sardinia" });
+    const library = await json<LibrarySnapshot>(await ctx.app.request("/api/library"));
+    expect(library.photos.find((photo) => photo.id === "legacy-provenance")?.location).toBe("");
+    expect(library.photos.find((photo) => photo.id === "genuine-place")?.location).toBe("Sardinia");
+  });
+
   it("rejects empty and undecodable uploads", async () => {
     const empty = await ctx.app.request("/api/imports/upload", {
       method: "POST",

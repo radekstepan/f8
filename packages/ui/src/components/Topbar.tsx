@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { ArrowLeft, Bandage, Check, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Sparkles, Undo2 } from 'lucide-react';
+import { ArrowLeft, Bandage, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Sparkles, Undo2 } from 'lucide-react';
 import type { DialogType, Tool, VisionWorkerStatus } from '@photomator/core';
 import { BrandMark, IconButton, MenuItem } from './EditorUI.js';
 
@@ -175,6 +175,6 @@ function renderVision(vision: VisionIndicator) {
   }
 }
 
-export function AppStatus({ count, edited, vision }: { count: number; edited: boolean; vision?: VisionIndicator }) {
-  return <footer className="app-status"><span>{count} photos in your library</span><span className="status-center">Non-destructive editing<span className="status-divider" />Your originals stay original.{vision && <><span className="status-divider" />{renderVision(vision)}</>}</span><span className="saved-status"><Check size={11} />{edited ? 'Edits saved locally' : 'All changes saved'}</span></footer>;
+export function AppStatus({ count, vision }: { count: number; vision?: VisionIndicator }) {
+  return <footer className="app-status"><span>{count} photos in your library</span><span className="status-center">Non-destructive editing<span className="status-divider" />Your originals stay original.{vision && <><span className="status-divider" />{renderVision(vision)}</>}</span></footer>;
 }

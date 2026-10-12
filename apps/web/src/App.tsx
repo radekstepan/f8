@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDefaultEdit, isRecentlyEdited, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@photomator/core';
+import { CROP_RATIOS, PRESETS, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isRecentlyEdited, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@photomator/core';
 import { RAW_ACCEPT } from '@photomator/core';
 import { useEditor, useLibrary } from '@photomator/ui';
 import type { DialogType, EditState, Tool, ViewMode } from '@photomator/core';
@@ -589,7 +589,6 @@ export default function App() {
     </div>
     <AppStatus
       count={photos.length}
-      edited={!isDefaultEdit(editor.edit)}
       vision={{
         status: vision.status,
         version: vision.version,
