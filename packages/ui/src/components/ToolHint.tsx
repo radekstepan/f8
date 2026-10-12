@@ -12,7 +12,7 @@ interface ToolHintProps {
   children: ReactNode;
 }
 
-/** Canvas help message: readable for a couple of seconds, then fades away.
+/** Canvas help message: fully readable for 5s, then fades away over 0.5s.
  *
  * Render every canvas tool hint through this wrapper so they all share the
  * once-per-photo-visit rule: the hint shows when its tool opens, fades after

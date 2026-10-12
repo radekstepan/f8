@@ -2,11 +2,10 @@ import { describe, expect, it } from "vitest";
 import { TOOL_HINT_FADE_MS, TOOL_HINT_VISIBLE_MS, createToolHintTracker } from "./toolHints.js";
 
 describe("tool hint timing", () => {
-  it("stays readable for a couple of seconds, then fades briefly", () => {
-    expect(TOOL_HINT_VISIBLE_MS).toBeGreaterThanOrEqual(2000);
-    expect(TOOL_HINT_VISIBLE_MS).toBeLessThanOrEqual(5000);
-    expect(TOOL_HINT_FADE_MS).toBeGreaterThan(0);
-    expect(TOOL_HINT_FADE_MS).toBeLessThan(TOOL_HINT_VISIBLE_MS);
+  it("stays fully readable for 5s, then fades briefly (5.5s total on screen)", () => {
+    expect(TOOL_HINT_VISIBLE_MS).toBe(5000);
+    expect(TOOL_HINT_FADE_MS).toBe(500);
+    expect(TOOL_HINT_VISIBLE_MS + TOOL_HINT_FADE_MS).toBe(5500);
   });
 });
 

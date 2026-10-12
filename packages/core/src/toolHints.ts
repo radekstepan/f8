@@ -1,15 +1,20 @@
 /** Canvas tool help messages: show once per photo visit, then fade away (PhotoCanvas).
  *
  * Each tool hint (repair, and any future canvas hint) appears when its tool
- * opens, stays readable for a couple of seconds, then fades out and stays
- * hidden until the user navigates away from the photo and back. The timing
+ * opens, stays fully readable for 5 seconds, then fades out over 0.5s and
+ * stays hidden until the user navigates away from the photo and back. The timing
  * constants live here so the component and its CSS transition stay in sync,
  * and the dismissal record lives here as a framework-free tracker so the
  * once-per-visit rule is unit-testable without a DOM.
  */
 
-/** How long a tool hint stays fully visible after its tool opens. */
-export const TOOL_HINT_VISIBLE_MS = 2500;
+/** How long a tool hint stays fully readable after its tool opens.
+ *
+ * Timing breakdown: 5s fully readable + 0.5s fade-out = 5.5s total on
+ * screen. The readable window is the part that matters for reading the
+ * hint; the fade is a short transition on top of it.
+ */
+export const TOOL_HINT_VISIBLE_MS = 5000;
 
 /** How long the fade-out transition runs (must match the .tool-hint CSS transition). */
 export const TOOL_HINT_FADE_MS = 500;
