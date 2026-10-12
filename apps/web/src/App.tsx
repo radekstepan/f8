@@ -12,6 +12,7 @@ import { Inspector } from '@f8/ui';
 import { EditorDialogs } from '@f8/ui';
 import { useVisionWorker } from './vision/useVisionWorker';
 import { useStraighten } from './vision/useStraighten';
+import { useObjectRemoval } from './vision/useObjectRemoval';
 import { useInpaintRepair } from './vision/useInpaintRepair';
 import { FsBrowser } from './components/FsBrowser';
 import { readToolPrefs, writeToolPrefsRaw } from './hooks/useToolPrefs';
@@ -122,6 +123,7 @@ export default function App() {
   const editor = useEditor(photo?.id ?? selectedId, { initial: library.editsSeed, onPersist: library.saveEdit });
   const vision = useVisionWorker();
   const straighten = useStraighten(photo?.id ?? selectedId);
+  const objectRemoval = useObjectRemoval(photo?.id ?? selectedId);
   const inpaintRepair = useInpaintRepair();
   // Canvas binding: ML strokes are gated until the tier is warmed, so the
   // brush cursor stays hidden and painting is ignored while loading.
@@ -403,6 +405,20 @@ export default function App() {
     }
     editor.change(patch, mergeKey);
   }, [editor]);
+
+  // One-click removal: checked detections become repair strokes in one atomic
+  // history entry (one stroke id per person, so each removal stays
+  // individually deletable); the existing pipeline heals them from there.
+  const applyObjectRemoval = useCallback(() => {
+    if (!photo) return;
+    const aspect = photo.height > 0 ? photo.width / photo.height : 1;
+    const points = objectRemoval.apply(editor.edit.retouches, aspect);
+    if (points.length === 0) return;
+    const people = objectRemoval.detections.filter((detection) => detection.checked).length;
+    handleEditChange({ retouches: [...editor.edit.retouches, ...points] });
+    objectRemoval.dismiss();
+    notify(`Removing ${people} ${people === 1 ? 'person' : 'people'} — healing with ${inpaintRepair.method === 'ml-heal' ? 'ML Repair' : 'the current repair method'}.`);
+  }, [photo, editor, handleEditChange, objectRemoval, inpaintRepair.method]);
 
   // Rotation turns repairs with the image in one atomic history entry, so
   // undo restores both together and they can never drift apart. The edit is
@@ -720,7 +736,7 @@ export default function App() {
         photo={photo} edit={editor.edit} tool={tool} histogram={histogram}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, source: straighten.source, runId: straighten.runId, mlProgress: straighten.mlProgress, mlWarming: straighten.mlWarming, mlNote: straighten.mlNote, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss, onCancelMl: straighten.cancelMl }}
-        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, serverDown: inpaintRepair.serverDown, onCancelHeal: inpaintRepair.cancelHeal, onRetry: () => { void inpaintRepair.warmup().catch(() => { /* Failure is recorded in mlProgress/serverDown. */ }); }, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
+        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, serverDown: inpaintRepair.serverDown, onCancelHeal: inpaintRepair.cancelHeal, onRetry: () => { void inpaintRepair.warmup().catch(() => { /* Failure is recorded in mlProgress/serverDown. */ }); }, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx, removal: { state: objectRemoval.state, detections: objectRemoval.detections, source: objectRemoval.source, progress: objectRemoval.progress, note: objectRemoval.note, message: objectRemoval.message, onDetect: () => objectRemoval.detect(photo.src), onToggle: objectRemoval.toggle, onApply: applyObjectRemoval, onDismiss: objectRemoval.dismiss } }}
         onStraightenDragging={setStraightenDragging}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={handleEditChange} onRotate={rotateImage} onStraighten={changeStraighten} onReset={() => handleAction('reset')}

@@ -369,6 +369,9 @@ img { display: block; }
 .ml-progress.is-error .inspector-note { color: #df9a94; }
 .ml-offline { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .ml-offline > p { font-size: 9px; line-height: 1.8; color: #df9a94; margin: 0; }
+.ml-badge { display: inline-block; font-size: 8px; font-weight: 700; letter-spacing: .04em; color: #f0d397; border: 1px solid #8b7650; border-radius: 3px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
+.object-removal { margin-top: 4px; }
+.object-removal > .secondary-button { width: 100%; }
 
 .app-status { height: 23px; flex-shrink: 0; background: #242426; border-top: 1px solid #36363b; padding: 0 17px; display: flex; align-items: center; justify-content: space-between; font-size: 8px; color: #85858f; position: relative; }
 .status-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; font-size: 7.5px; color: #74747e; gap: 8px; }

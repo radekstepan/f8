@@ -6,6 +6,7 @@ export * from "./heal-cache.js";
 export * from "./heal-queue.js";
 export * from "./ml-heal.js";
 export * from "./inpaint.js";
+export * from "./object-detect.js";
 export * from "./orientation.js";
 export * from "./poisson.js";
 export * from "./preview-render-cache.js";

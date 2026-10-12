@@ -11,6 +11,7 @@ import type { ServerConfig } from "./config.ts";
 import { getHealProgress, getMlHealHealth, kickEngineReady, runRemoteHeal, validateRemoteBody } from "./ml-heal.ts";
 import type { RemoteHealEngine } from "./ml-heal.ts";
 import { getStraightenHealth, kickStraightenReady, runStraightenEstimate, validateStraightenBody } from "./straighten-ml.ts";
+import { getObjectDetectHealth, kickObjectDetectReady, runObjectDetect, validateDetectBody } from "./object-detect.ts";
 import {
   deleteHealOverlay,
   listHealOverlays,
@@ -245,6 +246,34 @@ export function createApp(ctx: AppContext): Hono {
       if (error instanceof RangeError) return c.json({ error: error.message }, 400);
       console.error(error);
       return c.json({ error: "Straighten estimate failed." }, 503);
+    }
+  });
+
+  app.get("/api/object-detect/health", async (c) => c.json(await getObjectDetectHealth(config.dataDir)));
+
+  app.post("/api/object-detect/warmup", async (c) => {
+    // Kick provisioning into the background and return immediately: the
+    // client polls health for download/session progress, like ml-heal.
+    // First use downloads ~12MB once; detect serves classically until then.
+    kickObjectDetectReady(config.dataDir);
+    return c.json(await getObjectDetectHealth(config.dataDir));
+  });
+
+  app.post("/api/object-detect/detect", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    const parsed = validateDetectBody(body);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    try {
+      return c.json(await runObjectDetect(config.dataDir, parsed.value));
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 400);
+      console.error(error);
+      return c.json({ error: "Object detect failed." }, 503);
     }
   });
 
