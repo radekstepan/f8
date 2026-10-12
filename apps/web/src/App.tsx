@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { PRESETS, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDefaultEdit, photoInCollection } from '@photomator/core';
+import { CROP_RATIOS, PRESETS, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDefaultEdit, photoInCollection, rotateRetouches } from '@photomator/core';
 import { RAW_ACCEPT } from '@photomator/core';
 import { useEditor, useLibrary } from '@photomator/ui';
 import type { DialogType, EditState, Tool, ViewMode } from '@photomator/core';
@@ -255,6 +255,26 @@ export default function App() {
     editor.change(patch, mergeKey);
   }, [editor]);
 
+  // Rotation turns repairs with the image in one atomic history entry, so
+  // undo restores both together and they can never drift apart.
+  const rotateImage = useCallback((direction: 1 | -1) => {
+    const from = editor.edit.rotation;
+    const to = (from + direction * 90) % 360;
+    if (!editor.edit.retouches.length) {
+      handleEditChange({ rotation: to });
+      return;
+    }
+    handleEditChange({
+      rotation: to,
+      retouches: rotateRetouches(editor.edit.retouches, {
+        fromRotation: from,
+        toRotation: to,
+        cropRatio: CROP_RATIOS[editor.edit.cropRatio] ?? null,
+        sourceAspect: photo ? photo.width / photo.height : Number.NaN,
+      }),
+    });
+  }, [editor, handleEditChange, photo]);
+
   const copyAdjustments = () => { setClipboard({ ...editor.edit, retouches: [] }); notify('Adjustments copied. Pick another photo to paste them.'); };
   const pasteAdjustments = () => {
     if (!clipboard) return;
@@ -339,7 +359,7 @@ export default function App() {
       case 'copy': copyAdjustments(); break;
       case 'paste': pasteAdjustments(); break;
       case 'enhance': editor.autoEnhance(photo?.src); setView('editor'); break;
-      case 'rotate': editor.change({ rotation: (editor.edit.rotation - 90) % 360 }); break;
+      case 'rotate': rotateImage(-1); break;
       case 'favorite': toggleFavorite(); break;
       case 'sidebar': setSidebarOpen((current) => !current); if (window.innerWidth < 760) setInspectorOpen(false); break;
       case 'inspector': setInspectorOpen((current) => !current); break;
@@ -515,7 +535,7 @@ export default function App() {
         repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, serverDown: inpaintRepair.serverDown, onCancelHeal: inpaintRepair.cancelHeal, onRetry: () => { void inpaintRepair.warmup().catch(() => { /* Failure is recorded in mlProgress/serverDown. */ }); }, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
         onStraightenDragging={setStraightenDragging}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
-        onChange={handleEditChange} onReset={() => handleAction('reset')}
+        onChange={handleEditChange} onRotate={rotateImage} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
         onClose={() => setInspectorOpen(false)}
