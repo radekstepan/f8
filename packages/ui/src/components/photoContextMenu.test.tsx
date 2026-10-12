@@ -154,4 +154,61 @@ describe('photo context menu', () => {
     );
     expect(html).not.toContain('Enhance Faces');
   });
+
+  it('offers ML 2x export in the library grid when the handler is provided', () => {
+    const html = renderToStaticMarkup(
+      <PhotoBrowser
+        photos={photos}
+        title="All Photos"
+        search=""
+        onSelect={noop}
+        onFavorite={noop}
+        onImport={noop}
+        onSceneEnhance={noop}
+        onExport2x={noop}
+        initialContextMenu={{ photoId: 'p1', x: 100, y: 120 }}
+      />,
+    );
+    expect(html).toContain('Export 2x');
+    expect(html).toContain('Doubled by a machine-learning model on the photo server');
+  });
+
+  it('offers ML 2x export in the filmstrip without a remove entry', () => {
+    const html = renderToStaticMarkup(
+      <Filmstrip
+        photos={photos}
+        selectedId="p1"
+        collectionName="All Photos"
+        onSelect={noop}
+        onGrid={noop}
+        onSort={noop}
+        reversed={false}
+        showPresets={false}
+        onShowPresets={noop}
+        onSceneEnhance={noop}
+        onExport2x={noop}
+        onFavorite={noop}
+        initialContextMenu={{ photoId: 'p1', x: 50, y: 60 }}
+      />,
+    );
+    expect(html).toContain('Export 2x');
+    expect(html).toContain('>ML<');
+    expect(html).not.toContain('Remove from Library…');
+  });
+
+  it('omits 2x export without the handler', () => {
+    const html = renderToStaticMarkup(
+      <PhotoBrowser
+        photos={photos}
+        title="All Photos"
+        search=""
+        onSelect={noop}
+        onFavorite={noop}
+        onImport={noop}
+        onSceneEnhance={noop}
+        initialContextMenu={{ photoId: 'p1', x: 100, y: 120 }}
+      />,
+    );
+    expect(html).not.toContain('Export 2x');
+  });
 });

@@ -16,6 +16,7 @@ import { getDustSpotsHealth, runDustSpotsDetect, validateDustSpotsBody } from ".
 import { getFaceDetectHealth, kickFaceDetectReady, runFaceDetect, validateFaceDetectBody } from "./face-detect.ts";
 import { getSelectiveMaskHealth, kickSelectiveMaskReady, runSelectiveMaskDetect, validateSelectiveMaskBody } from "./selective-mask.ts";
 import { getDenoiseHealth, kickDenoiseReady, runDenoise, validateDenoiseBody } from "./denoise.ts";
+import { getSuperresHealth, getSuperresProgress, kickSuperresReady, runSuperres, validateSuperresBody } from "./superres.ts";
 import {
   SemanticWeightsMissingError,
   createSemanticQueue,
@@ -208,7 +209,7 @@ export function createApp(ctx: AppContext): Hono {
   app.use("/api/*", async (c, next) => {
     const startedAt = Date.now();
     await next();
-    if (c.req.path === "/api/ml-heal/progress") return;
+    if (c.req.path === "/api/ml-heal/progress" || c.req.path === "/api/superres/progress") return;
     console.log(`${c.req.method} ${c.req.path} -> ${c.res.status} (${Date.now() - startedAt}ms)`);
   });
 
@@ -432,6 +433,38 @@ export function createApp(ctx: AppContext): Hono {
   app.post("/api/denoise/preview", async (c) => denoiseRoute(c, "preview"));
 
   app.post("/api/denoise/apply", async (c) => denoiseRoute(c, "apply"));
+
+  app.get("/api/superres/health", async (c) => c.json(await getSuperresHealth(config.dataDir)));
+
+  // Live tile progress for the current upscale job (the client polls this
+  // while the upscale POST is in flight; single-user local server, one job).
+  app.get("/api/superres/progress", (c) => c.json(getSuperresProgress()));
+
+  app.post("/api/superres/warmup", async (c) => {
+    // Kick provisioning into the background and return immediately: the
+    // client polls health for download/session progress, like denoise.
+    // First use downloads ~64MB once; upscale serves classically until then.
+    kickSuperresReady(config.dataDir);
+    return c.json(await getSuperresHealth(config.dataDir));
+  });
+
+  app.post("/api/superres/upscale", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    const parsed = validateSuperresBody(body);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    try {
+      return c.json(await runSuperres(config.dataDir, parsed.value));
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 400);
+      console.error(error);
+      return c.json({ error: "Upscale failed." }, 503);
+    }
+  });
 
   app.get("/api/semantic-search/health", async (c) => c.json(await getSemanticSearchHealth(config.dataDir, {
     photos: store.listPhotos().length,

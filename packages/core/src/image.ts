@@ -459,13 +459,29 @@ export function renderAdjustedCanvas(base: HTMLCanvasElement, edit: EditState): 
   return output;
 }
 
-export async function exportPhoto(src: string, edit: EditState, format: string, quality: number, maxSize: number, repair?: ExportRepairOptions): Promise<Blob> {
+/**
+ * The full export pixel pipeline as a canvas: geometry (crop, rotation,
+ * repair) first, then every color/detail slider, then the overlay effects.
+ * exportPhoto encodes this canvas directly; the 2x super-resolution flow
+ * upscales it first and then encodes, so both paths share these pixels.
+ */
+export async function renderExportCanvas(src: string, edit: EditState, maxSize: number, repair?: ExportRepairOptions): Promise<HTMLCanvasElement> {
   const image = await loadImage(src);
   const base = await geometryForExport(image, edit, maxSize, repair, src);
   const output = renderAdjustedCanvas(base, edit);
   const ctx = output.getContext('2d')!;
   drawEffects(ctx, output.width, output.height, edit);
-  return new Promise((resolve, reject) => output.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Your browser could not create the image. Try another format.')), `image/${format}`, quality / 100));
+  return output;
+}
+
+/** Encode an export canvas to the requested format (JPEG/PNG/WebP). */
+export function encodeExportCanvas(canvas: HTMLCanvasElement, format: string, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Your browser could not create the image. Try another format.')), `image/${format}`, quality / 100));
+}
+
+export async function exportPhoto(src: string, edit: EditState, format: string, quality: number, maxSize: number, repair?: ExportRepairOptions): Promise<Blob> {
+  const output = await renderExportCanvas(src, edit, maxSize, repair);
+  return encodeExportCanvas(output, format, quality);
 }
 
 export function downloadBlob(blob: Blob, filename: string) {

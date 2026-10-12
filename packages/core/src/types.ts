@@ -92,6 +92,9 @@ export type SelectiveMaskSource = 'onnx' | 'classic';
 /** Which denoiser served the clean pixels: neural weights or the classical fallback. */
 export type DenoiseSource = 'onnx' | 'classic';
 
+/** Which upscaler served the 2x export: neural weights or the classical fallback. */
+export type SuperresSource = 'onnx' | 'classic';
+
 /**
  * Lightweight denoise state: strength 0..100 plus whether the Auto toggle
  * (keyed on EXIF ISO) picked it. The denoised pixels are a session

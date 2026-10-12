@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Camera, Check, Download, Folder, FolderPlus, Info, Keyboard, MapPin, Save, Share, Tag, Trash2, X } from 'lucide-react';
-import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_EDITION, APP_NAME, APP_TAGLINE, CULL_LABELS, EXTENSION_POINTS, SEMANTIC_CONCEPT_VOCAB, downloadBlob, exportPhoto, getPhotoFilter, isDefaultEdit, loadStoredHealOverlays, createLibraryClient } from '@f8/core';
-import type { DialogType, EditState, Photo, RepairInpaintBinding } from '@f8/core';
+import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_EDITION, APP_NAME, APP_TAGLINE, CULL_LABELS, EXTENSION_POINTS, SEMANTIC_CONCEPT_VOCAB, SUPERRES_MAX_INPUT_DIM, SUPERRES_SCALE, createLibraryClient, downloadBlob, encodeExportCanvas, exportPhoto, getPhotoFilter, isDefaultEdit, loadStoredHealOverlays, renderExportCanvas } from '@f8/core';
+import type { DialogType, EditState, Photo, RepairInpaintBinding, SuperresExportBinding, SuperresHealthSnapshot } from '@f8/core';
 
 export interface RemoveAlbumTarget {
   id: string;
@@ -17,6 +17,10 @@ interface EditorDialogsProps {
   edit: EditState;
   /** Worker inpainting for repair strokes at export; absent means blur repair. */
   inpaintRepair?: RepairInpaintBinding | null;
+  /** Server 2x upscale transport; omit to hide the super-resolution option. */
+  superres?: SuperresExportBinding | null;
+  /** Pre-check super-resolution (the photo context menu's "Export 2x" arms this). */
+  initialSuperres?: boolean;
   onClose: () => void;
   onToast: (message: string) => void;
   onCreateAlbum: (name: string, includePhoto: boolean) => void;
@@ -44,33 +48,98 @@ function PhotoLabelsSection({ photo, onAddLabel, onRemoveLabel, onSearchLabel }:
   return <div className="photo-info-section" data-testid="photo-labels"><h4><Tag size={14} />Labels</h4>{labels.length ? <ul className="photo-label-list">{labels.map((entry) => <li key={entry.label} className={`photo-label${entry.source === 'ml' ? ' is-ml' : ''}`}><button type="button" className="photo-label-name" title={onSearchLabel ? `Show photos labeled "${entry.label}"` : entry.label} onClick={() => onSearchLabel?.(entry.label)}>{entry.label}</button>{entry.source === 'ml' && <span className="ml-badge" title="Labeled by a machine-learning model on the photo server">ML</span>}{onRemoveLabel && <button type="button" className="photo-label-remove" aria-label={`Remove label "${entry.label}"`} onClick={() => onRemoveLabel(photo.id, entry.label)}><X size={11} /></button>}</li>)}</ul> : <p className="inspector-note">No labels yet — label this album from its menu to add ML labels, or add your own below.</p>}{onAddLabel && <form className="photo-label-add" onSubmit={(event) => { event.preventDefault(); submit(); }}><input value={draft} maxLength={32} placeholder="Add a label" aria-label="Add a label" list="f8-label-vocab" onChange={(event) => setDraft(event.target.value)} /><datalist id="f8-label-vocab">{SEMANTIC_CONCEPT_VOCAB.map((word) => <option key={word} value={word} />)}{CULL_LABELS.filter((flag) => !SEMANTIC_CONCEPT_VOCAB.includes(flag)).map((flag) => <option key={flag} value={flag} />)}</datalist><button type="submit" className="secondary-button" disabled={!draft.trim()}>Add</button></form>}</div>;
 }
 
-function ExportDialog({ photo, edit, inpaintRepair, onClose, onToast }: Pick<EditorDialogsProps, 'photo' | 'edit' | 'inpaintRepair' | 'onClose' | 'onToast'>) {
+function ExportDialog({ photo, edit, inpaintRepair, superres, initialSuperres, onClose, onToast }: Pick<EditorDialogsProps, 'photo' | 'edit' | 'inpaintRepair' | 'superres' | 'initialSuperres' | 'onClose' | 'onToast'>) {
   const [format, setFormat] = useState('jpeg');
   const [quality, setQuality] = useState(90);
   const [size, setSize] = useState('1200');
   const [filename, setFilename] = useState(`${photo.name.replace(/\.[^.]+$/, '')}-edited`);
   const [exporting, setExporting] = useState(false);
+  const [upscale2x, setUpscale2x] = useState(initialSuperres ?? false);
+  const [upscaleProgress, setUpscaleProgress] = useState<{ fraction: number; stage: string } | null>(null);
+  const [superresHealth, setSuperresHealth] = useState<SuperresHealthSnapshot | null>(null);
   const [error, setError] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
+  // The engine note follows the checkbox: one health read per arming tells
+  // whether ML or the classical fallback will serve the upscale.
+  useEffect(() => {
+    if (!upscale2x || !superres) { setSuperresHealth(null); return; }
+    let live = true;
+    setSuperresHealth(null);
+    superres.health().then(
+      (snapshot) => { if (live) setSuperresHealth(snapshot); },
+      () => { if (live) setSuperresHealth({ source: 'classic', downloading: false, downloadPct: 0, error: 'unreachable' }); },
+    );
+    return () => { live = false; };
+  }, [upscale2x, superres]);
+  // Expected long edge before the 2x (crop/rotation shift it a little; the
+  // server enforces the real cap, this only drives the hint and the guard).
+  const sourceLongEdge = Math.max(photo.width || 0, photo.height || 0);
+  const expectedLongEdge = sourceLongEdge > 0 ? Math.min(sourceLongEdge, Number(size)) : Number(size);
+  const overUpscaleCap = upscale2x && expectedLongEdge > SUPERRES_MAX_INPUT_DIM;
+  const resolveRepair = async () => {
+    // Reuse persisted per-group overlays so export matches the preview
+    // without rehealing saved work (rescaled when sizes differ); missing
+    // groups heal during export as before.
+    const healOverlays = inpaintRepair && (inpaintRepair.method === 'ml-heal' || inpaintRepair.method === 'heal') && edit.retouches.some((point) => point.kind === 'repair')
+      ? await loadStoredHealOverlays(createLibraryClient(), photo.id)
+      : undefined;
+    return inpaintRepair ? { method: inpaintRepair.method, runInpaint: inpaintRepair.run, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, ...(healOverlays?.length ? { healOverlays } : {}) } : undefined;
+  };
   const handleExport = async () => {
     if (!filename.trim()) { setError('Give your photo a filename first.'); return; }
     setExporting(true);
     setError('');
     try {
-      // Reuse persisted per-group overlays so export matches the preview
-      // without rehealing saved work (rescaled when sizes differ); missing
-      // groups heal during export as before.
-      const healOverlays = inpaintRepair && (inpaintRepair.method === 'ml-heal' || inpaintRepair.method === 'heal') && edit.retouches.some((point) => point.kind === 'repair')
-        ? await loadStoredHealOverlays(createLibraryClient(), photo.id)
-        : undefined;
-      const blob = await exportPhoto(photo.src, edit, format, quality, Number(size), inpaintRepair ? { method: inpaintRepair.method, runInpaint: inpaintRepair.run, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, ...(healOverlays?.length ? { healOverlays } : {}) } : undefined);
-      downloadBlob(blob, `${filename.trim().replace(/[\\/:*?"<>|]/g, '-')}.${format === 'jpeg' ? 'jpg' : format}`);
+      const repair = await resolveRepair();
+      const outName = `${filename.trim().replace(/[\\/:*?"<>|]/g, '-')}.${format === 'jpeg' ? 'jpg' : format}`;
+      if (upscale2x && superres) {
+        const aborter = new AbortController();
+        abortRef.current = aborter;
+        const report = (fraction: number, stage: string) => setUpscaleProgress({ fraction, stage });
+        try {
+          const canvas = await renderExportCanvas(photo.src, edit, Number(size), repair);
+          if (Math.max(canvas.width, canvas.height) > SUPERRES_MAX_INPUT_DIM) {
+            setError(`This export is ${Math.max(canvas.width, canvas.height)}px — 2x upscales cap at ${SUPERRES_MAX_INPUT_DIM}px input. Pick Large or smaller.`);
+            return;
+          }
+          let pixels: { width: number; height: number; data: Uint8ClampedArray };
+          try {
+            const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+            const found = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            pixels = { width: canvas.width, height: canvas.height, data: new Uint8ClampedArray(found.data) };
+          } catch {
+            setError("This photo's pixels can't be read here. Imported photos always work.");
+            return;
+          }
+          const upscaled = await superres.run(pixels, { onProgress: report, signal: aborter.signal });
+          const out = document.createElement('canvas');
+          out.width = upscaled.width;
+          out.height = upscaled.height;
+          out.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(upscaled.data), upscaled.width, upscaled.height), 0, 0);
+          const blob = await encodeExportCanvas(out, format, quality);
+          downloadBlob(blob, outName);
+          onToast(upscaled.source === 'onnx'
+            ? `Your photo was exported 2x as ${format.toUpperCase()} (Real-ESRGAN · ML).`
+            : `Your photo was exported 2x as ${format.toUpperCase()} (classical upscale — ML weights unavailable).`);
+          onClose();
+        } finally {
+          abortRef.current = null;
+          if (!aborter.signal.aborted) setUpscaleProgress(null);
+        }
+        return;
+      }
+      const blob = await exportPhoto(photo.src, edit, format, quality, Number(size), repair);
+      downloadBlob(blob, outName);
       onToast(`Your photo was exported as ${format.toUpperCase()}.`);
       onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Export failed. Please try again.');
-    } finally { setExporting(false); }
+      if (reason instanceof DOMException && reason.name === 'AbortError') setError('Upscale cancelled.');
+      else setError(reason instanceof Error ? reason.message : 'Export failed. Please try again.');
+    } finally { setExporting(false); setUpscaleProgress(null); }
   };
-  return <Modal title="Export Photo" subtitle="The finishing touch. Ready to share." onClose={onClose} className="export-modal"><div className="export-preview"><img src={photo.src} alt={photo.title} style={{ filter: getPhotoFilter(edit) }} /><div><span>{photo.name}</span><small>{isDefaultEdit(edit) ? 'Original photo' : 'All adjustments applied'}</small></div><Check size={16} /></div><form onSubmit={(event) => { event.preventDefault(); void handleExport(); }}><label className="text-field"><span>Save As</span><div className="filename-field"><input value={filename} onChange={(event) => setFilename(event.target.value)} aria-label="Export filename" /><span>.{format === 'jpeg' ? 'jpg' : format}</span></div></label><SelectField label="Format" value={format} options={[{ value: 'jpeg', label: 'JPEG - Best for sharing' }, { value: 'png', label: 'PNG - Lossless quality' }, { value: 'webp', label: 'WebP - Smaller file size' }]} onChange={setFormat} /><SelectField label="Image Size" value={size} options={[{ value: '10000', label: 'Original source size' }, { value: '2048', label: 'Large - Up to 2048 px' }, { value: '1200', label: 'Medium - Up to 1200 px' }, { value: '800', label: 'Small - Up to 800 px' }]} onChange={setSize} />{format !== 'png' && <RangeControl label="Quality" value={quality} min={10} max={100} suffix="%" onChange={setQuality} />}<p className="dialog-note"><Info size={14} /><span>Your original stays untouched. Sample photos export at their available web resolution.</span></p>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-footer"><button type="button" className="text-button export-settings" onClick={() => { downloadBlob(new Blob([JSON.stringify({ photo: photo.name, adjustments: edit, version: 1 }, null, 2)], { type: 'application/json' }), `${filename || 'photo'}-adjustments.json`); onToast('Adjustment settings downloaded.'); }}><Download size={13} />Settings</button><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit" disabled={exporting}>{exporting ? <span className="loading-spinner small" /> : <Share size={14} />}{exporting ? 'Exporting...' : 'Export Photo'}</button></div></form></Modal>;
+  const cancelUpscale = () => abortRef.current?.abort();
+  return <Modal title="Export Photo" subtitle="The finishing touch. Ready to share." onClose={onClose} className="export-modal"><div className="export-preview"><img src={photo.src} alt={photo.title} style={{ filter: getPhotoFilter(edit) }} /><div><span>{photo.name}</span><small>{isDefaultEdit(edit) ? 'Original photo' : 'All adjustments applied'}</small></div><Check size={16} /></div><form onSubmit={(event) => { event.preventDefault(); void handleExport(); }}><label className="text-field"><span>Save As</span><div className="filename-field"><input value={filename} onChange={(event) => setFilename(event.target.value)} aria-label="Export filename" /><span>.{format === 'jpeg' ? 'jpg' : format}</span></div></label><SelectField label="Format" value={format} options={[{ value: 'jpeg', label: 'JPEG - Best for sharing' }, { value: 'png', label: 'PNG - Lossless quality' }, { value: 'webp', label: 'WebP - Smaller file size' }]} onChange={setFormat} /><SelectField label="Image Size" value={size} options={[{ value: '10000', label: 'Original source size' }, { value: '2048', label: 'Large - Up to 2048 px' }, { value: '1200', label: 'Medium - Up to 1200 px' }, { value: '800', label: 'Small - Up to 800 px' }]} onChange={setSize} />{format !== 'png' && <RangeControl label="Quality" value={quality} min={10} max={100} suffix="%" onChange={setQuality} />}{superres && <div className="superres-field" data-testid="export-superres"><label className="checkbox-field"><input type="checkbox" checked={upscale2x} disabled={exporting} onChange={(event) => setUpscale2x(event.target.checked)} aria-label="Super-resolution 2x" /><span>Super-resolution 2x <span className="ml-badge" title="Doubled by a machine-learning model on the photo server">ML</span></span></label>{upscale2x && <p className="inspector-note" data-testid="export-superres-hint">Doubles export dimensions — about {expectedLongEdge * SUPERRES_SCALE}px on the long edge. Large frames take a minute or two.</p>}{upscale2x && !superresHealth && <p className="inspector-note">Checking the ML upscale…</p>}{upscale2x && superresHealth?.source === 'onnx' && <p className="inspector-note">Real-ESRGAN 2x is ready on the photo server.</p>}{upscale2x && superresHealth && superresHealth.source !== 'onnx' && (superresHealth.downloading ? <p className="inspector-note">Downloading Real-ESRGAN weights… {Math.round(superresHealth.downloadPct * 100)}% — exports serve the classical upscale until they land.</p> : superresHealth.error ? <p className="inspector-note">Photo server unreachable — 2x serves the classical upscale once it reconnects.</p> : <p className="inspector-note">ML weights unavailable — 2x serves the classical upscale (no ML).</p>)}{upscaleProgress && <div className="ml-progress" role="status"><div className="ml-progress-bar"><span style={{ width: `${Math.round(upscaleProgress.fraction * 100)}%` }} /></div><p className="inspector-note">{upscaleProgress.stage}</p></div>}</div>}{overUpscaleCap && <p className="form-error" role="alert">2x upscales cap at {SUPERRES_MAX_INPUT_DIM}px input — pick Large or smaller.</p>}<p className="dialog-note"><Info size={14} /><span>Your original stays untouched. Sample photos export at their available web resolution.</span></p>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-footer"><button type="button" className="text-button export-settings" onClick={() => { downloadBlob(new Blob([JSON.stringify({ photo: photo.name, adjustments: edit, version: 1 }, null, 2)], { type: 'application/json' }), `${filename || 'photo'}-adjustments.json`); onToast('Adjustment settings downloaded.'); }}><Download size={13} />Settings</button><button type="button" className="secondary-button" onClick={onClose}>Cancel</button>{upscaleProgress && <button type="button" className="secondary-button" onClick={cancelUpscale}>Cancel upscale</button>}<button className="primary-button" type="submit" disabled={exporting || overUpscaleCap}>{exporting ? <span className="loading-spinner small" /> : <Share size={14} />}{exporting ? (upscale2x ? 'Upscaling...' : 'Exporting...') : 'Export Photo'}</button></div></form></Modal>;
 }
 
 function AlbumDialog({ onClose, onCreateAlbum }: Pick<EditorDialogsProps, 'onClose' | 'onCreateAlbum'>) {

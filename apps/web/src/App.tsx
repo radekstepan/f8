@@ -21,6 +21,7 @@ import { useSemanticSearch } from './vision/useSemanticSearch';
 import { useCullAssist } from './vision/useCullAssist';
 import type { SelectiveMaskDraft } from '@f8/ui';
 import { useInpaintRepair } from './vision/useInpaintRepair';
+import { fetchSuperresHealth, runRemoteSuperres, warmupRemoteSuperres } from './vision/remoteSuperres';
 import { FsBrowser } from './components/FsBrowser';
 import { readToolPrefs, writeToolPrefsRaw } from './hooks/useToolPrefs';
 
@@ -871,6 +872,36 @@ export default function App() {
     editor.autoEnhanceScene(photo.src);
   });
 
+  // ML 2x export requested from a library-grid or filmstrip context menu:
+  // like scene enhance the request parks until the photo is open and seeded
+  // (the export dialog reads the editor's recipe), then opens the export
+  // dialog with super-resolution pre-checked.
+  const pendingExport2x = useRef<string | null>(null);
+  const [export2xArmed, setExport2xArmed] = useState(false);
+  const requestExport2x = (id: string) => {
+    pendingExport2x.current = id;
+    selectPhoto(id);
+    setView('editor');
+  };
+  useEffect(() => {
+    if (pendingExport2x.current === null || !photo || photo.id !== pendingExport2x.current) return;
+    if (view !== 'editor' || !editor.ready) return;
+    pendingExport2x.current = null;
+    setExport2xArmed(true);
+    setDialog('export');
+  });
+
+  // Server 2x upscale transport for the export dialog: warmup first (lazy
+  // ~64MB weights with progress), then the tiled upscale. Stateless, so one
+  // memo serves every dialog open.
+  const superresBinding = useMemo(() => ({
+    run: async (image: { width: number; height: number; data: Uint8ClampedArray }, options?: { onProgress?: (fraction: number, stage: string) => void; signal?: AbortSignal }) => {
+      await warmupRemoteSuperres({ onProgress: options?.onProgress, signal: options?.signal });
+      return runRemoteSuperres(image, options);
+    },
+    health: () => fetchSuperresHealth(),
+  }), []);
+
   // ML face enhance requested from a library-grid or filmstrip context
   // menu: like scene enhance the request parks until the photo is open and
   // seeded, then detection runs and auto-applies once it resolves.
@@ -970,7 +1001,7 @@ export default function App() {
       {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onCullAlbum={cullAlbumPhotos} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onCullAlbum={cullAlbumPhotos} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onCullAlbum={cullAlbumPhotos} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (
@@ -1004,7 +1035,7 @@ export default function App() {
               onSelect={selectPhoto} onGrid={() => setView('library')}
               onSort={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')} reversed={sortDir === 'desc'} sortKey={sortKey}
               showPresets={presetsOpen} onShowPresets={() => setPresetsOpen(true)}
-              onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onFavorite={toggleFavorite}
+              onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} onFavorite={toggleFavorite}
             />}
           </>
         )}
@@ -1032,7 +1063,7 @@ export default function App() {
       }}
     />
     <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
-    <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : (viewPhoto ?? photo)} edit={editor.edit} inpaintRepair={canvasRepairBinding} onClose={() => { setDialog(null); setRemoveTargetId(null); setRemoveAlbumTargetId(null); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} removeAlbum={removeAlbumTarget} onRemoveAlbum={confirmRemoveAlbum} onAddLabel={(photoId, label) => { void library.updateLabels(photoId, { add: [label] }).then(() => notify(`Labeled “${label}”.`), (reason: unknown) => notifyError(reason, 'Could not add the label.')); }} onRemoveLabel={(photoId, label) => { void library.updateLabels(photoId, { remove: [label] }).catch((reason: unknown) => notifyError(reason, 'Could not remove the label.')); }} onSearchLabel={(label) => { setDialog(null); setCollection('all'); clearFilters(); updateSearch(label); setView('library'); }} />
+    <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : (viewPhoto ?? photo)} edit={editor.edit} inpaintRepair={canvasRepairBinding} superres={superresBinding} initialSuperres={export2xArmed} onClose={() => { setDialog(null); setRemoveTargetId(null); setRemoveAlbumTargetId(null); setExport2xArmed(false); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} removeAlbum={removeAlbumTarget} onRemoveAlbum={confirmRemoveAlbum} onAddLabel={(photoId, label) => { void library.updateLabels(photoId, { add: [label] }).then(() => notify(`Labeled “${label}”.`), (reason: unknown) => notifyError(reason, 'Could not add the label.')); }} onRemoveLabel={(photoId, label) => { void library.updateLabels(photoId, { remove: [label] }).catch((reason: unknown) => notifyError(reason, 'Could not remove the label.')); }} onSearchLabel={(label) => { setDialog(null); setCollection('all'); clearFilters(); updateSearch(label); setView('library'); }} />
     {folderDialog && <FsBrowser
       title={folderDialog.mode === 'locate' ? 'Locate original' : 'Import from folder'}
       subtitle={folderDialog.mode === 'locate' ? 'Find the file in its new home.' : 'Referenced in place — nothing is copied.'}
