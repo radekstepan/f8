@@ -268,6 +268,100 @@ describe("scanPaths", () => {
     ]);
   });
 
+  it("files a folder import into an auto-created human-named album", async () => {
+    const folder = path.join(ctx.dir, "2026-europe-trip");
+    await fs.mkdir(path.join(folder, "nested"), { recursive: true });
+    await fs.writeFile(path.join(folder, "a.bmp"), makeBmp(4, 4));
+    await fs.writeFile(path.join(folder, "b.bmp"), makeBmp(5, 5));
+    await fs.writeFile(path.join(folder, "nested", "deep.bmp"), makeBmp(6, 5));
+    const config = { ...loadConfig({}), previewsDir: path.join(ctx.dir, "data", "previews") };
+
+    const report = await scanPaths(ctx.store, config, [ctx.dir], [folder]);
+
+    expect(report.outcomes).toHaveLength(3);
+    expect(report.albums).toHaveLength(1);
+    expect(report.albums[0]?.name).toBe("2026 Europe Trip");
+    // Nested files file under the selected folder, not their parent dir.
+    expect(new Set(report.outcomes.map((outcome) => outcome.row.album_id))).toEqual(
+      new Set([report.albums[0]?.id]),
+    );
+    expect(ctx.store.listAlbums().map((album) => album.name)).toEqual(["2026 Europe Trip"]);
+  });
+
+  it("reuses the album and reports duplicates when the folder is reimported", async () => {
+    const folder = path.join(ctx.dir, "2026-europe-trip");
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, "a.bmp"), makeBmp(4, 4));
+    await fs.writeFile(path.join(folder, "b.bmp"), makeBmp(5, 5));
+    const config = { ...loadConfig({}), previewsDir: path.join(ctx.dir, "data", "previews") };
+
+    const first = await scanPaths(ctx.store, config, [ctx.dir], [folder]);
+    const second = await scanPaths(ctx.store, config, [ctx.dir], [folder]);
+
+    expect(first.outcomes.map((outcome) => outcome.status)).toEqual(["imported", "imported"]);
+    expect(second.outcomes.map((outcome) => outcome.status)).toEqual(["duplicate", "duplicate"]);
+    expect(second.albums).toHaveLength(0);
+    expect(ctx.store.listAlbums()).toHaveLength(1);
+    expect(ctx.store.listPhotos()).toHaveLength(2);
+  });
+
+  it("leaves no empty album behind when every file is already catalogued", async () => {
+    const first = path.join(ctx.dir, "first-trip");
+    const second = path.join(ctx.dir, "second-trip");
+    await fs.mkdir(first, { recursive: true });
+    await fs.mkdir(second, { recursive: true });
+    const bytes = makeBmp(4, 4);
+    await fs.writeFile(path.join(first, "a.bmp"), bytes);
+    await fs.writeFile(path.join(second, "copy.bmp"), bytes);
+    const config = { ...loadConfig({}), previewsDir: path.join(ctx.dir, "data", "previews") };
+
+    await scanPaths(ctx.store, config, [ctx.dir], [first]);
+    const report = await scanPaths(ctx.store, config, [ctx.dir], [second]);
+
+    expect(report.outcomes).toHaveLength(1);
+    // Same bytes under a new path relink (a move), never a second record.
+    expect(report.outcomes[0]?.status).toBe("relinked");
+    // The relink keeps its original album: each file is unique app-wide.
+    expect(report.outcomes[0]?.row.album_id).toBe(ctx.store.listAlbums()[0]?.id);
+    expect(report.outcomes[0]?.row.path).toBe(path.join(second, "copy.bmp"));
+    expect(report.albums).toHaveLength(0);
+    expect(ctx.store.listAlbums().map((album) => album.name)).toEqual(["First Trip"]);
+    expect(ctx.store.listPhotos()).toHaveLength(1);
+  });
+
+  it("honors an explicitly chosen album for the whole batch", async () => {
+    const folder = path.join(ctx.dir, "2026-europe-trip");
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, "a.bmp"), makeBmp(4, 4));
+    ctx.store.insertAlbum({ id: "picked", name: "Picked", cover: "", sort: 0 });
+    const config = { ...loadConfig({}), previewsDir: path.join(ctx.dir, "data", "previews") };
+
+    const report = await scanPaths(ctx.store, config, [ctx.dir], [folder], { albumId: "picked" });
+
+    expect(report.outcomes).toHaveLength(1);
+    expect(report.outcomes[0]?.row.album_id).toBe("picked");
+    expect(report.albums).toHaveLength(0);
+    expect(ctx.store.listAlbums()).toHaveLength(1);
+  });
+
+  it("files each selected folder into its own album", async () => {
+    const one = path.join(ctx.dir, "coast_2024");
+    const two = path.join(ctx.dir, "dolomites-2024");
+    await fs.mkdir(one, { recursive: true });
+    await fs.mkdir(two, { recursive: true });
+    await fs.writeFile(path.join(one, "a.bmp"), makeBmp(4, 4));
+    await fs.writeFile(path.join(two, "b.bmp"), makeBmp(5, 5));
+    const config = { ...loadConfig({}), previewsDir: path.join(ctx.dir, "data", "previews") };
+
+    const report = await scanPaths(ctx.store, config, [ctx.dir], [one, two]);
+
+    expect(report.albums.map((album) => album.name).sort()).toEqual(["Coast 2024", "Dolomites 2024"]);
+    const byFile = new Map(report.outcomes.map((outcome) => [outcome.row.filename, outcome.row.album_id]));
+    const byName = new Map(report.albums.map((album) => [album.name, album.id]));
+    expect(byFile.get("a.bmp")).toBe(byName.get("Coast 2024"));
+    expect(byFile.get("b.bmp")).toBe(byName.get("Dolomites 2024"));
+  });
+
   it("stops at the per-request cap and flags the batch truncated", async () => {
     const inbox = path.join(ctx.dir, "bulk");
     await fs.mkdir(inbox, { recursive: true });

@@ -5,13 +5,14 @@ import { imageSizeFromFile } from "image-size/fromFile";
 import {
   DEFAULT_EDIT,
   MAX_IMPORTS_PER_REQUEST,
+  humanizeAlbumName,
   isImportableFilename,
   isRawFilename,
   readOrientation,
   readRawMetadata,
   resolveImportSelection,
 } from "@f8/core";
-import type { ImportProgress } from "@f8/core";
+import type { Album, ImportProgress } from "@f8/core";
 import type { ServerConfig } from "./config.ts";
 import { resolveWithinRoots } from "./fs-browse.ts";
 import { RawDecodeError, decodeRawFullRes } from "./raw-decode.ts";
@@ -38,6 +39,8 @@ export interface ScanReport {
   skipped: { path: string; reason: string }[];
   suppressedSidecars: number;
   truncated: boolean;
+  /** Albums this scan created (empty when every target already existed). */
+  albums: Album[];
 }
 
 const HEAD_SIZE = 1024 * 1024;
@@ -235,7 +238,13 @@ export async function importUpload(
   });
 }
 
-async function collectImportable(dir: string, into: string[]): Promise<boolean> {
+interface ExpandedFile {
+  file: string;
+  /** Folder the file was reached through: the selected folder, or the parent dir of a loose file. */
+  sourceDir: string;
+}
+
+async function collectImportable(dir: string, into: ExpandedFile[]): Promise<boolean> {
   const stack = [dir];
   const seen = new Set<string>();
   while (stack.length) {
@@ -252,7 +261,7 @@ async function collectImportable(dir: string, into: string[]): Promise<boolean> 
       if (entry.isDirectory()) {
         if (!entry.isSymbolicLink()) stack.push(full);
       } else if (entry.isFile() && isImportableFilename(entry.name)) {
-        into.push(full);
+        into.push({ file: full, sourceDir: dir });
       }
     }
   }
@@ -264,6 +273,15 @@ async function collectImportable(dir: string, into: string[]): Promise<boolean> 
 // sequentially so one bad file (or one huge RAW) cannot break the batch. The
 // loop yields between files so hundreds of sequential imports never starve
 // the event loop, and reports per-file progress for status UIs.
+//
+// Album filing: an explicitly chosen album wins for the whole batch.
+// Otherwise each source folder files into its own human-named album
+// ("2026-europe-trip" becomes "2026 Europe Trip"), matched
+// case-insensitively against existing albums so reimports never spawn
+// lookalikes. Albums materialize lazily on the first fresh import, so a
+// scan that only finds duplicates leaves no empty album behind — and
+// duplicates/relinks always keep their existing rows, so each file stays
+// unique across the whole library no matter how often it is reimported.
 export async function scanPaths(
   store: Store,
   config: ServerConfig,
@@ -271,7 +289,7 @@ export async function scanPaths(
   paths: string[],
   opts: { albumId?: string; decodeRaw?: DecodeRawFullRes; onProgress?: (progress: ImportProgress) => void } = {},
 ): Promise<ScanReport> {
-  const expanded: string[] = [];
+  const expanded: ExpandedFile[] = [];
   const skipped: { path: string; reason: string }[] = [];
   let truncated = false;
   for (const input of paths) {
@@ -292,27 +310,61 @@ export async function scanPaths(
         skipped.push({ path: input, reason: "Unsupported file type." });
         continue;
       }
-      expanded.push(confined);
+      expanded.push({ file: confined, sourceDir: path.dirname(confined) });
       continue;
     }
     truncated = (await collectImportable(confined, expanded)) || truncated;
   }
-  const unique = [...new Set(expanded)];
-  const shims = unique.map((file) => ({
+  const seenFiles = new Map<string, string>();
+  for (const entry of expanded) {
+    if (!seenFiles.has(entry.file)) seenFiles.set(entry.file, entry.sourceDir);
+  }
+  const shims = [...seenFiles.entries()].map(([file, sourceDir]) => ({
     file,
     name: path.basename(file),
     type: isRawFilename(file) ? "" : "image/x",
+    sourceDir,
   }));
   const { files: selected, suppressedSidecars } = resolveImportSelection(shims);
   const outcomes: ImportOutcome[] = [];
+  const createdAlbums: Album[] = [];
   const batch = selected.slice(0, MAX_IMPORTS_PER_REQUEST);
   truncated = truncated || selected.length > MAX_IMPORTS_PER_REQUEST;
+  const explicitAlbum = opts.albumId ? store.getAlbum(opts.albumId) : undefined;
+  const targets = new Map<string, { id: string; name: string; created: boolean }>();
+  const existingAlbums = explicitAlbum ? [] : store.listAlbums();
+  for (const album of existingAlbums) {
+    const key = album.name.toLowerCase();
+    if (!targets.has(key)) targets.set(key, { id: album.id, name: album.name, created: true });
+  }
+  let sort = existingAlbums.length;
+  const targetFor = (sourceDir: string): { id: string; name: string; created: boolean } => {
+    // The explicit choice is pre-created, so the lazy-creation branch below
+    // stands down for it naturally.
+    if (explicitAlbum) return { id: explicitAlbum.id, name: explicitAlbum.name, created: true };
+    const name = humanizeAlbumName(path.basename(sourceDir));
+    const key = name.toLowerCase();
+    let target = targets.get(key);
+    if (!target) {
+      target = { id: randomUUID(), name, created: false };
+      targets.set(key, target);
+    }
+    return target;
+  };
   opts.onProgress?.({ done: 0, total: batch.length });
   for (const [index, shim] of batch.entries()) {
+    const target = targetFor(shim.sourceDir);
     try {
-      outcomes.push(
-        await importFileAtPath(store, config, shim.file, { albumId: opts.albumId, decodeRaw: opts.decodeRaw }),
-      );
+      const outcome = await importFileAtPath(store, config, shim.file, {
+        albumId: target.id,
+        decodeRaw: opts.decodeRaw,
+      });
+      if (outcome.status === "imported" && !target.created) {
+        store.insertAlbum({ id: target.id, name: target.name, cover: "", sort: sort++ });
+        target.created = true;
+        createdAlbums.push({ id: target.id, name: target.name, cover: "" });
+      }
+      outcomes.push(outcome);
     } catch (error) {
       skipped.push({
         path: shim.file,
@@ -322,5 +374,5 @@ export async function scanPaths(
     opts.onProgress?.({ done: index + 1, total: batch.length });
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
-  return { outcomes, skipped, suppressedSidecars, truncated };
+  return { outcomes, skipped, suppressedSidecars, truncated, albums: createdAlbums };
 }

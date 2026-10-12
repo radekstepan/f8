@@ -33,6 +33,8 @@ export interface ImportReport {
   /** JPEG sidecars dropped because their RAW twin was imported. */
   suppressedSidecars: number;
   truncated: boolean;
+  /** Albums this import created (empty when every target already existed). */
+  albums: Album[];
 }
 
 export interface BrowseEntry {

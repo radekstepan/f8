@@ -233,6 +233,16 @@ export function useLibrary() {
       try {
         const report = await client.importByPath(paths, albumId);
         upsertPhotos([...report.imported, ...report.relinked, ...report.duplicates]);
+        // Folder imports file into auto-created albums server-side; merge
+        // them so the sidebar and collection routing see the new rows.
+        const created = report.albums ?? [];
+        if (created.length) {
+          setAlbums((current) => {
+            const ids = new Set(current.map((album) => album.id));
+            const fresh = created.filter((album) => !ids.has(album.id));
+            return fresh.length ? [...current, ...fresh] : current;
+          });
+        }
         return report;
       } catch (reason) {
         markOfflineIfDown(reason);

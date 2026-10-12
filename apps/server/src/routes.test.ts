@@ -140,6 +140,41 @@ describe("routes", () => {
     expect(relinked.relinked[0]?.edited).toBe(true);
   });
 
+  it("creates a folder album on by-path import and dedupes the reimport", async () => {
+    const folder = path.join(ctx.dir, "2026-europe-trip");
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, "a.bmp"), makeBmp(4, 4));
+    await fs.writeFile(path.join(folder, "b.bmp"), makeBmp(5, 5));
+    const payload = { paths: [folder] };
+
+    const first = await json<ImportReport>(
+      await ctx.app.request("/api/imports/by-path", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
+    );
+    expect(first.imported).toHaveLength(2);
+    expect(first.albums).toHaveLength(1);
+    expect(first.albums[0]?.name).toBe("2026 Europe Trip");
+    expect(first.imported.map((photo) => photo.albumId)).toEqual([first.albums[0]?.id, first.albums[0]?.id]);
+    expect((await json<LibrarySnapshot>(await ctx.app.request("/api/library"))).albums).toHaveLength(1);
+
+    const second = await json<ImportReport>(
+      await ctx.app.request("/api/imports/by-path", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
+    );
+    expect(second.imported).toHaveLength(0);
+    expect(second.duplicates).toHaveLength(2);
+    expect(second.albums).toHaveLength(0);
+    const library = await json<LibrarySnapshot>(await ctx.app.request("/api/library"));
+    expect(library.photos).toHaveLength(2);
+    expect(library.albums).toHaveLength(1);
+  });
+
   it("serves display bytes, distinguishes previews, and 404s the missing", async () => {
     const bmp = path.join(ctx.dir, "pixels.bmp");
     const raw = path.join(ctx.dir, "frame.CR2");

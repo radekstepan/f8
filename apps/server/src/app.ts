@@ -629,6 +629,7 @@ export function createApp(ctx: AppContext): Hono {
       skipped: report.skipped,
       suppressedSidecars: report.suppressedSidecars,
       truncated: report.truncated,
+      albums: report.albums,
     });
   });
 

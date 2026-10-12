@@ -1,4 +1,5 @@
 export * from "./adjustments.js";
+export * from "./albumNames.js";
 export * from "./albumSort.js";
 export * from "./branding.js";
 export * from "./canvasPan.js";

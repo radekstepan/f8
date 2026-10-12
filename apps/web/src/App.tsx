@@ -738,7 +738,11 @@ export default function App() {
       const first = report.imported[0] ?? report.relinked[0] ?? report.duplicates[0];
       if (first) {
         if (!locating) {
-          setCollection(albumId);
+          // An explicitly chosen album wins; otherwise the server filed
+          // each folder into its own auto-created album, so follow the
+          // photo home instead of the 'imports' pseudo-collection.
+          const explicit = albums.some((album) => album.id === albumId);
+          setCollection(explicit ? albumId : first.albumId);
         }
         setSearch('');
         semantic.search('');
@@ -749,8 +753,11 @@ export default function App() {
         notify(healed ? 'Original relinked. Your edits are back.' : 'That file does not match the missing photo.');
         return;
       }
+      const createdAlbums = report.albums ?? [];
       const notes = [
         report.imported.length ? `${report.imported.length} ${report.imported.length === 1 ? 'photo' : 'photos'} imported.` : '',
+        createdAlbums.length === 1 ? `New album "${createdAlbums[0]?.name}".` : '',
+        createdAlbums.length > 1 ? `${createdAlbums.length} new albums created.` : '',
         report.relinked.length ? `${report.relinked.length} relinked with ${report.relinked.length === 1 ? 'its' : 'their'} edits intact.` : '',
         report.duplicates.length ? `${report.duplicates.length} already in your library.` : '',
         report.suppressedSidecars ? `${report.suppressedSidecars} JPEG sidecar${report.suppressedSidecars === 1 ? ' was' : 's were'} skipped: the RAW original was kept.` : '',
