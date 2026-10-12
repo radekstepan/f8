@@ -112,6 +112,7 @@ function toApiPhoto(row: PhotoRow, edit: StoredEdit): LibraryPhoto {
     edit: edit.present,
     hash: row.hash,
     path: file ? row.path : null,
+    importedAt: row.created_at,
   };
 }
 

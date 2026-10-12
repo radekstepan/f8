@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
 import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDeletableCollection, isRecentlyEdited, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@f8/core';
-import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent } from '@f8/core';
+import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
-import type { DialogType, EditState, Tool, ViewMode } from '@f8/core';
+import type { AlbumSortDir, AlbumSortKey, DialogType, EditState, Tool, ViewMode } from '@f8/core';
 import { Sidebar } from '@f8/ui';
 import { AppStatus, MenuBar, Toolbar, type MenuAction } from '@f8/ui';
 import { PhotoCanvas, type HistogramData } from '@f8/ui';
@@ -99,7 +99,8 @@ export default function App() {
   const [compare, setCompare] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const [reversed, setReversed] = useState(false);
+  const [sortKey, setSortKey] = useState<AlbumSortKey>(() => readToolPrefs().albumSortKey);
+  const [sortDir, setSortDir] = useState<AlbumSortDir>(() => readToolPrefs().albumSortDir);
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
   const [brushSize, setBrushSize] = useState(() => readToolPrefs().brushSize);
   const [brushStrength, setBrushStrength] = useState(() => readToolPrefs().brushStrength);
@@ -141,11 +142,12 @@ export default function App() {
     // progress tick, which must not re-trigger the prefetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tool, inpaintRepair.method, inpaintRepair.warmup]);
-  // Persist tool preferences (brush, panels) across reloads. Adjust sliders
-  // are excluded by design — those persist per-photo on the server.
+  // Persist tool preferences (brush, panels, album sort) across reloads.
+  // Adjust sliders are excluded by design — those persist per-photo on the
+  // server.
   useEffect(() => {
-    writeToolPrefsRaw({ brushSize, brushStrength, presetsOpen, filmstripOpen });
-  }, [brushSize, brushStrength, presetsOpen, filmstripOpen]);
+    writeToolPrefsRaw({ brushSize, brushStrength, presetsOpen, filmstripOpen, albumSortKey: sortKey, albumSortDir: sortDir });
+  }, [brushSize, brushStrength, presetsOpen, filmstripOpen, sortKey, sortDir]);
   // Deep-link the view so a reload or shared URL restores it. View-only
   // pointer: edits still live on the server. Inside a photo the URL names
   // the photo (?photo=&tool=) and the album is inferred from it below, so
@@ -273,9 +275,8 @@ export default function App() {
     else if (editedFilter === 'unedited') items = items.filter((item) => !item.edited);
     if (favoriteFilter === 'favorited') items = items.filter((item) => item.favorite);
     else if (favoriteFilter === 'not') items = items.filter((item) => !item.favorite);
-    const byDate = [...items].sort((a, b) => a.date.localeCompare(b.date));
-    return reversed ? byDate.reverse() : byDate;
-  }, [photos, collection, search, reversed, editedFilter, favoriteFilter]);
+    return sortAlbumPhotos(items, sortKey, sortDir);
+  }, [photos, collection, search, sortKey, sortDir, editedFilter, favoriteFilter]);
 
   const selectPhoto = useCallback((id: string) => {
     setSelectedId(id);
@@ -677,7 +678,7 @@ export default function App() {
       {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${reversed}`} activeId={photo?.id} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (
@@ -709,7 +710,7 @@ export default function App() {
             {filmstripOpen && <Filmstrip
               photos={filteredPhotos} selectedId={photo.id} collectionName={collectionName} edits={liveEdits}
               onSelect={selectPhoto} onGrid={() => setView('library')}
-              onSort={() => setReversed(!reversed)} reversed={reversed}
+              onSort={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')} reversed={sortDir === 'desc'} sortKey={sortKey}
               showPresets={presetsOpen} onShowPresets={() => setPresetsOpen(true)}
             />}
           </>

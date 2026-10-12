@@ -27,6 +27,8 @@ export interface Photo {
   editedAt?: string | null;
   /** Server library only: absolute path of a referenced original, when it has one. */
   path?: string | null;
+  /** Server library only: ISO timestamp of the import (`created_at`). Absent on demo/legacy records. */
+  importedAt?: string | null;
 }
 
 export interface Album {

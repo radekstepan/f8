@@ -385,7 +385,7 @@ img { display: block; }
 .browser-heading-actions { display: flex; align-items: center; gap: 6px; }
 .browser-view-control { display: flex; align-items: center; gap: 8px; color: #81818e; }
 .browser-view-control input { width: 60px; height: 3px; accent-color: var(--accent-muted); }
-.browser-album-menu { position: relative; }
+.browser-album-menu, .browser-sort-menu { position: relative; }
 .browser-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; margin-bottom: 22px; }
 .filter-group { display: inline-flex; align-items: center; gap: 4px; background: #222227; border: 1px solid #ffffff0c; border-radius: 999px; padding: 3px; }
 .filter-chip { height: 26px; padding: 0 12px; border-radius: 999px; font-size: 9px; font-weight: 550; color: #9494a1; white-space: nowrap; }

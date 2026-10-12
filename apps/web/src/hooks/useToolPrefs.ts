@@ -1,8 +1,12 @@
 import { useCallback, useState } from "react";
 import {
   BLEND_FEATHER_PX,
+  DEFAULT_ALBUM_SORT_DIR,
+  DEFAULT_ALBUM_SORT_KEY,
   HEAL_DEFAULT_QUALITY,
   INPAINT_DEFAULT_METHOD,
+  type AlbumSortDir,
+  type AlbumSortKey,
   type HealQuality,
   type InpaintMethod,
 } from "@f8/core";
@@ -43,6 +47,8 @@ export interface ToolPrefs {
   cropRatio: string;
   presetsOpen: boolean;
   filmstripOpen: boolean;
+  albumSortKey: AlbumSortKey;
+  albumSortDir: AlbumSortDir;
 }
 
 const DEFAULTS: ToolPrefs = {
@@ -55,6 +61,8 @@ const DEFAULTS: ToolPrefs = {
   cropRatio: "Original",
   presetsOpen: true,
   filmstripOpen: true,
+  albumSortKey: DEFAULT_ALBUM_SORT_KEY,
+  albumSortDir: DEFAULT_ALBUM_SORT_DIR,
 };
 
 /** Fast has no ML tier: ml-heal requests for it resolve to Balanced. */
@@ -64,6 +72,8 @@ export function coercePrefQuality(method: InpaintMethod, quality: HealQuality): 
 
 const METHODS: InpaintMethod[] = ["ml-heal", "heal", "telea", "ns"];
 const QUALITIES: HealQuality[] = ["fast", "balanced", "best"];
+const SORT_KEYS: AlbumSortKey[] = ["filename", "imported", "captured"];
+const SORT_DIRS: AlbumSortDir[] = ["asc", "desc"];
 
 function clampNum(value: unknown, min: number, max: number, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value)
@@ -90,6 +100,8 @@ function sanitize(raw: unknown): ToolPrefs {
     cropRatio: typeof r.cropRatio === "string" && r.cropRatio ? r.cropRatio : DEFAULTS.cropRatio,
     presetsOpen: typeof r.presetsOpen === "boolean" ? r.presetsOpen : DEFAULTS.presetsOpen,
     filmstripOpen: typeof r.filmstripOpen === "boolean" ? r.filmstripOpen : DEFAULTS.filmstripOpen,
+    albumSortKey: SORT_KEYS.includes(r.albumSortKey as AlbumSortKey) ? (r.albumSortKey as AlbumSortKey) : DEFAULTS.albumSortKey,
+    albumSortDir: SORT_DIRS.includes(r.albumSortDir as AlbumSortDir) ? (r.albumSortDir as AlbumSortDir) : DEFAULTS.albumSortDir,
   };
 }
 

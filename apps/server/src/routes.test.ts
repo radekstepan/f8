@@ -111,6 +111,8 @@ describe("routes", () => {
       }),
     );
     expect(imported.imported).toHaveLength(1);
+    // The album "date imported" sort reads this stamp client-side.
+    expect(typeof imported.imported[0]?.importedAt).toBe("string");
     const id = imported.imported[0]?.id as string;
 
     await ctx.app.request(`/api/photos/${id}/edit`, {
