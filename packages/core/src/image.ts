@@ -39,6 +39,14 @@ export interface ImportSize {
   height: number;
 }
 
+// True when the stored (upright) dimensions are portrait. The album grid,
+// presets strip, and filmstrip share this so a portrait photo renders
+// portrait everywhere. Square and unknown (0×0) read as landscape, so only
+// true portraits change layout.
+export function isPortraitPhoto(photo: { width: number; height: number }): boolean {
+  return photo.height > photo.width;
+}
+
 // Decode an imported file with the browser's own EXIF handling so portrait
 // phone photos report upright dimensions. The returned size is orientation 1;
 // every later decode of the same blob URL (<img> auto-orients for display)

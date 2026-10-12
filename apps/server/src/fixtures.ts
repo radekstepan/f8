@@ -55,11 +55,20 @@ export function makeJpegWithOrientation(width: number, height: number, orientati
   return Buffer.concat([jpeg.subarray(0, 2), exif, jpeg.subarray(2)]);
 }
 
+export interface TiffPreviewOptions {
+  /** EXIF orientation tag on the TIFF itself (the capture orientation). */
+  orientation?: number;
+  /** EXIF orientation tag inside the embedded JPEG (cameras that tag the preview too). */
+  embeddedOrientation?: number;
+}
+
 // Minimal little-endian TIFF whose single JPEG-compressed strip is the whole
 // embedded preview. Enough structure for the TIFF scan, exifr, and image-size.
-export function makeTiffWithJpeg(width: number, height: number): Buffer {
-  const jpeg = makeJpeg(width, height);
-  const entries = 5;
+export function makeTiffWithJpeg(width: number, height: number, opts: TiffPreviewOptions = {}): Buffer {
+  const jpeg = opts.embeddedOrientation === undefined
+    ? makeJpeg(width, height)
+    : makeJpegWithOrientation(width, height, opts.embeddedOrientation);
+  const entries = opts.orientation === undefined ? 5 : 6;
   const jpegOffset = 8 + 2 + entries * 12 + 4;
   const buf = Buffer.alloc(jpegOffset + jpeg.length);
   buf.writeUInt16LE(0x4949, 0);
@@ -78,6 +87,7 @@ export function makeTiffWithJpeg(width: number, height: number): Buffer {
   entry(2, 259, 3, 1, 7);
   entry(3, 273, 4, 1, jpegOffset);
   entry(4, 279, 4, 1, jpeg.length);
+  if (opts.orientation !== undefined) entry(5, 274, 3, 1, opts.orientation);
   buf.writeUInt32LE(0, 8 + 2 + entries * 12);
   jpeg.copy(buf, jpegOffset);
   return buf;

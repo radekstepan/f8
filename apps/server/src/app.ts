@@ -85,8 +85,9 @@ function toApiPhoto(row: PhotoRow, edit: StoredEdit): LibraryPhoto {
     title: row.title,
     src: file ? endpoint : (row.url ?? ""),
     // Grids and the filmstrip read the small cached thumb (embedded RAW
-    // preview or downscaled render); the editor keeps full-res src.
-    thumbnail: file ? `/api/photos/${row.id}/thumb` : (row.thumbnail_url ?? row.url ?? ""),
+    // preview or downscaled render); the editor keeps full-res src. The v=2
+    // generation busts immutable browser caches of pre-rotation thumbs.
+    thumbnail: file ? `/api/photos/${row.id}/thumb?v=2` : (row.thumbnail_url ?? row.url ?? ""),
     albumId: row.album_id,
     // Legacy rows stored auto-generated "Imported from ..." provenance here;
     // everything comes from this device, so only real locations are served.
@@ -377,7 +378,7 @@ export function createApp(ctx: AppContext): Hono {
       });
       if (thumb) {
         return sendFile(c, thumb, "image/jpeg", {
-          ETag: `"${found.hash}-thumb"`,
+          ETag: `"${found.hash}-thumb2"`,
           "Cache-Control": "private, max-age=31536000, immutable",
         });
       }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_EDIT } from "./data.js";
-import { getPhotoFilter, thumbnailFilterForPhoto } from "./image.js";
+import { getPhotoFilter, isPortraitPhoto, thumbnailFilterForPhoto } from "./image.js";
 
 describe("thumbnailFilterForPhoto", () => {
   it("returns undefined when the photo has no stored edit", () => {
@@ -39,5 +39,17 @@ describe("thumbnailFilterForPhoto", () => {
   it("clears a stale persisted look when the live edit is reset to default", () => {
     const saved = { ...DEFAULT_EDIT, blackAndWhite: true };
     expect(thumbnailFilterForPhoto({ edit: saved }, { ...DEFAULT_EDIT })).toBeUndefined();
+  });
+});
+
+describe("isPortraitPhoto", () => {
+  it("reads portrait from the stored upright dimensions", () => {
+    expect(isPortraitPhoto({ width: 4024, height: 6024 })).toBe(true);
+    expect(isPortraitPhoto({ width: 6024, height: 4024 })).toBe(false);
+  });
+
+  it("treats square and unknown dimensions as landscape", () => {
+    expect(isPortraitPhoto({ width: 100, height: 100 })).toBe(false);
+    expect(isPortraitPhoto({ width: 0, height: 0 })).toBe(false);
   });
 });

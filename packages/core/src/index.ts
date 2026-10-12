@@ -5,6 +5,7 @@ export * from "./collections.js";
 export * from "./data.js";
 export * from "./filmstripScroll.js";
 export * from "./image.js";
+export * from "./jpeg.js";
 export * from "./library.js";
 export * from "./libraryUrl.js";
 export * from "./raw.js";
