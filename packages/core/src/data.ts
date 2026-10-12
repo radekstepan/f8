@@ -17,6 +17,31 @@ export const INITIAL_EDIT: EditState = {
   preset: 'Natural',
 };
 
+/** True when the recipe matches the factory default exactly (preset included). */
+export function isDefaultEdit(edit: EditState): boolean {
+  const { retouches, ...rest } = edit;
+  const { retouches: _base, ...base } = DEFAULT_EDIT;
+  return retouches.length === 0 && JSON.stringify(rest) === JSON.stringify(base);
+}
+
+/**
+ * Edit keys that never change the active preset. Presets are color looks:
+ * applying one preserves geometry and retouching (and saving one strips
+ * them), so editing those must not deselect the current preset either.
+ */
+const PRESET_PRESERVING_KEYS = new Set(['rotation', 'flipH', 'flipV', 'straighten', 'cropRatio', 'retouches']);
+
+/**
+ * Resolve the preset label for an edit patch: an explicit preset in the
+ * patch wins (apply/reset/save flows), color changes mark the recipe
+ * Custom, and geometry/retouch-only patches keep the current preset.
+ */
+export function presetForPatch(current: string, patch: Partial<EditState>): string {
+  if (patch.preset !== undefined) return patch.preset;
+  const touchesColor = Object.keys(patch).some((key) => key !== 'preset' && !PRESET_PRESERVING_KEYS.has(key));
+  return touchesColor ? 'Custom' : current;
+}
+
 const imageUrl = (id: number, thumbnail = false) =>
   `https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&${thumbnail ? 'dpr=1&fit=crop&h=200&w=280' : 'fit=crop&h=627&w=1200'}`;
 
@@ -61,14 +86,14 @@ export const SAMPLE_ALBUMS: Album[] = [
 ];
 
 export const PRESETS: Preset[] = [
-  { id: 'original', name: 'Original', category: 'Landscape', values: {} },
-  { id: 'natural', name: 'Natural', category: 'Landscape', values: INITIAL_EDIT },
-  { id: 'vivid', name: 'Vivid', category: 'Landscape', values: { saturation: 30, vibrance: 28, contrast: 16, exposure: 0.05 } },
-  { id: 'golden', name: 'Golden Hour', category: 'Landscape', values: { temperature: 8800, tint: 8, saturation: 15, contrast: 8, exposure: 0.12 } },
-  { id: 'cool', name: 'Cool', category: 'Landscape', values: { temperature: 3000, tint: -4, saturation: -10, contrast: 10 } },
-  { id: 'dramatic', name: 'Dramatic', category: 'Landscape', values: { contrast: 38, exposure: -0.12, saturation: -12, clarity: 22, vignette: 30 } },
-  { id: 'soft', name: 'Soft Light', category: 'Landscape', values: { contrast: -16, exposure: 0.18, temperature: 6300, fade: 14, saturation: -8 } },
-  { id: 'noir', name: 'Noir', category: 'Landscape', values: { blackAndWhite: true, contrast: 28, exposure: 0.1, vignette: 20 } },
+  { id: 'original', name: 'Original', category: 'Essentials', values: {} },
+  { id: 'natural', name: 'Natural', category: 'Essentials', values: INITIAL_EDIT },
+  { id: 'vivid', name: 'Vivid', category: 'Essentials', values: { saturation: 30, vibrance: 28, contrast: 16, exposure: 0.05 } },
+  { id: 'golden', name: 'Golden Hour', category: 'Essentials', values: { temperature: 8800, tint: 8, saturation: 15, contrast: 8, exposure: 0.12 } },
+  { id: 'cool', name: 'Cool', category: 'Essentials', values: { temperature: 3000, tint: -4, saturation: -10, contrast: 10 } },
+  { id: 'dramatic', name: 'Dramatic', category: 'Essentials', values: { contrast: 38, exposure: -0.12, saturation: -12, clarity: 22, vignette: 30 } },
+  { id: 'soft', name: 'Soft Light', category: 'Essentials', values: { contrast: -16, exposure: 0.18, temperature: 6300, fade: 14, saturation: -8 } },
+  { id: 'noir', name: 'Noir', category: 'Essentials', values: { blackAndWhite: true, contrast: 28, exposure: 0.1, vignette: 20 } },
   { id: 'teal', name: 'Teal & Orange', category: 'Cinematic', values: { temperature: 6800, tint: -15, hue: -8, contrast: 26, saturation: 12 } },
   { id: 'film', name: '35mm', category: 'Cinematic', values: { temperature: 7000, contrast: 14, saturation: -18, grain: 24, fade: 12 } },
   { id: 'faded', name: 'Faded Film', category: 'Cinematic', values: { fade: 35, temperature: 6400, contrast: -8, saturation: -26, grain: 12 } },

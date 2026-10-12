@@ -87,7 +87,7 @@ export type NumericAdjustment = {
 export interface Preset {
   id: string;
   name: string;
-  category: 'Landscape' | 'Cinematic' | 'Black & White' | 'My Presets';
+  category: 'Essentials' | 'Cinematic' | 'Black & White' | 'My Presets';
   values: Partial<EditState>;
 }
 

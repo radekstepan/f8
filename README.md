@@ -29,7 +29,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 ## Included Interactions
 
 - Twelve sample photographs, three albums, favorites, star ratings, search, smart collections, and a resizable photo grid.
-- Fourteen built-in presets across Landscape, Cinematic, and Black & White, plus persistent custom presets.
+- Fourteen built-in presets across Essentials, Cinematic, and Black & White, plus persistent custom presets.
 - Live temperature, tint, lightness, hue, saturation, vibrance, detail, tone, grain, vignette, and fade adjustments.
 - Editable numeric values, keyboard-accessible sliders, section toggles, automatic adjustment examples, and double-click slider resets.
 - A live RGB histogram derived from the rendered image.

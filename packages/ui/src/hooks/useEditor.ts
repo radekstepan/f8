@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeWhiteBalanceAuto, decodeDownsampled } from '@photomator/core';
+import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeWhiteBalanceAuto, decodeDownsampled, isDefaultEdit, presetForPatch } from '@photomator/core';
 import type { EditState, HistoryState, Preset } from '@photomator/core';
 
 const initialHistory = (_id?: string): HistoryState => ({
@@ -11,12 +11,6 @@ const initialHistory = (_id?: string): HistoryState => ({
 /** Merge keys for heal strokes bypass the time window: one stroke id = one undo step. */
 const STICKY_MERGE_PREFIX = 'retouch-stroke:';
 const MERGE_WINDOW_MS = 700;
-
-function isDefaultEdit(edit: EditState): boolean {
-  const { retouches, ...rest } = edit;
-  const { retouches: _base, ...base } = DEFAULT_EDIT;
-  return retouches.length === 0 && JSON.stringify(rest) === JSON.stringify(base);
-}
 
 export interface EditorPersistence {
   /** Seed from the server library; applied once when it arrives. */
@@ -78,7 +72,7 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     lastChange.current = { key: mergeKey, photoId, time: now };
     setHistories((all) => {
       const current = all[photoId] || initialHistory(photoId);
-      const present = { ...current.present, preset: 'Custom', ...patch };
+      const present = { ...current.present, ...patch, preset: presetForPatch(current.present.preset, patch) };
       schedulePersist(photoId, present);
       return {
         ...all,

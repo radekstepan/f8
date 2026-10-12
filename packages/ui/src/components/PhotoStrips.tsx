@@ -6,12 +6,12 @@ import type { Photo, Preset } from '@photomator/core';
 import { IconButton } from './EditorUI.js';
 
 export function PresetStrip({ photo, presets, selected, onSelect, onAdd, onToggle }: { photo: Photo; presets: Preset[]; selected: string; onSelect: (preset: Preset) => void; onAdd: () => void; onToggle: () => void }) {
-  const [category, setCategory] = useState('Landscape');
+  const [category, setCategory] = useState('Essentials');
   useEffect(() => {
     const preset = presets.find((item) => item.name === selected);
     if (preset) setCategory(preset.category);
   }, [selected, presets]);
-  const categories = ['Landscape', 'Cinematic', 'Black & White', ...(presets.some((preset) => preset.category === 'My Presets') ? ['My Presets'] : [])];
+  const categories = ['Essentials', 'Cinematic', 'Black & White', ...(presets.some((preset) => preset.category === 'My Presets') ? ['My Presets'] : [])];
   const original = presets.find((preset) => preset.id === 'original') ?? presets.find((preset) => preset.name === 'Original');
   return <section className="presets-panel" aria-label="Photo presets"><div className="presets-heading"><div className="presets-title"><SlidersHorizontal size={13} /><h2>Presets</h2></div><nav className="preset-tabs" aria-label="Preset categories">{categories.map((name) => <button key={name} className={category === name ? 'is-active' : ''} onClick={() => setCategory(name)}>{name}</button>)}</nav><div className="presets-actions"><IconButton label="Save current adjustments as a preset" onClick={onAdd}><Plus size={15} /></IconButton><IconButton label="Hide presets" onClick={onToggle}><ChevronDown size={14} /></IconButton></div></div><div className="presets-list">{presets.filter((preset) => preset.category === category).map((preset) => {
     const isSelected = selected === preset.name;
