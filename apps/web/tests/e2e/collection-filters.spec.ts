@@ -1,0 +1,228 @@
+// apps/web/tests/e2e/collection-filters.spec.ts
+//
+// Locks two behaviors (App.tsx + PhotoStrips.tsx):
+//   - collection deep-linking: reloading on a photo highlights that photo's
+//     album in the sidebar and filmstrip (not the hardcoded default), an
+//     explicit ?collection= is honored, and sidebar clicks persist it.
+//   - library edited/favorite chip filters: they narrow the grid and the
+//     filmstrip (shared filteredPhotos), combine, clear, and empty-state.
+//
+// State is API-seeded (PUT /api/photos/:id/edit) for determinism: every test
+// resets all photos to DEFAULT_EDIT, then marks photo-2 edited. Favorites
+// stay seed-stable (photo-1/4/10 favorited) and are never mutated here.
+// Seed images are stubbed to a local SVG (no network), same as basic.spec.ts.
+import { expect, test, type Page } from "@playwright/test";
+import { DEFAULT_EDIT } from "@photomator/core";
+import { awaitEditor, stubLibraryImages } from "./helpers";
+
+const EDITED_ID = "photo-2";
+const EDITED_TITLE = "The stillness of the mountains";
+const COAST_ID = "photo-9";
+const COAST_TITLE = "Along the Sardinian coast";
+const COAST_FAV_TITLE = "The last light in Tellaro";
+
+async function libraryIds(page: Page): Promise<string[]> {
+  const res = await page.request.get("/api/library");
+  expect(res.ok()).toBeTruthy();
+  const body = (await res.json()) as { photos: { id: string }[] };
+  return body.photos.map((photo) => photo.id);
+}
+
+/** Reset every photo to unedited, then mark exactly one photo edited. */
+async function seedEditedState(page: Page): Promise<void> {
+  for (const id of await libraryIds(page)) {
+    const put = await page.request.put(`/api/photos/${id}/edit`, {
+      data: { present: { ...DEFAULT_EDIT, retouches: [] } },
+    });
+    expect(put.ok()).toBeTruthy();
+  }
+  const mark = await page.request.put(`/api/photos/${EDITED_ID}/edit`, {
+    data: { present: { ...DEFAULT_EDIT, exposure: 1, retouches: [] } },
+  });
+  expect(mark.ok()).toBeTruthy();
+}
+
+function sidebar(page: Page) {
+  return page.getByRole("complementary", { name: "Photo library" });
+}
+
+function filmstrip(page: Page) {
+  return page.locator("section.filmstrip");
+}
+
+function grid(page: Page) {
+  return page.locator("section.photo-browser");
+}
+
+async function openLibraryOnAll(page: Page): Promise<void> {
+  await sidebar(page).getByRole("button", { name: /All Photos/ }).click();
+  await expect(grid(page)).toBeVisible();
+}
+
+test.beforeEach(async ({ page }) => {
+  await stubLibraryImages(page);
+  await page.goto("/");
+  await seedEditedState(page);
+});
+
+test.afterEach(async ({ page }) => {
+  // Leave the shared library pristine (no edited photos) for other specs.
+  await Promise.all(
+    (await libraryIds(page).catch(() => [] as string[])).map((id) =>
+      page.request
+        .put(`/api/photos/${id}/edit`, {
+          data: { present: { ...DEFAULT_EDIT, retouches: [] } },
+        })
+        .catch(() => undefined),
+    ),
+  );
+});
+
+test("reload on a coast photo highlights Coastal Escape in sidebar and filmstrip", async ({
+  page,
+}) => {
+  await page.goto("/?photo=photo-9");
+  await awaitEditor(page);
+
+  await expect(page).toHaveURL(/collection=coast/);
+  await expect(
+    sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
+  ).toHaveClass(/is-selected/);
+  await expect(
+    sidebar(page).getByRole("button", { name: /Dolomites 2024/ }),
+  ).not.toHaveClass(/is-selected/);
+  await expect(filmstrip(page).locator("h2")).toHaveText("Coastal Escape");
+  await expect(
+    filmstrip(page).locator('[data-photo-id="photo-9"]'),
+  ).toHaveClass(/is-selected/);
+
+  await page.reload();
+  await awaitEditor(page);
+
+  await expect(page).toHaveURL(/collection=coast/);
+  await expect(
+    sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
+  ).toHaveClass(/is-selected/);
+  await expect(filmstrip(page).locator("h2")).toHaveText("Coastal Escape");
+  await expect(
+    filmstrip(page).locator('[data-photo-id="photo-9"]'),
+  ).toHaveClass(/is-selected/);
+});
+
+test("explicit collection param is honored, not overridden", async ({
+  page,
+}) => {
+  await page.goto("/?photo=photo-9&collection=favorites");
+  await awaitEditor(page);
+
+  await expect(
+    sidebar(page).getByRole("button", { name: /^Favorites/ }),
+  ).toHaveClass(/is-selected/);
+  await expect(
+    sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
+  ).not.toHaveClass(/is-selected/);
+  await expect(page).toHaveURL(/collection=favorites/);
+});
+
+test("sidebar album click persists collection to the URL", async ({
+  page,
+}) => {
+  await page.goto("/?photo=photo-1");
+  await awaitEditor(page);
+
+  await sidebar(page).getByRole("button", { name: /Coastal Escape/ }).click();
+
+  await expect(page).toHaveURL(/collection=coast/);
+  await expect(grid(page).locator("h1")).toHaveText("Coastal Escape");
+});
+
+test("edited chips filter the grid and the filmstrip", async ({ page }) => {
+  await page.goto("/");
+  await awaitEditor(page);
+  await openLibraryOnAll(page);
+
+  const editedGroup = page.getByRole("group", { name: "Edited status" });
+  await editedGroup.getByRole("button", { name: "Edited", exact: true }).click();
+
+  await expect(
+    editedGroup.getByRole("button", { name: "Edited", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${EDITED_TITLE}` }),
+  ).toBeVisible();
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${COAST_TITLE}` }),
+  ).toHaveCount(0);
+  await expect(grid(page).locator("p").first()).toContainText("1 photo");
+
+  await editedGroup
+    .getByRole("button", { name: "Unedited", exact: true })
+    .click();
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${EDITED_TITLE}` }),
+  ).toHaveCount(0);
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${COAST_TITLE}` }),
+  ).toBeVisible();
+
+  // Back to Edited, then open the photo: the filmstrip shares the filter.
+  await editedGroup.getByRole("button", { name: "Edited", exact: true }).click();
+  await grid(page).getByRole("button", { name: `Edit ${EDITED_TITLE}` }).click();
+  await awaitEditor(page);
+  await expect(filmstrip(page).locator("[data-photo-id]")).toHaveCount(1);
+  await expect(
+    filmstrip(page).locator(`[data-photo-id="${EDITED_ID}"]`),
+  ).toBeVisible();
+});
+
+test("favorite chips filter, clear, and empty-state", async ({ page }) => {
+  await page.goto("/");
+  await awaitEditor(page);
+  await sidebar(page).getByRole("button", { name: /Coastal Escape/ }).click();
+  await expect(grid(page)).toBeVisible();
+
+  const favGroup = page.getByRole("group", { name: "Favorite status" });
+  await favGroup
+    .getByRole("button", { name: "Favorited", exact: true })
+    .click();
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${COAST_FAV_TITLE}` }),
+  ).toBeVisible();
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${COAST_TITLE}` }),
+  ).toHaveCount(0);
+
+  await favGroup
+    .getByRole("button", { name: "Not favorited", exact: true })
+    .click();
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${COAST_TITLE}` }),
+  ).toBeVisible();
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${COAST_FAV_TITLE}` }),
+  ).toHaveCount(0);
+
+  // Clear restores both photos.
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${COAST_TITLE}` }),
+  ).toBeVisible();
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${COAST_FAV_TITLE}` }),
+  ).toBeVisible();
+
+  // No coast photo is edited: Edited chip empties the album.
+  await page
+    .getByRole("group", { name: "Edited status" })
+    .getByRole("button", { name: "Edited", exact: true })
+    .click();
+  await expect(grid(page).locator(".empty-library h2")).toHaveText(
+    "No photos match these filters",
+  );
+  await grid(page)
+    .getByRole("button", { name: "Clear filters" })
+    .click();
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${COAST_TITLE}` }),
+  ).toBeVisible();
+});

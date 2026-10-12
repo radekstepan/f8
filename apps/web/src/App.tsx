@@ -39,12 +39,25 @@ function initialTool(): Tool {
   }
 }
 
+function initialCollection(): string | null {
+  try {
+    return new URLSearchParams(window.location.search).get('collection');
+  } catch {
+    return null;
+  }
+}
+
+export type EditedFilter = 'all' | 'edited' | 'unedited';
+export type FavoriteFilter = 'all' | 'favorited' | 'not';
+
 export default function App() {
   const library = useLibrary();
   const { photos, albums, customPresets } = library;
   const [selectedId, setSelectedId] = useState(initialPhotoId);
-  const [collection, setCollection] = useState('dolomites');
+  const [collection, setCollection] = useState(() => initialCollection() || 'dolomites');
   const [search, setSearch] = useState('');
+  const [editedFilter, setEditedFilter] = useState<EditedFilter>('all');
+  const [favoriteFilter, setFavoriteFilter] = useState<FavoriteFilter>('all');
   const [view, setView] = useState<ViewMode>('editor');
   const [tool, setTool] = useState<Tool>(initialTool);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 1080);
@@ -102,28 +115,45 @@ export default function App() {
       /* Private mode / quota — prefs stay session-only. */
     }
   }, [brushSize, brushStrength, presetsOpen, filmstripOpen]);
-  // Deep-link the open image + tool (?photo=<id>&tool=<name>) so a reload or
-  // shared URL restores them. View-only pointer: edits still live on the
-  // server. replaceState avoids spamming history on every filmstrip click.
+  // Deep-link the open image + tool + collection so a reload or shared URL
+  // restores them. View-only pointer: edits still live on the server.
+  // replaceState avoids spamming history on every filmstrip click.
   const photoIdForUrl = photo?.id ?? selectedId;
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       params.set('photo', photoIdForUrl);
       params.set('tool', tool);
+      params.set('collection', collection);
       window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
     } catch {
       /* Non-browser / restricted context — URL stays as-is. */
     }
-  }, [photoIdForUrl, tool]);
+  }, [photoIdForUrl, tool, collection]);
+  // On first library load, align the sidebar/filmstrip collection with the
+  // deep-linked photo when the URL carries no explicit collection. Without
+  // this the sidebar stays stuck on the hardcoded default while editing a
+  // photo from another album.
+  const collectionSynced = useRef(initialCollection() !== null);
+  useEffect(() => {
+    if (collectionSynced.current) return;
+    if (!photos.length || !photo) return;
+    if (photo.albumId && photo.albumId !== collection) setCollection(photo.albumId);
+    collectionSynced.current = true;
+  }, [photos, photo, collection]);
   useEffect(() => {
     const onPopState = () => {
       try {
         const params = new URLSearchParams(window.location.search);
         const nextPhoto = params.get('photo');
         const nextTool = params.get('tool') as Tool | null;
+        const nextCollection = params.get('collection');
         if (nextTool && TOOLS.includes(nextTool)) setTool(nextTool);
         if (nextPhoto) setSelectedId(nextPhoto);
+        if (nextCollection) {
+          setCollection(nextCollection);
+          collectionSynced.current = true;
+        }
         setView('editor');
       } catch {
         /* Keep current state on malformed URLs. */
@@ -163,9 +193,13 @@ export default function App() {
       const query = search.toLowerCase();
       items = items.filter((item) => `${item.name} ${item.title} ${item.location} ${item.camera}`.toLowerCase().includes(query));
     }
+    if (editedFilter === 'edited') items = items.filter((item) => Boolean(item.edited));
+    else if (editedFilter === 'unedited') items = items.filter((item) => !item.edited);
+    if (favoriteFilter === 'favorited') items = items.filter((item) => item.favorite);
+    else if (favoriteFilter === 'not') items = items.filter((item) => !item.favorite);
     const byDate = [...items].sort((a, b) => a.date.localeCompare(b.date));
     return reversed ? byDate.reverse() : byDate;
-  }, [photos, collection, search, reversed]);
+  }, [photos, collection, search, reversed, editedFilter, favoriteFilter]);
 
   const selectPhoto = useCallback((id: string) => {
     setSelectedId(id);
@@ -177,9 +211,17 @@ export default function App() {
 
   const selectCollection = (id: string) => {
     setCollection(id);
+    collectionSynced.current = true;
     setSearch('');
+    setEditedFilter('all');
+    setFavoriteFilter('all');
     setView('library');
     if (window.innerWidth < 760) setSidebarOpen(false);
+  };
+
+  const clearFilters = () => {
+    setEditedFilter('all');
+    setFavoriteFilter('all');
   };
 
   const toggleFavorite = useCallback((id?: string) => {
@@ -232,6 +274,7 @@ export default function App() {
     const summary = await library.uploadFiles(list, albumId);
     if (summary.firstId) {
       setCollection(albumId);
+      collectionSynced.current = true;
       setSearch('');
       selectPhoto(summary.firstId);
     }
@@ -253,7 +296,10 @@ export default function App() {
       const report = await library.importPaths(paths, albumId);
       const first = report.imported[0] ?? report.relinked[0] ?? report.duplicates[0];
       if (first) {
-        if (!locating) setCollection(albumId);
+        if (!locating) {
+          setCollection(albumId);
+          collectionSynced.current = true;
+        }
         setSearch('');
         selectPhoto(first.id);
       }
@@ -419,7 +465,7 @@ export default function App() {
       {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} editedCount={photos.filter((item) => item.edited).length} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} onSelect={selectPhoto} onFavorite={toggleFavorite} onImport={() => fileInput.current?.click()} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={setEditedFilter} onFavoriteFilter={setFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onImport={() => fileInput.current?.click()} />
         ) : (
           <>
             {!editor.ready ? (

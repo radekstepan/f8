@@ -383,6 +383,13 @@ img { display: block; }
 .browser-heading p > span { width: 3px; height: 3px; background: #62626d; border-radius: 50%; }
 .browser-view-control { display: flex; align-items: center; gap: 8px; color: #81818e; }
 .browser-view-control input { width: 60px; height: 3px; accent-color: var(--accent-muted); }
+.browser-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; margin-bottom: 22px; }
+.filter-group { display: inline-flex; align-items: center; gap: 4px; background: #222227; border: 1px solid #ffffff0c; border-radius: 999px; padding: 3px; }
+.filter-chip { height: 26px; padding: 0 12px; border-radius: 999px; font-size: 9px; font-weight: 550; color: #9494a1; white-space: nowrap; }
+.filter-chip:hover { color: #dedce1; }
+.filter-chip.is-active { background: #e2c382; color: #3b3020; }
+.filter-clear { font-size: 9px; color: #b8a279; padding: 6px 4px; }
+.filter-clear:hover { color: #f0d496; text-decoration: underline; text-underline-offset: 2px; }
 .photo-grid { display: grid; grid-template-columns: repeat(var(--grid-columns), minmax(0, 1fr)); gap: 24px 16px; }
 .browser-photo { position: relative; min-width: 0; }
 .browser-photo-open { display: block; width: 100%; text-align: left; }
