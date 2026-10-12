@@ -26,14 +26,14 @@ describe("createHealQueue", () => {
     // Simulate a transport that reports per-group done (the old bug).
     const healGroup = vi.fn().mockImplementation(async (_src: unknown, _group: unknown, _m: unknown, run: (img: PixelImage, mask: unknown, r: number, mm: unknown, opts?: { onProgress?: (f: number, s: string) => void; areas?: number }) => Promise<PixelImage>, opts?: { onProgress?: (f: number, s: string) => void; areas?: number }) => {
       opts?.onProgress?.(0, "Contacting photo server…");
-      opts?.onProgress?.(0.5, "Healing on server…");
+      opts?.onProgress?.(0.5, "Repairing…");
       // Per-group terminal the queue must swallow.
       await run(source(), { width: 1, height: 1, data: new Uint8ClampedArray(1) }, 1, "ml-heal", { onProgress: (f, s) => opts?.onProgress?.(f, s) });
       return fakePatch();
     });
     const run = vi.fn().mockImplementation(async (_img: PixelImage, _mask: unknown, _r: number, _m: unknown, opts?: { onProgress?: (f: number, s: string) => void }) => {
       // Transport-level per-group done — must never reach the UI directly.
-      opts?.onProgress?.(1, "Healing done");
+      opts?.onProgress?.(1, "Repair done");
       return source();
     });
     const queue = createHealQueue(healGroup);
@@ -50,15 +50,15 @@ describe("createHealQueue", () => {
     expect(healGroup).toHaveBeenCalledTimes(3);
     expect(doneOrder.sort()).toEqual([1, 2, 3]);
     // Exactly one terminal done, at the end.
-    const terminals = seen.filter((s) => s.fraction >= 1 || s.stage === "Healing done");
+    const terminals = seen.filter((s) => s.fraction >= 1 || s.stage === "Repair done");
     expect(terminals).toHaveLength(1);
-    expect(seen[seen.length - 1]).toEqual({ fraction: 1, stage: "Healing done" });
+    expect(seen[seen.length - 1]).toEqual({ fraction: 1, stage: "Repair done" });
     // Monotonic, and intermediate stages name the group position.
     for (let i = 1; i < seen.length; i += 1) {
       expect(seen[i]!.fraction).toBeGreaterThanOrEqual(seen[i - 1]!.fraction);
     }
-    expect(seen.some((s) => s.stage === "Healing 1 of 3…")).toBe(true);
-    expect(seen.some((s) => s.stage === "Healing 3 of 3…")).toBe(true);
+    expect(seen.some((s) => s.stage === "Repairing 1 of 3…")).toBe(true);
+    expect(seen.some((s) => s.stage === "Repairing 3 of 3…")).toBe(true);
   });
 
   it("processes jobs one at a time in FIFO order without overlap", async () => {
@@ -103,7 +103,7 @@ describe("createHealQueue", () => {
       onProgress: (_f, stage) => void seen.push(stage),
     });
     expect(seen).toContain("done-2");
-    expect(seen[seen.length - 1]).toBe("Healing done");
+    expect(seen[seen.length - 1]).toBe("Repair done");
   });
 
   it("plans deferred jobs at start time so follow-ups see finished groups", async () => {

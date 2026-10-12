@@ -2,7 +2,7 @@
 //
 // Locks the serial heal job queue (core/heal-queue.ts, PhotoCanvas prepare):
 // one group at a time, FIFO, never parallel; aggregate progress
-// ("Healing i of N…") with a single terminal "Healing done"; repeat strokes
+// ("Repairing i of N…") with a single terminal "Repair done"; repeat strokes
 // schedule follow-up jobs planned at start time against the latest cache.
 //
 // The neural backend is mocked with a fixed delay so job boundaries are

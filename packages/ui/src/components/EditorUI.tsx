@@ -44,12 +44,35 @@ interface RangeControlProps {
   testId?: string;
   /** Tooltip hint on the typeable value (e.g. click-to-type discoverability). */
   valueHint?: string;
+  /** Fires when slider dragging starts/stops; the canvas shows a fine grid while straightening. */
+  onDraggingChange?: (dragging: boolean) => void;
   onChange: (value: number) => void;
 }
 
-export function RangeControl({ label, value, min = -100, max = 100, step = 1, defaultValue = 0, suffix = '', signed = false, color, disabled, testId, valueHint, onChange }: RangeControlProps) {
+export function RangeControl({ label, value, min = -100, max = 100, step = 1, defaultValue = 0, suffix = '', signed = false, color, disabled, testId, valueHint, onDraggingChange, onChange }: RangeControlProps) {
   const id = useId();
   const [draft, setDraft] = useState<string | null>(null);
+  const draggingRef = useRef(false);
+  const draggingCallback = useRef(onDraggingChange);
+  draggingCallback.current = onDraggingChange;
+  // A drag can release outside the slider (or the window can blur mid-drag),
+  // so the end of the gesture is observed globally, not on the input.
+  useEffect(() => {
+    if (!onDraggingChange) return;
+    const end = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      draggingCallback.current?.(false);
+    };
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    window.addEventListener('blur', end);
+    return () => {
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      window.removeEventListener('blur', end);
+    };
+  }, [onDraggingChange]);
   const digits = step < 1 ? 2 : 0;
   const displayed = String(Number(value.toFixed(digits)));
   const progress = (value - min) / (max - min) * 100;
@@ -92,7 +115,7 @@ export function RangeControl({ label, value, min = -100, max = 100, step = 1, de
       </div>
       <div className={`range-track ${color ? `range-${color}` : ''}`} style={style}>
         {showOrigin && <span className="range-origin" />}
-        <input id={id} type="range" min={min} max={max} step={step} value={value} disabled={disabled} title={`Double-click to reset ${label.toLowerCase()}`} onDoubleClick={() => onChange(defaultValue)} onChange={(event) => onChange(Number(event.target.value))} />
+        <input id={id} type="range" min={min} max={max} step={step} value={value} disabled={disabled} title={`Double-click to reset ${label.toLowerCase()}`} onDoubleClick={() => onChange(defaultValue)} onPointerDown={() => { if (onDraggingChange && !draggingRef.current) { draggingRef.current = true; onDraggingChange(true); } }} onChange={(event) => onChange(Number(event.target.value))} />
       </div>
     </div>
   );

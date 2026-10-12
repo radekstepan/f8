@@ -89,7 +89,7 @@ function isMlErrorStage(stage: string): boolean {
 }
 
 function isMlDoneStage(stage: string, fraction: number): boolean {
-  return fraction >= 1 || stage === 'Healing done' || stage.endsWith('ready on this device');
+  return fraction >= 1 || stage === 'Repair done' || stage.endsWith('ready on this device');
 }
 
 function isMlDownloadStage(stage: string): boolean {
@@ -97,7 +97,7 @@ function isMlDownloadStage(stage: string): boolean {
 }
 
 function isMlSteppedStage(stage: string): boolean {
-  return /^Healing \d+ of \d+/.test(stage);
+  return /^Repairing \d+ of \d+/.test(stage);
 }
 
 function MlProgressView({ progress, onCancel }: { progress: { fraction: number; stage: string; job?: string; areas?: number | null; updatedAt?: number }; onCancel?: () => void }) {
@@ -105,8 +105,9 @@ function MlProgressView({ progress, onCancel }: { progress: { fraction: number; 
   const isDone = isMlDoneStage(progress.stage, progress.fraction);
   const [, setTick] = useState(0);
   const updatedAt = progress.updatedAt ?? 0;
-  // Tick while active so "Still working… Xs" and success auto-dismiss stay
-  // live without new worker messages (LaMa inference has no per-step posts).
+  // Tick while active so the elapsed-seconds suffix and success
+  // auto-dismiss stay live without new worker messages (LaMa inference has
+  // no per-step posts).
   useEffect(() => {
     if (isError || (isDone && Date.now() - updatedAt > ML_SUCCESS_DISMISS_MS)) return;
     const timer = window.setInterval(() => setTick((value) => value + 1), 500);
@@ -124,17 +125,17 @@ function MlProgressView({ progress, onCancel }: { progress: { fraction: number; 
   const headline = showPercent
     ? `${progress.stage} · ${pct}%`
     : stalled
-      ? `${progress.stage} Still working… ${Math.floor(elapsed)}s`
+      ? `${progress.stage} ${Math.floor(elapsed)}s`
       : progress.stage;
   return <div className={`ml-progress${isError ? ' is-error' : ''}${!showPercent && !isError && !isDone ? ' is-busy' : ''}`} data-testid="ml-progress" role={isError ? 'alert' : 'status'} aria-live="polite">
-    <div className={`ml-progress-bar${!showPercent && !isError && !isDone ? ' is-indeterminate' : ''}`}>{showPercent || isError || isDone ? <span style={{ width: `${pct}%` }} /> : <span className="ml-progress-pulse" />}</div>
+    {!isDone && <div className={`ml-progress-bar${!showPercent && !isError ? ' is-indeterminate' : ''}`}>{showPercent || isError ? <span style={{ width: `${pct}%` }} /> : <span className="ml-progress-pulse" />}</div>}
     <p className="inspector-note" data-testid="ml-progress-stage">{headline}</p>
     {areaNote && <p className="inspector-note ml-area-note" data-testid="ml-area-note">{areaNote}</p>}
-    {!isError && !isDone && onCancel && <button className="text-button" data-testid="ml-cancel" title="Stop this heal and restart the worker" onClick={onCancel}>Cancel heal</button>}
+    {!isError && !isDone && onCancel && <button className="text-button" data-testid="ml-cancel" title="Stop this repair and restart the worker" onClick={onCancel}>Cancel repair</button>}
   </div>;
 }
 
-function StraightenControl({ value, assist, onChange }: { value: number; assist: StraightenAssist; onChange: ChangeEdit }) {
+function StraightenControl({ value, assist, onChange, onDraggingChange }: { value: number; assist: StraightenAssist; onChange: ChangeEdit; onDraggingChange?: (dragging: boolean) => void }) {
   const working = assist.state === 'loading' || assist.state === 'detecting';
   const mlActive = Boolean(working && assist.mlProgress);
   // Pre-Auto slider value for one-click Revert. Captured in the Auto click
@@ -166,9 +167,9 @@ function StraightenControl({ value, assist, onChange }: { value: number; assist:
     : null;
   const formatAngle = (angle: number) => `${angle > 0 ? '+' : ''}${angle.toFixed(1)}°`;
   return <div className="straighten-assist">
-    <RangeControl label="Straighten" value={value} min={-15} max={15} step={0.1} suffix="deg" signed valueHint="Click to type an exact value in degrees" onChange={(next) => { assist.onDismiss(); onChange({ straighten: next }, 'straighten'); }} />
+    <RangeControl label="Straighten" value={value} min={-15} max={15} step={0.1} suffix="deg" signed valueHint="Click to type an exact value in degrees" onDraggingChange={onDraggingChange} onChange={(next) => { assist.onDismiss(); onChange({ straighten: next }, 'straighten'); }} />
     <div className="straighten-auto-row">
-      <button className="secondary-button straighten-auto" disabled={working} title="Detect the horizon tilt automatically and apply it" onClick={() => { setSnapshot(value); assist.onDetect(); }}>{working ? (assist.state === 'loading' ? 'Loading…' : mlActive ? 'Estimating…' : 'Detecting…') : 'Auto'}</button>
+      <button className="auto-small straighten-auto" disabled={working} title="Detect the horizon tilt automatically and apply it" onClick={() => { setSnapshot(value); assist.onDetect(); }}>{working ? (assist.state === 'loading' ? 'Loading…' : mlActive ? 'Estimating…' : 'Detecting…') : 'Auto'}</button>
       {working && !mlActive && <span className="straighten-status" role="status">{assist.state === 'loading' ? 'Loading vision engine…' : 'Detecting horizon tilt…'}</span>}
       {assist.state === 'error' && assist.message && <span className="straighten-status is-error" role="alert">{assist.message}</span>}
     </div>
@@ -276,6 +277,8 @@ interface InspectorProps {
   canPaste: boolean;
   straightenAssist?: StraightenAssist;
   repairAssist?: RepairAssist;
+  /** Fires while the straighten slider is dragged so the canvas can show a fine grid. */
+  onStraightenDragging?: (dragging: boolean) => void;
   highlightStroke?: number | null;
   onHighlightStroke?: (stroke: number | null) => void;
   onChange: ChangeEdit;
@@ -291,7 +294,7 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, highlightStroke = null, onHighlightStroke, onChange, onReset, onAuto, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onReset, onAuto, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
   const [extraSections, setExtraSections] = useState<string[]>([]);
@@ -367,7 +370,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </AdjustmentSection>
       {extraSections.includes('Black & White') && <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} enabled={edit.blackAndWhite} onToggle={() => onChange({ blackAndWhite: !edit.blackAndWhite })}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>}
       <div className="inspector-end-note"><Circle size={10} />Every change. Always reversible.</div>
-    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onChange({ rotation: (edit.rotation - 90) % 360 })}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onChange({ rotation: (edit.rotation + 90) % 360 })}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onChange={onChange} /> : range('straighten', 'Straighten', { min: -15, max: 15, step: 0.1, suffix: 'deg' })}<button className="secondary-button full-width reset-crop" onClick={() => onChange({ cropRatio: 'Original', rotation: 0, flipH: false, flipV: false, straighten: 0 })}><RotateCcw size={13} />Reset Composition</button><p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <div className="tool-inspector"><div className="tool-intro"><Bandage size={30} strokeWidth={1.3} /><h3>Less distraction. More photo.</h3><p>Rebuild small distractions from the surrounding photo.</p></div><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} />{repairAssist && <RepairMethodControl assist={repairAssist} />}<RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></div>}</div>
+    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onChange({ rotation: (edit.rotation - 90) % 360 })}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onChange({ rotation: (edit.rotation + 90) % 360 })}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onChange={onChange} onDraggingChange={onStraightenDragging} /> : range('straighten', 'Straighten', { min: -15, max: 15, step: 0.1, suffix: 'deg', onDraggingChange: onStraightenDragging })}<button className="secondary-button full-width reset-crop" onClick={() => onChange({ cropRatio: 'Original', rotation: 0, flipH: false, flipV: false, straighten: 0 })}><RotateCcw size={13} />Reset Composition</button><p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <div className="tool-inspector"><div className="tool-intro"><Bandage size={30} strokeWidth={1.3} /><h3>Less distraction. More photo.</h3><p>Rebuild small distractions from the surrounding photo.</p></div><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} />{repairAssist && <RepairMethodControl assist={repairAssist} />}<RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></div>}</div>
     {tool === 'adjust' && <div className="inspector-footer"><button className="add-adjustment" onClick={() => setAddMenu(!addMenu)} aria-expanded={addMenu}><Plus size={15} />Add Adjustment<ChevronDown size={12} /></button>{addMenu && <div className="dropdown-menu add-adjustment-menu" role="menu">{['Black & White'].filter((name) => !extraSections.includes(name)).map((name) => <MenuItem key={name} onClick={() => addSection(name)}>{name}</MenuItem>)}{!extraSections.includes('Black & White') && <div className="menu-separator" />}<MenuItem onClick={() => { onSavePreset(); setAddMenu(false); }}>Save as Preset...</MenuItem></div>}</div>}
   </aside>;
 }

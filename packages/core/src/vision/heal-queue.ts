@@ -2,10 +2,10 @@
 //
 // Clicking repeatedly used to spawn one async loop per edit, each driving
 // its own per-group `runInpaint` — overlapping server inferences plus a
-// premature per-group "Healing done". Every enqueue here becomes a job with
+// premature per-group "Repair done". Every enqueue here becomes a job with
 // a fixed group list; the processor runs jobs strictly sequentially and
-// reports aggregate progress ("Healing i of N…") with a single terminal
-// "Healing done" after the job's last group. New strokes schedule a later
+// reports aggregate progress ("Repairing i of N…") with a single terminal
+// "Repair done" after the job's last group. New strokes schedule a later
 // job — the running group is never cancelled.
 
 import type { PixelImage } from "./analyze.js";
@@ -93,7 +93,7 @@ export function createHealQueue(
   async function runJob(job: HealQueueJob): Promise<void> {
     const total = job.groups.length;
     if (total === 0) {
-      job.onProgress?.(1, "Healing done");
+      job.onProgress?.(1, "Repair done");
       return;
     }
     const base = job.options ?? {};
@@ -115,11 +115,11 @@ export function createHealQueue(
         onProgress: (fraction, _stage) => {
           const clamped = Math.max(0, Math.min(1, fraction));
           // Suppress the transport's per-group terminal: only the queue
-          // emits "Healing done", after the job's last group.
+          // emits "Repair done", after the job's last group.
           if (clamped >= 1) return;
           job.onProgress?.(
             doneBase + clamped * step,
-            total > 1 ? `Healing ${index + 1} of ${total}…` : "Healing…",
+            total > 1 ? `Repairing ${index + 1} of ${total}…` : "Repairing…",
           );
         },
       };
@@ -131,7 +131,7 @@ export function createHealQueue(
         // Progress still advances so the bar never stalls on one group.
         job.onProgress?.(
           (index + 1) / total,
-          total > 1 ? `Healing ${index + 1} of ${total}…` : "Healing…",
+          total > 1 ? `Repairing ${index + 1} of ${total}…` : "Repairing…",
         );
         continue;
       }
@@ -147,7 +147,7 @@ export function createHealQueue(
       const last = index === total - 1;
       job.onProgress?.(
         last ? 1 : (index + 1) / total,
-        last ? "Healing done" : `Healing ${index + 1} of ${total}…`,
+        last ? "Repair done" : `Repairing ${index + 1} of ${total}…`,
       );
     }
   }

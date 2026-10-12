@@ -1410,7 +1410,7 @@ export function healRepair(image: PixelImage, mask: RepairMask, options: HealOpt
   const total = components.reduce((sum, component) => sum + component.pixels.length, 0);
   let done = 0;
   components.forEach((component, index) => {
-    const stage = `Healing ${index + 1}/${components.length}`;
+    const stage = `Repairing ${index + 1}/${components.length}`;
     onProgress?.(done / total, stage);
     const maxDim = Math.max(component.maxX - component.minX + 1, component.maxY - component.minY + 1);
     if (maxDim <= HEAL_SINGLE_OFFSET_MAX_DIM) {

@@ -186,7 +186,7 @@ export function createApp(ctx: AppContext): Hono {
     } catch (error) {
       if (error instanceof RangeError) return c.json({ error: error.message }, 400);
       console.error(error);
-      return c.json({ error: "Remote heal failed." }, 503);
+      return c.json({ error: "Remote repair failed." }, 503);
     }
   });
 

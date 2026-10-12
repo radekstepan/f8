@@ -90,7 +90,7 @@ export async function runRemoteHeal(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {
-    options.onProgress?.(0.1, "Healing on server…");
+    options.onProgress?.(0.1, "Repairing…");
     response = await fetch("/api/ml-heal/inpaint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -115,10 +115,10 @@ export async function runRemoteHeal(
   }
   if (!response.ok) {
     if (response.status === 503 || response.status === 500) {
-      throw new RemoteHealError("Photo server heal failed.");
+      throw new RemoteHealError("Photo server repair failed.");
     }
     const detail = await response.text().catch(() => "");
-    throw new RemoteHealError(`Photo server rejected the heal (${response.status}${detail ? ` — ${detail.slice(0, 160)}` : ""}).`);
+    throw new RemoteHealError(`Photo server rejected the repair (${response.status}${detail ? ` — ${detail.slice(0, 160)}` : ""}).`);
   }
   const payload = (await response.json()) as { outputB64?: unknown };
   if (typeof payload.outputB64 !== "string") throw new RemoteHealError("Photo server returned no output.");
@@ -127,7 +127,7 @@ export async function runRemoteHeal(
   const output = new Float32Array(3 * 512 * 512);
   for (let i = 0; i < output.length; i += 1) output[i] = rgb[i] ?? 0;
   const result = compositeMlHealOutput(image, mask, roi, output);
-  options.onProgress?.(1, "Healing done");
+  options.onProgress?.(1, "Repair done");
   return result;
 }
 

@@ -114,7 +114,7 @@ export async function mockMlHeal(page: Page, options: MockMlOptions = {}): Promi
     }
     calls.push({ engine, at: Date.now(), roi: body?.roi ?? null, maskNonzero, maskTotal });
     if (failing.includes(engine)) {
-      await route.fulfill({ status: 503, json: { error: "Remote heal failed." } });
+      await route.fulfill({ status: 503, json: { error: "Remote repair failed." } });
       return;
     }
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));

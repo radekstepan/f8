@@ -44,7 +44,7 @@ export async function runMlHeal(
 ): Promise<PixelImage> {
   void image;
   const engine = mlHealEngineForQuality(options.quality ?? "balanced");
-  options.onProgress?.(0, engine === "classic" ? "Healing with Classic…" : "Healing on photo server…");
+  options.onProgress?.(0, engine === "classic" ? "Repairing with Classic…" : "Repairing on photo server…");
   throw unavailable(engine);
 }
 

@@ -461,7 +461,7 @@ describe("healRepair progress", () => {
       onProgress: (fraction, stage) => calls.push([fraction, stage]),
     });
     expect(calls).toEqual([
-      [0, "Healing 1/1"],
+      [0, "Repairing 1/1"],
       [1, "Done"],
     ]);
   });
@@ -474,7 +474,7 @@ describe("healRepair progress", () => {
       onProgress: (fraction, stage) => calls.push([fraction, stage]),
     });
     expect(calls.length).toBeGreaterThan(2);
-    expect(calls[0]).toEqual([0, "Healing 1/1"]);
+    expect(calls[0]).toEqual([0, "Repairing 1/1"]);
     for (const [fraction, stage] of calls) {
       expect(fraction).toBeGreaterThanOrEqual(0);
       expect(fraction).toBeLessThanOrEqual(1);

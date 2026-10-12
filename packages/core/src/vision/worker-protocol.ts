@@ -115,7 +115,7 @@ export interface InpaintProgressResponse {
   kind: "inpaint-progress";
   /** Completed fraction, 0..1. */
   fraction: number;
-  /** Human-readable stage, e.g. "Healing 2/5". */
+  /** Human-readable stage, e.g. "Repairing 2/5". */
   stage: string;
 }
 

@@ -63,6 +63,7 @@ export default function App() {
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
   const [brushSize, setBrushSize] = useState(() => readToolPrefs().brushSize);
   const [brushStrength, setBrushStrength] = useState(() => readToolPrefs().brushStrength);
+  const [straightenDragging, setStraightenDragging] = useState(false);
   const [highlightStroke, setHighlightStroke] = useState<number | null>(null);
   const [clipboard, setClipboard] = useState<EditState | null>(null);
   const [dialog, setDialog] = useState<DialogType>(null);
@@ -486,7 +487,7 @@ export default function App() {
               <PhotoCanvas
                 photo={photo} edit={editor.edit} tool={tool} zoom={zoom}
                 compare={compare} showOriginal={showOriginal}
-                brushSize={brushSize} brushStrength={brushStrength}
+                brushSize={brushSize} brushStrength={brushStrength} fineGrid={straightenDragging}
                 inpaintRepair={canvasRepairBinding}
                 highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
                 onZoom={setZoom} onCompare={() => setCompare(!compare)}
@@ -512,6 +513,7 @@ export default function App() {
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, source: straighten.source, runId: straighten.runId, mlProgress: straighten.mlProgress, mlWarming: straighten.mlWarming, mlNote: straighten.mlNote, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss, onCancelMl: straighten.cancelMl }}
         repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, serverDown: inpaintRepair.serverDown, onCancelHeal: inpaintRepair.cancelHeal, onRetry: () => { void inpaintRepair.warmup().catch(() => { /* Failure is recorded in mlProgress/serverDown. */ }); }, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
+        onStraightenDragging={setStraightenDragging}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={handleEditChange} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}

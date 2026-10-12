@@ -114,7 +114,7 @@ function writePrefs(patch: Record<string, unknown>): void {
 /**
  * Map one group's transport progress onto a serial multi-group job: the bar
  * advances monotonically across groups and only the last group may report
- * terminal "Healing done". Without this, every group flashes "done" and the
+ * terminal "Repair done". Without this, every group flashes "done" and the
  * areas copy flickers while later groups are still healing.
  */
 function mapAggregateProgress(
@@ -126,10 +126,10 @@ function mapAggregateProgress(
   const { index, total } = aggregate;
   const clamped = Math.max(0, Math.min(1, fraction));
   if (clamped >= 1) {
-    if (index >= total - 1) return [1, "Healing done"];
-    return [(index + 1) / total, `Healing ${index + 1} of ${total}…`];
+    if (index >= total - 1) return [1, "Repair done"];
+    return [(index + 1) / total, `Repairing ${index + 1} of ${total}…`];
   }
-  return [(index + clamped) / total, `Healing ${index + 1} of ${total}…`];
+  return [(index + clamped) / total, `Repairing ${index + 1} of ${total}…`];
 }
 
 export function useInpaintRepair(): InpaintRepairState {
@@ -247,7 +247,7 @@ export function useInpaintRepair(): InpaintRepairState {
           // the last step forever (blur fallback stays underneath).
           if (next === "ml-heal") {
             const detail = error instanceof Error ? error.message : String(error);
-            record(0, `Model unavailable: Healing stalled — ${detail}`, "heal", areas);
+            record(0, `Model unavailable: Repair stalled — ${detail}`, "heal", areas);
           }
           throw error;
         });

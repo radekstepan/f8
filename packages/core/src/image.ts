@@ -186,7 +186,7 @@ export interface RunInpaintOptions {
   /**
    * Position of this call inside a serial multi-group job (0-based). When
    * set with total > 1, the transport maps per-group fractions to aggregate
-   * progress and only the last group may report terminal "Healing done" —
+   * progress and only the last group may report terminal "Repair done" —
    * otherwise every group flashes "done" and the areas copy flickers.
    */
   aggregate?: { index: number; total: number };

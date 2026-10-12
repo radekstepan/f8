@@ -136,6 +136,34 @@ test("unreachable server shows one offline line and retry recovers", async ({ pa
   await expect(page.getByTestId("heal-quality-balanced")).toHaveClass(/is-active/);
 });
 
+test("repair progress names the work and hides the bar once done", async ({ page }) => {
+  await page.unroute("**/api/ml-heal/inpaint");
+  await mockMlHeal(page, { delayMs: 6000 });
+
+  await paintStroke(page, { x: 0.25, y: 0.4 }, { x: 0.3, y: 0.45 });
+  await waitForHealingStart(page);
+
+  // Long inference names the work plus elapsed time — no server/stall filler.
+  await expect(page.getByTestId("ml-progress-stage")).toContainText(/Repairing… \d+s/, { timeout: 15_000 });
+  await expect(page.getByTestId("ml-cancel")).toContainText("Cancel repair");
+
+  await waitForHealingDone(page);
+
+  // Terminal states keep their note but never a full progress bar.
+  await expect(page.getByTestId("ml-progress-stage")).toContainText("Repair done", { timeout: 10_000 });
+  await expect(page.locator('[data-testid="ml-progress"] .ml-progress-bar')).toHaveCount(0);
+});
+
+test("server-ready state shows a note without a progress bar", async ({ page }) => {
+  // Re-enter ML Heal so warmup runs again against the mocked backend.
+  await selectRepairMethod(page, "heal");
+  await selectRepairMethod(page, "ml-heal");
+
+  // A static ready state is a note, not progress: no bar under it.
+  await expect(page.getByTestId("ml-progress-stage")).toContainText("Server ready.", { timeout: 15_000 });
+  await expect(page.locator('[data-testid="ml-progress"] .ml-progress-bar')).toHaveCount(0);
+});
+
 test("cancel heals clears progress and later strokes still heal", async ({ page }) => {
   await page.unroute("**/api/ml-heal/inpaint");
   await mockMlHeal(page, { delayMs: 6000 });
