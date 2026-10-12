@@ -50,6 +50,45 @@ export interface SceneEnhanceResult {
   confidence: number;
 }
 
+/** Normalized box in 0..1 image coordinates (x0 <= x1, y0 <= y1). */
+export interface FaceBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** Normalized point in 0..1 image coordinates. */
+export interface FacePoint {
+  x: number;
+  y: number;
+}
+
+/** One red-eye fix: normalized center + x-normalized radius. */
+export interface RedEyeSpot {
+  x: number;
+  y: number;
+  radius: number;
+}
+
+/** Which detector served the faces: neural weights or the classical fallback. */
+export type FaceDetectSource = 'onnx' | 'classic';
+
+/**
+ * ML face-aware exposure state: softly masked lift ellipses over detected
+ * faces plus red-eye fix discs. Null/absent when no face enhance is applied.
+ */
+export interface FaceAdjustState {
+  /** One lift ellipse per face (normalized boxes). */
+  boxes: FaceBox[];
+  /** Exposure lift in EV applied inside the face ellipses (0..1). */
+  amount: number;
+  /** Red-eye fix discs (normalized). */
+  redEye: RedEyeSpot[];
+  /** Which detector found the faces (drives the UI's ML badge). */
+  source: FaceDetectSource;
+}
+
 export interface RetouchPoint {
   x: number;
   y: number;
@@ -97,6 +136,12 @@ export interface EditState {
    * legacy server recipes. Shown only while autoEnhanced is true.
    */
   sceneEnhance?: SceneEnhanceResult | null;
+  /**
+   * Set when ML face enhance applied masked exposure lift and/or red-eye
+   * fixes. Null/absent otherwise (including legacy server recipes). The
+   * skin-anchored white balance rides the plain temperature/tint sliders.
+   */
+  faceAdjust?: FaceAdjustState | null;
 }
 
 export type NumericAdjustment = {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDeletableCollection, isRecentlyEdited, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@f8/core';
+import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDeletableCollection, isFaceAdjustActive, isRecentlyEdited, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@f8/core';
 import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DialogType, EditState, Tool, ViewMode } from '@f8/core';
@@ -14,6 +14,7 @@ import { useVisionWorker } from './vision/useVisionWorker';
 import { useStraighten } from './vision/useStraighten';
 import { useObjectRemoval } from './vision/useObjectRemoval';
 import { useDustSpots } from './vision/useDustSpots';
+import { useFaceEnhance } from './vision/useFaceEnhance';
 import { useInpaintRepair } from './vision/useInpaintRepair';
 import { FsBrowser } from './components/FsBrowser';
 import { readToolPrefs, writeToolPrefsRaw } from './hooks/useToolPrefs';
@@ -126,6 +127,7 @@ export default function App() {
   const straighten = useStraighten(photo?.id ?? selectedId);
   const objectRemoval = useObjectRemoval(photo?.id ?? selectedId);
   const dustSpots = useDustSpots(photo?.id ?? selectedId);
+  const faceEnhance = useFaceEnhance(photo?.id ?? selectedId);
   const inpaintRepair = useInpaintRepair();
   // Canvas binding: ML strokes are gated until the tier is warmed, so the
   // brush cursor stays hidden and painting is ignored while loading.
@@ -435,6 +437,38 @@ export default function App() {
     notify(`Repairing ${count} ${count === 1 ? 'spot' : 'spots'} — healing with ${inpaintRepair.method === 'ml-heal' ? 'ML Repair' : 'the current repair method'}.`);
   }, [photo, editor, handleEditChange, dustSpots, inpaintRepair.method]);
 
+  // Face enhance: skin-anchored (or classic-fallback) white balance plus the
+  // masked face lift and red-eye discs in one atomic history entry. A fresh
+  // scan replaces the stored adjust, so Rescan never stacks lifts.
+  const applyFaceEnhance = useCallback(() => {
+    if (!photo || faceEnhance.state !== 'ready' || !faceEnhance.result) return;
+    const { faces, source, skinWhiteBalance, classicWhiteBalance, faceAdjust } = faceEnhance.result;
+    if (faces.length === 0) {
+      faceEnhance.dismiss();
+      notify('No faces found — nothing to enhance.');
+      return;
+    }
+    const wb = skinWhiteBalance ?? classicWhiteBalance;
+    handleEditChange({ temperature: wb.temperature, tint: wb.tint, whiteBalanceEnabled: true, faceAdjust });
+    faceEnhance.dismiss();
+    const ml = source === 'onnx' ? ' (ML)' : '';
+    const parts = [
+      `${faces.length} ${faces.length === 1 ? 'face' : 'faces'}`,
+      skinWhiteBalance ? 'skin-anchored white balance' : 'white balance',
+      ...(faceAdjust && faceAdjust.amount > 0 ? [`lift +${faceAdjust.amount} EV`] : []),
+      ...(faceAdjust && faceAdjust.redEye.length > 0 ? [`${faceAdjust.redEye.length} red-eye`] : []),
+    ];
+    notify(`Face enhance${ml}: ${parts.join(', ')}.`);
+  }, [photo, faceEnhance, handleEditChange]);
+
+  // Clear removes the stored masked lift + red-eye discs; the applied white
+  // balance stays as plain slider values (undo restores everything at once).
+  const clearFaceEnhance = useCallback(() => {
+    if (!photo) return;
+    handleEditChange({ faceAdjust: null });
+    notify('Face lift and red-eye fixes cleared.');
+  }, [photo, handleEditChange]);
+
   // Rotation turns repairs with the image in one atomic history entry, so
   // undo restores both together and they can never drift apart. The edit is
   // flushed immediately (rotation/retouches keep the preset label, so the
@@ -576,6 +610,7 @@ export default function App() {
       case 'paste': pasteAdjustments(); break;
       case 'enhance': editor.autoEnhance(photo?.src); setView('editor'); break;
       case 'enhance-scene': editor.autoEnhanceScene(photo?.src); setView('editor'); break;
+      case 'enhance-faces': if (photo) faceEnhance.detect(photo.src); setView('editor'); setTool('adjust'); break;
       case 'rotate': rotateImage(-1); break;
       case 'favorite': toggleFavorite(); break;
       case 'remove': if (photo) requestRemove(photo.id); break;
@@ -626,6 +661,7 @@ export default function App() {
         return;
       }
       if (key === 'a' && event.shiftKey) { event.preventDefault(); actionRef.current('enhance-scene'); return; }
+      if (key === 'e' && event.shiftKey) { event.preventDefault(); actionRef.current('enhance-faces'); return; }
       const actions: Record<string, MenuAction> = { a: 'enhance', f: 'favorite', b: 'compare', g: 'grid', r: 'rotate' };
       const tools: Record<string, Tool> = { v: 'adjust', c: 'crop', j: 'repair' };
       if (actions[key]) actionRef.current(actions[key]);
@@ -654,6 +690,34 @@ export default function App() {
     if (view !== 'editor' || !editor.ready) return;
     pendingSceneEnhance.current = null;
     editor.autoEnhanceScene(photo.src);
+  });
+
+  // ML face enhance requested from a library-grid or filmstrip context
+  // menu: like scene enhance the request parks until the photo is open and
+  // seeded, then detection runs and auto-applies once it resolves.
+  const pendingFaceEnhance = useRef<string | null>(null);
+  const pendingFaceApply = useRef(false);
+  const requestFaceEnhance = (id: string) => {
+    pendingFaceEnhance.current = id;
+    selectPhoto(id);
+    setView('editor');
+  };
+  useEffect(() => {
+    if (pendingFaceEnhance.current === null || !photo || photo.id !== pendingFaceEnhance.current) return;
+    if (view !== 'editor' || !editor.ready) return;
+    pendingFaceEnhance.current = null;
+    pendingFaceApply.current = true;
+    setTool('adjust');
+    faceEnhance.detect(photo.src);
+  });
+  useEffect(() => {
+    if (!pendingFaceApply.current) return;
+    if (faceEnhance.state === 'ready') {
+      pendingFaceApply.current = false;
+      applyFaceEnhance();
+    } else if (faceEnhance.state === 'error' || faceEnhance.state === 'idle') {
+      pendingFaceApply.current = false;
+    }
   });
 
   const createAlbum = (name: string, includePhoto: boolean) => {
@@ -727,7 +791,7 @@ export default function App() {
       {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onSceneEnhance={requestSceneEnhance} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (
@@ -761,7 +825,7 @@ export default function App() {
               onSelect={selectPhoto} onGrid={() => setView('library')}
               onSort={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')} reversed={sortDir === 'desc'} sortKey={sortKey}
               showPresets={presetsOpen} onShowPresets={() => setPresetsOpen(true)}
-              onSceneEnhance={requestSceneEnhance} onFavorite={toggleFavorite}
+              onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onFavorite={toggleFavorite}
             />}
           </>
         )}
@@ -774,7 +838,7 @@ export default function App() {
         onStraightenDragging={setStraightenDragging}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={handleEditChange} onRotate={rotateImage} onStraighten={changeStraighten} onReset={() => handleAction('reset')}
-        onAuto={() => editor.autoEnhance(photo.src)} onAutoScene={() => editor.autoEnhanceScene(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
+        onAuto={() => editor.autoEnhance(photo.src)} onAutoScene={() => editor.autoEnhanceScene(photo.src)} faceAssist={{ state: faceEnhance.state, faces: faceEnhance.result?.faces.length ?? 0, source: faceEnhance.result?.source ?? null, whiteBalance: faceEnhance.result ? (faceEnhance.result.skinWhiteBalance ?? faceEnhance.result.classicWhiteBalance) : null, skinAnchored: Boolean(faceEnhance.result?.skinWhiteBalance), liftAmount: faceEnhance.result?.faceAdjust?.amount ?? 0, redEyeCount: faceEnhance.result?.faceAdjust?.redEye.length ?? 0, progress: faceEnhance.progress, note: faceEnhance.note, message: faceEnhance.message, applied: isFaceAdjustActive(editor.edit.faceAdjust) ? { faces: editor.edit.faceAdjust.boxes.length, source: editor.edit.faceAdjust.source } : null, onDetect: () => faceEnhance.detect(photo.src), onApply: applyFaceEnhance, onClear: clearFaceEnhance, onDismiss: faceEnhance.dismiss }} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
         onClose={() => setInspectorOpen(false)}
       />}

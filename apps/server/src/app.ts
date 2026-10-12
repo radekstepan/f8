@@ -13,6 +13,7 @@ import type { RemoteHealEngine } from "./ml-heal.ts";
 import { getStraightenHealth, kickStraightenReady, runStraightenEstimate, validateStraightenBody } from "./straighten-ml.ts";
 import { getObjectDetectHealth, kickObjectDetectReady, runObjectDetect, validateDetectBody } from "./object-detect.ts";
 import { getDustSpotsHealth, runDustSpotsDetect, validateDustSpotsBody } from "./dust-spots.ts";
+import { getFaceDetectHealth, kickFaceDetectReady, runFaceDetect, validateFaceDetectBody } from "./face-detect.ts";
 import {
   deleteHealOverlay,
   listHealOverlays,
@@ -302,6 +303,34 @@ export function createApp(ctx: AppContext): Hono {
       if (error instanceof RangeError) return c.json({ error: error.message }, 400);
       console.error(error);
       return c.json({ error: "Dust-spots detect failed." }, 503);
+    }
+  });
+
+  app.get("/api/face-detect/health", async (c) => c.json(await getFaceDetectHealth(config.dataDir)));
+
+  app.post("/api/face-detect/warmup", async (c) => {
+    // Kick provisioning into the background and return immediately: the
+    // client polls health for download/session progress, like object-detect.
+    // First use downloads ~227KB once; detect serves classically until then.
+    kickFaceDetectReady(config.dataDir);
+    return c.json(await getFaceDetectHealth(config.dataDir));
+  });
+
+  app.post("/api/face-detect/detect", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    const parsed = validateFaceDetectBody(body);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    try {
+      return c.json(await runFaceDetect(config.dataDir, parsed.value));
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 400);
+      console.error(error);
+      return c.json({ error: "Face detect failed." }, 503);
     }
   });
 

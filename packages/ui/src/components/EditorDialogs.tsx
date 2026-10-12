@@ -69,7 +69,7 @@ function PresetDialog({ onClose, onSavePreset }: Pick<EditorDialogsProps, 'onClo
 
 const shortcuts = [
   ['Navigation', [['Photo browser', 'G'], ['Previous / next photo', 'Left / Right'], ['Search library', '/'], ['Photo information', 'I'], ['Remove from library', 'Del'], ['Focus mode', 'Shift F']]],
-  ['Editing', [['Auto Enhance', 'A'], ['Scene Enhance (ML)', 'Shift A'], ['Color adjustments', 'V'], ['Crop & straighten', 'C'], ['Repair tool', 'J'], ['Rotate left', 'R'], ['Favorite photo', 'F']]],
+  ['Editing', [['Auto Enhance', 'A'], ['Scene Enhance (ML)', 'Shift A'], ['Enhance Faces (ML)', 'Shift E'], ['Color adjustments', 'V'], ['Crop & straighten', 'C'], ['Repair tool', 'J'], ['Rotate left', 'R'], ['Favorite photo', 'F']]],
   ['Preview', [['Compare before & after', 'B'], ['Hold to show original', '\\'], ['Zoom in / out', '+ / -'], ['Zoom to fit', '0']]],
   ['Your workflow', [['Undo', 'Ctrl / Cmd Z'], ['Redo', 'Ctrl / Cmd Shift Z or Ctrl / Cmd Y'], ['Import photos', 'Ctrl / Cmd O'], ['Export photo', 'Ctrl / Cmd Shift E'], ['Copy adjustments', 'Ctrl / Cmd Shift C'], ['Paste adjustments', 'Ctrl / Cmd Shift V']]],
 ] as const;

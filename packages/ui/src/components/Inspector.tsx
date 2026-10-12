@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Bandage, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, FlipHorizontal2, FlipVertical2, Focus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, X } from 'lucide-react';
 import { CROP_RATIOS, SCENE_DISPLAY_NAMES, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, groupRetouchStrokes, strokeIdForPoint } from '@f8/core';
-import type { ChangeEdit, DetectedObject, DustSpot, DustSpotsSource, EditState, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, Tool, VisionWorkerStatus } from '@f8/core';
+import type { ChangeEdit, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { IconButton, MenuItem, RangeControl, SelectField, Toggle } from './EditorUI.js';
 
@@ -122,6 +122,37 @@ export interface DustSpotsAssist {
   onToggle: (index: number) => void;
   /** Apply checked spots as repair strokes (one undo step). */
   onApply: () => void;
+  onDismiss: () => void;
+}
+
+/** View model for ML face-aware exposure, driven by the app's vision hook. */
+export interface FaceEnhanceAssist {
+  state: 'idle' | 'detecting' | 'ready' | 'error';
+  /** Detected faces; set when state is ready. */
+  faces: number;
+  /** "onnx" when YuNet served, "classic" for the skin-tone fallback. */
+  source: FaceDetectSource | null;
+  /** WB the apply would set (skin-anchored when skinAnchored, else whole-image). */
+  whiteBalance: { temperature: number; tint: number } | null;
+  /** True when the WB anchors on face skin tones (vs the classic fallback). */
+  skinAnchored: boolean;
+  /** Masked lift in EV the apply would set (0 when faces need none). */
+  liftAmount: number;
+  /** Red-eye discs the apply would set. */
+  redEyeCount: number;
+  /** Live server progress (warmup + detect); same shape as ML-heal progress. */
+  progress: { fraction: number; stage: string; updatedAt?: number } | null;
+  /** Note when the classical fallback served instead of ML. */
+  note: string | null;
+  /** Human-readable error; set only when state is error. */
+  message: string | null;
+  /** Stored face adjust from the recipe; shown with Clear while idle. */
+  applied: { faces: number; source: FaceDetectSource } | null;
+  onDetect: () => void;
+  /** Apply WB + masked lift + red-eye fixes as one undo step. */
+  onApply: () => void;
+  /** Remove the stored masked lift + red-eye discs (WB sliders stay). */
+  onClear: () => void;
   onDismiss: () => void;
 }
 
@@ -358,6 +389,52 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
   </div>;
 }
 
+function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
+  const working = assist.state === 'detecting';
+  const mlTag = assist.source === 'onnx' ? ' · ML' : '';
+  const wb = assist.whiteBalance;
+  const summary = wb
+    ? [`${assist.faces} ${assist.faces === 1 ? 'face' : 'faces'}`,
+      `${assist.skinAnchored ? 'skin WB' : 'WB'} ${wb.temperature}K ${wb.tint >= 0 ? '+' : ''}${wb.tint}`,
+      ...(assist.liftAmount > 0 ? [`lift +${assist.liftAmount} EV`] : []),
+      ...(assist.redEyeCount > 0 ? [`${assist.redEyeCount} red-eye`] : []),
+    ].join(' · ') + mlTag
+    : null;
+  return <div className="face-enhance" data-testid="face-enhance">
+    {assist.state === 'idle' && !assist.applied && <>
+      <button className="secondary-button full-width" data-testid="face-enhance-detect" title="Find faces with ML, anchor white balance on skin, lift dark faces, fix red-eye" onClick={assist.onDetect}><span>Enhance Faces <span className="ml-badge" title="Faces are detected by a machine-learning model on the photo server">ML</span></span></button>
+      <p className="inspector-note">Finds faces with ML, then anchors white balance on skin, lifts dark faces, and fixes red-eye. Nothing changes until you apply.</p>
+    </>}
+    {assist.state === 'idle' && assist.applied && <div className="auto-enhance-row face-enhance-row">
+      <span className="scene-enhance-scene" data-testid="face-enhance-applied" title={`Face enhance applied to ${assist.applied.faces} ${assist.applied.faces === 1 ? 'face' : 'faces'}`}>{assist.applied.faces} {assist.applied.faces === 1 ? 'face' : 'faces'}{assist.applied.source === 'onnx' ? ' · ML' : ''}</span>
+      <div className="suggestion-actions">
+        <button className="text-button" data-testid="face-enhance-redetect" title="Detect faces again" onClick={assist.onDetect}>Rescan</button>
+        <button className="text-button" data-testid="face-enhance-clear" title="Remove the masked face lift and red-eye fixes (white balance stays)" onClick={assist.onClear}>Clear</button>
+      </div>
+    </div>}
+    {working && assist.progress && <MlProgressView progress={assist.progress} />}
+    {working && <div className="suggestion-actions"><button className="text-button" data-testid="face-enhance-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
+    {assist.state === 'ready' && (assist.faces === 0 ? <>
+      <p className="inspector-note" role="status">No faces found{assist.source === 'classic' ? ' by the classical scan' : ''}.</p>
+      <div className="suggestion-actions"><button className="text-button" onClick={assist.onDismiss}>Dismiss</button></div>
+    </> : <>
+      <p className="inspector-note" role="status" data-testid="face-enhance-summary">{summary}</p>
+      {assist.note && <p className="inspector-note">{assist.note}</p>}
+      <div className="suggestion-actions">
+        <button className="secondary-button" data-testid="face-enhance-apply" title="Set white balance from faces and store the masked lift plus red-eye fixes" onClick={assist.onApply}>Apply face enhance</button>
+        <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
+      </div>
+    </>)}
+    {assist.state === 'error' && <>
+      <p className="inspector-note" role="alert">{assist.message ?? 'Detection failed.'}</p>
+      <div className="suggestion-actions">
+        <button className="text-button" data-testid="face-enhance-retry" onClick={assist.onDetect}>Retry</button>
+        <button className="text-button" onClick={assist.onDismiss}>Dismiss</button>
+      </div>
+    </>}
+  </div>;
+}
+
 function RetouchGroups({ edit, highlightStroke, onHighlightStroke, onChange }: { edit: EditState; highlightStroke: number | null; onHighlightStroke?: (stroke: number | null) => void; onChange: ChangeEdit }) {
   const groups = useMemo(() => groupRetouchStrokes(edit.retouches), [edit.retouches]);
   const counters = { repair: 0 };
@@ -416,6 +493,8 @@ interface InspectorProps {
   onAuto: () => void;
   /** ML subject-aware enhance; omit to hide the scene row. */
   onAutoScene?: () => void;
+  /** ML face-aware exposure; omit to hide the faces control. */
+  faceAssist?: FaceEnhanceAssist;
   onAutoWhiteBalance: () => void;
   onAutoLightness: () => void;
   onCopy: () => void;
@@ -426,7 +505,7 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, faceAssist, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
   const [extraSections, setExtraSections] = useState<string[]>([]);
@@ -473,7 +552,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="auto-enhance-row"><button onClick={onAuto}><Sparkles size={17} /><span>Auto Enhance</span></button><Toggle checked={edit.autoEnhanced} label="Auto Enhance" onChange={onAuto} /></div>{onAutoScene && <div className="auto-enhance-row scene-enhance-row" data-testid="scene-enhance"><button data-testid="scene-enhance-apply" title="Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings" onClick={onAutoScene}><Sparkles size={17} /><span>Scene Enhance</span><span className="ml-badge" title="The scene is classified by a machine-learning model on your device">ML</span></button>{edit.autoEnhanced && edit.sceneEnhance && <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}% · ML</span>}</div>}<Histogram data={histogram} photo={photo} />
+    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="auto-enhance-row"><button onClick={onAuto}><Sparkles size={17} /><span>Auto Enhance</span></button><Toggle checked={edit.autoEnhanced} label="Auto Enhance" onChange={onAuto} /></div>{onAutoScene && <div className="auto-enhance-row scene-enhance-row" data-testid="scene-enhance"><button data-testid="scene-enhance-apply" title="Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings" onClick={onAutoScene}><Sparkles size={17} /><span>Scene Enhance</span><span className="ml-badge" title="The scene is classified by a machine-learning model on your device">ML</span></button>{edit.autoEnhanced && edit.sceneEnhance && <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}% · ML</span>}</div>}{faceAssist && <FaceEnhanceControl assist={faceAssist} />}<Histogram data={histogram} photo={photo} />
       <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} enabled={edit.whiteBalanceEnabled} onToggle={() => onChange({ whiteBalanceEnabled: !edit.whiteBalanceEnabled })} onAuto={onAutoWhiteBalance} onReset={() => onChange({ temperature: 5500, tint: 0 })}>
         {range('temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false, disabled: !edit.whiteBalanceEnabled })}
         {range('tint', 'Tint', { color: 'tint', disabled: !edit.whiteBalanceEnabled })}

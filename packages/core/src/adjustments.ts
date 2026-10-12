@@ -16,6 +16,7 @@ import type { EditState } from "./types.js";
 import type { PixelImage } from "./vision/analyze.js";
 import { assertValidImage } from "./vision/analyze.js";
 import type { WhiteBalanceGains } from "./vision/enhance.js";
+import { applyFaceLift, applyRedEyeFix, isFaceAdjustActive } from "./vision/face-exposure.js";
 
 export const TEMPERATURE_NEUTRAL = 5500;
 export const TEMPERATURE_MIN = 2000;
@@ -280,7 +281,8 @@ export function isNeutralEdit(edit: EditState): boolean {
   const colorNeutral =
     !edit.colorEnabled || (edit.saturation === 0 && edit.vibrance === 0 && edit.hue === 0);
   const detailNeutral = !edit.detailsEnabled || (edit.clarity === 0 && edit.sharpness === 0);
-  return whiteBalanced && lightNeutral && colorNeutral && edit.curve === 0 && !edit.blackAndWhite && detailNeutral;
+  const faceNeutral = !isFaceAdjustActive(edit.faceAdjust);
+  return whiteBalanced && lightNeutral && colorNeutral && edit.curve === 0 && !edit.blackAndWhite && detailNeutral && faceNeutral;
 }
 
 /**
@@ -301,6 +303,15 @@ export function renderAdjustedPixels(source: PixelImage, edit: EditState): Pixel
     output[i + 1] = green;
     output[i + 2] = blue;
     output[i + 3] = data[i + 3] ?? 255;
+  }
+
+  // ML face adjust (masked lift + red-eye discs) lands after the point
+  // pass and before the detail passes, so clarity/sharpness work on the
+  // lifted faces instead of amplifying the lift edge.
+  if (isFaceAdjustActive(edit.faceAdjust)) {
+    const face = edit.faceAdjust;
+    if (face.amount > 0 && face.boxes.length > 0) applyFaceLift(output, width, height, face.boxes, face.amount);
+    if (face.redEye.length > 0) applyRedEyeFix(output, width, height, face.redEye);
   }
 
   const clarity = edit.detailsEnabled ? clamp(edit.clarity, -100, 100) : 0;

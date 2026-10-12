@@ -53,6 +53,9 @@ const ORIGINAL_LOOK_KEYS = (Object.keys(DEFAULT_EDIT) as (keyof EditState)[]).fi
  * photo with default sliders still shows Original, not Custom.
  */
 export function isOriginalLook(edit: EditState): boolean {
+  // faceAdjust is optional (absent from DEFAULT_EDIT's keys), so it needs
+  // an explicit check: a masked face lift is a visible look change.
+  if (edit.faceAdjust != null) return false;
   return ORIGINAL_LOOK_KEYS.every((key) => edit[key] === DEFAULT_EDIT[key]);
 }
 

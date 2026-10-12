@@ -55,6 +55,7 @@ describe("isOriginalLook", () => {
       { blackAndWhite: true },
       { whiteBalanceEnabled: false },
       { autoEnhanced: true },
+      { faceAdjust: { boxes: [{ x0: 0, y0: 0, x1: 1, y1: 1 }], amount: 0.5, redEye: [], source: "onnx" } },
     ];
     for (const patch of changed) {
       expect(isOriginalLook({ ...DEFAULT_EDIT, ...patch })).toBe(false);

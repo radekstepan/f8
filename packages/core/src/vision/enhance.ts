@@ -145,15 +145,14 @@ export type WhiteBalanceAutoPatch = Pick<EditState, "temperature" | "tint">;
 export type LightnessAutoPatch = Pick<EditState, "exposure" | "contrast" | "highlights" | "shadows">;
 
 /**
- * Derive the White Balance section's Auto values from pixel data. Warm
- * casts cool the temperature, green casts push tint negative (toward
- * magenta). Near-neutral images stay at the neutral defaults.
+ * Map channel means to White Balance Auto values: warm casts cool the
+ * temperature, green casts push tint negative (toward magenta).
+ * Near-neutral means stay at the neutral defaults. Shared by the classic
+ * whole-image auto (computeWhiteBalanceAuto) and the ML face-anchored auto,
+ * which feeds skin-tone means instead of whole-image means.
  */
-export function computeWhiteBalanceAuto(image: PixelImage): WhiteBalanceAutoPatch {
-  assertValidImage(image);
-  const { r, g, b } = channelMeans(image);
+export function whiteBalancePatchFromMeans(r: number, g: number, b: number): WhiteBalanceAutoPatch {
   const gray = (r + g + b) / 3;
-
   let temperature = TEMPERATURE_NEUTRAL;
   let tint = 0;
   if (gray > 1) {
@@ -167,6 +166,17 @@ export function computeWhiteBalanceAuto(image: PixelImage): WhiteBalanceAutoPatc
     }
   }
   return { temperature, tint };
+}
+
+/**
+ * Derive the White Balance section's Auto values from pixel data. Warm
+ * casts cool the temperature, green casts push tint negative (toward
+ * magenta). Near-neutral images stay at the neutral defaults.
+ */
+export function computeWhiteBalanceAuto(image: PixelImage): WhiteBalanceAutoPatch {
+  assertValidImage(image);
+  const { r, g, b } = channelMeans(image);
+  return whiteBalancePatchFromMeans(r, g, b);
 }
 
 /**

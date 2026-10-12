@@ -120,4 +120,38 @@ describe('photo context menu', () => {
     expect(html).toContain('>ML<');
     expect(html).not.toContain('Remove from Library…');
   });
+
+  it('offers ML face enhance when the handler is provided', () => {
+    const html = renderToStaticMarkup(
+      <PhotoBrowser
+        photos={photos}
+        title="All Photos"
+        search=""
+        onSelect={noop}
+        onFavorite={noop}
+        onImport={noop}
+        onSceneEnhance={noop}
+        onFaceEnhance={noop}
+        initialContextMenu={{ photoId: 'p1', x: 100, y: 120 }}
+      />,
+    );
+    expect(html).toContain('Enhance Faces');
+    expect(html).toContain('Faces are detected by a machine-learning model');
+  });
+
+  it('omits face enhance without the handler', () => {
+    const html = renderToStaticMarkup(
+      <PhotoBrowser
+        photos={photos}
+        title="All Photos"
+        search=""
+        onSelect={noop}
+        onFavorite={noop}
+        onImport={noop}
+        onSceneEnhance={noop}
+        initialContextMenu={{ photoId: 'p1', x: 100, y: 120 }}
+      />,
+    );
+    expect(html).not.toContain('Enhance Faces');
+  });
 });
