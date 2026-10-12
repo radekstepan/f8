@@ -1,38 +1,57 @@
 # Tasks
 
-System instruction: Work on these tasks, make sure to add tests, but do not run playwright. Commit each result you work on with a writeup of what you changed in docs/tasks. Work on these sequentially. If you made some important decisions, add them in the writeup. If you changed architecture or introduced a new complex feature, make sure to update the documentation of this app.
+System instruction: Work through every item in ## List below, top to bottom, executing each task in its own fresh subagent. Rules:
+
+1. One task per subagent: spawn a single subagent for the current list item only, giving it the task text plus everything below as its brief.
+2. Strictly sequential: wait for the subagent to finish (and its commit to land) before spawning the next one. Never run two task subagents in parallel.
+3. Each subagent must: implement the task, add tests covering the change, and commit the result on completion.
+4. Do not run Playwright (unit/integration tests only).
+5. Each commit must include a writeup of what changed in docs/tasks. Record any important decisions in that writeup.
+6. If a task changes architecture or introduces a complex feature, update the app documentation (README.md) in the same commit.
+7. If a task is blocked or fails, stop the loop and report — do not skip ahead to the next item.
 
 ## List
 
-Rename the app to "f/8" (or f8 where we can't use a slash in the name like package names). Make sure to update md files and package.json files etc. There should be no references to Photomator as a name of our app.
+Why are color adjustments (including ML adjustments) showing on a library view when no photo is in focus?
 
-DSC06308.ARW is a portrait photo but shows landscape in album and in presents and film strip below the photo. Make sure that making the photo portrait will look seamless in album with landscape photos.
+After importing photos they show in all photos but not in an album. Automatically create an album name from folder name. Use human name e.g. "2026-europe-trip" becomes "2026 Europe Trip" etc. Also watch out, do not reimport the same file 2x. Each file is unique in the whole app.
 
-The film strip should have a vertical scrollbar if we have more photos
+The rename from Photomator didn't take. Whole bunch of env vars keep saying PHOTOMATOR, tests say it, even the damned README. You don't need to keep this legacy stuff around, remove it. The app is inspired by Photomator, yes, but it's called "f/8".
 
-Hints disappear after 2.5s + 0.5, increase it to 5s so we have a chance to read them
+The photos in the footer below the main photo should always be a single row, not multiple rows. Make sure when we navigate to a photo in a row we try to "center" it in the middle of the viewport so we see older and newer photos.
 
-Remove from library button should be bottom right, and make sure we have this action on the photo view as well
-Be able to remove a whole album and not just a photo. Perhaps onhover show ... and a menu in the sidebar and top of the album view somewhere
+Why do we keep saying "Keeper ML"? I only care to know if a photo is blurry. Do not report on "positive" state.
 
-Sort album by filename or time imported or datetime captured
+When I switch to the repair tool, the message that shows at the bottom shifts the picture itself. Then when the message disappears it shifts the picture again. Fix it, picture should stay fixed and not move just because a message showed up.
 
-When we open a photo and scroll to it in the footer, try to place the photo in the middle of the footer, meaning right now we scroll to it and it's always to the right, but I'd like to make it easy to see if there are other photos after it.
+Right click on a footer photo in the context menu should let me remove the photo. In the album view the delete buttom should be in bottom right corner just like favorite is in top right. Right now it spills out of the photo "card".
 
-Implement ML feature - **One-click object removal.** Biggest unlock with zero new infra: add a small detector/segmenter (e.g. YOLO-NAS-class or MobileSAM ONNX, tens of MB) whose mask feeds the existing LaMa/Moebius ROI pipeline. "Remove people / power lines" becomes detect → mask → inpaint. Say it's ML, have a label for it.
+I should be able to drag and select multiple photos in album view (or Ctrl click individual ones) to move to an album (right click or drag onto an album itself).
 
-Implement ML feature - *Auto dust/spot detection for repair.** Classical blob candidates plus a tiny false-positive classifier; surface as suggested repair masks the user accepts per spot. Reuses the whole heal stack. Say it's ML.
+In the sidebar listing albums when I click on the ... the menu is cutoff instead of showing on "top" of the UI.
 
-Implement ML feature - **Subject-aware auto-enhance.** A tiny scene classifier (portrait / landscape / night / document) picks per-scene enhance parameters instead of one fixed patch — portrait protects skin tones, landscape allows stronger contrast. Runs on the existing 160px analysis image. We already have enhance, maybe add this to context menu. Make sure to say it's ML.
+The + and down arrow on Add Adjustment is too far to the sides.
 
-Implement ML feature - **Face-aware exposure / white balance.** Face detection (small ONNX, e.g. YuNet/SCRFD-tiny) anchors WB on skin tones and lifts underexposed faces; also enables **auto red-eye removal** (face + eye landmarks). Make sure to say it's ML.
+The Repair tool sidebar should have diffrent sections like the Adjust tool so things are grouped together. Then fix the "Remove x selected" on One-click removal, the button is too chionky. Same with Find dust spots. Don't we have a nicer looking buttons for this? Then on the person removal it shows me say "2 people", but I don't know which is which. Show me onhover in red just like we show healed areas. Or in a bounding box. Same with dust spots.
 
-Implement ML feature - **Selective (masked) adjustments.** Person/background segmentation (BiRefNet-lite / MODNet-class, server-side) enables "brighten subject only" — the most-requested-adjustment-shaped gap once global enhance exists. Mask plugs into the existing mask-composite pattern.  Make sure to say it's ML.
+Download of person removal object failed. The error emssage is just 2 links, it should show as a little "message" with the 2 options. And the install script for this app should download all the assets ahead of time rather than on demand.
+@f8/server:dev: [object-detect] Downloading YOLOv8n weights (~12MB, AGPL-3.0) from https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.onnx
+@f8/server:dev: POST /api/object-detect/warmup -> 200 (0ms)
+@f8/server:dev: GET /api/object-detect/health -> 200 (0ms)
+@f8/server:dev: [object-detect] Background readiness failed: Model download failed: HTTP 404.
 
-Implement ML feature - **Local semantic search / smart albums.** CLIP-image embeddings computed server-side at import, stored in the SQLite catalog: search "beach" or "dog" with no cloud. Privacy story stays intact; cost is import-time, amortized, and skippable offline. Do this from album context menu to label files that haven't been labeled yet.
+For dust spots found, don't you have a confident score? Show them sorted by the score and show the score.
 
-Implement ML feature - **Import-time cull assist.** Blur detection (classical Laplacian first), near-duplicate grouping (perceptual hash), and optionally a tiny aesthetic scorer flag the keepers when importing hundreds of photos. Directly serves the import-progress pain in tasks 08/09. From context menu on album be able to look for blurs and label such files with an icon and be able to filter for them. Be able to custom remove the label too. Do not re-detect the same file 2x.
+The Adjust sidebar looks nice for White Balance, histogram, Curves etc. But then you lost the plot with Auto Enhance, Scene Enhance, Enhance Faces, Brghten. It's a mix of toggles non-buttons and buttons. Clean it the fuck up! Make a toggleable section for ML enhance and use nice looking buttons fot the actions.
 
-**Lightweight denoise for high-ISO shots.** A small learned denoiser (e.g. NAFNet-tiny ONNX) behind a new adjust slider or an auto toggle keyed on EXIF ISO. Server-side; preview on downsample first. Be able to run on a photo.
+I click ML face enhance and maybe it does something but I don't see it. No progress bar. No way to toggle it on/off etc. Does it even work?
 
-**Export-time super-resolution.** Real-ESRGAN-tiny ONNX as an export option ("Export 2x"). Slow on CPU but export is already wait-tolerant, unlike interactive editing. Context menu option on export with progress.
+Brighten subject only seems like a better version of Enhance Faces? Can I then apply enhance to subject AND background at the same time? How to do I preserve the changes? Clicking Cancel goes away. And why do I have to click apply? Why don't I see the changes live when I use the sliders? Fucking fix the UX on this.
+
+If I am on a photo pressing Esc takes me back to the album.
+
+Semantic Search ML. How do I retrain it? Do I retrain the model after importing more photos?
+
+The Denoise ML should be with the other ML functions in Adjust. And the Preview... the pictures Before and After are so small that they are useless. Show me a closeup of an area or something. And when I apply it if I then use the Compare tool I can't tell any difference. Is it even working?
+
+Superresolution on export shows "ML weights unavailable — 2x serves the classical upscale (no ML)." WTF? The install script should fetch them. I don't get why it's not a hard fail if some of the ML functionality doesn't work. Get it working. No fallbacks. No "that's ok, we'll just not use ML", fucking show the error message and make it a hard fail.
