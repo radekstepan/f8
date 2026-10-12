@@ -83,11 +83,13 @@ export function validateOverlayBody(
   const v = body as Record<string, unknown>;
   const { signature, x0, y0, width, height, canvasWidth, canvasHeight, method, quality, featherPx, geometryKey, dataB64, resampleDeg } = v;
   if (typeof signature !== "string" || !signature || signature.length > 4096) throw new RangeError("Invalid signature.");
-  if (!isInt(x0, 0, 8192) || !isInt(y0, 0, 8192)) throw new RangeError("Invalid patch origin.");
+  // Overhanging origins are valid: a straighten turn may swing part of a
+  // repair off-canvas, and those carried pixels swing back on the reverse
+  // turn — the paste clips to the visible intersection. Fully-outside
+  // patches are kept for the same reason.
+  if (!isInt(x0, -8192, 8192) || !isInt(y0, -8192, 8192)) throw new RangeError("Invalid patch origin.");
   if (!isInt(width, 1, 4096) || !isInt(height, 1, 4096)) throw new RangeError("Invalid patch size.");
   if (!isInt(canvasWidth, 1, 8192) || !isInt(canvasHeight, 1, 8192)) throw new RangeError("Invalid canvas size.");
-  if ((x0 as number) + (width as number) > (canvasWidth as number)) throw new RangeError("Patch exceeds canvas width.");
-  if ((y0 as number) + (height as number) > (canvasHeight as number)) throw new RangeError("Patch exceeds canvas height.");
   if (typeof method !== "string" || !method || method.length > 32) throw new RangeError("Invalid method.");
   if (quality !== undefined && (typeof quality !== "string" || quality.length > 32)) throw new RangeError("Invalid quality.");
   if (featherPx !== undefined && !isInt(featherPx, 0, 64)) throw new RangeError("Invalid feather.");

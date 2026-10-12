@@ -261,6 +261,32 @@ describe("pasteHealPatches", () => {
     // Inputs are not mutated.
     expect(base.data[0]).toBe(1);
   });
+
+  it("clips overhanging patches to the visible intersection", () => {
+    const base: PixelImage = solidColor(8, 8, 1, 2, 3);
+    // Opaque 4x4 patch hanging off the top-left: only its bottom-right 2x2
+    // (patch-local x 2..3, y 2..3) lands on base pixels (0..1, 0..1).
+    const data = new Uint8ClampedArray(4 * 4 * 4);
+    for (let i = 0; i < 16; i += 1) {
+      data[i * 4] = 100 + i;
+      data[i * 4 + 1] = 0;
+      data[i * 4 + 2] = 0;
+      data[i * 4 + 3] = 255;
+    }
+    const out = pasteHealPatches(base, [
+      { signature: "a", x0: -2, y0: -2, width: 4, height: 4, data, resampleDeg: 0 },
+      // Fully outside: pastes nothing, never throws, never corrupts.
+      { signature: "b", x0: 20, y0: 20, width: 2, height: 2, data: new Uint8ClampedArray(2 * 2 * 4).fill(200), resampleDeg: 0 },
+    ]);
+    expect(out.data[0]).toBe(100 + 2 * 4 + 2);
+    expect(out.data[4]).toBe(100 + 2 * 4 + 3);
+    expect(out.data[8 * 4]).toBe(100 + 3 * 4 + 2);
+    expect(out.data[8 * 4 + 4]).toBe(100 + 3 * 4 + 3);
+    // Just outside the intersection the base shows through untouched.
+    expect(out.data[8]).toBe(1);
+    expect(out.data[(7 * 8 + 7) * 4]).toBe(1);
+    expect(base.data[0]).toBe(1);
+  });
 });
 
 describe("reusableOverlayForGroup", () => {
@@ -373,10 +399,19 @@ describe("rotateHealPatch", () => {
     // Swapped dims on a 180-degree turn: reheal.
     expect(rotateHealPatch(patch, 10, 8, 8, 10, 2)).toBeNull();
     expect(rotateHealPatch(patch, 10, 8, 8, 10, 1.5 as unknown as number)).toBeNull();
-    const outside = labeledPatch(9, 7);
-    expect(rotateHealPatch(outside, 10, 8, 8, 10, 1)).toBeNull();
     const corrupt = { ...labeledPatch(), data: new Uint8ClampedArray(4) };
     expect(rotateHealPatch(corrupt, 10, 8, 8, 10, 1)).toBeNull();
+  });
+
+  it("carries overhanging patches through quarter turns", () => {
+    // Carried off-canvas pixels (from a straighten swing) turn with the
+    // rest instead of forcing a reheal: same permutation, overhang intact.
+    const turned = rotateHealPatch(labeledPatch(9, 7), 10, 8, 8, 10, 1)!;
+    expect(turned).not.toBeNull();
+    expect([turned.x0, turned.y0, turned.width, turned.height]).toEqual([8 - 7 - 3, 9, 3, 2]);
+    expect(turned.x0).toBeLessThan(0);
+    expect(turned.y0 + turned.height).toBeGreaterThan(10);
+    expect(reds(turned)).toEqual([5, 3, 1, 6, 4, 2]);
   });
 
   it("keeps a healed group cache-valid across heal-then-rotate (no rerun)", () => {
@@ -480,13 +515,18 @@ describe("resampleHealPatchForStraighten", () => {
     expect(Math.abs(out.y0 + out.height / 2 - ey)).toBeLessThan(1);
   });
 
-  it("returns null for edge-clipped, corrupt, and senseless inputs", () => {
-    // Corner patch swung out of the canvas must reheal, never clip (even a
-    // 1deg turn about the center moves a flush-corner patch out of bounds).
+  it("carries overhang instead of nulling on clip; still nulls corrupt inputs", () => {
+    // A flush-corner patch swung partly out of the canvas keeps its
+    // off-canvas pixels (carried for the reverse turn) instead of forcing
+    // a reheal that would lose them.
     const corner = flatPatch(0, 0, 20, 20);
-    expect(resampleHealPatchForStraighten(corner, 100, 100, { fromStraighten: 0, toStraighten: 15, sourceAspect: 1 })).toBeNull();
-    expect(resampleHealPatchForStraighten(corner, 100, 100, { fromStraighten: 0, toStraighten: 1, sourceAspect: 1 })).toBeNull();
-    // Same size slightly inset fits and resamples.
+    const swung = resampleHealPatchForStraighten(corner, 100, 100, { fromStraighten: 0, toStraighten: 15, sourceAspect: 1 })!;
+    expect(swung).not.toBeNull();
+    expect(swung.y0).toBeLessThan(0);
+    expect(swung.data.length).toBe(swung.width * swung.height * 4);
+    // An already-overhanging source resamples fine (validity is patch-local).
+    const outside = flatPatch(95, 95, 10, 10);
+    expect(resampleHealPatchForStraighten(outside, 100, 100, { fromStraighten: 0, toStraighten: 5, sourceAspect: 1 })).not.toBeNull();
     const nearCorner = flatPatch(5, 5, 20, 20);
     expect(resampleHealPatchForStraighten(nearCorner, 100, 100, { fromStraighten: 0, toStraighten: 1, sourceAspect: 1 })).not.toBeNull();
     const ok = flatPatch(30, 30, 10, 10);
@@ -495,8 +535,6 @@ describe("resampleHealPatchForStraighten", () => {
     expect(resampleHealPatchForStraighten(ok, 100, 100, { fromStraighten: Number.NaN, toStraighten: 5, sourceAspect: 1 })).toBeNull();
     expect(resampleHealPatchForStraighten({ ...ok, data: new Uint8ClampedArray(4) }, 100, 100, { fromStraighten: 0, toStraighten: 5, sourceAspect: 1 })).toBeNull();
     expect(resampleHealPatchForStraighten({ ...ok, resampleDeg: -1 }, 100, 100, { fromStraighten: 0, toStraighten: 5, sourceAspect: 1 })).toBeNull();
-    const outside = flatPatch(95, 95, 10, 10);
-    expect(resampleHealPatchForStraighten(outside, 100, 100, { fromStraighten: 0, toStraighten: 5, sourceAspect: 1 })).toBeNull();
   });
 
   it("keeps a healed group cache-valid across a straighten tweak (no rerun)", () => {
@@ -789,6 +827,37 @@ describe("straighten resample validity mask", () => {
     expect(tick75!.width).toBeGreaterThan(anchor.width);
     expect(tick150!.width).toBeGreaterThanOrEqual(tick75!.width);
     expect(tick150!.height).toBeGreaterThanOrEqual(tick75!.height);
+  });
+
+  it("swings a clipped repair back intact on the reverse turn (no hard cut)", () => {
+    // The edge-repair flow: a flush-edge patch swings partly off-canvas
+    // (carried, never nulled), the paste clips to the visible part, and
+    // the reverse hop restores the original region and content instead of
+    // stamping a clipped patch back over the blemish with a hard edge.
+    const start = opaquePatch(80, 40, 20, 20);
+    const out = resampleHealPatchForStraighten(start, 100, 100, { fromStraighten: 0, toStraighten: 8, sourceAspect: 1 })!;
+    expect(out).not.toBeNull();
+    expect(out.x0 + out.width).toBeGreaterThan(100);
+    const base: PixelImage = solidColor(100, 100, 1, 2, 3);
+    const pasted = pasteHealPatches(base, [out]);
+    // A visible interior pixel took healed content (opaque interior 50/51/52).
+    const cx = Math.floor(out.x0 + out.width / 2);
+    const cy = Math.floor(out.y0 + out.height / 2);
+    expect(cx).toBeLessThan(100);
+    const at = (pasted.data[(cy * 100 + cx) * 4] ?? -1);
+    expect(at).toBe(50);
+    // The reverse hop restores the original bbox (each hop quantizes ~1px
+    // per edge, so two hops stay within 2) with identical flat content.
+    const back = resampleHealPatchForStraighten(out, 100, 100, { fromStraighten: 8, toStraighten: 0, sourceAspect: 1 })!;
+    expect(back).not.toBeNull();
+    expect(Math.abs(back.x0 - start.x0)).toBeLessThanOrEqual(2);
+    expect(Math.abs(back.y0 - start.y0)).toBeLessThanOrEqual(2);
+    expect(Math.abs(back.width - start.width)).toBeLessThanOrEqual(2);
+    expect(Math.abs(back.height - start.height)).toBeLessThanOrEqual(2);
+    const bcx = Math.floor(back.width / 2);
+    const bcy = Math.floor(back.height / 2);
+    expect(back.data[(bcy * back.width + bcx) * 4]).toBe(50);
+    expect(back.data[(bcy * back.width + bcx) * 4 + 3]).toBe(255);
   });
 });
 

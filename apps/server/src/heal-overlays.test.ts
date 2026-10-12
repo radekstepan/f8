@@ -113,6 +113,23 @@ describe("heal overlays", () => {
     expect(legacy.status).toBe(200);
   });
 
+  it("accepts overhanging patches that a turn swung off-canvas", async () => {
+    // Negative origins and edges past the canvas dims carry off-canvas
+    // pixels for the reverse turn; even fully-outside patches persist.
+    for (const [groupId, x0, y0] of [[1, -3, 2], [2, 31, 31], [3, 40, 40]] as const) {
+      const put = await ctx.app.request(`/api/photos/${photoId}/heal-overlays/${groupId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...patchBody(`sig-${groupId}`), x0, y0 }),
+      });
+      expect(put.status).toBe(200);
+    }
+    const listed = (await (await ctx.app.request(`/api/photos/${photoId}/heal-overlays`)).json()) as {
+      patches: { groupId: number; x0: number; y0: number }[];
+    };
+    expect(listed.patches.map((p) => [p.groupId, p.x0, p.y0])).toEqual([[1, -3, 2], [2, 31, 31], [3, 40, 40]]);
+  });
+
   it("404s unknown photos and purges overlays with the photo", async () => {
     const missing = await ctx.app.request("/api/photos/nope/heal-overlays");
     expect(missing.status).toBe(404);

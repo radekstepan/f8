@@ -281,8 +281,9 @@ export interface ExportRepairOptions {
 
 // Rebase a stored overlay onto a canvas of a different size: same blended
 // pixels, rescaled bbox. Exact-size overlays pass through with a fresh
-// signature; anything else needs DOM canvas scaling (null outside browsers
-// or when the overlay falls off-canvas after rounding).
+// signature; anything else needs DOM canvas scaling (null outside
+// browsers). Overhang survives the rescale: the paste clips to the visible
+// intersection.
 function rebaseOverlayToCanvas(
   overlay: StoredHealPatch,
   signature: string,
@@ -300,7 +301,6 @@ function rebaseOverlayToCanvas(
   const y0 = Math.round(overlay.y0 * scaleY);
   const width = Math.max(1, Math.round(overlay.width * scaleX));
   const height = Math.max(1, Math.round(overlay.height * scaleY));
-  if (x0 < 0 || y0 < 0 || x0 + width > canvasWidth || y0 + height > canvasHeight) return null;
   try {
     const src = document.createElement("canvas");
     src.width = overlay.width;

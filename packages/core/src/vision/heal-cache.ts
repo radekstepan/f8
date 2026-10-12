@@ -339,11 +339,12 @@ export function clockwiseStepsForRotation(fromRotation: number, toRotation: numb
  * Rotate a cached heal patch with the image across a quarter-turn rotation
  * change, so heal-then-rotate reuses pixels instead of re-running inference.
  * Both the cropped pixel block and its bbox turn together; 90-degree turns
- * require swapped canvas dims, 180 requires identical dims. Anything else
- * (crop-window changes, out-of-bounds patches, corrupt data) returns null
- * and the caller reheals that group. The signature is preserved verbatim —
- * the caller must restamp it for the rotated strokes and new geometry key.
- * Inputs are never mutated.
+ * require swapped canvas dims, 180 requires identical dims. Crop-window
+ * changes and corrupt data return null and the caller reheals that group.
+ * Overhanging patches (carried off-canvas pixels from a straighten turn)
+ * rotate through unchanged in kind — the permutation is bounds-agnostic.
+ * The signature is preserved verbatim — the caller must restamp it for the
+ * rotated strokes and new geometry key. Inputs are never mutated.
  */
 export function rotateHealPatch(
   patch: CachedHealPatch,
@@ -369,13 +370,7 @@ export function rotateHealPatch(
   ) {
     return null;
   }
-  if (
-    patch.x0 < 0 || patch.y0 < 0 ||
-    patch.x0 + patch.width > oldWidth ||
-    patch.y0 + patch.height > oldHeight
-  ) {
-    return null;
-  }
+  // No canvas-bounds check: overhanging patches turn along with the rest.
   if (patch.data.length !== patch.width * patch.height * 4) return null;
   if (steps === 0) {
     if (oldWidth !== newWidth || oldHeight !== newHeight) return null;
@@ -491,10 +486,12 @@ export interface ResampleStraightenOptions {
  * instead of edge-smeared, and the bbox is tightened to valid pixels every
  * step — without the tightening, floor/ceil slack would ratchet the bbox
  * outward ~1px per side per resample and explode across a slider drag. The
- * result must fit the canvas strictly — an edge-clipped patch returns null
- * (reheal) rather than permanently losing edge pixels. Adds |delta| to
- * resampleDeg; the signature is preserved verbatim for the caller to
- * restamp. Inputs are never mutated. Pure: no DOM, runs anywhere.
+ * result may overhang the canvas (negative origin, edges past the dims):
+ * off-canvas pixels are computed the same way and carried along, so a
+ * repair swung partly out of view survives the turn and swings back intact
+ * instead of rehealing — the paste clips to the visible intersection.
+ * Adds |delta| to resampleDeg; the signature is preserved verbatim for the
+ * caller to restamp. Inputs are never mutated. Pure: no DOM, runs anywhere.
  *
  * Callers driving progressive drags must resample from a FIXED anchor patch
  * with the total angle each tick, never chain tick-to-tick: integer bboxes
@@ -520,13 +517,8 @@ export function resampleHealPatchForStraighten(
   ) {
     return null;
   }
-  if (
-    patch.x0 < 0 || patch.y0 < 0 ||
-    patch.x0 + patch.width > width ||
-    patch.y0 + patch.height > height
-  ) {
-    return null;
-  }
+  // No canvas-bounds check: the source patch may itself overhang (carried
+  // off-canvas pixels from an earlier turn), and validity is patch-local.
   if (patch.data.length !== patch.width * patch.height * 4) return null;
   if (!Number.isFinite(patch.resampleDeg) || patch.resampleDeg < 0) return null;
   const { fromStraighten, toStraighten } = options;
@@ -567,7 +559,8 @@ export function resampleHealPatchForStraighten(
   const nw = nx1 - nx0;
   const nh = ny1 - ny0;
   if (nw <= 0 || nh <= 0) return null;
-  if (nx0 < 0 || ny0 < 0 || nx0 + nw > width || ny0 + nh > height) return null;
+  // No containment check: the AABB may overhang the canvas, and those
+  // off-canvas pixels are carried (computed the same way), not dropped.
   // Inverse map per destination pixel center, bilinearly sampled with edge
   // clamping. The validity mask travels in alpha: a destination center
   // mapping outside the source patch rect (the AABB corner triangles past
@@ -696,11 +689,14 @@ export async function healSingleGroup(
 
 /**
  * Paste cropped patches over a base image. Patches must come from the same
- * geometry key (same dimensions); mismatched patches are skipped. Patch
- * alpha composites source-over: straighten resamples emit transparent
- * pixels past the rotated rect, and those must leave the clean base alone
- * instead of stamping smeared edges. Fully opaque patches keep the fast
- * row-copy path. Returns a fresh image; inputs are never mutated.
+ * geometry key (same dimensions); dimension mismatches are skipped. Patches
+ * may overhang the canvas (a straighten turn swung part of the repair out
+ * of view): only the visible intersection pastes, and the carried
+ * off-canvas pixels swing back intact on the reverse turn. Patch alpha
+ * composites source-over: straighten resamples emit transparent pixels
+ * past the rotated rect, and those must leave the clean base alone instead
+ * of stamping smeared edges. Fully opaque patches keep the fast row-copy
+ * path. Returns a fresh image; inputs are never mutated.
  */
 export function pasteHealPatches(
   base: PixelImage,
@@ -711,14 +707,17 @@ export function pasteHealPatches(
     if (
       patch.width <= 0 ||
       patch.height <= 0 ||
-      patch.x0 < 0 ||
-      patch.y0 < 0 ||
-      patch.x0 + patch.width > base.width ||
-      patch.y0 + patch.height > base.height ||
       patch.data.length !== patch.width * patch.height * 4
     ) {
       continue;
     }
+    // Clip to the visible intersection; fully-outside patches paste nothing
+    // but are kept (their pixels matter when the turn reverses).
+    const ix0 = Math.max(0, patch.x0);
+    const iy0 = Math.max(0, patch.y0);
+    const ix1 = Math.min(base.width, patch.x0 + patch.width);
+    const iy1 = Math.min(base.height, patch.y0 + patch.height);
+    if (ix1 <= ix0 || iy1 <= iy0) continue;
     let hasAlpha = false;
     for (let i = 3; i < patch.data.length; i += 4) {
       if ((patch.data[i] ?? 255) !== 255) {
@@ -727,21 +726,22 @@ export function pasteHealPatches(
       }
     }
     if (!hasAlpha) {
-      for (let y = 0; y < patch.height; y += 1) {
-        const dstRow = ((patch.y0 + y) * base.width + patch.x0) * 4;
+      for (let y = iy0; y < iy1; y += 1) {
+        const dstRow = (y * base.width + ix0) * 4;
+        const srcOff = ((y - patch.y0) * patch.width + (ix0 - patch.x0)) * 4;
         out.set(
-          patch.data.subarray(y * patch.width * 4, (y + 1) * patch.width * 4),
+          patch.data.subarray(srcOff, srcOff + (ix1 - ix0) * 4),
           dstRow,
         );
       }
       continue;
     }
-    for (let y = 0; y < patch.height; y += 1) {
-      for (let x = 0; x < patch.width; x += 1) {
-        const s = (y * patch.width + x) * 4;
+    for (let y = iy0; y < iy1; y += 1) {
+      for (let x = ix0; x < ix1; x += 1) {
+        const s = ((y - patch.y0) * patch.width + (x - patch.x0)) * 4;
         const a = (patch.data[s + 3] ?? 0) / 255;
         if (a <= 0) continue;
-        const d = ((patch.y0 + y) * base.width + patch.x0 + x) * 4;
+        const d = (y * base.width + x) * 4;
         if (a >= 1) {
           out[d] = patch.data[s] ?? 0;
           out[d + 1] = patch.data[s + 1] ?? 0;
