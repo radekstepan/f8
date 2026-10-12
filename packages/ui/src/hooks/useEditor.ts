@@ -139,7 +139,7 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
 
   const reset = useCallback(() => {
     if (isDefaultEdit(history.present)) return false;
-    change({ ...DEFAULT_EDIT, sceneEnhance: null, faceAdjust: null });
+    change({ ...DEFAULT_EDIT, sceneEnhance: null, faceAdjust: null, selectiveAdjust: null });
     return true;
   }, [change, history.present]);
   // Classic and ML scene enhance share one toggle: each button activates its

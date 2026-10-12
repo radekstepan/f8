@@ -74,6 +74,33 @@ export interface RedEyeSpot {
 /** Which detector served the faces: neural weights or the classical fallback. */
 export type FaceDetectSource = 'onnx' | 'classic';
 
+/** Which segmenter served the subject mask: neural weights or the classical fallback. */
+export type SelectiveMaskSource = 'onnx' | 'classic';
+
+/** Which side of the subject mask the masked adjustments apply to. */
+export type SelectiveTarget = 'subject' | 'background';
+
+/**
+ * ML selective (masked) adjustments: a soft subject mask plus masked
+ * exposure/contrast/saturation over the subject or the background.
+ * Null/absent when no selective adjust is applied.
+ */
+export interface SelectiveAdjustState {
+  /** Base64 8-bit subject mask (1 = subject), resampled at render. */
+  maskB64: string;
+  maskWidth: number;
+  maskHeight: number;
+  target: SelectiveTarget;
+  /** Masked exposure in EV (-3..3), same response as the global slider. */
+  exposure: number;
+  /** Masked contrast (-100..100), same pivot as the global slider. */
+  contrast: number;
+  /** Masked saturation (-100..100), same chroma scale as the global slider. */
+  saturation: number;
+  /** Which segmenter found the subject (drives the UI's ML badge). */
+  source: SelectiveMaskSource;
+}
+
 /**
  * ML face-aware exposure state: softly masked lift ellipses over detected
  * faces plus red-eye fix discs. Null/absent when no face enhance is applied.
@@ -142,6 +169,12 @@ export interface EditState {
    * skin-anchored white balance rides the plain temperature/tint sliders.
    */
   faceAdjust?: FaceAdjustState | null;
+  /**
+   * Set when ML selective segmentation applied masked adjustments to the
+   * subject or background. Null/absent otherwise (including legacy server
+   * recipes).
+   */
+  selectiveAdjust?: SelectiveAdjustState | null;
 }
 
 export type NumericAdjustment = {

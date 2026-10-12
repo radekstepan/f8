@@ -56,6 +56,8 @@ export function isOriginalLook(edit: EditState): boolean {
   // faceAdjust is optional (absent from DEFAULT_EDIT's keys), so it needs
   // an explicit check: a masked face lift is a visible look change.
   if (edit.faceAdjust != null) return false;
+  // Same for selectiveAdjust: a masked subject/background edit is a look.
+  if (edit.selectiveAdjust != null) return false;
   return ORIGINAL_LOOK_KEYS.every((key) => edit[key] === DEFAULT_EDIT[key]);
 }
 

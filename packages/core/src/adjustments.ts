@@ -17,6 +17,7 @@ import type { PixelImage } from "./vision/analyze.js";
 import { assertValidImage } from "./vision/analyze.js";
 import type { WhiteBalanceGains } from "./vision/enhance.js";
 import { applyFaceLift, applyRedEyeFix, isFaceAdjustActive } from "./vision/face-exposure.js";
+import { applySelectiveAdjust, decodeSelectiveMask, isSelectiveAdjustActive } from "./vision/selective-mask.js";
 
 export const TEMPERATURE_NEUTRAL = 5500;
 export const TEMPERATURE_MIN = 2000;
@@ -282,7 +283,8 @@ export function isNeutralEdit(edit: EditState): boolean {
     !edit.colorEnabled || (edit.saturation === 0 && edit.vibrance === 0 && edit.hue === 0);
   const detailNeutral = !edit.detailsEnabled || (edit.clarity === 0 && edit.sharpness === 0);
   const faceNeutral = !isFaceAdjustActive(edit.faceAdjust);
-  return whiteBalanced && lightNeutral && colorNeutral && edit.curve === 0 && !edit.blackAndWhite && detailNeutral && faceNeutral;
+  const selectiveNeutral = !isSelectiveAdjustActive(edit.selectiveAdjust);
+  return whiteBalanced && lightNeutral && colorNeutral && edit.curve === 0 && !edit.blackAndWhite && detailNeutral && faceNeutral && selectiveNeutral;
 }
 
 /**
@@ -312,6 +314,16 @@ export function renderAdjustedPixels(source: PixelImage, edit: EditState): Pixel
     const face = edit.faceAdjust;
     if (face.amount > 0 && face.boxes.length > 0) applyFaceLift(output, width, height, face.boxes, face.amount);
     if (face.redEye.length > 0) applyRedEyeFix(output, width, height, face.redEye);
+  }
+
+  // ML selective adjust (masked exposure/contrast/saturation over the
+  // subject or background) lands with the face pass, after the point pass
+  // and before the detail passes. Corrupt masks skip silently — a damaged
+  // recipe must never break the render.
+  if (isSelectiveAdjustActive(edit.selectiveAdjust)) {
+    const selective = edit.selectiveAdjust;
+    const mask = decodeSelectiveMask(selective.maskB64, selective.maskWidth, selective.maskHeight);
+    if (mask) applySelectiveAdjust(output, width, height, mask, selective);
   }
 
   const clarity = edit.detailsEnabled ? clamp(edit.clarity, -100, 100) : 0;

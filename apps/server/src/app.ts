@@ -14,6 +14,7 @@ import { getStraightenHealth, kickStraightenReady, runStraightenEstimate, valida
 import { getObjectDetectHealth, kickObjectDetectReady, runObjectDetect, validateDetectBody } from "./object-detect.ts";
 import { getDustSpotsHealth, runDustSpotsDetect, validateDustSpotsBody } from "./dust-spots.ts";
 import { getFaceDetectHealth, kickFaceDetectReady, runFaceDetect, validateFaceDetectBody } from "./face-detect.ts";
+import { getSelectiveMaskHealth, kickSelectiveMaskReady, runSelectiveMaskDetect, validateSelectiveMaskBody } from "./selective-mask.ts";
 import {
   deleteHealOverlay,
   listHealOverlays,
@@ -331,6 +332,34 @@ export function createApp(ctx: AppContext): Hono {
       if (error instanceof RangeError) return c.json({ error: error.message }, 400);
       console.error(error);
       return c.json({ error: "Face detect failed." }, 503);
+    }
+  });
+
+  app.get("/api/selective-mask/health", async (c) => c.json(await getSelectiveMaskHealth(config.dataDir)));
+
+  app.post("/api/selective-mask/warmup", async (c) => {
+    // Kick provisioning into the background and return immediately: the
+    // client polls health for download/session progress, like face-detect.
+    // First use downloads ~4.6MB once; detect serves classically until then.
+    kickSelectiveMaskReady(config.dataDir);
+    return c.json(await getSelectiveMaskHealth(config.dataDir));
+  });
+
+  app.post("/api/selective-mask/detect", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    const parsed = validateSelectiveMaskBody(body);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    try {
+      return c.json(await runSelectiveMaskDetect(config.dataDir, parsed.value));
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 400);
+      console.error(error);
+      return c.json({ error: "Selective-mask detect failed." }, 503);
     }
   });
 
