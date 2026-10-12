@@ -40,3 +40,18 @@ export function photoInCollection(photo: Photo, collection: string, now: number 
 export function collectionForPhoto(photo: Photo): string {
   return photo.albumId;
 }
+
+/** Sidebar collections computed from flags/recency — never stored, never deletable. */
+export const BUILT_IN_COLLECTIONS = ["all", "favorites", "edited"] as const;
+
+export type BuiltInCollection = (typeof BUILT_IN_COLLECTIONS)[number];
+
+/** True for the built-in collections (All Photos, Favorites, Recently Edited). */
+export function isBuiltInCollection(collection: string): boolean {
+  return (BUILT_IN_COLLECTIONS as readonly string[]).includes(collection);
+}
+
+/** True when the collection is a user album that may be deleted. */
+export function isDeletableCollection(collection: string): boolean {
+  return !isBuiltInCollection(collection);
+}

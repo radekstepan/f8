@@ -2,6 +2,13 @@ import { useState } from 'react';
 import { Camera, Check, Download, Folder, FolderPlus, Info, Keyboard, MapPin, Save, Share, Trash2 } from 'lucide-react';
 import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_EDITION, APP_NAME, APP_TAGLINE, EXTENSION_POINTS, downloadBlob, exportPhoto, getPhotoFilter, isDefaultEdit, loadStoredHealOverlays, createLibraryClient } from '@f8/core';
 import type { DialogType, EditState, Photo, RepairInpaintBinding } from '@f8/core';
+
+export interface RemoveAlbumTarget {
+  id: string;
+  name: string;
+  /** Photos currently filed in the album; all stay in the library. */
+  count: number;
+}
 import { BrandMark, Modal, RangeControl, SelectField } from './EditorUI.js';
 
 interface EditorDialogsProps {
@@ -15,6 +22,9 @@ interface EditorDialogsProps {
   onCreateAlbum: (name: string, includePhoto: boolean) => void;
   onSavePreset: (name: string) => void;
   onRemovePhoto: (id: string) => void;
+  /** Album awaiting delete confirmation; the dialog only renders when set. */
+  removeAlbum?: RemoveAlbumTarget | null;
+  onRemoveAlbum?: (id: string) => void;
 }
 
 function ExportDialog({ photo, edit, inpaintRepair, onClose, onToast }: Pick<EditorDialogsProps, 'photo' | 'edit' | 'inpaintRepair' | 'onClose' | 'onToast'>) {
@@ -68,10 +78,18 @@ function RemoveDialog({ photo, onClose, onRemovePhoto }: Pick<EditorDialogsProps
   return <Modal title="Remove from Library" subtitle={photo.name} onClose={onClose} className="small-modal"><div className="dialog-feature-icon"><Trash2 size={28} strokeWidth={1.3} /></div><p className="dialog-note"><Info size={14} /><span>This removes the photo and its edits from your library. The original file on disk is never deleted — you can import it again any time.</span></p><div className="modal-footer"><button className="secondary-button" type="button" onClick={onClose}>Keep photo</button><button className="danger-button" type="button" onClick={() => onRemovePhoto(photo.id)}>Remove</button></div></Modal>;
 }
 
+function RemoveAlbumDialog({ removeAlbum, onClose, onRemoveAlbum }: Pick<EditorDialogsProps, 'removeAlbum' | 'onClose' | 'onRemoveAlbum'>) {
+  if (!removeAlbum || !onRemoveAlbum) return null;
+  const target = removeAlbum;
+  const photos = target.count === 1 ? '1 photo' : `${target.count} photos`;
+  return <Modal title="Delete Album" subtitle={target.name} onClose={onClose} className="small-modal"><div className="dialog-feature-icon"><Trash2 size={28} strokeWidth={1.3} /></div><p className="dialog-note"><Info size={14} /><span>This deletes the album only. {target.count ? `Its ${photos} stay${target.count === 1 ? 's' : ''} in your library under All Photos.` : 'It holds no photos.'} Nothing is removed from disk.</span></p><div className="modal-footer"><button className="secondary-button" type="button" onClick={onClose}>Keep album</button><button className="danger-button" type="button" onClick={() => onRemoveAlbum(target.id)}>Delete album</button></div></Modal>;
+}
+
 export function EditorDialogs(props: EditorDialogsProps) {
   const { dialog, photo, onClose } = props;
   if (!dialog) return null;
   if (dialog === 'remove') return <RemoveDialog {...props} />;
+  if (dialog === 'remove-album') return <RemoveAlbumDialog {...props} />;
   if (dialog === 'export') return <ExportDialog {...props} />;
   if (dialog === 'album') return <AlbumDialog {...props} />;
   if (dialog === 'preset') return <PresetDialog {...props} />;

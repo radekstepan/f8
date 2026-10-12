@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectionForPhoto, isRecentlyEdited, photoInCollection } from "./collections.js";
+import { collectionForPhoto, isBuiltInCollection, isDeletableCollection, isRecentlyEdited, photoInCollection } from "./collections.js";
 import type { Photo } from "./types.js";
 
 function photo(overrides: Partial<Photo> = {}): Photo {
@@ -80,5 +80,21 @@ describe("collectionForPhoto", () => {
   it("infers the photo's album", () => {
     expect(collectionForPhoto(photo())).toBe("coast");
     expect(collectionForPhoto(photo({ albumId: "dolomites" }))).toBe("dolomites");
+  });
+});
+
+describe("built-in collections", () => {
+  it("recognizes the three computed collections", () => {
+    for (const id of ["all", "favorites", "edited"]) {
+      expect(isBuiltInCollection(id)).toBe(true);
+      expect(isDeletableCollection(id)).toBe(false);
+    }
+  });
+
+  it("treats every other id as a deletable user album", () => {
+    for (const id of ["coast", "imports", "All", "ALL", ""]) {
+      expect(isBuiltInCollection(id)).toBe(false);
+      expect(isDeletableCollection(id)).toBe(true);
+    }
   });
 });

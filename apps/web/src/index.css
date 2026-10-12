@@ -109,6 +109,13 @@ img { display: block; }
 .album-item { height: 38px; gap: 9px; padding-left: 10px; }
 .album-item img { width: 23px; height: 23px; object-fit: cover; border-radius: 3px; filter: saturate(.65); }
 .album-item.is-selected img { filter: none; }
+.album-row { position: relative; display: flex; align-items: center; }
+.album-row .sidebar-item { flex: 1; min-width: 0; }
+.album-menu-trigger { position: absolute; right: 4px; width: 26px; height: 26px; flex-shrink: 0; border-radius: 4px; color: #b9b9c2; opacity: 0; pointer-events: none; }
+.album-row:hover .album-menu-trigger, .album-row:focus-within .album-menu-trigger, .album-row.is-menu-open .album-menu-trigger { opacity: 1; pointer-events: auto; }
+.album-row:has(.album-menu-trigger):hover .item-count, .album-row:has(.album-menu-trigger):focus-within .item-count, .album-row.is-menu-open .item-count { visibility: hidden; }
+.album-menu-trigger:hover { background: #ffffff14; color: #fff; }
+.album-menu { left: auto; right: 0; min-width: 150px; }
 .sidebar-bottom { margin-top: auto; padding: 24px 14px 16px; }
 .import-button { height: 32px; display: flex; align-items: center; width: 100%; gap: 8px; font-size: 10.5px; padding: 0 10px; color: #c9c9d0; background: #2c2c30; border: 1px solid #45454b; border-radius: 5px; box-shadow: 0 1px 2px #0002; }
 .import-button:hover { background: #363639; border-color: #676153; }
@@ -375,8 +382,10 @@ img { display: block; }
 .browser-heading h1 { color: #eae9e8; font-size: 27px; font-weight: 500; letter-spacing: -.8px; line-height: 1.4; margin: 6px 0; }
 .browser-heading p { display: flex; align-items: center; gap: 9px; color: #8e8e9a; font-size: 10px; }
 .browser-heading p > span { width: 3px; height: 3px; background: #62626d; border-radius: 50%; }
+.browser-heading-actions { display: flex; align-items: center; gap: 6px; }
 .browser-view-control { display: flex; align-items: center; gap: 8px; color: #81818e; }
 .browser-view-control input { width: 60px; height: 3px; accent-color: var(--accent-muted); }
+.browser-album-menu { position: relative; }
 .browser-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; margin-bottom: 22px; }
 .filter-group { display: inline-flex; align-items: center; gap: 4px; background: #222227; border: 1px solid #ffffff0c; border-radius: 999px; padding: 3px; }
 .filter-chip { height: 26px; padding: 0 12px; border-radius: 999px; font-size: 9px; font-weight: 550; color: #9494a1; white-space: nowrap; }

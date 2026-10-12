@@ -339,7 +339,13 @@ describe("routes", () => {
     expect(removed.status).toBe(200);
     const library = await json<LibrarySnapshot>(await ctx.app.request("/api/library"));
     expect(library.albums).toHaveLength(0);
+    // Deleting the album deletes only the album row: the photo survives
+    // with its album id intact, so it stays listed in All Photos.
     expect(library.photos).toHaveLength(1);
+    expect(library.photos[0]?.albumId).toBe(created.album.id);
+    expect(library.photos[0]?.id).toBe(report.imported[0]?.id);
+    expect((await ctx.app.request(`/api/albums/${created.album.id}`, { method: "DELETE" })).status).toBe(404);
+    expect((await ctx.app.request("/api/albums/does-not-exist", { method: "DELETE" })).status).toBe(404);
   });
 
   it("manages custom presets", async () => {

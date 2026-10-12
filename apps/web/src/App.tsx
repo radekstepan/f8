@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isRecentlyEdited, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@f8/core';
+import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDeletableCollection, isRecentlyEdited, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@f8/core';
 import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { DialogType, EditState, Tool, ViewMode } from '@f8/core';
@@ -108,6 +108,7 @@ export default function App() {
   const [clipboard, setClipboard] = useState<EditState | null>(null);
   const [dialog, setDialog] = useState<DialogType>(null);
   const [removeTargetId, setRemoveTargetId] = useState<string | null>(null);
+  const [removeAlbumTargetId, setRemoveAlbumTargetId] = useState<string | null>(null);
   const [folderDialog, setFolderDialog] = useState<FolderDialog | null>(null);
   const [toast, setToast] = useState('');
   const [importProgress, setImportProgress] = useState<ImportStatus | null>(null);
@@ -232,6 +233,8 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
   const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
+  const removeAlbumRow = dialog === 'remove-album' ? albums.find((album) => album.id === removeAlbumTargetId) ?? null : null;
+  const removeAlbumTarget = removeAlbumRow ? { id: removeAlbumRow.id, name: removeAlbumRow.name, count: photos.filter((item) => item.albumId === removeAlbumRow.id).length } : null;
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
   // Live session recipes per photo: thumbnails prefer these over the last
   // persisted edit so the grid and filmstrip match the canvas immediately
@@ -338,6 +341,34 @@ export default function App() {
     setRemoveTargetId(id);
     setDialog('remove');
   }, []);
+
+  // Album deletion is always confirmed too. Only user albums reach the
+  // dialog — the built-ins have no menu trigger, and the guard below makes
+  // a stray call a no-op. Photos are never touched: they keep their album
+  // id server-side and stay visible in All Photos.
+  const requestRemoveAlbum = useCallback((id: string) => {
+    if (!isDeletableCollection(id)) return;
+    if (!albums.some((album) => album.id === id)) return;
+    setRemoveAlbumTargetId(id);
+    setDialog('remove-album');
+  }, [albums]);
+
+  const confirmRemoveAlbum = useCallback((id: string) => {
+    const target = albums.find((album) => album.id === id);
+    const kept = photos.filter((item) => item.albumId === id).length;
+    setDialog(null);
+    setRemoveAlbumTargetId(null);
+    void library.removeAlbum(id).then(
+      () => {
+        // The open grid must not strand on a deleted album: the existing
+        // unknown-collection effect also covers this, but switching
+        // immediately avoids one empty-grid frame.
+        setCollection((current) => (current === id ? 'all' : current));
+        notify(target ? `"${target.name}" deleted. ${kept === 1 ? 'Its photo stays' : `Its ${kept} photos stay`} in your library.` : 'Album deleted.');
+      },
+      (reason: unknown) => notifyError(reason, 'Could not delete the album.'),
+    );
+  }, [albums, photos, library, notify, notifyError]);
 
   const confirmRemovePhoto = useCallback((id: string) => {
     const list = filteredPhotos.some((item) => item.id === id) ? filteredPhotos : photos;
@@ -643,10 +674,10 @@ export default function App() {
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} presetsOpen={presetsOpen} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
-      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} />}
+      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} edits={liveEdits} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${reversed}`} activeId={photo?.id} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${reversed}`} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (
@@ -707,7 +738,7 @@ export default function App() {
       }}
     />
     <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
-    <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : photo} edit={editor.edit} inpaintRepair={canvasRepairBinding} onClose={() => { setDialog(null); setRemoveTargetId(null); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} />
+    <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : photo} edit={editor.edit} inpaintRepair={canvasRepairBinding} onClose={() => { setDialog(null); setRemoveTargetId(null); setRemoveAlbumTargetId(null); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} removeAlbum={removeAlbumTarget} onRemoveAlbum={confirmRemoveAlbum} />
     {folderDialog && <FsBrowser
       title={folderDialog.mode === 'locate' ? 'Locate original' : 'Import from folder'}
       subtitle={folderDialog.mode === 'locate' ? 'Find the file in its new home.' : 'Referenced in place — nothing is copied.'}

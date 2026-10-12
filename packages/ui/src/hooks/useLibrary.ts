@@ -292,6 +292,21 @@ export function useLibrary() {
     [client, markOfflineIfDown],
   );
 
+  const removeAlbum = useCallback(
+    async (id: string) => {
+      try {
+        await client.deleteAlbum(id);
+        // Photos are untouched server-side (they keep their album id and stay
+        // visible in All Photos); only the album row drops out of state.
+        setAlbums((current) => current.filter((album) => album.id !== id));
+      } catch (reason) {
+        markOfflineIfDown(reason);
+        throw reason;
+      }
+    },
+    [client, markOfflineIfDown],
+  );
+
   const createPreset = useCallback(
     async (name: string, values: Partial<EditState>) => {
       try {
@@ -320,6 +335,7 @@ export function useLibrary() {
     removePhoto,
     saveEdit,
     createAlbum,
+    removeAlbum,
     createPreset,
   };
 }

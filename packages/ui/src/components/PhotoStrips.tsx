@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDownWideNarrow, Check, ChevronDown, ChevronUp, Grid2X2, Heart, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { ArrowDownWideNarrow, Check, ChevronDown, ChevronUp, Grid2X2, Heart, MoreHorizontal, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT } from '@f8/core';
-import { computeGridWindow, filmstripGridArrowIndex, filmstripOverflows, filmstripWheelShift, getPhotoFilter, isPortraitPhoto, thumbnailFilterForPhoto } from '@f8/core';
-import type { EditState, Photo, Preset } from '@f8/core';
+import { computeGridWindow, filmstripGridArrowIndex, filmstripOverflows, filmstripWheelShift, getPhotoFilter, isBuiltInCollection, isPortraitPhoto, thumbnailFilterForPhoto } from '@f8/core';
+import type { Album, EditState, Photo, Preset } from '@f8/core';
 
 /** A grid/filmstrip photo with its edit recipe attached when known (library photos carry `edit`). */
 export type PhotoWithEdit = Photo & { edit?: EditState | null };
-import { IconButton } from './EditorUI.js';
+import { IconButton, MenuItem } from './EditorUI.js';
 
 export function PresetStrip({ photo, presets, selected, onSelect, onAdd, onToggle }: { photo: Photo; presets: Preset[]; selected: string; onSelect: (preset: Preset) => void; onAdd: () => void; onToggle: () => void }) {
   const [category, setCategory] = useState('Essentials');
@@ -169,8 +169,14 @@ function sameMetrics(a: GridMetrics | null, b: GridMetrics | null): boolean {
     a.viewportHeight === b.viewportHeight && a.scrollTop === b.scrollTop;
 }
 
-export function PhotoBrowser({ photos, title, search, edits, editedFilter, favoriteFilter, onEditedFilter, onFavoriteFilter, onClearFilters, onSelect, onFavorite, onRemove, onImport, scrollKey, activeId }: {
-  photos: PhotoWithEdit[]; title: string; search: string; edits?: Record<string, EditState>; onSelect: (id: string) => void; onFavorite: (id: string) => void; onRemove?: (id: string) => void; onImport: () => void;
+export function PhotoBrowser({ photos, title, search, edits, album, editedFilter, favoriteFilter, onEditedFilter, onFavoriteFilter, onClearFilters, onSelect, onFavorite, onRemove, onRemoveAlbum, onImport, scrollKey, activeId }: {
+  photos: PhotoWithEdit[]; title: string; search: string; edits?: Record<string, EditState>;
+  /** The open album, when the grid shows one; built-ins never carry a menu. */
+  album?: Album | null;
+  onSelect: (id: string) => void; onFavorite: (id: string) => void; onRemove?: (id: string) => void;
+  /** Request album deletion (confirmed by the caller). */
+  onRemoveAlbum?: (id: string) => void;
+  onImport: () => void;
   /** List identity for scroll memory (collection + filters + search). */
   scrollKey?: string;
   /** Photo to reveal when no saved position exists (back-nav from the editor). */
@@ -181,6 +187,20 @@ export function PhotoBrowser({ photos, title, search, edits, editedFilter, favor
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [metrics, setMetrics] = useState<GridMetrics | null>(null);
   const keyRef = useRef(scrollKey);
+  const [albumMenu, setAlbumMenu] = useState(false);
+  const albumMenuRef = useRef<HTMLDivElement>(null);
+  // The header menu only exists on a real user album: built-in collections
+  // (All Photos, Favorites, Recently Edited) and search results have no
+  // album row to delete, so the trigger never renders there.
+  const showAlbumMenu = Boolean(album && onRemoveAlbum && !isBuiltInCollection(album.id));
+  useEffect(() => {
+    if (!albumMenu) return;
+    const onPointer = (event: PointerEvent) => { if (!albumMenuRef.current?.contains(event.target as Node)) setAlbumMenu(false); };
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setAlbumMenu(false); };
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('pointerdown', onPointer); document.removeEventListener('keydown', onKey); };
+  }, [albumMenu]);
   const filtersActive = (editedFilter && editedFilter !== 'all') || (favoriteFilter && favoriteFilter !== 'all');
   const showFilters = Boolean(onEditedFilter && onFavoriteFilter);
   const chip = (active: boolean, label: string, title: string, onClick: () => void) => (
@@ -252,7 +272,7 @@ export function PhotoBrowser({ photos, title, search, edits, editedFilter, favor
     })
     : null;
   const visible = gridWindow ? photos.slice(gridWindow.startIndex, gridWindow.endIndex) : photos;
-  return <section className="photo-browser" ref={scrollRef}><div className="browser-heading"><div><span className="browser-eyebrow">YOUR LIBRARY</span><h1>{search ? `Results for "${search}"` : title}</h1><p>{photos.length} {photos.length === 1 ? 'photo' : 'photos'}<span />A little inspiration, ready to develop.</p></div><div className="browser-view-control"><Grid2X2 size={14} /><input type="range" aria-label="Photo grid size" min={2} max={5} value={size} onChange={(event) => setSize(Number(event.target.value))} /></div></div>{showFilters && <div className="browser-filters" role="group" aria-label="Filter photos"><div className="filter-group" role="group" aria-label="Edited status">{chip(editedFilter === 'all', 'All', 'Show edited and unedited photos', () => onEditedFilter?.('all'))}{chip(editedFilter === 'edited', 'Edited', 'Show only photos you have edited', () => onEditedFilter?.('edited'))}{chip(editedFilter === 'unedited', 'Unedited', 'Show only photos with no edits', () => onEditedFilter?.('unedited'))}</div><div className="filter-group" role="group" aria-label="Favorite status">{chip(favoriteFilter === 'all', 'All', 'Show favorited and other photos', () => onFavoriteFilter?.('all'))}{chip(favoriteFilter === 'favorited', 'Favorited', 'Show only favorited photos', () => onFavoriteFilter?.('favorited'))}{chip(favoriteFilter === 'not', 'Not favorited', 'Show only photos that are not favorited', () => onFavoriteFilter?.('not'))}</div>{filtersActive && <button type="button" className="filter-clear" onClick={onClearFilters}>Clear</button>}</div>}{photos.length ? <div className="photo-grid" ref={gridRef} style={{ '--grid-columns': size } as React.CSSProperties}>{gridWindow && gridWindow.topSpacerHeight > 0 && <div className="grid-spacer" aria-hidden="true" style={{ height: gridWindow.topSpacerHeight }} />}{visible.map((photo) => {
+  return <section className="photo-browser" ref={scrollRef}><div className="browser-heading"><div><span className="browser-eyebrow">YOUR LIBRARY</span><h1>{search ? `Results for "${search}"` : title}</h1><p>{photos.length} {photos.length === 1 ? 'photo' : 'photos'}<span />A little inspiration, ready to develop.</p></div><div className="browser-heading-actions"><div className="browser-view-control"><Grid2X2 size={14} /><input type="range" aria-label="Photo grid size" min={2} max={5} value={size} onChange={(event) => setSize(Number(event.target.value))} /></div>{showAlbumMenu && <div className="browser-album-menu" ref={albumMenuRef}><IconButton label={`Album actions for ${album?.name ?? title}`} aria-haspopup="menu" aria-expanded={albumMenu} onClick={() => setAlbumMenu((current) => !current)}><MoreHorizontal size={16} /></IconButton>{albumMenu && <div className="dropdown-menu album-menu" role="menu" aria-label={`Album actions for ${album?.name ?? title}`}><MenuItem danger onClick={() => { setAlbumMenu(false); onRemoveAlbum?.(album!.id); }}>Delete album…</MenuItem></div>}</div>}</div></div>{showFilters && <div className="browser-filters" role="group" aria-label="Filter photos"><div className="filter-group" role="group" aria-label="Edited status">{chip(editedFilter === 'all', 'All', 'Show edited and unedited photos', () => onEditedFilter?.('all'))}{chip(editedFilter === 'edited', 'Edited', 'Show only photos you have edited', () => onEditedFilter?.('edited'))}{chip(editedFilter === 'unedited', 'Unedited', 'Show only photos with no edits', () => onEditedFilter?.('unedited'))}</div><div className="filter-group" role="group" aria-label="Favorite status">{chip(favoriteFilter === 'all', 'All', 'Show favorited and other photos', () => onFavoriteFilter?.('all'))}{chip(favoriteFilter === 'favorited', 'Favorited', 'Show only favorited photos', () => onFavoriteFilter?.('favorited'))}{chip(favoriteFilter === 'not', 'Not favorited', 'Show only photos that are not favorited', () => onFavoriteFilter?.('not'))}</div>{filtersActive && <button type="button" className="filter-clear" onClick={onClearFilters}>Clear</button>}</div>}{photos.length ? <div className="photo-grid" ref={gridRef} style={{ '--grid-columns': size } as React.CSSProperties}>{gridWindow && gridWindow.topSpacerHeight > 0 && <div className="grid-spacer" aria-hidden="true" style={{ height: gridWindow.topSpacerHeight }} />}{visible.map((photo) => {
   const filter = thumbnailFilterForPhoto(photo, edits?.[photo.id]);
   return <div className={`browser-photo ${photo.missing ? 'is-missing' : ''}`} key={photo.id} data-photo-id={photo.id}><button className="browser-photo-open" onClick={() => onSelect(photo.id)} aria-label={`Edit ${photo.title}`}><div className={`browser-photo-image${isPortraitPhoto(photo) ? ' is-portrait' : ''}`}><img src={photo.thumbnail} alt={photo.title} loading="lazy" decoding="async" style={filter ? { filter } : undefined} />{photo.raw && <span className="thumb-raw">RAW</span>}{photo.missing && <span className="thumb-missing">Missing</span>}<span className="browser-edit-label">Open in editor</span></div><div className="browser-photo-caption"><span>{photo.name}</span>{photo.location && <small>{photo.location}</small>}</div></button><IconButton label={photo.favorite ? 'Remove favorite' : 'Add favorite'} className="browser-favorite" active={photo.favorite} onClick={() => onFavorite(photo.id)}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} /></IconButton>{onRemove && <IconButton label={`Remove ${photo.name} from library`} className="browser-remove" onClick={() => onRemove(photo.id)}><Trash2 size={15} /></IconButton>}</div>;})}{gridWindow && gridWindow.bottomSpacerHeight > 0 && <div className="grid-spacer" aria-hidden="true" style={{ height: gridWindow.bottomSpacerHeight }} />}</div> : <div className="empty-library"><Grid2X2 size={32} /><h2>{search ? 'No matching photos' : filtersActive ? 'No photos match these filters' : 'A fresh perspective starts here.'}</h2><p>{search ? 'Try a filename, location, or another search.' : filtersActive ? 'Try a different combination, or clear the filters.' : 'Import a few photos to make this space your own.'}</p>{filtersActive && !search ? <button className="secondary-button" onClick={onClearFilters}>Clear filters</button> : <button className="primary-button" onClick={onImport}>Import Photos</button>}</div>}</section>;
 }
