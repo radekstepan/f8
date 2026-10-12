@@ -70,6 +70,8 @@ export interface HealOverlayRecord {
   featherPx?: number;
   geometryKey: string;
   dataB64: string;
+  /** Cumulative straighten-resample degrees; absent on pre-budget records (= 0). */
+  resampleDeg?: number;
   updatedAt: string;
 }
 

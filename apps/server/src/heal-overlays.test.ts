@@ -85,6 +85,34 @@ describe("heal overlays", () => {
     expect(((await oversized.json()) as { error: string }).error).toBe("Invalid signature.");
   });
 
+  it("round-trips the resample budget and rejects invalid values", async () => {
+    const put = await ctx.app.request(`/api/photos/${photoId}/heal-overlays/1`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...patchBody("sig-1"), resampleDeg: 12.5 }),
+    });
+    expect(put.status).toBe(200);
+    const listed = (await (await ctx.app.request(`/api/photos/${photoId}/heal-overlays`)).json()) as {
+      patches: { groupId: number; resampleDeg?: number }[];
+    };
+    expect(listed.patches[0]?.resampleDeg).toBe(12.5);
+    for (const bad of [-1, Number.NaN, "12" as unknown as number]) {
+      const res = await ctx.app.request(`/api/photos/${photoId}/heal-overlays/2`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...patchBody("sig-2"), resampleDeg: bad }),
+      });
+      expect(res.status).toBe(400);
+    }
+    // Pre-budget clients omit the field: still accepted.
+    const legacy = await ctx.app.request(`/api/photos/${photoId}/heal-overlays/3`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patchBody("sig-3")),
+    });
+    expect(legacy.status).toBe(200);
+  });
+
   it("404s unknown photos and purges overlays with the photo", async () => {
     const missing = await ctx.app.request("/api/photos/nope/heal-overlays");
     expect(missing.status).toBe(404);

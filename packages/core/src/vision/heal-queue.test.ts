@@ -15,7 +15,7 @@ function source(): PixelImage {
 }
 
 function fakePatch(): CachedHealPatch {
-  return { signature: "sig", x0: 0, y0: 0, width: 2, height: 2, data: new Uint8ClampedArray(2 * 2 * 4) };
+  return { signature: "sig", x0: 0, y0: 0, width: 2, height: 2, data: new Uint8ClampedArray(2 * 2 * 4), resampleDeg: 0 };
 }
 
 describe("createHealQueue", () => {

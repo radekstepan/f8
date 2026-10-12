@@ -22,6 +22,13 @@ export interface TestHealCall {
   at: number;
 }
 
+/** One main-canvas paint recorded by PhotoCanvas (source path + content key). */
+export interface PaintLogEntry {
+  source: string;
+  key: string;
+  at: number;
+}
+
 interface TestHookValues {
   healCalls: () => TestHealCall[];
   clearHealCalls: () => void;
@@ -30,6 +37,8 @@ interface TestHookValues {
   pendingRepairIds: () => number[];
   overlayGroupIds: () => number[];
   mlReady: () => { method: string | null; engine: string | null; ready: boolean | null; warming: boolean };
+  paintLog: () => PaintLogEntry[];
+  clearPaintLog: () => void;
 }
 
 export interface MlReadiness {
@@ -67,6 +76,8 @@ export const getQueue = (page: Page) => hook<{ active: boolean; pendingJobs: num
 export const getCacheKeys = (page: Page) => hook<number[]>(page, "cacheKeys()");
 export const getPendingIds = (page: Page) => hook<number[]>(page, "pendingRepairIds()");
 export const getOverlayGroupIds = (page: Page) => hook<number[]>(page, "overlayGroupIds()");
+export const getPaintLog = (page: Page) => hook<PaintLogEntry[]>(page, "paintLog()");
+export const clearPaintLog = (page: Page) => hook<void>(page, "clearPaintLog()");
 
 // Deterministic photo pixels: the seed library points at remote Pexels URLs
 // (network + CORS-tainted canvas would break heal readbacks), so every spec

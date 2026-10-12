@@ -33,6 +33,8 @@ export interface SavedHealOverlay {
   geometryKey: string;
   /** Base64 of raw RGBA bytes (width*height*4). */
   dataB64: string;
+  /** Cumulative straighten-resample degrees; absent on pre-budget records (= 0). */
+  resampleDeg?: number;
   updatedAt: string;
 }
 
@@ -79,7 +81,7 @@ export function validateOverlayBody(
     throw new RangeError("Invalid overlay.");
   }
   const v = body as Record<string, unknown>;
-  const { signature, x0, y0, width, height, canvasWidth, canvasHeight, method, quality, featherPx, geometryKey, dataB64 } = v;
+  const { signature, x0, y0, width, height, canvasWidth, canvasHeight, method, quality, featherPx, geometryKey, dataB64, resampleDeg } = v;
   if (typeof signature !== "string" || !signature || signature.length > 4096) throw new RangeError("Invalid signature.");
   if (!isInt(x0, 0, 8192) || !isInt(y0, 0, 8192)) throw new RangeError("Invalid patch origin.");
   if (!isInt(width, 1, 4096) || !isInt(height, 1, 4096)) throw new RangeError("Invalid patch size.");
@@ -90,6 +92,7 @@ export function validateOverlayBody(
   if (quality !== undefined && (typeof quality !== "string" || quality.length > 32)) throw new RangeError("Invalid quality.");
   if (featherPx !== undefined && !isInt(featherPx, 0, 64)) throw new RangeError("Invalid feather.");
   if (typeof geometryKey !== "string" || !geometryKey || geometryKey.length > 2048) throw new RangeError("Invalid geometry key.");
+  if (resampleDeg !== undefined && (typeof resampleDeg !== "number" || !Number.isFinite(resampleDeg) || resampleDeg < 0 || resampleDeg > 100000)) throw new RangeError("Invalid resample budget.");
   if (typeof dataB64 !== "string" || !dataB64) throw new RangeError("Missing patch data.");
   let rawLength = -1;
   try {
@@ -114,6 +117,7 @@ export function validateOverlayBody(
     ...(featherPx === undefined ? {} : { featherPx: featherPx as number }),
     geometryKey,
     dataB64,
+    ...(resampleDeg === undefined ? {} : { resampleDeg: resampleDeg as number }),
     updatedAt: new Date().toISOString(),
   };
 }

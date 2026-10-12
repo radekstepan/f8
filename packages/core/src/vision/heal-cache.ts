@@ -16,7 +16,7 @@
 // saved work is never re-healed to match a joint run.
 
 import type { RetouchPoint } from "../types.js";
-import { groupRetouchStrokes, type RetouchStrokeGroup } from "../retouch.js";
+import { groupRetouchStrokes, straightenZoom, type RetouchStrokeGroup } from "../retouch.js";
 import type { PixelImage } from "./analyze.js";
 import type { HealQuality } from "./heal.js";
 import type { HealOverlayBody, HealOverlayRecord, LibraryClient } from "../library.js";import {
@@ -57,6 +57,14 @@ export interface CachedHealPatch {
   width: number;
   height: number;
   data: Uint8ClampedArray;
+  /**
+   * Cumulative straighten degrees this patch has been resampled through
+   * since its last fresh inference. Quarter turns never add to it (pixel
+   * permutations are lossless); each straighten resample adds |delta|.
+   * Past HEAL_RESAMPLE_DEG_BUDGET the next straighten reheals instead, so
+   * interpolation softening stays bounded. Persisted on the overlay record.
+   */
+  resampleDeg: number;
 }
 
 /**
@@ -444,6 +452,204 @@ export function rotateHealPatch(
 }
 
 /**
+ * Cumulative straighten degrees a patch may be resampled through before a
+ * straighten change reheals it fresh instead. The slider spans 30 degrees
+ * end to end, so this covers a full sweep plus headroom; interpolation
+ * softening stays comparable to a single modest rotation.
+ */
+export const HEAL_RESAMPLE_DEG_BUDGET = 45;
+
+/** True when a patch may be resampled for this delta without exceeding the budget. */
+export function straightenResampleAllowed(
+  spentDeg: number,
+  deltaDeg: number,
+  budget: number = HEAL_RESAMPLE_DEG_BUDGET,
+): boolean {
+  return (
+    Number.isFinite(spentDeg) &&
+    Number.isFinite(deltaDeg) &&
+    Number.isFinite(budget) &&
+    spentDeg >= 0 &&
+    spentDeg + Math.abs(deltaDeg) <= budget
+  );
+}
+
+export interface ResampleStraightenOptions {
+  fromStraighten: number;
+  toStraighten: number;
+  /** Upright source aspect (width/height) for the content zoom; missing means null. */
+  sourceAspect?: number;
+}
+
+/**
+ * Resample a cached heal patch across a straighten change, so free-angle
+ * turns reuse pixels instead of re-running inference. Same transform the
+ * stamps take (unzoom, turn about the canvas center, rezoom), bilinearly
+ * resampled; the canvas dims are identical on both sides because straighten
+ * never changes them. Destination pixels mapping outside the source patch
+ * (the AABB corner triangles past the rotated rect) are emitted transparent
+ * instead of edge-smeared, and the bbox is tightened to valid pixels every
+ * step — without the tightening, floor/ceil slack would ratchet the bbox
+ * outward ~1px per side per resample and explode across a slider drag. The
+ * result must fit the canvas strictly — an edge-clipped patch returns null
+ * (reheal) rather than permanently losing edge pixels. Adds |delta| to
+ * resampleDeg; the signature is preserved verbatim for the caller to
+ * restamp. Inputs are never mutated. Pure: no DOM, runs anywhere.
+ *
+ * Callers driving progressive drags must resample from a FIXED anchor patch
+ * with the total angle each tick, never chain tick-to-tick: integer bboxes
+ * forget sub-pixel growth every hop, so a naive chain freezes (no zoom, no
+ * drift) while the content turns, diverging from the remapped stamps.
+ */
+export function resampleHealPatchForStraighten(
+  patch: CachedHealPatch,
+  width: number,
+  height: number,
+  options: ResampleStraightenOptions,
+): CachedHealPatch | null {
+  if (
+    !Number.isInteger(width) || !Number.isInteger(height) ||
+    width <= 0 || height <= 0
+  ) {
+    return null;
+  }
+  if (
+    !Number.isInteger(patch.x0) || !Number.isInteger(patch.y0) ||
+    !Number.isInteger(patch.width) || !Number.isInteger(patch.height) ||
+    patch.width <= 0 || patch.height <= 0
+  ) {
+    return null;
+  }
+  if (
+    patch.x0 < 0 || patch.y0 < 0 ||
+    patch.x0 + patch.width > width ||
+    patch.y0 + patch.height > height
+  ) {
+    return null;
+  }
+  if (patch.data.length !== patch.width * patch.height * 4) return null;
+  if (!Number.isFinite(patch.resampleDeg) || patch.resampleDeg < 0) return null;
+  const { fromStraighten, toStraighten } = options;
+  if (!Number.isFinite(fromStraighten) || !Number.isFinite(toStraighten)) return null;
+  const deltaDeg = toStraighten - fromStraighten;
+  if (deltaDeg === 0) return { ...patch, data: patch.data.slice() };
+  const aspect = options.sourceAspect;
+  if (typeof aspect !== "number" || !Number.isFinite(aspect) || aspect <= 0) return null;
+  const k1 = straightenZoom(fromStraighten, aspect);
+  const k2 = straightenZoom(toStraighten, aspect);
+  if (!(k1 > 0) || !(k2 > 0) || !Number.isFinite(k1) || !Number.isFinite(k2)) return null;
+  const theta = (deltaDeg * Math.PI) / 180;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  // Forward map (canvas coords): unzoom, turn, rezoom about the center.
+  const cx = width / 2;
+  const cy = height / 2;
+  const forward = (px: number, py: number): [number, number] => {
+    const dx = (px - cx) / k1;
+    const dy = (py - cy) / k1;
+    return [cx + (dx * cos - dy * sin) * k2, cy + (dx * sin + dy * cos) * k2];
+  };
+  const corners: [number, number][] = [
+    [patch.x0, patch.y0],
+    [patch.x0 + patch.width, patch.y0],
+    [patch.x0, patch.y0 + patch.height],
+    [patch.x0 + patch.width, patch.y0 + patch.height],
+  ];
+  const mapped = corners.map(([px, py]) => forward(px, py));
+  const minX = Math.min(...mapped.map(([px]) => px as number));
+  const maxX = Math.max(...mapped.map(([px]) => px as number));
+  const minY = Math.min(...mapped.map(([, py]) => py as number));
+  const maxY = Math.max(...mapped.map(([, py]) => py as number));
+  const nx0 = Math.floor(minX);
+  const ny0 = Math.floor(minY);
+  const nx1 = Math.ceil(maxX);
+  const ny1 = Math.ceil(maxY);
+  const nw = nx1 - nx0;
+  const nh = ny1 - ny0;
+  if (nw <= 0 || nh <= 0) return null;
+  if (nx0 < 0 || ny0 < 0 || nx0 + nw > width || ny0 + nh > height) return null;
+  // Inverse map per destination pixel center, bilinearly sampled with edge
+  // clamping. The validity mask travels in alpha: a destination center
+  // mapping outside the source patch rect (the AABB corner triangles past
+  // the rotated rect) emits transparent, so the paste leaves the clean base
+  // alone there instead of stamping smeared edge pixels. Inside, alpha is
+  // resampled like any channel, so a progressive drag keeps a soft ~1px
+  // valid edge without eroding (validity is re-derived geometrically each
+  // step, never thresholded from the previous alpha).
+  const invCos = Math.cos(-theta);
+  const invSin = Math.sin(-theta);
+  const invZoom = k1 / k2;
+  const out = new Uint8ClampedArray(nw * nh * 4);
+  const pw = patch.width;
+  const ph = patch.height;
+  const src = patch.data;
+  for (let y = 0; y < nh; y += 1) {
+    for (let x = 0; x < nw; x += 1) {
+      const px = nx0 + x + 0.5;
+      const py = ny0 + y + 0.5;
+      const dx = px - cx;
+      const dy = py - cy;
+      const qx = cx + (dx * invCos - dy * invSin) * invZoom - patch.x0;
+      const qy = cy + (dx * invSin + dy * invCos) * invZoom - patch.y0;
+      const valid = qx >= 0 && qy >= 0 && qx < pw && qy < ph;
+      const clampedX = Math.max(0, Math.min(pw - 1, qx));
+      const clampedY = Math.max(0, Math.min(ph - 1, qy));
+      const xA = Math.floor(clampedX);
+      const yA = Math.floor(clampedY);
+      const xB = Math.min(xA + 1, pw - 1);
+      const yB = Math.min(yA + 1, ph - 1);
+      const tx = clampedX - xA;
+      const ty = clampedY - yA;
+      const dst = (y * nw + x) * 4;
+      for (let c = 0; c < 4; c += 1) {
+        const a = src[(yA * pw + xA) * 4 + c] ?? 0;
+        const b = src[(yA * pw + xB) * 4 + c] ?? 0;
+        const d = src[(yB * pw + xA) * 4 + c] ?? 0;
+        const e = src[(yB * pw + xB) * 4 + c] ?? 0;
+        out[dst + c] = a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + d * (1 - tx) * ty + e * tx * ty;
+      }
+      if (!valid) out[dst + 3] = 0;
+    }
+  }
+  // Tighten the bbox to valid pixels: floor/ceil slack plus the transparent
+  // corner triangles would otherwise ratchet outward on every resample and
+  // explode the patch (then clip and force a reheal) across a slider drag.
+  let bx0 = nw;
+  let by0 = nh;
+  let bx1 = -1;
+  let by1 = -1;
+  for (let y = 0; y < nh; y += 1) {
+    for (let x = 0; x < nw; x += 1) {
+      if ((out[(y * nw + x) * 4 + 3] ?? 0) > 0) {
+        if (x < bx0) bx0 = x;
+        if (x > bx1) bx1 = x;
+        if (y < by0) by0 = y;
+        if (y > by1) by1 = y;
+      }
+    }
+  }
+  if (bx1 < 0) return null;
+  const tw = bx1 - bx0 + 1;
+  const th = by1 - by0 + 1;
+  const tight = new Uint8ClampedArray(tw * th * 4);
+  for (let y = 0; y < th; y += 1) {
+    tight.set(
+      out.subarray(((by0 + y) * nw + bx0) * 4, ((by0 + y) * nw + bx0 + tw) * 4),
+      y * tw * 4,
+    );
+  }
+  return {
+    ...patch,
+    x0: nx0 + bx0,
+    y0: ny0 + by0,
+    width: tw,
+    height: th,
+    data: tight,
+    resampleDeg: patch.resampleDeg + Math.abs(deltaDeg),
+  };
+}
+
+/**
  * Heal one stroke group against the clean base and return its cropped patch.
  * Returns null when the group rasterizes empty. Transport errors propagate
  * so the caller can keep the blur fallback for this group and continue.
@@ -484,13 +690,17 @@ export async function healSingleGroup(
     width: bbox.width,
     height: bbox.height,
     data,
+    resampleDeg: 0,
   };
 }
 
 /**
  * Paste cropped patches over a base image. Patches must come from the same
- * geometry key (same dimensions); mismatched patches are skipped. Returns a
- * fresh image; inputs are never mutated.
+ * geometry key (same dimensions); mismatched patches are skipped. Patch
+ * alpha composites source-over: straighten resamples emit transparent
+ * pixels past the rotated rect, and those must leave the clean base alone
+ * instead of stamping smeared edges. Fully opaque patches keep the fast
+ * row-copy path. Returns a fresh image; inputs are never mutated.
  */
 export function pasteHealPatches(
   base: PixelImage,
@@ -509,12 +719,42 @@ export function pasteHealPatches(
     ) {
       continue;
     }
+    let hasAlpha = false;
+    for (let i = 3; i < patch.data.length; i += 4) {
+      if ((patch.data[i] ?? 255) !== 255) {
+        hasAlpha = true;
+        break;
+      }
+    }
+    if (!hasAlpha) {
+      for (let y = 0; y < patch.height; y += 1) {
+        const dstRow = ((patch.y0 + y) * base.width + patch.x0) * 4;
+        out.set(
+          patch.data.subarray(y * patch.width * 4, (y + 1) * patch.width * 4),
+          dstRow,
+        );
+      }
+      continue;
+    }
     for (let y = 0; y < patch.height; y += 1) {
-      const dstRow = ((patch.y0 + y) * base.width + patch.x0) * 4;
-      out.set(
-        patch.data.subarray(y * patch.width * 4, (y + 1) * patch.width * 4),
-        dstRow,
-      );
+      for (let x = 0; x < patch.width; x += 1) {
+        const s = (y * patch.width + x) * 4;
+        const a = (patch.data[s + 3] ?? 0) / 255;
+        if (a <= 0) continue;
+        const d = ((patch.y0 + y) * base.width + patch.x0 + x) * 4;
+        if (a >= 1) {
+          out[d] = patch.data[s] ?? 0;
+          out[d + 1] = patch.data[s + 1] ?? 0;
+          out[d + 2] = patch.data[s + 2] ?? 0;
+          out[d + 3] = 255;
+          continue;
+        }
+        const inv = 1 - a;
+        out[d] = (patch.data[s] ?? 0) * a + (out[d] ?? 0) * inv;
+        out[d + 1] = (patch.data[s + 1] ?? 0) * a + (out[d + 1] ?? 0) * inv;
+        out[d + 2] = (patch.data[s + 2] ?? 0) * a + (out[d + 2] ?? 0) * inv;
+        out[d + 3] = a * 255 + (out[d + 3] ?? 0) * inv;
+      }
     }
   }
   return { width: base.width, height: base.height, data: out };
@@ -567,6 +807,7 @@ export function storedPatchFromRecord(record: HealOverlayRecord): StoredHealPatc
   }
   const data = b64ToData(record.dataB64);
   if (!data || data.length !== record.width * record.height * 4) return null;
+  const resampleDeg = record.resampleDeg;
   return {
     groupId: record.groupId,
     signature: record.signature,
@@ -578,6 +819,8 @@ export function storedPatchFromRecord(record: HealOverlayRecord): StoredHealPatc
     canvasWidth: record.canvasWidth,
     canvasHeight: record.canvasHeight,
     data,
+    // Pre-budget records lack the field; treat them as freshly healed.
+    resampleDeg: typeof resampleDeg === "number" && Number.isFinite(resampleDeg) && resampleDeg >= 0 ? resampleDeg : 0,
   };
 }
 
@@ -605,6 +848,7 @@ export function overlayBodyFromPatch(patch: CachedHealPatch, meta: HealOverlayMe
     ...(meta.featherPx === undefined ? {} : { featherPx: meta.featherPx }),
     geometryKey: meta.geometryKey,
     dataB64: dataToB64(patch.data),
+    resampleDeg: patch.resampleDeg,
   };
 }
 

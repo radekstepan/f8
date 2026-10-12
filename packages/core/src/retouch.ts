@@ -157,8 +157,8 @@ export interface RemapStraightenOptions {
   sourceAspect?: number;
 }
 
-/** Content zoom geometryCanvas applies for a straighten angle; mirrored exactly. */
-function straightenZoom(straighten: number, sourceAspect: number): number {
+/** Content zoom geometryCanvas applies for a straighten angle; mirrored exactly. Exported for patch resampling, which must match stamp remapping. */
+export function straightenZoom(straighten: number, sourceAspect: number): number {
   return (
     1 +
     Math.abs(Math.sin((straighten * Math.PI) / 180)) *

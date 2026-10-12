@@ -290,7 +290,7 @@ function rebaseOverlayToCanvas(
   canvasHeight: number,
 ): CachedHealPatch | null {
   if (overlay.canvasWidth === canvasWidth && overlay.canvasHeight === canvasHeight) {
-    return { signature, x0: overlay.x0, y0: overlay.y0, width: overlay.width, height: overlay.height, data: overlay.data };
+    return { signature, x0: overlay.x0, y0: overlay.y0, width: overlay.width, height: overlay.height, data: overlay.data, resampleDeg: overlay.resampleDeg };
   }
   if (typeof document === "undefined") return null;
   if (overlay.width <= 0 || overlay.height <= 0) return null;
@@ -311,7 +311,7 @@ function rebaseOverlayToCanvas(
     dst.height = height;
     dst.getContext("2d")!.drawImage(src, 0, 0, width, height);
     const scaled = dst.getContext("2d")!.getImageData(0, 0, width, height);
-    return { signature, x0, y0, width, height, data: new Uint8ClampedArray(scaled.data) };
+    return { signature, x0, y0, width, height, data: new Uint8ClampedArray(scaled.data), resampleDeg: overlay.resampleDeg };
   } catch {
     return null;
   }
