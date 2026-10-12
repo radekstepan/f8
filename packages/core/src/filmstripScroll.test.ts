@@ -31,7 +31,7 @@ describe("filmstripWheelShift", () => {
 
   it("still translates when only horizontal overflow exists", () => {
     expect(filmstripWheelShift({ ...base, canScrollY: false })).toBe(120);
-    // Legacy callers omit canScrollY: no vertical overflow is assumed.
+    // The single-row strip omits canScrollY: no vertical overflow is assumed.
     expect(filmstripWheelShift(base)).toBe(120);
   });
 

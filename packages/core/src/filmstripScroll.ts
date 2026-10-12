@@ -1,13 +1,13 @@
 /** Album-footer filmstrip scroll routing (Filmstrip).
  *
- * The filmstrip wraps its items into rows and grows up to a capped height;
- * past the cap it scrolls vertically (thin app-standard scrollbar). A plain
- * mouse wheel over it only carries a vertical delta, so when the strip fits
- * vertically but overflows horizontally (narrow viewport) the wheel is
- * translated into horizontal scroll instead — otherwise the strip would feel
- * "not scrollable". The wheel routing rule, the overflow predicate, and the
- * arrow-key focus math live here as pure functions so all are unit-testable
- * without a DOM; the component only applies the verdict (shift scrollLeft,
+ * The filmstrip is always a single horizontal row: items never wrap, and
+ * overflow scrolls sideways (thin app-standard scrollbar). A plain mouse
+ * wheel over it only carries a vertical delta, so vertical-dominant wheels
+ * are translated into horizontal scroll — otherwise the strip would feel
+ * "not scrollable". The wheel routing rule, the overflow predicate, the
+ * center-on-select math, and the arrow-key focus math live here as pure
+ * functions so all are unit-testable without a DOM; the component only
+ * applies the verdict (shift scrollLeft, scrollTo the centered offset,
  * move focus).
  */
 
@@ -24,7 +24,7 @@ export interface FilmstripWheelIntent {
   /** True when the list overflows horizontally (scrollWidth > clientWidth). */
   canScrollX: boolean;
   /** True when the list overflows vertically (scrollHeight > clientHeight).
-   * Absent (legacy callers) means no vertical overflow. */
+   * The single-row strip never does; absent means no vertical overflow. */
   canScrollY?: boolean;
   /** List clientWidth in px; only used to scale page-mode deltas. */
   clientWidth: number;
@@ -45,7 +45,8 @@ export function filmstripOverflows(scrollSize: number, clientSize: number): bool
  *
  * Returns 0 to let the browser handle the event natively:
  * - zoom chords are never hijacked (pinch/browser zoom must keep working);
- * - with vertical overflow the wheel scrolls the rows natively instead;
+ * - with vertical overflow the wheel scrolls vertically natively instead
+ *   (never the case for the single-row strip, which omits the flag);
  * - without horizontal overflow there is nowhere to go;
  * - horizontal-dominant gestures (trackpad swipe, Shift+wheel) already
  *   scroll the strip natively, so only vertical-dominant ones translate.
@@ -118,10 +119,10 @@ export interface FilmstripScrollOffset {
  * item is already visible — opening a photo is an explicit jump, so the
  * strip settles with context (photos before and after) on both sides.
  *
- * Vertical: nearest-row reveal (like `block: 'nearest'`): rows above the
- * viewport align their top, rows below align their bottom, visible rows
- * stay put. The wrapped strip's overflow is vertical, so this is the axis
- * that actually moves there.
+ * Vertical: nearest reveal (like `block: 'nearest'`): content above the
+ * viewport aligns its top, content below aligns its bottom, visible
+ * content stays put. The single-row strip never overflows vertically, so
+ * this axis always keeps its offset there.
  *
  * Axes without overflow (within `FILMSTRIP_OVERFLOW_TOLERANCE_PX`, or a
  * non-positive viewport) keep the current offset rather than snapping.
@@ -145,6 +146,9 @@ export function filmstripCenteredScrollOffset(intent: FilmstripCenterIntent): Fi
 }
 
 /** Index of the filmstrip item to focus for a key press in a wrapped grid.
+ *
+ * Kept for grid-style callers; the footer filmstrip is a single row and
+ * uses {@link filmstripArrowIndex} instead.
  *
  * Left/Right/Home/End behave exactly as {@link filmstripArrowIndex} (DOM
  * order across rows). Up/Down step one row in the same column; there is no
