@@ -4,6 +4,8 @@ System instruction: Work on these tasks, make sure to add tests, but do not run 
 
 ## List
 
+Rename the app to "f/8" (or f8 where we can't use a slash in the name like package names). Make sure to update md files and package.json files etc. There should be no references to Photomator as a name of our app.
+
 DSC06308.ARW is a portrait photo but shows landscape in album and in presents and film strip below the photo. Make sure that making the photo portrait will look seamless in album with landscape photos.
 
 The film strip should have a vertical scrollbar if we have more photos
