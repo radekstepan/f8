@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Bandage, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, FlipHorizontal2, FlipVertical2, Focus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, X } from 'lucide-react';
-import { CROP_RATIOS, SCENE_DISPLAY_NAMES, SELECTIVE_MASK_DEFAULT_EXPOSURE, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, groupRetouchStrokes, strokeIdForPoint } from '@f8/core';
-import type { ChangeEdit, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
+import { CROP_RATIOS, SCENE_DISPLAY_NAMES, SELECTIVE_MASK_DEFAULT_EXPOSURE, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, denoiseStrengthForIso, groupRetouchStrokes, shouldAutoDenoise, strokeIdForPoint } from '@f8/core';
+import type { ChangeEdit, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { IconButton, MenuItem, RangeControl, SelectField, Toggle } from './EditorUI.js';
 
@@ -187,6 +187,30 @@ export interface SelectiveMaskAssist {
   /** Live-tweak the stored target/params (each drag coalesces to one undo step). */
   onAdjust: (patch: Partial<SelectiveMaskDraft>) => void;
   /** Remove the stored mask + params. */
+  onClear: () => void;
+  onDismiss: () => void;
+}
+
+/** View model for lightweight denoise, driven by the app's vision hook. */
+export interface DenoiseAssist {
+  state: 'idle' | 'previewing' | 'preview-ready' | 'applying' | 'applied' | 'error';
+  /** Downsampled before/after pair; set when state is preview-ready. */
+  preview: { beforeUrl: string; afterUrl: string; strength: number; source: DenoiseSource } | null;
+  /** Stored denoise state from the recipe; null when never applied. */
+  applied: DenoiseState | null;
+  /** True when the denoised full-res base lives in this session. */
+  hasBase: boolean;
+  /** Live server progress (warmup + denoise); same shape as ML-heal progress. */
+  progress: { fraction: number; stage: string; updatedAt?: number } | null;
+  /** Note when the classical fallback served instead of ML. */
+  note: string | null;
+  /** Human-readable error; set only when state is error. */
+  message: string | null;
+  /** Preview a strength on the ≤512px downsample (before/after, recipe untouched). */
+  onPreview: (strength: number, auto: boolean) => void;
+  /** Denoise at up to 2048px and use it as the canvas/export base. */
+  onApply: (strength: number, auto: boolean) => void;
+  /** Remove the stored strength and drop the denoised base. */
   onClear: () => void;
   onDismiss: () => void;
 }
@@ -548,6 +572,81 @@ function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
   </div>;
 }
 
+/** Manual slider start for clean captures (the auto ladder suggests 0 there). */
+const DENOISE_MANUAL_DEFAULT = 45;
+
+function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo }) {
+  const working = assist.state === 'previewing' || assist.state === 'applying';
+  // Draft strength + auto toggle, reset per photo: high-ISO captures start
+  // on Auto at the ISO suggestion, clean captures on manual 45.
+  const [auto, setAuto] = useState(() => shouldAutoDenoise(photo.iso));
+  const [slider, setSlider] = useState(() => denoiseStrengthForIso(photo.iso) || DENOISE_MANUAL_DEFAULT);
+  useEffect(() => {
+    setAuto(shouldAutoDenoise(photo.iso));
+    setSlider(denoiseStrengthForIso(photo.iso) || DENOISE_MANUAL_DEFAULT);
+  }, [photo.id]);
+  const suggestion = denoiseStrengthForIso(photo.iso);
+  const effective = auto ? suggestion : slider;
+  // Stale after reload (recipe strength, no session pixels) — except while
+  // a fresh preview is on screen, where Apply already covers the re-run.
+  const stale = assist.applied !== null && !assist.hasBase && assist.state !== 'preview-ready';
+  const appliedTag = assist.applied?.source === 'onnx' ? ' · ML' : '';
+  const previewTag = assist.preview?.source === 'onnx' ? ' · ML' : '';
+  return <div className="denoise" data-testid="denoise">
+    <div className="denoise-auto-row" data-testid="denoise-auto-row">
+      <span>Auto <span className="ml-badge" title="The strength is suggested by the capture ISO for a machine-learning denoise on the photo server">ML</span></span>
+      <Toggle checked={auto} onChange={() => setAuto(!auto)} label="Auto denoise strength from ISO" />
+    </div>
+    <RangeControl label="Strength" value={auto ? suggestion : slider} min={0} max={100} step={1} defaultValue={DENOISE_MANUAL_DEFAULT} disabled={auto || working} testId="denoise-strength" onChange={setSlider} />
+    <p className="inspector-note" data-testid="denoise-hint">
+      {auto
+        ? (suggestion > 0 ? `Auto · ISO ${photo.iso} → ${suggestion}` : `Auto · ISO ${photo.iso} needs no denoise`)
+        : 'Manual strength — previews on a small downsample first'}
+    </p>
+    {working && assist.progress && <MlProgressView progress={assist.progress} />}
+    {working && <div className="suggestion-actions"><button className="text-button" data-testid="denoise-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
+    {!working && assist.state !== 'preview-ready' && !assist.applied && <>
+      <button className="secondary-button full-width" data-testid="denoise-preview" disabled={effective <= 0} title={effective <= 0 ? 'Raise the strength to preview' : 'Preview this strength on a small downsample'} onClick={() => assist.onPreview(effective, auto)}>Preview denoise</button>
+      <p className="inspector-note">Denoises on the photo server — a small preview first, then the full photo on apply. The recipe keeps only the strength.</p>
+    </>}
+    {!working && assist.state === 'preview-ready' && assist.preview && <>
+      <div className="denoise-compare" data-testid="denoise-compare">
+        <figure><img src={assist.preview.beforeUrl} alt="Noisy preview" data-testid="denoise-before" /><figcaption>Before</figcaption></figure>
+        <figure><img src={assist.preview.afterUrl} alt="Denoised preview" data-testid="denoise-after" /><figcaption>After</figcaption></figure>
+      </div>
+      <p className="inspector-note" role="status" data-testid="denoise-summary">Preview {assist.preview.strength}{previewTag}</p>
+      {assist.note && <p className="inspector-note">{assist.note}</p>}
+      <div className="suggestion-actions">
+        <button className="secondary-button" data-testid="denoise-apply" title="Denoise the full photo and edit from the clean pixels" onClick={() => assist.onApply(effective, auto)}>Apply to photo</button>
+        <button className="text-button" data-testid="denoise-repreview" title="Preview the current strength again" onClick={() => assist.onPreview(effective, auto)}>Update preview</button>
+        <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
+      </div>
+    </>}
+    {!working && assist.state === 'applied' && assist.hasBase && assist.applied && <>
+      <p className="inspector-note" role="status" data-testid="denoise-applied">Denoised {assist.applied.strength}{appliedTag} — the canvas and export use the clean photo.</p>
+      {assist.note && <p className="inspector-note">{assist.note}</p>}
+      <div className="suggestion-actions">
+        <button className="text-button" data-testid="denoise-repreview" title="Try another strength on a small preview first" onClick={() => assist.onPreview(effective, auto)}>Try another strength</button>
+        <button className="text-button" data-testid="denoise-clear" title="Drop the denoised photo and edit from the original" onClick={assist.onClear}>Clear</button>
+      </div>
+    </>}
+    {!working && stale && assist.applied && <>
+      <p className="inspector-note" role="status" data-testid="denoise-stale">Denoise {assist.applied.strength}{appliedTag} was applied — re-run to restore the clean photo.</p>
+      <div className="suggestion-actions">
+        <button className="secondary-button" data-testid="denoise-restore" title="Denoise the full photo again at the stored strength" onClick={() => assist.onApply(assist.applied!.strength, assist.applied!.auto)}>Restore denoise</button>
+        <button className="text-button" data-testid="denoise-clear" title="Drop the stored strength and keep the original" onClick={assist.onClear}>Clear</button>
+      </div>
+    </>}
+    {assist.state === 'error' && <>
+      <p className="inspector-note" role="alert">{assist.message ?? 'Denoise failed.'}</p>
+      <div className="suggestion-actions">
+        <button className="text-button" data-testid="denoise-retry" onClick={() => assist.onPreview(effective, auto)}>Retry</button>
+        <button className="text-button" onClick={assist.onDismiss}>Dismiss</button>
+      </div>
+    </>}
+  </div>;
+}
+
 function RetouchGroups({ edit, highlightStroke, onHighlightStroke, onChange }: { edit: EditState; highlightStroke: number | null; onHighlightStroke?: (stroke: number | null) => void; onChange: ChangeEdit }) {
   const groups = useMemo(() => groupRetouchStrokes(edit.retouches), [edit.retouches]);
   const counters = { repair: 0 };
@@ -610,6 +709,8 @@ interface InspectorProps {
   faceAssist?: FaceEnhanceAssist;
   /** ML selective (masked) adjustments; omit to hide the subject control. */
   selectiveAssist?: SelectiveMaskAssist;
+  /** Lightweight denoise; omit to hide the denoise section. */
+  denoiseAssist?: DenoiseAssist;
   onAutoWhiteBalance: () => void;
   onAutoLightness: () => void;
   onCopy: () => void;
@@ -620,7 +721,7 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, faceAssist, selectiveAssist, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
   const [extraSections, setExtraSections] = useState<string[]>([]);
@@ -691,6 +792,9 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       <AdjustmentSection key={`details-${openedExtra === 'Details' ? extraRevision : 0}`} title="Details" icon={<Focus size={14} />} initiallyOpen={openedExtra === 'Details'} enabled={edit.detailsEnabled} onToggle={() => onChange({ detailsEnabled: !edit.detailsEnabled })}>
         {range('clarity', 'Clarity', { disabled: !edit.detailsEnabled })}{range('sharpness', 'Sharpness', { min: 0, disabled: !edit.detailsEnabled })}{range('grain', 'Grain', { min: 0, disabled: !edit.detailsEnabled })}
       </AdjustmentSection>
+      {denoiseAssist && <AdjustmentSection title="Denoise" icon={<Sparkles size={14} />} onReset={denoiseAssist.onClear}>
+        <DenoiseControl assist={denoiseAssist} photo={photo} />
+      </AdjustmentSection>}
       <AdjustmentSection key={`effects-${openedExtra === 'Effects' ? extraRevision : 0}`} title="Effects" icon={<CircleDashed size={14} />} initiallyOpen={openedExtra === 'Effects'} onReset={() => onChange({ vignette: 0, fade: 0 })}>
         {range('vignette', 'Vignette', { min: 0 })}{range('fade', 'Fade', { min: 0 })}
       </AdjustmentSection>

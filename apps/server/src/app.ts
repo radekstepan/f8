@@ -15,6 +15,7 @@ import { getObjectDetectHealth, kickObjectDetectReady, runObjectDetect, validate
 import { getDustSpotsHealth, runDustSpotsDetect, validateDustSpotsBody } from "./dust-spots.ts";
 import { getFaceDetectHealth, kickFaceDetectReady, runFaceDetect, validateFaceDetectBody } from "./face-detect.ts";
 import { getSelectiveMaskHealth, kickSelectiveMaskReady, runSelectiveMaskDetect, validateSelectiveMaskBody } from "./selective-mask.ts";
+import { getDenoiseHealth, kickDenoiseReady, runDenoise, validateDenoiseBody } from "./denoise.ts";
 import {
   SemanticWeightsMissingError,
   createSemanticQueue,
@@ -399,6 +400,38 @@ export function createApp(ctx: AppContext): Hono {
       return c.json({ error: "Selective-mask detect failed." }, 503);
     }
   });
+
+  app.get("/api/denoise/health", async (c) => c.json(await getDenoiseHealth(config.dataDir)));
+
+  app.post("/api/denoise/warmup", async (c) => {
+    // Kick provisioning into the background and return immediately: the
+    // client polls health for download/session progress, like face-detect.
+    // First use downloads ~2.6MB once; denoise serves classically until then.
+    kickDenoiseReady(config.dataDir);
+    return c.json(await getDenoiseHealth(config.dataDir));
+  });
+
+  async function denoiseRoute(c: Context, route: "preview" | "apply") {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    const parsed = validateDenoiseBody(body, route);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    try {
+      return c.json(await runDenoise(config.dataDir, parsed.value));
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 400);
+      console.error(error);
+      return c.json({ error: "Denoise failed." }, 503);
+    }
+  }
+
+  app.post("/api/denoise/preview", async (c) => denoiseRoute(c, "preview"));
+
+  app.post("/api/denoise/apply", async (c) => denoiseRoute(c, "apply"));
 
   app.get("/api/semantic-search/health", async (c) => c.json(await getSemanticSearchHealth(config.dataDir, {
     photos: store.listPhotos().length,

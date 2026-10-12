@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDeletableCollection, isFaceAdjustActive, isRecentlyEdited, isSelectiveAdjustActive, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@f8/core';
+import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDeletableCollection, isDenoiseActive, isFaceAdjustActive, isRecentlyEdited, isSelectiveAdjustActive, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@f8/core';
 import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DialogType, EditState, Tool, ViewMode } from '@f8/core';
@@ -16,6 +16,7 @@ import { useObjectRemoval } from './vision/useObjectRemoval';
 import { useDustSpots } from './vision/useDustSpots';
 import { useFaceEnhance } from './vision/useFaceEnhance';
 import { useSelectiveMask } from './vision/useSelectiveMask';
+import { useDenoise } from './vision/useDenoise';
 import { useSemanticSearch } from './vision/useSemanticSearch';
 import { useCullAssist } from './vision/useCullAssist';
 import type { SelectiveMaskDraft } from '@f8/ui';
@@ -135,6 +136,7 @@ export default function App() {
   const dustSpots = useDustSpots(photo?.id ?? selectedId);
   const faceEnhance = useFaceEnhance(photo?.id ?? selectedId);
   const selectiveMask = useSelectiveMask(photo?.id ?? selectedId);
+  const denoise = useDenoise(photo?.id ?? selectedId);
   const semantic = useSemanticSearch();
   const cull = useCullAssist();
   const inpaintRepair = useInpaintRepair();
@@ -604,6 +606,45 @@ export default function App() {
     notify('Selective adjustments cleared.');
   }, [photo, handleEditChange]);
 
+  // Lightweight denoise always runs on the original pixels (photo.src):
+  // the Inspector receives the original photo even while the canvas shows
+  // the denoised base, so a re-run never denoises twice.
+  const previewDenoise = useCallback((strength: number) => {
+    if (!photo) return;
+    denoise.previewPhoto(photo.src, strength);
+  }, [photo, denoise]);
+
+  const applyDenoise = useCallback((strength: number, auto: boolean) => {
+    if (!photo) return;
+    denoise.applyPhoto(photo.src, strength, auto);
+  }, [photo, denoise]);
+
+  const clearDenoise = useCallback(() => {
+    if (!photo) return;
+    denoise.clearApplied();
+    handleEditChange({ denoise: null });
+    notify('Denoise cleared — editing from the original.');
+  }, [photo, denoise, handleEditChange]);
+
+  // The full-res pass lands pixels in the hook first; this stores the
+  // matching recipe strength in one undo step. Guarded on equality so the
+  // patch never loops back in (and a restore at the stored strength is a
+  // pixels-only no-op for the recipe).
+  const denoiseBase = denoise.appliedBase;
+  const denoiseRecipe = editor.edit.denoise;
+  useEffect(() => {
+    if (!photo || !denoiseBase) return;
+    if (denoiseRecipe && denoiseRecipe.strength === denoiseBase.strength && denoiseRecipe.auto === denoiseBase.auto && denoiseRecipe.source === denoiseBase.source) return;
+    handleEditChange({ denoise: { strength: denoiseBase.strength, auto: denoiseBase.auto, source: denoiseBase.source } });
+    notify(`Denoised${denoiseBase.source === 'onnx' ? ' (ML)' : ''}: strength ${denoiseBase.strength}.`);
+  }, [photo, denoiseBase, denoiseRecipe, handleEditChange, notify]);
+
+  // The canvas and export edit from the denoised base while applied; every
+  // other surface (Inspector runs, thumbnails, presets) keeps the original.
+  const viewPhoto = useMemo(() => (
+    photo && denoiseBase && isDenoiseActive(denoiseRecipe) ? { ...photo, src: denoiseBase.url } : photo
+  ), [photo, denoiseBase, denoiseRecipe]);
+
   // Rotation turns repairs with the image in one atomic history entry, so
   // undo restores both together and they can never drift apart. The edit is
   // flushed immediately (rotation/retouches keep the preset label, so the
@@ -735,6 +776,7 @@ export default function App() {
         if (!photo) break;
         const groups = groupRetouchStrokes(editor.edit.retouches);
         const changed = editor.reset();
+        denoise.clearApplied();
         // Deterministic overlay purge: the canvas orphan-sweep only runs on
         // the next paint, so a reset-then-close would leak server files.
         for (const group of groups) {
@@ -943,7 +985,7 @@ export default function App() {
               </div>
             ) : (
               <PhotoCanvas
-                photo={photo} edit={editor.edit} tool={tool} zoom={zoom}
+                photo={viewPhoto ?? photo} edit={editor.edit} tool={tool} zoom={zoom}
                 compare={compare} showOriginal={showOriginal}
                 brushSize={brushSize} brushStrength={brushStrength} fineGrid={straightenDragging}
                 inpaintRepair={canvasRepairBinding}
@@ -968,7 +1010,7 @@ export default function App() {
         )}
       </main>
       {inspectorOpen && <Inspector
-        photo={photo} edit={editor.edit} tool={tool} histogram={histogram}
+        photo={photo} edit={editor.edit} tool={tool} histogram={histogram} denoiseAssist={{ state: denoise.status, preview: denoise.preview, applied: isDenoiseActive(editor.edit.denoise) ? editor.edit.denoise : null, hasBase: Boolean(denoise.appliedBase), progress: denoise.progress, note: denoise.note, message: denoise.message, onPreview: previewDenoise, onApply: applyDenoise, onClear: clearDenoise, onDismiss: denoise.dismiss }}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, source: straighten.source, runId: straighten.runId, mlProgress: straighten.mlProgress, mlWarming: straighten.mlWarming, mlNote: straighten.mlNote, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss, onCancelMl: straighten.cancelMl }}
         repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, serverDown: inpaintRepair.serverDown, onCancelHeal: inpaintRepair.cancelHeal, onRetry: () => { void inpaintRepair.warmup().catch(() => { /* Failure is recorded in mlProgress/serverDown. */ }); }, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx, removal: { state: objectRemoval.state, detections: objectRemoval.detections, source: objectRemoval.source, progress: objectRemoval.progress, note: objectRemoval.note, message: objectRemoval.message, onDetect: () => objectRemoval.detect(photo.src), onToggle: objectRemoval.toggle, onApply: applyObjectRemoval, onDismiss: objectRemoval.dismiss }, dustSpots: { state: dustSpots.state, spots: dustSpots.spots, source: dustSpots.source, progress: dustSpots.progress, note: dustSpots.note, message: dustSpots.message, onDetect: () => dustSpots.detect(photo.src), onToggle: dustSpots.toggle, onApply: applyDustSpots, onDismiss: dustSpots.dismiss } }}
@@ -990,7 +1032,7 @@ export default function App() {
       }}
     />
     <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
-    <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : photo} edit={editor.edit} inpaintRepair={canvasRepairBinding} onClose={() => { setDialog(null); setRemoveTargetId(null); setRemoveAlbumTargetId(null); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} removeAlbum={removeAlbumTarget} onRemoveAlbum={confirmRemoveAlbum} onAddLabel={(photoId, label) => { void library.updateLabels(photoId, { add: [label] }).then(() => notify(`Labeled “${label}”.`), (reason: unknown) => notifyError(reason, 'Could not add the label.')); }} onRemoveLabel={(photoId, label) => { void library.updateLabels(photoId, { remove: [label] }).catch((reason: unknown) => notifyError(reason, 'Could not remove the label.')); }} onSearchLabel={(label) => { setDialog(null); setCollection('all'); clearFilters(); updateSearch(label); setView('library'); }} />
+    <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : (viewPhoto ?? photo)} edit={editor.edit} inpaintRepair={canvasRepairBinding} onClose={() => { setDialog(null); setRemoveTargetId(null); setRemoveAlbumTargetId(null); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} removeAlbum={removeAlbumTarget} onRemoveAlbum={confirmRemoveAlbum} onAddLabel={(photoId, label) => { void library.updateLabels(photoId, { add: [label] }).then(() => notify(`Labeled “${label}”.`), (reason: unknown) => notifyError(reason, 'Could not add the label.')); }} onRemoveLabel={(photoId, label) => { void library.updateLabels(photoId, { remove: [label] }).catch((reason: unknown) => notifyError(reason, 'Could not remove the label.')); }} onSearchLabel={(label) => { setDialog(null); setCollection('all'); clearFilters(); updateSearch(label); setView('library'); }} />
     {folderDialog && <FsBrowser
       title={folderDialog.mode === 'locate' ? 'Locate original' : 'Import from folder'}
       subtitle={folderDialog.mode === 'locate' ? 'Find the file in its new home.' : 'Referenced in place — nothing is copied.'}

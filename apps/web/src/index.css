@@ -390,6 +390,13 @@ img { display: block; }
 .selective-target > button.is-active { color: #f0d397; border-color: #8b7650; background: #33302a; }
 .selective-mask .range-control { margin-top: 8px; }
 .dust-spots .retouch-group-list { max-height: 220px; }
+.denoise-auto-row { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #c9c9d1; margin-top: 2px; }
+.denoise-auto-row .ml-badge { margin-left: 2px; }
+.denoise .range-control { margin-top: 8px; }
+.denoise-compare { display: flex; gap: 8px; margin-top: 10px; }
+.denoise-compare > figure { flex: 1; min-width: 0; margin: 0; }
+.denoise-compare img { display: block; width: 100%; border-radius: 4px; border: 1px solid #3a3a3e; }
+.denoise-compare figcaption { margin-top: 4px; font-size: 9px; color: #85858f; text-align: center; }
 
 .app-status { height: 23px; flex-shrink: 0; background: #242426; border-top: 1px solid #36363b; padding: 0 17px; display: flex; align-items: center; justify-content: space-between; font-size: 8px; color: #85858f; position: relative; }
 .status-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; font-size: 7.5px; color: #74747e; gap: 8px; }

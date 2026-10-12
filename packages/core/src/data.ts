@@ -58,6 +58,8 @@ export function isOriginalLook(edit: EditState): boolean {
   if (edit.faceAdjust != null) return false;
   // Same for selectiveAdjust: a masked subject/background edit is a look.
   if (edit.selectiveAdjust != null) return false;
+  // Same for denoise: server-denoised base pixels are a visible look.
+  if (edit.denoise != null && edit.denoise.strength > 0) return false;
   return ORIGINAL_LOOK_KEYS.every((key) => edit[key] === DEFAULT_EDIT[key]);
 }
 

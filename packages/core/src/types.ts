@@ -89,6 +89,24 @@ export type FaceDetectSource = 'onnx' | 'classic';
 /** Which segmenter served the subject mask: neural weights or the classical fallback. */
 export type SelectiveMaskSource = 'onnx' | 'classic';
 
+/** Which denoiser served the clean pixels: neural weights or the classical fallback. */
+export type DenoiseSource = 'onnx' | 'classic';
+
+/**
+ * Lightweight denoise state: strength 0..100 plus whether the Auto toggle
+ * (keyed on EXIF ISO) picked it. The denoised pixels are a session
+ * artifact — the recipe stores only the strength, so reopening a photo
+ * re-runs the server pass to restore them. Null/absent when off.
+ */
+export interface DenoiseState {
+  /** Denoise strength 0..100 (0 = off). */
+  strength: number;
+  /** True when the Auto toggle (not the slider) picked the strength. */
+  auto: boolean;
+  /** Which denoiser produced the pixels (drives the UI's ML badge). */
+  source: DenoiseSource;
+}
+
 /** Which side of the subject mask the masked adjustments apply to. */
 export type SelectiveTarget = 'subject' | 'background';
 
@@ -187,6 +205,13 @@ export interface EditState {
    * recipes).
    */
   selectiveAdjust?: SelectiveAdjustState | null;
+  /**
+   * Set when lightweight denoise applied server-denoised pixels (learned
+   * DnCNN or the classical fallback). Null/absent otherwise (including
+   * legacy server recipes). The pixels live in the client session; the
+   * recipe keeps the strength so a reopen can re-run the same pass.
+   */
+  denoise?: DenoiseState | null;
 }
 
 export type NumericAdjustment = {
