@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDefaultEdit, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@photomator/core';
+import { CROP_RATIOS, PRESETS, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDefaultEdit, isRecentlyEdited, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@photomator/core';
 import { RAW_ACCEPT } from '@photomator/core';
 import { useEditor, useLibrary } from '@photomator/ui';
 import type { DialogType, EditState, Tool, ViewMode } from '@photomator/core';
@@ -16,7 +16,7 @@ import { useInpaintRepair } from './vision/useInpaintRepair';
 import { FsBrowser } from './components/FsBrowser';
 import { readToolPrefs, TOOL_PREFS_KEY } from './hooks/useToolPrefs';
 
-const collectionTitles: Record<string, string> = { all: 'All Photos', favorites: 'Favorites', edited: 'Recently Edited', imports: 'Imports', landscapes: 'Landscapes', raw: 'RAW Photos' };
+const collectionTitles: Record<string, string> = { all: 'All Photos', favorites: 'Favorites', edited: 'Recently Edited' };
 
 type FolderDialog = { mode: 'import' } | { mode: 'locate'; photoId: string };
 
@@ -176,10 +176,7 @@ export default function App() {
       if (search) return true;
       if (collection === 'all') return true;
       if (collection === 'favorites') return item.favorite;
-      if (collection === 'edited') return Boolean(item.edited);
-      if (collection === 'imports') return item.albumId === 'imports';
-      if (collection === 'raw') return item.raw;
-      if (collection === 'landscapes') return item.width > item.height;
+      if (collection === 'edited') return isRecentlyEdited(item);
       return item.albumId === collection;
     });
     if (search) {
@@ -206,16 +203,36 @@ export default function App() {
     setHighlightStroke(null);
   }, []);
 
+  // Library shortcuts turn on the same chip filters used within each
+  // album, so the grid always shows why it is narrowed. Recently Edited
+  // additionally implies recency (last week) via the collection predicate.
   const selectCollection = (id: string) => {
     setCollection(id);
     setSearch('');
-    setEditedFilter('all');
-    setFavoriteFilter('all');
+    setEditedFilter(id === 'edited' ? 'edited' : 'all');
+    setFavoriteFilter(id === 'favorites' ? 'favorited' : 'all');
     setView('library');
     if (window.innerWidth < 760) setSidebarOpen(false);
   };
 
+  // Chips narrow within albums, but the Library shortcuts are just entry
+  // presets: touching any chip there drops back to All Photos with that
+  // filter applied, so the sidebar never claims a scope the chips undid.
+  // Re-clicking the active chip is a no-op, not a scope change.
+  const handleEditedFilter = (value: EditedFilter) => {
+    if (value === editedFilter) return;
+    if (collection === 'favorites' || collection === 'edited') setCollection('all');
+    setEditedFilter(value);
+  };
+
+  const handleFavoriteFilter = (value: FavoriteFilter) => {
+    if (value === favoriteFilter) return;
+    if (collection === 'favorites' || collection === 'edited') setCollection('all');
+    setFavoriteFilter(value);
+  };
+
   const clearFilters = () => {
+    if (collection === 'favorites' || collection === 'edited') setCollection('all');
     setEditedFilter('all');
     setFavoriteFilter('all');
   };
@@ -516,10 +533,10 @@ export default function App() {
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} presetsOpen={presetsOpen} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
-      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} editedCount={photos.filter((item) => item.edited).length} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} />}
+      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={setEditedFilter} onFavoriteFilter={setFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onImport={() => fileInput.current?.click()} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onImport={() => fileInput.current?.click()} />
         ) : (
           <>
             {!editor.ready ? (

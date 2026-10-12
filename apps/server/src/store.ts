@@ -35,6 +35,8 @@ export interface PhotoRow {
 export interface StoredEdit {
   present: EditState;
   edited: boolean;
+  /** ISO timestamp of the last save; null when no recipe was ever stored. */
+  updatedAt: string | null;
 }
 
 interface AlbumRow {
@@ -51,13 +53,13 @@ interface PresetRow {
 
 const DEFAULT_EDIT_JSON = JSON.stringify(DEFAULT_EDIT);
 
-function parseEdit(presentJson: string | null | undefined, editedFlag: boolean): StoredEdit {
-  if (!presentJson) return { present: { ...DEFAULT_EDIT }, edited: false };
+function parseEdit(presentJson: string | null | undefined, editedFlag: boolean, updatedAt: string | null): StoredEdit {
+  if (!presentJson) return { present: { ...DEFAULT_EDIT }, edited: false, updatedAt: null };
   try {
     // Merging over DEFAULT_EDIT tolerates recipes saved by older app versions.
-    return { present: { ...DEFAULT_EDIT, ...(JSON.parse(presentJson) as Partial<EditState>) }, edited: editedFlag };
+    return { present: { ...DEFAULT_EDIT, ...(JSON.parse(presentJson) as Partial<EditState>) }, edited: editedFlag, updatedAt };
   } catch {
-    return { present: { ...DEFAULT_EDIT }, edited: false };
+    return { present: { ...DEFAULT_EDIT }, edited: false, updatedAt: null };
   }
 }
 
@@ -146,21 +148,22 @@ export function createStore(db: DatabaseSync) {
 
     getEdit: (photoId: string): StoredEdit => {
       const row = db
-        .prepare("SELECT present_json, edited FROM photo_edits WHERE photo_id = ?")
-        .get(photoId) as { present_json: string; edited: number } | undefined;
-      if (!row) return { present: { ...DEFAULT_EDIT }, edited: false };
-      return parseEdit(row.present_json, row.edited === 1);
+        .prepare("SELECT present_json, edited, updated_at FROM photo_edits WHERE photo_id = ?")
+        .get(photoId) as { present_json: string; edited: number; updated_at: string } | undefined;
+      if (!row) return { present: { ...DEFAULT_EDIT }, edited: false, updatedAt: null };
+      return parseEdit(row.present_json, row.edited === 1, row.updated_at);
     },
 
     saveEdit: (photoId: string, present: EditState): StoredEdit => {
       const canonical = { ...DEFAULT_EDIT, ...present };
       const edited = JSON.stringify(canonical) !== DEFAULT_EDIT_JSON;
+      const updatedAt = now();
       db.prepare(
         `INSERT INTO photo_edits (photo_id, present_json, edited, updated_at) VALUES (?, ?, ?, ?)
          ON CONFLICT (photo_id) DO UPDATE SET present_json = excluded.present_json,
            edited = excluded.edited, updated_at = excluded.updated_at`,
-      ).run(photoId, JSON.stringify(canonical), edited ? 1 : 0, now());
-      return { present: canonical, edited };
+      ).run(photoId, JSON.stringify(canonical), edited ? 1 : 0, updatedAt);
+      return { present: canonical, edited, updatedAt };
     },
 
     listAlbums: (): Album[] =>

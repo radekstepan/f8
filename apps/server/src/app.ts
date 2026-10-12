@@ -94,6 +94,8 @@ function toApiPhoto(row: PhotoRow, edit: StoredEdit): LibraryPhoto {
     ...(row.photographer ? { photographer: row.photographer } : {}),
     missing: isMissing(row),
     edited: edit.edited,
+    // A reset stamps updated_at too, so only edited photos carry a timestamp.
+    editedAt: edit.edited ? edit.updatedAt : null,
     edit: edit.present,
     hash: row.hash,
     path: file ? row.path : null,

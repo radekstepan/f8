@@ -195,6 +195,7 @@ describe("routes", () => {
     );
     expect(changed.photo.edited).toBe(true);
     expect(changed.photo.edit.exposure).toBe(0.5);
+    expect(typeof changed.photo.editedAt).toBe("string");
 
     const reset = await json<{ photo: LibraryPhoto }>(
       await ctx.app.request(`/api/photos/${id}/edit`, {
@@ -204,6 +205,7 @@ describe("routes", () => {
       }),
     );
     expect(reset.photo.edited).toBe(false);
+    expect(reset.photo.editedAt).toBeNull();
 
     const bad = await ctx.app.request(`/api/photos/${id}/edit`, {
       method: "PUT",

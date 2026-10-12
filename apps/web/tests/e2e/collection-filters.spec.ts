@@ -8,6 +8,11 @@
 //     switch the grid without touching the URL.
 //   - library edited/favorite chip filters: they narrow the grid and the
 //     filmstrip (shared filteredPhotos), combine, clear, and empty-state.
+//   - Library sidebar shortcuts: Favorites and Recently Edited turn on the
+//     matching chip filters (Recently Edited additionally implies the
+//     last-week recency window); there is no Imports entry and no Smart
+//     Albums section. Touching any chip inside a shortcut drops back to
+//     All Photos with that filter applied.
 //
 // State is API-seeded (PUT /api/photos/:id/edit) for determinism: every test
 // resets all photos to DEFAULT_EDIT, then marks photo-2 edited. Favorites
@@ -139,6 +144,91 @@ test("sidebar album click switches the grid without touching the URL", async ({
 
   await expect(page).not.toHaveURL(/collection=/);
   await expect(grid(page).locator("h1")).toHaveText("Coastal Escape");
+});
+
+test("sidebar Library shortcuts turn on the matching chip filters", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await awaitEditor(page);
+
+  // No Imports entry and no Smart Albums section remain.
+  await expect(
+    sidebar(page).getByRole("button", { name: /^Imports/ }),
+  ).toHaveCount(0);
+  await expect(
+    sidebar(page).getByRole("heading", { name: "Smart Albums" }),
+  ).toHaveCount(0);
+  await expect(
+    sidebar(page).getByRole("button", { name: /Landscapes|RAW Photos/ }),
+  ).toHaveCount(0);
+
+  // Favorites turns on the Favorited chip and narrows the grid.
+  await sidebar(page).getByRole("button", { name: /^Favorites/ }).click();
+  await expect(grid(page)).toBeVisible();
+  await expect(grid(page).locator("h1")).toHaveText("Favorites");
+  const favGroup = page.getByRole("group", { name: "Favorite status" });
+  await expect(
+    favGroup.getByRole("button", { name: "Favorited", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(grid(page).locator("p").first()).toContainText("3 photos");
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${COAST_TITLE}` }),
+  ).toHaveCount(0);
+
+  // Recently Edited turns on the Edited chip; the fresh seed edit qualifies.
+  await sidebar(page).getByRole("button", { name: /^Recently Edited/ }).click();
+  await expect(grid(page).locator("h1")).toHaveText("Recently Edited");
+  const editedGroup = page.getByRole("group", { name: "Edited status" });
+  await expect(
+    editedGroup.getByRole("button", { name: "Edited", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    grid(page).getByRole("button", { name: `Edit ${EDITED_TITLE}` }),
+  ).toBeVisible();
+  await expect(grid(page).locator("p").first()).toContainText("1 photo");
+});
+
+test("chip clicks inside Library shortcuts drop back to All Photos", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await awaitEditor(page);
+
+  // Loosening the chip inside Favorites returns to the full library.
+  await sidebar(page).getByRole("button", { name: /^Favorites/ }).click();
+  await expect(grid(page)).toBeVisible();
+  await page
+    .getByRole("group", { name: "Favorite status" })
+    .getByRole("button", { name: "All", exact: true })
+    .click();
+  await expect(grid(page).locator("h1")).toHaveText("All Photos");
+  await expect(
+    sidebar(page).getByRole("button", { name: /All Photos/ }),
+  ).toHaveClass(/is-selected/);
+  await expect(grid(page).locator("p").first()).toContainText("12 photos");
+
+  // Switching chips inside Recently Edited keeps the new filter, not the scope.
+  await sidebar(page).getByRole("button", { name: /^Recently Edited/ }).click();
+  await expect(grid(page).locator("h1")).toHaveText("Recently Edited");
+  await page
+    .getByRole("group", { name: "Edited status" })
+    .getByRole("button", { name: "Unedited", exact: true })
+    .click();
+  await expect(grid(page).locator("h1")).toHaveText("All Photos");
+  await expect(grid(page).locator("p").first()).toContainText("11 photos");
+
+  // Clearing inside a shortcut also returns to the unfiltered library.
+  await sidebar(page).getByRole("button", { name: /^Favorites/ }).click();
+  await expect(grid(page).locator("h1")).toHaveText("Favorites");
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await expect(grid(page).locator("h1")).toHaveText("All Photos");
+  await expect(grid(page).locator("p").first()).toContainText("12 photos");
+  await expect(
+    page
+      .getByRole("group", { name: "Favorite status" })
+      .getByRole("button", { name: "Favorited", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
 });
 
 test("edited chips filter the grid and the filmstrip", async ({ page }) => {

@@ -7,6 +7,8 @@ import type { Album, EditState, Photo, Preset } from "./types.js";
 export interface LibraryPhoto extends Photo {
   missing: boolean;
   edited: boolean;
+  /** ISO timestamp of the last saved non-default edit; null when unedited. */
+  editedAt: string | null;
   edit: EditState;
   /** SHA-256 of the original bytes; the stable identity across moves and reimports. Null for URL photos. */
   hash: string | null;

@@ -23,6 +23,8 @@ export interface Photo {
   missing?: boolean;
   /** Server library only: a non-default edit recipe is stored for this photo. */
   edited?: boolean;
+  /** Server library only: ISO timestamp of the last saved non-default edit. Null/absent when unedited. */
+  editedAt?: string | null;
   /** Server library only: absolute path of a referenced original, when it has one. */
   path?: string | null;
 }
