@@ -127,6 +127,7 @@ img { display: block; }
 .photo-rating .rated { color: #a89a76; }
 .photo-rating > button:hover .rated, .photo-rating > button:hover { color: var(--accent); }
 .photo-rating .icon-button { width: 24px; height: 25px; }
+.photo-rating .photo-remove:hover { color: #f29c97; }
 .heading-divider { height: 12px; width: 1px; background: #39393f; margin: 0 6px 0 8px; }
 .canvas-stage-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
 .canvas-stage { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: auto; }
@@ -400,7 +401,7 @@ img { display: block; }
 .browser-photo-caption > small { color: #767683; font-size: 8px; }
 .browser-favorite { position: absolute; right: 6px; top: 6px; background: #1e1e2460; backdrop-filter: blur(6px); color: #dedee2; opacity: 0; transition: opacity 150ms; }
 .browser-favorite.is-active, .browser-photo:hover .browser-favorite, .browser-favorite:focus-visible { opacity: 1; }
-.browser-remove { position: absolute; left: 6px; top: 6px; background: #1e1e2460; backdrop-filter: blur(6px); color: #dedee2; opacity: 0; transition: opacity 150ms; }
+.browser-remove { position: absolute; right: 6px; bottom: 6px; background: #1e1e2460; backdrop-filter: blur(6px); color: #dedee2; opacity: 0; transition: opacity 150ms; }
 .browser-photo:hover .browser-remove, .browser-remove:focus-visible { opacity: 1; }
 .browser-remove:hover { color: #f29c97; }
 .empty-library { min-height: 300px; height: 65%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; }
