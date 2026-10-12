@@ -115,6 +115,11 @@ Configuration is all environment variables:
 | `PHOTOMATOR_DATA` | `apps/server/data` | Database, previews, and upload staging. |
 | `PHOTOMATOR_LIBRARY` | `~/Pictures/Photomator` | Where uploaded bytes land. |
 | `PHOTOMATOR_ROOTS` | `~` | Colon-separated roots the folder browser and path import may touch. |
+| `PHOTOMATOR_ML_HEAL_STEPS` | `10` | Best (Moebius) diffusion steps, 1–50. Fewer steps is near-linearly faster (~3.7s saved per step on M1 Pro) at some quality cost. |
+| `PHOTOMATOR_ML_THREADS` | ORT default | ONNX intra-op thread override. Unset measured fastest on M1 Pro; set to experiment on other machines. |
+| `PHOTOMATOR_ML_EP` | `cpu` | `coreml` opts Moebius into CoreML, but it measured ~2× slower than CPU on M1 (UNet partitioning overhead). |
+
+Best runs full diffusion on the server CPU (~45s per repair area on M1 Pro: ~4s VAE encode, ~3.7s per denoise step × 9, ~8s VAE decode). While it runs, the terminal shows per-stage timing (`[ml-heal] moebius step 3/9 …`) plus one line per API call, and the repair bar polls live step progress instead of sitting still.
 
 The API contract lives in `packages/core/src/library.ts` (`LibraryPhoto`, `LibrarySnapshot`, `createLibraryClient`), so scripts and alternative clients can share it.
 

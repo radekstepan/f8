@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getMlHealHealth, runRemoteHeal, validateRemoteBody } from "./ml-heal.ts";
+import { defaultMoebiusSteps, getMlHealHealth, resetHealProgress, runRemoteHeal, validateRemoteBody } from "./ml-heal.ts";
 import { createTestContext } from "./fixtures.ts";
 
 function b64(bytes: Uint8Array): string {
@@ -45,6 +45,50 @@ describe("validateRemoteBody", () => {
     expect(validateRemoteBody({ ...base, engine: "moebius" }).ok).toBe(true);
     expect(validateRemoteBody({ ...base }).ok).toBe(true);
     expect(validateRemoteBody({ ...base, engine: "lama-fake" }).ok).toBe(false);
+  });
+});
+
+describe("defaultMoebiusSteps", () => {
+  it("defaults to the preview step count", () => {
+    expect(defaultMoebiusSteps({})).toBe(10);
+  });
+
+  it("honors PHOTOMATOR_ML_HEAL_STEPS inside 1..50", () => {
+    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "6" })).toBe(6);
+    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "1" })).toBe(1);
+    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "50" })).toBe(50);
+  });
+
+  it("falls back on missing or out-of-range values", () => {
+    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "" })).toBe(10);
+    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "0" })).toBe(10);
+    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "51" })).toBe(10);
+    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "fast" })).toBe(10);
+  });
+});
+
+describe("heal progress", () => {
+  it("reports an idle snapshot with no job running", async () => {
+    const ctx = createTestContext();
+    try {
+      resetHealProgress();
+      const response = await ctx.app.request("/api/ml-heal/progress");
+      expect(response.status).toBe(200);
+      const snapshot = (await response.json()) as {
+        active: boolean;
+        engine: null;
+        stage: string;
+        step: number;
+        totalSteps: number;
+      };
+      expect(snapshot.active).toBe(false);
+      expect(snapshot.engine).toBeNull();
+      expect(snapshot.stage).toBe("idle");
+      expect(snapshot.step).toBe(0);
+      expect(snapshot.totalSteps).toBe(0);
+    } finally {
+      ctx.close();
+    }
   });
 });
 

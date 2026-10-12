@@ -88,7 +88,49 @@ export async function runRemoteHeal(
   const timeoutMs = options.timeoutMs ?? (remoteEngine === "lama" ? REMOTE_LAMA_TIMEOUT_MS : ML_HEAL_DIFFUSION_TIMEOUT_MS);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // Diffusion takes ~45s/area on M1: poll the server's live job progress so
+  // the bar moves (step X/N) instead of sitting at "Repairing…" the whole
+  // time. Poll failures never fail the heal — the POST is authoritative.
+  const startProgressPoll = (): (() => void) => {
+    const onProgress = options.onProgress;
+    if (!onProgress) return () => undefined;
+    let stopped = false;
+    const tick = async (): Promise<void> => {
+      if (stopped || controller.signal.aborted) return;
+      try {
+        const snapshot = await fetch("/api/ml-heal/progress", { signal: controller.signal });
+        if (!snapshot.ok) return;
+        const job = (await snapshot.json()) as {
+          active?: unknown;
+          stage?: unknown;
+          step?: unknown;
+          totalSteps?: unknown;
+        };
+        if (stopped || job.active !== true) return;
+        const total = typeof job.totalSteps === "number" && job.totalSteps > 0 ? job.totalSteps : 0;
+        const step = typeof job.step === "number" && job.step >= 0 ? Math.min(job.step, total) : 0;
+        const stage = typeof job.stage === "string" ? job.stage : "";
+        if (total > 0) {
+          onProgress(0.1 + (0.8 * step) / total, `Diffusion step ${Math.min(step + 1, total)} of ${total}…`);
+        } else if (stage === "encode") {
+          onProgress(0.12, "Encoding…");
+        } else if (stage === "decode") {
+          onProgress(0.88, "Decoding…");
+        } else if (stage === "infer") {
+          onProgress(0.4, "Neural fill…");
+        }
+      } catch {
+        // Aborted with the POST, or a transient poll miss — ignore.
+      }
+    };
+    const interval = setInterval(() => void tick(), 750);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  };
   let response: Response;
+  const stopProgressPoll = startProgressPoll();
   try {
     options.onProgress?.(0.1, "Repairing…");
     response = await fetch("/api/ml-heal/inpaint", {
@@ -112,6 +154,7 @@ export async function runRemoteHeal(
     throw new RemoteHealError("Photo server unreachable — start it with yarn dev.", "unreachable");
   } finally {
     clearTimeout(timer);
+    stopProgressPoll();
   }
   if (!response.ok) {
     if (response.status === 503 || response.status === 500) {

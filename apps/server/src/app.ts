@@ -8,7 +8,7 @@ import type { Context } from "hono";
 import { DEFAULT_EDIT } from "@photomator/core";
 import type { EditState, LibraryPhoto } from "@photomator/core";
 import type { ServerConfig } from "./config.ts";
-import { getMlHealHealth, kickEngineReady, runRemoteHeal, validateRemoteBody } from "./ml-heal.ts";
+import { getHealProgress, getMlHealHealth, kickEngineReady, runRemoteHeal, validateRemoteBody } from "./ml-heal.ts";
 import type { RemoteHealEngine } from "./ml-heal.ts";
 import { getStraightenHealth, kickStraightenReady, runStraightenEstimate, validateStraightenBody } from "./straighten-ml.ts";
 import {
@@ -144,9 +144,23 @@ export function createApp(ctx: AppContext): Hono {
     return row ?? c.json({ error: "Photo not found." }, 404);
   };
 
+  // One line per API call so the terminal shows what the server is doing
+  // (long ML heals stay visible instead of looking hung). Skips the hot
+  // progress poll to keep the log readable.
+  app.use("/api/*", async (c, next) => {
+    const startedAt = Date.now();
+    await next();
+    if (c.req.path === "/api/ml-heal/progress") return;
+    console.log(`${c.req.method} ${c.req.path} -> ${c.res.status} (${Date.now() - startedAt}ms)`);
+  });
+
   app.get("/api/health", (c) => c.json({ ok: true }));
 
   app.get("/api/ml-heal/health", async (c) => c.json(await getMlHealHealth(config.dataDir)));
+
+  // Live inference progress for the current heal job (the client polls this
+  // while the inpaint POST is in flight; single-user local server, one job).
+  app.get("/api/ml-heal/progress", (c) => c.json(getHealProgress()));
 
   app.post("/api/ml-heal/warmup", async (c) => {
     // Kick provisioning into the background and return immediately: the

@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
+import { mlRuntimeSummary } from "./ml-heal.ts";
 import { seedIfNeeded } from "./seed.ts";
 import { createStore } from "./store.ts";
 
@@ -29,6 +30,7 @@ const seeded = seedIfNeeded(store);
 const app = createApp({ config, store, roots });
 
 console.log(`Photomator library: ${config.dbPath}`);
+console.log(`ML heal runtime: ${mlRuntimeSummary()}`);
 if (seeded) console.log("Seeded the sample library.");
 if (existsSync(path.join(config.webDistDir, "index.html"))) {
   console.log(`Serving the app from ${config.webDistDir}`);
