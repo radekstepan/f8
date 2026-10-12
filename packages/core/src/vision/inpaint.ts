@@ -4,8 +4,8 @@
 // The mask rasterizer mirrors geometryCanvas exactly: a RetouchPoint's center
 // is (x * width, y * height) and its brush radius is size * width / 2, so the
 // inpainted region aligns with the blur fallback and the on-canvas brush
-// cursor. Only `repair` strokes are rasterized; `clone` strokes always keep
-// the pixel-copy path in geometryCanvas.
+// cursor. Only `repair` strokes are rasterized; degenerate strokes are
+// skipped.
 
 import type { RetouchPoint } from "../types.js";
 import { assertValidImage, type PixelImage } from "./analyze.js";
@@ -68,7 +68,7 @@ export function assertValidMask(mask: RepairMask): void {
   }
 }
 
-/** True when at least one stroke is a repair stroke (clone strokes never inpaint). */
+/** True when at least one repair stroke is present. */
 export function hasRepairStrokes(points: readonly RetouchPoint[]): boolean {
   return points.some((point) => point.kind === "repair");
 }
@@ -78,7 +78,7 @@ export function hasRepairStrokes(points: readonly RetouchPoint[]): boolean {
  * stroke paints a disc whose value is its strength scaled to 0..255; on
  * overlap the strongest stroke wins, so the mask doubles as the blend alpha
  * for compositing (cv.inpaint itself treats any nonzero value as fill region).
- * Clone, degenerate (non-finite, zero-size, zero-strength), and off-canvas
+ * Degenerate (non-finite, zero-size, zero-strength), and off-canvas
  * strokes are skipped; brushes crossing the edge are clamped to the image.
  */
 export function rasterizeRepairMask(

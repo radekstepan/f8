@@ -17,9 +17,13 @@ test("home page loads and renders the photo editor", async ({ page }) => {
   await gotoEditor(page);
 
   // Toolbar (Topbar.tsx) renders one button per tool; Repair is the heal entry.
+  // Order is Adjust first (the default tool), then Repair, Crop, and the
+  // Enhance one-shot action last. Clone was removed.
   const toolbar = page.getByRole("toolbar", { name: "Editing tools" });
   await expect(toolbar.getByRole("button", { name: "Repair", exact: true })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Adjust", exact: true })).toBeVisible();
+  await expect(toolbar.getByRole("button", { name: "Clone", exact: true })).toHaveCount(0);
+  await expect(toolbar.locator("button").first()).toContainText("Adjust");
 
   // PhotoCanvas mounts with an empty retouch state on a fresh seed photo.
   await expect(page.getByTestId("photo-frame")).toBeVisible();
@@ -42,4 +46,21 @@ test("repair tool opens the heal inspector", async ({ page }) => {
   await expect(page.getByTestId("heal-quality-balanced")).toBeVisible();
   await expect(page.getByTestId("brush-size")).toBeVisible();
   await expect(page.getByTestId("retouch-status")).toContainText("No retouching yet");
+});
+
+test("compare is disabled while cropping", async ({ page }) => {
+  await stubLibraryImages(page);
+  await page.goto("/");
+  await resetPhoto(page, PHOTO_ID);
+  await gotoEditor(page);
+
+  await page.getByRole("toolbar", { name: "Editing tools" }).getByRole("button", { name: "Crop", exact: true }).click();
+
+  // Both compare entry points (toolbar + canvas status) are disabled on Crop.
+  await expect(page.locator(".toolbar-actions").getByRole("button", { name: /Compare/ })).toBeDisabled();
+  await expect(page.locator(".canvas-status .compare-button")).toBeDisabled();
+
+  // Back on Adjust, compare works again.
+  await page.getByRole("toolbar", { name: "Editing tools" }).getByRole("button", { name: "Adjust", exact: true }).click();
+  await expect(page.locator(".canvas-status .compare-button")).toBeEnabled();
 });

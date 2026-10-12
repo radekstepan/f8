@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  LEGACY_CLONE_STROKE,
   LEGACY_REPAIR_STROKE,
   groupRetouchStrokes,
   nextRetouchStrokeId,
@@ -28,20 +27,19 @@ describe("groupRetouchStrokes", () => {
     expect(groups[1]?.points).toHaveLength(1);
   });
 
-  it("collapses legacy stamps without a stroke into one group per kind", () => {
+  it("collapses legacy stamps without a stroke into one group", () => {
     const groups = groupRetouchStrokes([
       stamp({ kind: "repair" }),
-      stamp({ kind: "clone" }),
       stamp({ kind: "repair" }),
     ]);
-    expect(groups.map((group) => group.id)).toEqual([LEGACY_REPAIR_STROKE, LEGACY_CLONE_STROKE]);
+    expect(groups.map((group) => group.id)).toEqual([LEGACY_REPAIR_STROKE]);
     expect(groups[0]?.points).toHaveLength(2);
-    expect(groups[1]?.kind).toBe("clone");
+    expect(groups[0]?.kind).toBe("repair");
   });
 
   it("treats non-positive stroke ids as legacy", () => {
     expect(strokeIdForPoint(stamp({ stroke: 0 }))).toBe(LEGACY_REPAIR_STROKE);
-    expect(strokeIdForPoint(stamp({ kind: "clone", stroke: -4 }))).toBe(LEGACY_CLONE_STROKE);
+    expect(strokeIdForPoint(stamp({ stroke: -4 }))).toBe(LEGACY_REPAIR_STROKE);
     expect(strokeIdForPoint(stamp({ stroke: 3 }))).toBe(3);
   });
 });
@@ -49,7 +47,7 @@ describe("groupRetouchStrokes", () => {
 describe("nextRetouchStrokeId", () => {
   it("starts at 1 and never returns a legacy id", () => {
     expect(nextRetouchStrokeId([])).toBe(1);
-    expect(nextRetouchStrokeId([stamp({}), stamp({ kind: "clone" })])).toBe(1);
+    expect(nextRetouchStrokeId([stamp({}), stamp({})])).toBe(1);
   });
 
   it("returns one past the largest positive stroke id", () => {

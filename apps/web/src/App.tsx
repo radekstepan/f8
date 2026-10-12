@@ -20,7 +20,7 @@ const collectionTitles: Record<string, string> = { all: 'All Photos', favorites:
 
 type FolderDialog = { mode: 'import' } | { mode: 'locate'; photoId: string };
 
-const TOOLS: Tool[] = ['adjust', 'crop', 'repair', 'clone'];
+const TOOLS: Tool[] = ['adjust', 'crop', 'repair'];
 
 function initialPhotoId(): string {
   try {
@@ -198,7 +198,7 @@ export default function App() {
     setView('editor');
     setInspectorOpen((current) => window.innerWidth < 760 && next === tool ? !current : true);
     if (window.innerWidth < 760) setSidebarOpen(false);
-    if (next !== 'adjust') { setCompare(false); setShowOriginal(false); }
+    if (next === 'crop') { setCompare(false); setShowOriginal(false); }
   };
 
   // Records the last-used crop ratio as a tool preference (per-photo crop
@@ -294,7 +294,7 @@ export default function App() {
       case 'inspector': setInspectorOpen((current) => !current); break;
       case 'presets': setPresetsOpen((current) => !current); break;
       case 'filmstrip': setFilmstripOpen((current) => !current); break;
-      case 'compare': setCompare((current) => !current); setView('editor'); break;
+      case 'compare': if (tool === 'crop') break; setCompare((current) => !current); setView('editor'); break;
       case 'grid': setView((current) => current === 'editor' ? 'library' : 'editor'); break;
       case 'fit': setZoom(1); break;
       case 'fullscreen': { const showing = sidebarOpen || inspectorOpen; setSidebarOpen(!showing); setInspectorOpen(!showing); break; }
@@ -413,7 +413,7 @@ export default function App() {
   }
 
   return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${inspectorOpen ? 'has-inspector' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importFiles(event.dataTransfer.files); }}>
-    <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
+    <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} presetsOpen={presetsOpen} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
       {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} editedCount={photos.filter((item) => item.edited).length} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} />}
@@ -463,7 +463,7 @@ export default function App() {
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, source: straighten.source, runId: straighten.runId, mlProgress: straighten.mlProgress, mlWarming: straighten.mlWarming, mlNote: straighten.mlNote, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss, onCancelMl: straighten.cancelMl }}
         repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, mlReady: inpaintRepair.mlReady, mlEngine: inpaintRepair.mlEngine, mlWarming: inpaintRepair.mlWarming, onCancelHeal: inpaintRepair.cancelHeal, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
-        onChange={handleEditChange} onTool={selectTool} onReset={() => handleAction('reset')}
+        onChange={handleEditChange} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
         onClose={() => setInspectorOpen(false)}

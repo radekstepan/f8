@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, Bandage, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, FlipHorizontal2, FlipVertical2, Focus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Stamp, Sun, Thermometer, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Bandage, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, FlipHorizontal2, FlipVertical2, Focus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, X } from 'lucide-react';
 import { CROP_RATIOS, ML_HEAL_ENGINE_INFO, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, groupRetouchStrokes, strokeIdForPoint } from '@photomator/core';
 import type { ChangeEdit, EditState, HealQuality, InpaintMethod, MlHealEngine, NumericAdjustment, Photo, Tool, VisionWorkerStatus } from '@photomator/core';
 import type { HistogramData } from './PhotoCanvas.js';
@@ -71,7 +71,7 @@ export interface RepairAssist {
   mlProgress: { fraction: number; stage: string; job?: 'heal' | 'warmup'; areas?: number | null; updatedAt?: number } | null;
   /** Engine readiness from the last warmup/job (serving = real inference, never a fallback). */
   mlReady?: { engine: MlHealEngine; cached: boolean; serving: boolean; updatedAt: number } | null;
-  /** Engine the current ML Heal quality tier resolves to. */
+  /** Engine the current ML Repair quality tier resolves to. */
   mlEngine: MlHealEngine;
   /** True while the current tier is being prefetched; painting is gated. */
   mlWarming?: boolean;
@@ -188,9 +188,9 @@ function StraightenControl({ value, assist, onChange }: { value: number; assist:
 function RepairMethodControl({ assist }: { assist: RepairAssist }) {
   const engineInfo = ML_HEAL_ENGINE_INFO[assist.mlEngine];
   const methodBlurb = assist.method === 'ml-heal'
-    ? `ML heal picks its engine from quality: Balanced runs ${ML_HEAL_ENGINE_INFO.lama.label} (${ML_HEAL_ENGINE_INFO.lama.download}), Best runs ${ML_HEAL_ENGINE_INFO.moebius.label} (${ML_HEAL_ENGINE_INFO.moebius.download}). Painting unlocks when the tier is ready; neural tiers need the photo server.`
+    ? `ML Repair picks its engine from quality: Balanced runs ${ML_HEAL_ENGINE_INFO.lama.label} (${ML_HEAL_ENGINE_INFO.lama.download}), Best runs ${ML_HEAL_ENGINE_INFO.moebius.label} (${ML_HEAL_ENGINE_INFO.moebius.download}). Painting unlocks when the tier is ready; neural tiers need the photo server.`
     : assist.method === 'heal'
-    ? 'Heal copies matching texture from nearby — best for most fixes.'
+    ? 'Repair copies matching texture from nearby — best for most fixes.'
     : assist.method === 'telea'
       ? 'Smooth fill (Telea) is a fast blur-like fill for tiny smooth blemishes.'
       : 'Detail fill (Navier–Stokes) is slower and follows edges — try it when Smooth looks smeary.';
@@ -219,15 +219,15 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
   return <>
     <h4>Reconstruction</h4>
     <div className="segmented-control" role="group" aria-label="Repair reconstruction method" data-testid="repair-method-group">
-      <button data-testid="repair-method-ml-heal" className={assist.method === 'ml-heal' ? 'is-active' : ''} title="ML heal: tiered engines by quality — Balanced neural, Best diffusion" onClick={() => assist.onMethodChange('ml-heal')}>ML Heal</button>
-      <button data-testid="repair-method-heal" className={assist.method === 'heal' ? 'is-active' : ''} title="Heal: copies matching texture from nearby — best for most fixes" onClick={() => assist.onMethodChange('heal')}>Heal</button>
+      <button data-testid="repair-method-ml-heal" className={assist.method === 'ml-heal' ? 'is-active' : ''} title="ML repair: tiered engines by quality — Balanced neural, Best diffusion" onClick={() => assist.onMethodChange('ml-heal')}>ML Repair</button>
+      <button data-testid="repair-method-heal" className={assist.method === 'heal' ? 'is-active' : ''} title="Repair: copies matching texture from nearby — best for most fixes" onClick={() => assist.onMethodChange('heal')}>Repair</button>
       <button data-testid="repair-method-telea" className={assist.method === 'telea' ? 'is-active' : ''} title="Smooth fill (Telea): fast, blur-like fill for tiny smooth blemishes" onClick={() => assist.onMethodChange('telea')}>Smooth</button>
       <button data-testid="repair-method-ns" className={assist.method === 'ns' ? 'is-active' : ''} title="Detail fill (Navier–Stokes): slower, follows edges — try when Smooth looks smeary" onClick={() => assist.onMethodChange('ns')}>Detail</button>
     </div>
     <p className="inspector-note repair-method-blurb">{methodBlurb}</p>
     {(assist.method === 'heal' || assist.method === 'ml-heal') && <>
-      <h4>Heal Quality</h4>
-      <div className="segmented-control" role="group" aria-label="Heal search effort" data-testid="heal-quality-group">
+      <h4>Repair Quality</h4>
+      <div className="segmented-control" role="group" aria-label="Repair search effort" data-testid="heal-quality-group">
         {assist.method !== 'ml-heal' && <button data-testid="heal-quality-fast" className={assist.quality === 'fast' ? 'is-active' : ''} title="Fast: nearby donors only, best for small blemishes" onClick={() => assist.onQualityChange('fast')}>Fast</button>}
         <button data-testid="heal-quality-balanced" className={assist.quality === 'balanced' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('balanced') : 'Balanced: the default search reach and effort'} onClick={() => assist.onQualityChange('balanced')}>Balanced</button>
         <button data-testid="heal-quality-best" className={assist.quality === 'best' ? 'is-active' : ''} title={assist.method === 'ml-heal' ? qualityTitle('best') : 'Best: widest search, slowest — for tricky removals'} onClick={() => assist.onQualityChange('best')}>Best</button>
@@ -237,7 +237,7 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
       {progress && <MlProgressView progress={progress} onCancel={assist.onCancelHeal} />}
       {assist.method === 'ml-heal' && isError && <>
         {assist.mlEngine === 'moebius' && <button className="secondary-button full-width" title="Fall back to the one-pass neural engine" onClick={() => assist.onQualityChange('balanced')}>Try Balanced instead</button>}
-        <button className="secondary-button full-width" title="Drop to the instant classic engine" onClick={() => assist.onMethodChange('heal')}>Use classic Heal instead (instant, no model)</button>
+        <button className="secondary-button full-width" title="Drop to the instant classic engine" onClick={() => assist.onMethodChange('heal')}>Use classic Repair instead (instant, no model)</button>
       </>}
       {assist.method === 'heal' && <>
       <div className="repair-toggle-row" data-testid="seamless-light-row"><span>Seamless light</span><Toggle checked={assist.seamlessLight} onChange={() => assist.onSeamlessLightChange(!assist.seamlessLight)} label="Seamless light adaptation" /></div>
@@ -253,10 +253,10 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
 
 function RetouchGroups({ edit, highlightStroke, onHighlightStroke, onChange }: { edit: EditState; highlightStroke: number | null; onHighlightStroke?: (stroke: number | null) => void; onChange: ChangeEdit }) {
   const groups = useMemo(() => groupRetouchStrokes(edit.retouches), [edit.retouches]);
-  const counters = { repair: 0, clone: 0 };
+  const counters = { repair: 0 };
   const labels = groups.map((group) => {
     counters[group.kind] += 1;
-    return `${group.kind === 'repair' ? 'Repair' : 'Clone'} ${counters[group.kind]}`;
+    return `Repair ${counters[group.kind]}`;
   });
   const clearHighlight = (id: number) => { if (highlightStroke === id) onHighlightStroke?.(null); };
   return <div className="retouch-groups">
@@ -299,7 +299,6 @@ interface InspectorProps {
   highlightStroke?: number | null;
   onHighlightStroke?: (stroke: number | null) => void;
   onChange: ChangeEdit;
-  onTool: (tool: Tool) => void;
   onReset: () => void;
   onAuto: () => void;
   onAutoWhiteBalance: () => void;
@@ -312,7 +311,7 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, highlightStroke = null, onHighlightStroke, onChange, onTool, onReset, onAuto, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, highlightStroke = null, onHighlightStroke, onChange, onReset, onAuto, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
   const [extraSections, setExtraSections] = useState<string[]>([]);
@@ -332,8 +331,8 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   }, []);
 
   const range = (key: NumericAdjustment, label: string, options: Partial<React.ComponentProps<typeof RangeControl>> = {}) => <RangeControl key={key} label={label} value={edit[key]} signed onChange={(value) => onChange({ [key]: value }, key)} {...options} />;
-  const title = tool === 'crop' ? 'Crop & Straighten' : tool === 'repair' ? 'Repair' : tool === 'clone' ? 'Clone' : 'Color Adjustments';
-  const TitleIcon = tool === 'crop' ? Crop : tool === 'repair' ? Bandage : tool === 'clone' ? Stamp : SlidersHorizontal;
+  const title = tool === 'crop' ? 'Crop & Straighten' : tool === 'repair' ? 'Repair' : 'Color Adjustments';
+  const TitleIcon = tool === 'crop' ? Crop : tool === 'repair' ? Bandage : SlidersHorizontal;
   const closeAction = (callback: () => void) => { callback(); setMenu(false); };
   const addSection = (name: string) => {
     setExtraSections((current) => current.includes(name) ? current : [...current, name]);
@@ -388,7 +387,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </AdjustmentSection>
       {extraSections.includes('Black & White') && <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} enabled={edit.blackAndWhite} onToggle={() => onChange({ blackAndWhite: !edit.blackAndWhite })}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>}
       <div className="inspector-end-note"><Circle size={10} />Every change. Always reversible.</div>
-    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onChange({ rotation: (edit.rotation - 90) % 360 })}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onChange({ rotation: (edit.rotation + 90) % 360 })}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onChange={onChange} /> : range('straighten', 'Straighten', { min: -15, max: 15, step: 0.1, suffix: 'deg' })}<button className="secondary-button full-width reset-crop" onClick={() => onChange({ cropRatio: 'Original', rotation: 0, flipH: false, flipV: false, straighten: 0 })}><RotateCcw size={13} />Reset Composition</button><p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <div className="tool-inspector"><div className="tool-intro">{tool === 'repair' ? <Bandage size={30} strokeWidth={1.3} /> : <Stamp size={30} strokeWidth={1.3} />}<h3>{tool === 'repair' ? 'Less distraction. More photo.' : 'A little creative borrowing.'}</h3><p>{tool === 'repair' ? repairAssist ? 'Rebuild small distractions from the surrounding photo.' : 'Gently blend small distractions with a soft retouching brush.' : 'Sample one area of your photo and paint it onto another.'}</p></div><div className="segmented-control"><button className={tool === 'repair' ? 'is-active' : ''} onClick={() => onTool('repair')}>Repair</button><button className={tool === 'clone' ? 'is-active' : ''} onClick={() => onTool('clone')}>Clone</button></div><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} />{tool === 'repair' && repairAssist && <RepairMethodControl assist={repairAssist} />}<p className="inspector-note">{tool === 'clone' ? 'Hold Alt and click to choose a source. Then click and drag to paint. Use Undo to step back.' : repairAssist ? 'Click and drag over distractions to rebuild them. Everything runs on your device — ML Heal uses a local model, Heal rebuilds from surrounding detail.' : 'Click and drag over the photo to apply a local blur. This demo uses browser-based retouching, not AI object removal.'}</p><RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></div>}</div>
+    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onChange({ rotation: (edit.rotation - 90) % 360 })}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onChange({ rotation: (edit.rotation + 90) % 360 })}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onChange={onChange} /> : range('straighten', 'Straighten', { min: -15, max: 15, step: 0.1, suffix: 'deg' })}<button className="secondary-button full-width reset-crop" onClick={() => onChange({ cropRatio: 'Original', rotation: 0, flipH: false, flipV: false, straighten: 0 })}><RotateCcw size={13} />Reset Composition</button><p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <div className="tool-inspector"><div className="tool-intro"><Bandage size={30} strokeWidth={1.3} /><h3>Less distraction. More photo.</h3><p>Rebuild small distractions from the surrounding photo.</p></div><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} />{repairAssist && <RepairMethodControl assist={repairAssist} />}<p className="inspector-note">{repairAssist ? 'Click and drag over distractions to rebuild them. Everything runs on your device — ML Repair uses a local model, Repair rebuilds from surrounding detail.' : 'Click and drag over the photo to apply a local blur. This demo uses browser-based retouching, not AI object removal.'}</p><RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></div>}</div>
     {tool === 'adjust' && <div className="inspector-footer"><button className="add-adjustment" onClick={() => setAddMenu(!addMenu)} aria-expanded={addMenu}><Plus size={15} />Add Adjustment<ChevronDown size={12} /></button>{addMenu && <div className="dropdown-menu add-adjustment-menu" role="menu">{['Black & White'].filter((name) => !extraSections.includes(name)).map((name) => <MenuItem key={name} onClick={() => addSection(name)}>{name}</MenuItem>)}{!extraSections.includes('Black & White') && <div className="menu-separator" />}<MenuItem onClick={() => { onSavePreset(); setAddMenu(false); }}>Save as Preset...</MenuItem></div>}</div>}
   </aside>;
 }

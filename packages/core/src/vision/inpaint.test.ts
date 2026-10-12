@@ -28,10 +28,6 @@ function repair(x: number, y: number, size: number, strength = 100): RetouchPoin
   return { x, y, size, strength, kind: "repair" };
 }
 
-function clone(x: number, y: number): RetouchPoint {
-  return { x, y, size: 0.2, strength: 100, kind: "clone", sourceX: 0.1, sourceY: 0.1 };
-}
-
 function maskedPixels(mask: RepairMask): Array<[number, number, number]> {
   const found: Array<[number, number, number]> = [];
   for (let y = 0; y < mask.height; y += 1) {
@@ -44,13 +40,12 @@ function maskedPixels(mask: RepairMask): Array<[number, number, number]> {
 }
 
 describe("hasRepairStrokes", () => {
-  it("is false for empty and clone-only strokes", () => {
+  it("is false for empty strokes", () => {
     expect(hasRepairStrokes([])).toBe(false);
-    expect(hasRepairStrokes([clone(0.5, 0.5)])).toBe(false);
   });
 
   it("is true when any stroke is a repair", () => {
-    expect(hasRepairStrokes([clone(0.1, 0.1), repair(0.5, 0.5, 0.1)])).toBe(true);
+    expect(hasRepairStrokes([repair(0.5, 0.5, 0.1)])).toBe(true);
   });
 });
 
@@ -106,14 +101,12 @@ describe("rasterizeRepairMask", () => {
     expect(maskedPixels(mask)).toEqual([]);
   });
 
-  it("ignores clone strokes", () => {
-    const mask = rasterizeRepairMask([clone(0.5, 0.5), repair(0.5, 0.5, 0.2, 100)], 10, 10);
-    // The clone stroke at the same spot carries strength 100 too, but with a
-    // different brush (0.2 vs its own size) it would paint a different disc if
-    // it were rasterized; the repair disc alone is the 2x2 block.
+  it("skips degenerate strokes", () => {
+    const mask = rasterizeRepairMask([repair(0.5, 0.5, 0.2, 100)], 10, 10);
+    // The repair disc alone is the 2x2 block.
     expect(maskedPixels(mask)).toHaveLength(4);
-    const cloneOnly = rasterizeRepairMask([clone(0.5, 0.5)], 10, 10);
-    expect(maskedPixels(cloneOnly)).toEqual([]);
+    const empty = rasterizeRepairMask([repair(0.5, 0.5, 0.2, 0)], 10, 10);
+    expect(maskedPixels(empty)).toEqual([]);
   });
 
   it("encodes per-point strength in the mask value, max wins on overlap", () => {
@@ -302,11 +295,10 @@ describe("inpaintWithCv method guard", () => {
 });
 
 describe("inpaintRadiusForStrokes", () => {
-  it("takes the largest repair brush and ignores clones", () => {
+  it("takes the largest repair brush", () => {
     expect(inpaintRadiusForStrokes([repair(0.1, 0.1, 45 / 800), repair(0.5, 0.5, 80 / 800)], 1800)).toBe(
       inpaintRadiusForBrush(80 / 800, 1800),
     );
-    expect(inpaintRadiusForStrokes([clone(0.5, 0.5)], 1800)).toBe(INPAINT_RADIUS_MIN);
     expect(inpaintRadiusForStrokes([], 1800)).toBe(INPAINT_RADIUS_MIN);
   });
 });

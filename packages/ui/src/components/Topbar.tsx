@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { ArrowLeft, Bandage, Check, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Sparkles, Stamp, Undo2 } from 'lucide-react';
+import { ArrowLeft, Bandage, Check, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Sparkles, Undo2 } from 'lucide-react';
 import type { DialogType, Tool, VisionWorkerStatus } from '@photomator/core';
 import { BrandMark, IconButton, MenuItem } from './EditorUI.js';
 
@@ -10,13 +10,14 @@ interface MenuBarProps {
   canUndo: boolean;
   canRedo: boolean;
   canPaste: boolean;
+  compareDisabled?: boolean;
   sidebar: boolean;
   inspector: boolean;
   presets: boolean;
   filmstrip: boolean;
 }
 
-export function MenuBar({ onAction, canUndo, canRedo, canPaste, sidebar, inspector, presets, filmstrip }: MenuBarProps) {
+export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled, sidebar, inspector, presets, filmstrip }: MenuBarProps) {
   const [open, setOpen] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -32,7 +33,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, sidebar, inspect
     Photomator: <>{item('About this demo', 'about')}<div className="menu-separator" />{item('Keyboard Shortcuts', 'shortcuts', '?')}</>,
     File: <>{item('Import Photos...', 'import', 'Ctrl O')}{item('Import from Folder...', 'import-folder', 'Ctrl Shift O')}{item('New Album...', 'album')}<div className="menu-separator" />{item('Export Photo...', 'export', 'Ctrl Shift E')}</>,
     Edit: <>{item('Undo', 'undo', 'Ctrl Z', !canUndo)}{item('Redo', 'redo', 'Ctrl Shift Z', !canRedo)}<div className="menu-separator" />{item('Copy Adjustments', 'copy', 'Ctrl Shift C')}{item('Paste Adjustments', 'paste', 'Ctrl Shift V', !canPaste)}<div className="menu-separator" />{item('Reset All Adjustments', 'reset')}</>,
-    Image: <>{item('Auto Enhance', 'enhance', 'A')}{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<div className="menu-separator" />{item('Compare with Original', 'compare', 'B')}</>,
+    Image: <>{item('Auto Enhance', 'enhance', 'A')}{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<div className="menu-separator" />{item('Compare with Original', 'compare', 'B', compareDisabled)}</>,
     View: <>{item('Show Library', 'sidebar', undefined, false, sidebar)}{item('Show Adjustments', 'inspector', undefined, false, inspector)}{item('Show Presets', 'presets', undefined, false, presets)}{item('Show Filmstrip', 'filmstrip', undefined, false, filmstrip)}<div className="menu-separator" />{item('Photo Browser', 'grid', 'G')}{item('Zoom to Fit', 'fit', '0')}</>,
     Window: <>{item('Focus Mode', 'fullscreen', 'Shift F')}{item('Photo Browser', 'grid')}</>,
     Help: <>{item('Keyboard Shortcuts', 'shortcuts', '?')}{item('About the Kitchen Sink', 'about')}</>,
@@ -106,11 +107,10 @@ interface ToolbarProps {
 
 export function Toolbar({ collectionName, count, tool, enhanced, compare, canUndo, canRedo, libraryView, presetsOpen, onTool, onAction, onDialog, onTogglePresets }: ToolbarProps) {
   const tools = [
-    { id: 'enhance', label: 'Enhance', icon: Sparkles, active: enhanced },
-    { id: 'repair', label: 'Repair', icon: Bandage, active: tool === 'repair' },
-    { id: 'clone', label: 'Clone', icon: Stamp, active: tool === 'clone' },
-    { id: 'crop', label: 'Crop', icon: Crop, active: tool === 'crop' },
     { id: 'adjust', label: 'Adjust', icon: SlidersHorizontal, active: tool === 'adjust' },
+    { id: 'repair', label: 'Repair', icon: Bandage, active: tool === 'repair' },
+    { id: 'crop', label: 'Crop', icon: Crop, active: tool === 'crop' },
+    { id: 'enhance', label: 'Enhance', icon: Sparkles, active: enhanced },
   ];
   return (
     <header className="toolbar">
@@ -137,7 +137,7 @@ export function Toolbar({ collectionName, count, tool, enhanced, compare, canUnd
               className={`tool-button ${active ? 'is-active' : ''} ${id === 'enhance' ? 'enhance-tool' : ''}`}
               aria-label={label}
               aria-pressed={active}
-              title={id === 'enhance' ? 'Auto Enhance (A)' : label}
+              title={id === 'enhance' ? 'Auto Enhance (A) — one-shot, not a tool' : label}
               onClick={() => id === 'enhance' ? onAction('enhance') : onTool(id as Tool)}
             ><Icon size={20} strokeWidth={1.55} /><span>{label}</span></button>
           ))}
@@ -149,7 +149,7 @@ export function Toolbar({ collectionName, count, tool, enhanced, compare, canUnd
       </div>
       <div className="toolbar-actions">
         {onTogglePresets && <IconButton label={presetsOpen ? 'Hide presets' : 'Show presets'} active={presetsOpen} onClick={onTogglePresets}><SlidersHorizontal size={18} strokeWidth={1.6} /></IconButton>}
-        <IconButton label="Compare with original (B)" active={compare} onClick={() => onAction('compare')}><Columns2 size={18} strokeWidth={1.6} /></IconButton>
+        <IconButton label={tool === 'crop' ? 'Compare with original (unavailable while cropping)' : 'Compare with original (B)'} active={compare} disabled={tool === 'crop'} onClick={() => onAction('compare')}><Columns2 size={18} strokeWidth={1.6} /></IconButton>
         <IconButton label="Photo information (I)" onClick={() => onDialog('info')}><Info size={18} strokeWidth={1.6} /></IconButton>
         <button className="export-button" onClick={() => onDialog('export')}><Share size={15} /><span>Export</span></button>
         <IconButton label="Focus mode (Shift F)" className="mobile-focus" onClick={() => onAction('fullscreen')}><Maximize2 size={17} /></IconButton>

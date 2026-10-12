@@ -49,8 +49,6 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const originalRef = useRef<HTMLCanvasElement>(null);
   const painting = useRef(false);
   const points = useRef<RetouchPoint[]>([]);
-  const cloneSource = useRef<{ x: number; y: number } | null>(null);
-  const cloneStart = useRef<{ x: number; y: number } | null>(null);
   const lastStamp = useRef<{ x: number; y: number } | null>(null);
   const strokeCounter = useRef(1);
   const activeStrokeRef = useRef<number | null>(null);
@@ -86,7 +84,6 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   const [split, setSplit] = useState(50);
-  const [sourceSet, setSourceSet] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   /** Repair stroke groups with a heal still in flight (clean canvas + red overlay, never blur). */
   const [pendingRepairIds, setPendingRepairIds] = useState<number[]>([]);
@@ -110,7 +107,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const lastSavedPreviewKey = useRef<string | null>(null);
   /** Bumped on every canvas paint so the idle-save effect re-evaluates. */
   const [paintCount, setPaintCount] = useState(0);
-  const isBrush = tool === 'repair' || tool === 'clone';
+  const isBrush = tool === 'repair';
   /** Mirror of pendingRepairIds for the read-only e2e hook (state is async). */
   const pendingRef = useRef<number[]>([]);
   pendingRef.current = pendingRepairIds;
@@ -139,7 +136,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => { setLoading(true); setError(''); cloneSource.current = null; setSourceSet(false); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src, retry]);
+  useEffect(() => { setLoading(true); setError(''); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src, retry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,8 +241,8 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         featherPx: inpaintRepair?.featherPx,
         areas,
       };
-      // Single clean base for this run: repairs excluded (clone stamps stay),
-      // healed patches composited below before the only paint. One geometry
+      // Single clean base for this run: repairs excluded, healed patches
+      // composited below before the only paint. One geometry
       // pass feeds seeding, partitioning, and rendering alike.
       const baseEditSync = { ...edit, retouches: edit.retouches.filter((point) => point.kind !== 'repair') };
       const paintOriginal = () => {
@@ -581,16 +578,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   };
 
   const stampAt = (point: { x: number; y: number }, size: number) => {
-    const next: RetouchPoint = { ...point, size, strength: brushStrength, kind: tool === 'clone' ? 'clone' : 'repair', stroke: activeStrokeRef.current ?? undefined };
-    if (tool === 'clone' && cloneSource.current && cloneStart.current) {
-      next.sourceX = Math.max(0, Math.min(1, cloneSource.current.x + point.x - cloneStart.current.x));
-      next.sourceY = Math.max(0, Math.min(1, cloneSource.current.y + point.y - cloneStart.current.y));
-    }
+    const next: RetouchPoint = { ...point, size, strength: brushStrength, kind: 'repair', stroke: activeStrokeRef.current ?? undefined };
     points.current = [...points.current, next];
   };
 
   const paint = (event: ReactPointerEvent) => {
-    if (tool === 'clone' && (!cloneSource.current || !cloneStart.current)) return;
     // Coalesced events recover the pointer positions the browser merged
     // between frames, so fast strokes stay continuous.
     const native = event.nativeEvent as PointerEvent & { getCoalescedEvents?: () => PointerEvent[] };
@@ -623,14 +615,12 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     if (!isBrush || compare || showOriginal) return;
     // ML tiers must be warmed before painting: no round cursor, no strokes.
     if (tool === 'repair' && inpaintRepair?.method === 'ml-heal' && inpaintRepair.mlEngine !== 'classic' && inpaintRepair.mlReady === false) return;
-    if (tool === 'clone' && (event.altKey || !cloneSource.current)) { cloneSource.current = position(event); setSourceSet(true); return; }
     points.current = [...edit.retouches];
     painting.current = true;
     const id = Math.max(nextRetouchStrokeId(edit.retouches), strokeCounter.current);
     strokeCounter.current = id + 1;
     activeStrokeRef.current = id;
     setActiveStroke(id);
-    cloneStart.current = position(event);
     lastStamp.current = null;
     event.currentTarget.setPointerCapture(event.pointerId);
     paint(event);
@@ -700,7 +690,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       {showBrushCursor && <div className="brush-cursor" style={{ left: cursor!.x, top: cursor!.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
       {(activePoints.length > 0 || hoverPoints.length > 0) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}</svg>}
     </div></div>
-      {isBrush && <div className="tool-hint">{tool === 'clone' ? sourceSet ? 'Click and drag to clone. Alt-click to change the source.' : 'Click the photo to choose a clone source.' : compare ? 'Comparing — turn off Compare to keep repairing.' : mlRepairWarming ? 'Loading the ML engine… painting unlocks when ready.' : mlRepairBlocked ? 'This ML engine is unavailable — pick Balanced in the inspector.' : 'Click and drag to repair — hover a repair in the list to locate it.'}</div>}
+      {isBrush && <div className="tool-hint">{compare ? 'Comparing — turn off Compare to keep repairing.' : mlRepairWarming ? 'Loading the ML engine… painting unlocks when ready.' : mlRepairBlocked ? 'This ML engine is unavailable — pick Balanced in the inspector.' : 'Click and drag to repair — hover a repair in the list to locate it.'}</div>}
     </div>
     <div className="canvas-status">
       <button className="canvas-dimensions" onClick={onInfo} title="Photo information">
@@ -708,7 +698,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         <span>{photo.width.toLocaleString()} <span className="dimension-x">x</span> {photo.height.toLocaleString()} px</span>
         <span className="dimension-separator" />{Math.round(photo.width * photo.height / 1000000)} MP
       </button>
-      <button className={`compare-button ${compare ? 'is-active' : ''}`} onClick={onCompare} title="Compare with original (B)">
+      <button className={`compare-button ${compare ? 'is-active' : ''}`} onClick={onCompare} disabled={tool === 'crop'} title={tool === 'crop' ? 'Compare is unavailable while cropping' : 'Compare with original (B)'}>
         <Columns2 size={14} /><span>Compare</span><kbd>B</kbd>
       </button>
       <div className="zoom-controls">

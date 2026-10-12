@@ -141,14 +141,8 @@ export function geometryCanvas(image: HTMLImageElement, edit: EditState, maxSize
       output.arc(x, y, radius, 0, Math.PI * 2);
       output.clip();
       output.globalAlpha = point.strength / 100;
-      if (point.kind === 'clone') {
-        const sx = (point.sourceX ?? point.x) * canvas.width;
-        const sy = (point.sourceY ?? point.y) * canvas.height;
-        output.drawImage(source, sx - radius, sy - radius, radius * 2, radius * 2, x - radius, y - radius, radius * 2, radius * 2);
-      } else {
-        output.filter = `blur(${Math.max(2, radius / 3)}px)`;
-        output.drawImage(source, 0, 0);
-      }
+      output.filter = `blur(${Math.max(2, radius / 3)}px)`;
+      output.drawImage(source, 0, 0);
       output.restore();
     }
   }
@@ -237,7 +231,6 @@ export interface RepairInpaintBinding {
  * result back honoring per-stroke strength. The composite mask is feathered
  * so edges leave no seam; for diffusion methods it is also dilated by the
  * same amount as the worker's fill region so fringe reconstruction is kept.
- * Clone strokes are ignored (the caller renders them via geometryCanvas).
  * Returns false when there is nothing to inpaint; transport errors propagate
  * so the caller can fall back to the blur repair.
  */
@@ -340,7 +333,7 @@ async function geometryForExport(
   const runInpaint = repair.runInpaint;
   const clean = geometryCanvas(
     image,
-    { ...edit, retouches: edit.retouches.filter((point) => point.kind === 'clone') },
+    { ...edit, retouches: [] },
     maxSize,
   );
   // Group-overlay path (heal + ml-heal): reusable saved patches composite

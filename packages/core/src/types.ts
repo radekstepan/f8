@@ -33,7 +33,7 @@ export interface Album {
   cover: string;
 }
 
-export type Tool = 'adjust' | 'crop' | 'repair' | 'clone';
+export type Tool = 'adjust' | 'crop' | 'repair';
 export type ViewMode = 'editor' | 'library';
 export type DialogType = 'export' | 'info' | 'shortcuts' | 'about' | 'album' | 'preset' | null;
 
@@ -42,9 +42,7 @@ export interface RetouchPoint {
   y: number;
   size: number;
   strength: number;
-  kind: 'repair' | 'clone';
-  sourceX?: number;
-  sourceY?: number;
+  kind: 'repair';
   /** Paint stroke id: every stamp in one drag shares it. Absent on legacy edits. */
   stroke?: number;
 }
