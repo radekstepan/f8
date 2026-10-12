@@ -6,7 +6,7 @@
 // calls) published by PhotoCanvas (no behavior change, specs read only).
 
 import { expect, type Page } from "@playwright/test";
-import { DEFAULT_EDIT } from "@photomator/core";
+import { DEFAULT_EDIT, type EditState } from "@photomator/core";
 
 export const PHOTO_ID = "photo-1";
 
@@ -260,4 +260,32 @@ export async function setRangeByTestId(page: Page, testId: string, value: number
   const input = page.getByTestId(testId).locator('input[type="number"]');
   await input.fill(String(value));
   await input.press("Enter");
+}
+
+/** Full edit recipe for one photo, straight from the server library. */
+export async function serverEdit(page: Page, photoId: string): Promise<EditState> {
+  const res = await page.request.get("/api/library");
+  expect(res.ok()).toBeTruthy();
+  const body = (await res.json()) as { photos: { id: string; edit: EditState }[] };
+  const photo = body.photos.find((item) => item.id === photoId);
+  if (!photo) throw new Error(`photo ${photoId} missing from library.`);
+  return photo.edit;
+}
+
+/** Set an Adjust-panel RangeControl (no testid) by its accessible value label. */
+export async function adjustSlider(page: Page, label: string, value: number): Promise<void> {
+  const input = page.getByLabel(`${label} value`);
+  await input.fill(String(value));
+  await input.press("Enter");
+}
+
+/** Toolbar undo/redo buttons in the Topbar .history-buttons group. */
+export function historyButton(page: Page, name: "Undo" | "Redo") {
+  return page.locator(".history-buttons").getByRole("button", { name: new RegExp(name) });
+}
+
+/** Reset All Adjustments via the Edit menu (the only reset entry point). */
+export async function resetViaMenu(page: Page): Promise<void> {
+  await page.locator(".menu-bar").getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Reset All Adjustments" }).click();
 }

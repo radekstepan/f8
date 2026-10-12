@@ -144,7 +144,7 @@ export function Toolbar({ collectionName, count, tool, enhanced, compare, canUnd
         </div>
         <div className="history-buttons">
           <IconButton label="Undo (Ctrl Z)" disabled={!canUndo} onClick={() => onAction('undo')}><Undo2 size={18} /></IconButton>
-          <IconButton label="Redo (Ctrl Shift Z)" disabled={!canRedo} onClick={() => onAction('redo')}><Redo2 size={18} /></IconButton>
+          <IconButton label="Redo (Ctrl Shift Z, Ctrl Y)" disabled={!canRedo} onClick={() => onAction('redo')}><Redo2 size={18} /></IconButton>
         </div>
       </div>
       <div className="toolbar-actions">

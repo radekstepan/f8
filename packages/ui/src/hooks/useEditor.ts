@@ -2,11 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeWhiteBalanceAuto, decodeDownsampled } from '@photomator/core';
 import type { EditState, HistoryState, Preset } from '@photomator/core';
 
-const initialHistory = (id: string): HistoryState => ({
-  past: id === 'photo-1' ? [{ ...DEFAULT_EDIT }] : [],
-  present: { ...(id === 'photo-1' ? INITIAL_EDIT : DEFAULT_EDIT) },
+const initialHistory = (_id?: string): HistoryState => ({
+  past: [],
+  present: { ...DEFAULT_EDIT },
   future: [],
 });
+
+/** Merge keys for heal strokes bypass the time window: one stroke id = one undo step. */
+const STICKY_MERGE_PREFIX = 'retouch-stroke:';
+const MERGE_WINDOW_MS = 700;
+
+function isDefaultEdit(edit: EditState): boolean {
+  const { retouches, ...rest } = edit;
+  const { retouches: _base, ...base } = DEFAULT_EDIT;
+  return retouches.length === 0 && JSON.stringify(rest) === JSON.stringify(base);
+}
 
 export interface EditorPersistence {
   /** Seed from the server library; applied once when it arrives. */
@@ -56,9 +66,15 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     timers.current[id] = setTimeout(() => persist(id, present), 500);
   }, []);
 
+  const endMerge = useCallback(() => {
+    lastChange.current.key = '';
+  }, []);
+
   const change = useCallback((patch: Partial<EditState>, mergeKey = '') => {
     const now = Date.now();
-    const merge = Boolean(mergeKey && lastChange.current.key === mergeKey && lastChange.current.photoId === photoId && now - lastChange.current.time < 700);
+    const sticky = mergeKey.startsWith(STICKY_MERGE_PREFIX);
+    const sameGesture = Boolean(mergeKey && lastChange.current.key === mergeKey && lastChange.current.photoId === photoId);
+    const merge = sticky ? sameGesture : Boolean(sameGesture && now - lastChange.current.time < MERGE_WINDOW_MS);
     lastChange.current = { key: mergeKey, photoId, time: now };
     setHistories((all) => {
       const current = all[photoId] || initialHistory(photoId);
@@ -102,7 +118,11 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     change({ ...DEFAULT_EDIT, ...preset.values, rotation, flipH, flipV, straighten, cropRatio, retouches, preset: preset.name });
   }, [change, history.present]);
 
-  const reset = useCallback(() => change({ ...DEFAULT_EDIT }), [change]);
+  const reset = useCallback(() => {
+    if (isDefaultEdit(history.present)) return false;
+    change({ ...DEFAULT_EDIT });
+    return true;
+  }, [change, history.present]);
   const autoEnhance = useCallback((src?: string) => {
     const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
     const geometry = { rotation, flipH, flipV, straighten, cropRatio, retouches };
@@ -141,5 +161,5 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     })();
   }, [change]);
 
-  return { edit: history.present, ready: seedApplied, histories, change, undo, redo, reset, autoEnhance, autoWhiteBalance, autoLightness, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
+  return { edit: history.present, ready: seedApplied, histories, change, endMerge, undo, redo, reset, autoEnhance, autoWhiteBalance, autoLightness, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
 }

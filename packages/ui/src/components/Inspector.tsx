@@ -157,7 +157,9 @@ function StraightenControl({ value, assist, onChange }: { value: number; assist:
       const key = `${runId}:${readyAngle}`;
       if (appliedKey.current !== key) {
         appliedKey.current = key;
-        onChange({ straighten: readyAngle }, 'straighten');
+        // Discrete step: Auto must stay independently undoable and never
+        // coalesce with adjacent manual slider drags sharing 'straighten'.
+        onChange({ straighten: readyAngle });
       }
     }
   }, [assist.state, readyAngle, runId, onChange]);
@@ -178,7 +180,7 @@ function StraightenControl({ value, assist, onChange }: { value: number; assist:
       {suggestion.confidence < STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD && <p className="inspector-note">Low confidence — no clear horizon found. Adjust the slider or revert below.</p>}
       {assist.mlNote && <p className="inspector-note">{assist.mlNote}</p>}
       <div className="suggestion-actions">
-        {snapshot !== null && <button className="secondary-button" title={`Restore straighten to ${formatAngle(snapshot)}`} onClick={() => { onChange({ straighten: snapshot }, 'straighten'); assist.onDismiss(); }}>Revert</button>}
+        {snapshot !== null && <button className="secondary-button" title={`Restore straighten to ${formatAngle(snapshot)}`} onClick={() => { onChange({ straighten: snapshot }); assist.onDismiss(); }}>Revert</button>}
         <button className="secondary-button" onClick={assist.onDismiss}>Dismiss</button>
       </div>
     </div>}

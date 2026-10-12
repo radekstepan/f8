@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { PRESETS } from '@photomator/core';
+import { PRESETS, createLibraryClient, groupRetouchStrokes } from '@photomator/core';
 import { RAW_ACCEPT } from '@photomator/core';
 import { useEditor, useLibrary } from '@photomator/ui';
 import type { DialogType, EditState, Tool, ViewMode } from '@photomator/core';
@@ -330,7 +330,18 @@ export default function App() {
       case 'album': setDialog('album'); break;
       case 'undo': editor.undo(); break;
       case 'redo': editor.redo(); break;
-      case 'reset': editor.reset(); notify('Adjustments reset. Your original is unchanged.'); break;
+      case 'reset': {
+        if (!photo) break;
+        const groups = groupRetouchStrokes(editor.edit.retouches);
+        const changed = editor.reset();
+        // Deterministic overlay purge: the canvas orphan-sweep only runs on
+        // the next paint, so a reset-then-close would leak server files.
+        for (const group of groups) {
+          void createLibraryClient().deleteHealOverlay(photo.id, group.id).catch(() => undefined);
+        }
+        notify(changed ? 'Adjustments reset. Your original is unchanged.' : 'Already showing the original — nothing to reset.');
+        break;
+      }
       case 'copy': copyAdjustments(); break;
       case 'paste': pasteAdjustments(); break;
       case 'enhance': editor.autoEnhance(photo?.src); setView('editor'); break;
@@ -361,7 +372,7 @@ export default function App() {
       const command = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
       if (command) {
-        const shortcut = key === 'z' ? event.shiftKey ? 'redo' : 'undo' : key === 'o' ? event.shiftKey ? 'import-folder' : 'import' : event.shiftKey && key === 'e' ? 'export' : event.shiftKey && key === 'c' ? 'copy' : event.shiftKey && key === 'v' ? 'paste' : null;
+        const shortcut = key === 'z' ? event.shiftKey ? 'redo' : 'undo' : key === 'y' && !event.shiftKey ? 'redo' : key === 'o' ? event.shiftKey ? 'import-folder' : 'import' : event.shiftKey && key === 'e' ? 'export' : event.shiftKey && key === 'c' ? 'copy' : event.shiftKey && key === 'v' ? 'paste' : null;
         if (shortcut) { event.preventDefault(); actionRef.current(shortcut); }
         return;
       }
@@ -487,7 +498,7 @@ export default function App() {
                 highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
                 onZoom={setZoom} onCompare={() => setCompare(!compare)}
                 onFavorite={() => toggleFavorite()} onRating={setRating}
-                onInfo={() => setDialog('info')} onChange={editor.change} onHistogram={setHistogram}
+                onInfo={() => setDialog('info')} onChange={editor.change} onEndMerge={editor.endMerge} onHistogram={setHistogram}
               />
             )}
             {presetsOpen && <PresetStrip

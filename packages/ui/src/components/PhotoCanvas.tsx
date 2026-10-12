@@ -39,10 +39,11 @@ interface PhotoCanvasProps {
   onRating: (rating: number) => void;
   onInfo: () => void;
   onChange: ChangeEdit;
+  onEndMerge?: () => void;
   onHistogram: (data: HistogramData) => void;
 }
 
-export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, brushSize, brushStrength, inpaintRepair, highlightStroke = null, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onInfo, onChange, onHistogram }: PhotoCanvasProps) {
+export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, brushSize, brushStrength, inpaintRepair, highlightStroke = null, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -174,6 +175,14 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         }
         return;
       }
+      // Best-effort: drop server overlays for deleted strokes. Safe to call
+      // from any branch — only entries with no live stroke are deleted.
+      const sweepOrphanOverlays = (live: Set<number>) => {
+        const orphans = overlayStore.current.filter((entry) => !live.has(entry.groupId));
+        if (!orphans.length) return;
+        overlayStore.current = overlayStore.current.filter((entry) => live.has(entry.groupId));
+        for (const orphan of orphans) void overlayClient.deleteHealOverlay(photo.id, orphan.groupId).catch(() => undefined);
+      };
       // First paint waits for saved work: no clean flash, no pop-in. Photos
       // without repairs skip the wait (nothing to composite, and an offline
       // hang must never block them).
@@ -190,9 +199,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
           for (const entry of overlayStore.current) merged.set(entry.groupId, entry);
           overlayStore.current = [...merged.values()];
         }
+        sweepOrphanOverlays(new Set(repairsAtStart.map((point) => strokeIdForPoint(point))));
       } else if (overlayPromise.current) {
         void overlayPromise.current.then((patches) => {
           if (!cancelled && patches.length && !overlayStore.current.length) overlayStore.current = patches;
+          if (!cancelled) sweepOrphanOverlays(new Set());
         }).catch(() => undefined);
       }
       if (cancelled || repairGeneration.current !== generation || !canvasRef.current || !originalRef.current) return;
@@ -306,12 +317,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
               healCache.current.set(group.id, { signature: signatureForHealGroup(group, syncParams), x0: overlay.x0, y0: overlay.y0, width: overlay.width, height: overlay.height, data: overlay.data.slice() });
             }
             // Best-effort: drop server overlays for deleted strokes.
-            const liveSync = new Set(syncGroups.map((group) => group.id));
-            const orphansSync = overlayStore.current.filter((entry) => !liveSync.has(entry.groupId));
-            if (orphansSync.length) {
-              overlayStore.current = overlayStore.current.filter((entry) => liveSync.has(entry.groupId));
-              for (const orphan of orphansSync) void overlayClient.deleteHealOverlay(photo.id, orphan.groupId).catch(() => undefined);
-            }
+            sweepOrphanOverlays(new Set(syncGroups.map((group) => group.id)));
             const syncPart = partitionHealGroups(repairs, healCache.current, syncParams, syncWidth, syncHeight);
             const syncPatches = syncPart.valid.flatMap((group) => {
               const entry = healCache.current.get(group.id);
@@ -334,6 +340,22 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
             finishPaint();
             if (!syncPart.dirty.length) {
               needsQueue = false;
+              // Undo/redo can restore strokes from the in-memory cache after
+              // their server overlays were purged as orphans: re-persist the
+              // missing ones so a reload never reheals finished work.
+              const storedSync = new Set(overlayStore.current.map((entry) => entry.groupId));
+              for (const group of syncPart.valid) {
+                if (storedSync.has(group.id)) continue;
+                const patch = healCache.current.get(group.id);
+                if (!patch) continue;
+                overlayStore.current.push({ ...patch, data: patch.data.slice(), groupId: group.id, geometryKey: syncParams.geometryKey, canvasWidth: syncWidth, canvasHeight: syncHeight });
+                storedSync.add(group.id);
+                await overlayClient.saveHealOverlay(photo.id, group.id, overlayBodyFromPatch(patch, { geometryKey: syncParams.geometryKey, canvasWidth: syncWidth, canvasHeight: syncHeight, method, quality: syncParams.quality, featherPx: syncParams.featherPx })).catch((reason: unknown) => {
+                  if (reason instanceof LibraryError && reason.status >= 400 && reason.status < 500) {
+                    console.warn(`[heal] Overlay re-persist rejected for group ${group.id}: ${reason.message}`);
+                  }
+                });
+              }
               if (syncPatches.length) maybeSavePreview(runKey);
             }
           } else {
@@ -356,6 +378,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         setPendingRepairIds((prev) => (prev.length === allIds.length && prev.every((id) => allIds.includes(id)) ? prev : allIds));
         finishPaint();
       } else {
+        // Undo/reset/clear-all land here with zero repairs, and the heal
+        // branches above never run to sweep — drop orphan overlays now so
+        // the server never keeps pixels for strokes that no longer exist.
+        // With live repairs (e.g. no repair method bound) this is a noop.
+        sweepOrphanOverlays(new Set(edit.retouches.filter((point) => point.kind === 'repair').map((point) => strokeIdForPoint(point))));
         renderBase(geometryCanvas(image, edit));
         paintOriginal();
         setPendingRepairIds((prev) => (prev.length ? [] : prev));
@@ -608,7 +635,9 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       }
       lastStamp.current = point;
     }
-    onChange({ retouches: points.current }, 'retouch-stroke');
+    // Sticky per-stroke merge key: the whole drag is one undo step regardless
+    // of duration, and consecutive strokes never coalesce (unique ids).
+    onChange({ retouches: points.current }, `retouch-stroke:${activeStrokeRef.current ?? 0}`);
   };
 
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -630,6 +659,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     painting.current = false;
     activeStrokeRef.current = null;
     setActiveStroke(null);
+    onEndMerge?.();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 

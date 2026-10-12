@@ -97,7 +97,7 @@ test("failed tier surfaces a persistent error with fallbacks", async ({ page }) 
   // Recovery paths are offered in place.
   await expect(page.getByRole("button", { name: "Try Balanced instead" })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Use classic Heal instead (instant, no model)" }),
+    page.getByRole("button", { name: "Use classic Repair instead (instant, no model)" }),
   ).toBeVisible();
 
   // Switching tiers clears the stale Moebius error; Balanced heals cleanly.
