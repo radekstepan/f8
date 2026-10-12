@@ -2,8 +2,10 @@ import exifr from "exifr";
 
 // Camera RAW extensions accepted at import. The server decodes these at
 // full sensor resolution (LibRaw); there is intentionally no embedded-JPEG
-// fallback — a file that cannot be decoded fails its import loudly instead
-// of entering the library as a misleading low-res preview.
+// fallback at import — a file that cannot be decoded fails loudly instead
+// of entering the library as a misleading low-res preview. The embedded
+// preview IS used for grid thumbnails (see extractEmbeddedJpeg), where a
+// small fast image is exactly what the UI wants.
 export const RAW_EXTENSIONS = [
   "3fr", "arw", "cr2", "cr3", "crw", "dcr", "dng", "erf", "fff",
   "iiq", "k25", "kdc", "mef", "mos", "mrw", "nef", "nrw", "orf",
@@ -56,6 +58,53 @@ function isJpegFilename(filename: string): boolean {
 export interface ImportSelection<T> {
   files: T[];
   suppressedSidecars: number;
+}
+
+// Per-request import cap shared by client batching and the server scan loop,
+// so both sides agree on where "Stopped at the per-import limit" lands.
+export const MAX_IMPORTS_PER_REQUEST = 200;
+
+export interface ImportProgress {
+  done: number;
+  total: number;
+}
+
+// Whole-percent completion, clamped to 0-100. Unknown or empty totals read
+// as 0 so callers can render an indeterminate state instead of NaN.
+export function importPercent(done: number, total: number): number {
+  if (!Number.isFinite(done) || !Number.isFinite(total) || total <= 0 || done <= 0) return 0;
+  return Math.min(100, Math.floor((done / total) * 100));
+}
+
+// Persistent status line for bulk imports: file counts plus a % estimate.
+// Unknown totals collapse to a bare label (folder scans report one request).
+export function formatImportProgress(done: number, total: number): string {
+  if (!Number.isFinite(total) || total <= 0) return "Importing…";
+  const clamped = Math.max(0, Math.min(Number.isFinite(done) ? Math.floor(done) : 0, Math.floor(total)));
+  return `Importing ${clamped} of ${Math.floor(total)} (${importPercent(clamped, total)}%)…`;
+}
+
+export interface FileImportSummary {
+  imported: number;
+  deduplicated: number;
+  failed: number;
+  suppressedSidecars: number;
+  truncated: number;
+}
+
+// Final summary once a file-batch import settles. Sentences appear only for
+// nonzero buckets; an empty batch reports "Nothing to import."
+export function formatUploadSummary(summary: FileImportSummary): string {
+  const notes = [
+    summary.imported ? `${summary.imported} ${summary.imported === 1 ? "photo" : "photos"} imported.` : "",
+    summary.deduplicated ? `${summary.deduplicated} ${summary.deduplicated === 1 ? "was" : "were"} already in your library.` : "",
+    summary.suppressedSidecars
+      ? `${summary.suppressedSidecars} JPEG sidecar${summary.suppressedSidecars === 1 ? " was" : "s were"} skipped: the RAW original was kept.`
+      : "",
+    summary.failed ? `${summary.failed} could not be imported.` : "",
+    summary.truncated ? "Stopped at the per-import limit; run it again for the rest." : "",
+  ];
+  return notes.filter(Boolean).join(" ") || "Nothing to import.";
 }
 
 // Filter dropped/picked files down to importable photos. When a RAW file

@@ -48,6 +48,22 @@ test("repair tool opens the heal inspector", async ({ page }) => {
   await expect(page.getByTestId("retouch-status")).toContainText("No retouching yet");
 });
 
+test("crop view has no Reset Composition button; reset stays in options menu", async ({ page }) => {
+  await stubLibraryImages(page);
+  await page.goto("/");
+  await resetPhoto(page, PHOTO_ID);
+  await gotoEditor(page);
+
+  await page.getByRole("toolbar", { name: "Editing tools" }).getByRole("button", { name: "Crop", exact: true }).click();
+
+  // Reset Composition was removed from the Crop inspector body.
+  await expect(page.getByRole("button", { name: "Reset Composition" })).toHaveCount(0);
+
+  // Reset remains available via the inspector "..." options menu.
+  await page.getByRole("button", { name: "Adjustment options" }).click();
+  await expect(page.getByRole("menuitem", { name: "Reset All Adjustments" })).toBeVisible();
+});
+
 test("compare is disabled while cropping", async ({ page }) => {
   await stubLibraryImages(page);
   await page.goto("/");

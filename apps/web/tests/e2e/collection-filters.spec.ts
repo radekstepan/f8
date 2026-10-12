@@ -3,9 +3,10 @@
 // Locks two behaviors (App.tsx + PhotoStrips.tsx):
 //   - collection inference: the open photo decides the collection —
 //     reloading on a photo highlights that photo's album in the sidebar
-//     and filmstrip, the URL never carries a collection (stale
+//     and filmstrip, the editor URL never carries a collection (stale
 //     ?collection= params are ignored and stripped), and sidebar clicks
-//     switch the grid without touching the URL.
+//     switch the grid to that album's ?album= URL (deep-linkable, and
+//     Back returns to it).
 //   - library edited/favorite chip filters: they narrow the grid and the
 //     filmstrip (shared filteredPhotos), combine, clear, and empty-state.
 //   - Library sidebar shortcuts: Favorites and Recently Edited turn on the
@@ -91,7 +92,7 @@ test("reload on a coast photo highlights Coastal Escape in sidebar and filmstrip
   await page.goto("/?photo=photo-9");
   await awaitEditor(page);
 
-  // The collection is inferred, never deep-linked.
+  // The collection is inferred from the photo, never in the editor URL.
   await expect(page).not.toHaveURL(/collection=/);
   await expect(
     sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
@@ -134,7 +135,7 @@ test("stale collection param is ignored and stripped", async ({
   await expect(filmstrip(page).locator("h2")).toHaveText("Coastal Escape");
 });
 
-test("sidebar album click switches the grid without touching the URL", async ({
+test("sidebar album click switches the grid to that album's URL", async ({
   page,
 }) => {
   await page.goto("/?photo=photo-1");
@@ -142,8 +143,47 @@ test("sidebar album click switches the grid without touching the URL", async ({
 
   await sidebar(page).getByRole("button", { name: /Coastal Escape/ }).click();
 
-  await expect(page).not.toHaveURL(/collection=/);
+  // In an album the URL shows the album, not the stale photo.
+  await expect(grid(page)).toBeVisible();
   await expect(grid(page).locator("h1")).toHaveText("Coastal Escape");
+  await expect(page).toHaveURL(/album=coast/);
+  await expect(page).not.toHaveURL(/photo=/);
+});
+
+test("album URL deep-links the grid and survives reload", async ({
+  page,
+}) => {
+  await page.goto("/?album=coast");
+  await expect(grid(page)).toBeVisible({ timeout: 20_000 });
+
+  await expect(grid(page).locator("h1")).toHaveText("Coastal Escape");
+  await expect(
+    sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
+  ).toHaveClass(/is-selected/);
+
+  await page.reload();
+  await expect(grid(page)).toBeVisible({ timeout: 20_000 });
+  await expect(grid(page).locator("h1")).toHaveText("Coastal Escape");
+  await expect(page).toHaveURL(/album=coast/);
+});
+
+test("back returns from a photo to the album URL", async ({ page }) => {
+  await page.goto("/?photo=photo-1");
+  await awaitEditor(page);
+
+  await sidebar(page).getByRole("button", { name: /Coastal Escape/ }).click();
+  await expect(grid(page)).toBeVisible();
+  await expect(page).toHaveURL(/album=coast/);
+
+  await grid(page).getByRole("button", { name: `Edit ${COAST_TITLE}` }).click();
+  await awaitEditor(page);
+  await expect(page).toHaveURL(/photo=photo-9/);
+
+  await page.goBack();
+  await expect(grid(page)).toBeVisible();
+  await expect(grid(page).locator("h1")).toHaveText("Coastal Escape");
+  await expect(page).toHaveURL(/album=coast/);
+  await expect(page).not.toHaveURL(/photo=/);
 });
 
 test("sidebar Library shortcuts turn on the matching chip filters", async ({

@@ -1,5 +1,5 @@
 import { isNeutralEdit, renderAdjustedPixels } from './adjustments.js';
-import { CROP_RATIOS } from './data.js';
+import { CROP_RATIOS, DEFAULT_EDIT } from './data.js';
 import type { EditState, RetouchPoint } from './types.js';
 import type { PixelImage } from './vision/analyze.js';
 import type { HealProgress, HealQuality } from './vision/heal.js';
@@ -90,6 +90,29 @@ export function getPhotoFilter(edit: EditState): string {
   const hue = (edit.whiteBalanceEnabled ? edit.tint / 4 - warmth * 24 : 0) + (edit.colorEnabled ? edit.hue : 0);
   const detailContrast = edit.detailsEnabled ? edit.clarity / 350 + edit.sharpness / 700 : 0;
   return `brightness(${brightness}) contrast(${Math.max(0.05, contrast + detailContrast)}) saturate(${saturation}) sepia(${Math.max(0, warmth)}) hue-rotate(${hue + Math.min(0, warmth) * 50}deg) grayscale(${edit.blackAndWhite ? 1 : 0})`;
+}
+
+// Identity filter string for the default recipe, computed once: thumbnails
+// whose recipe renders identically to the original get no inline style.
+const DEFAULT_PHOTO_FILTER = getPhotoFilter(DEFAULT_EDIT);
+
+/**
+ * CSS filter making an album-grid or filmstrip thumbnail approximate the
+ * photo's latest edits (the same approximation as the preset strip and the
+ * export preview). The live session edit wins over the last persisted
+ * recipe, so a thumbnail never lags the save debounce; geometry (crop,
+ * rotation, straighten, flips) and repair strokes have no CSS equivalent
+ * and are not reflected. Returns undefined when the thumbnail matches the
+ * original, so callers render a plain <img> with no style cost.
+ */
+export function thumbnailFilterForPhoto(
+  photo: { edit?: EditState | null },
+  liveEdit?: EditState | null,
+): string | undefined {
+  const edit = liveEdit ?? photo.edit ?? undefined;
+  if (!edit) return undefined;
+  const filter = getPhotoFilter(edit);
+  return filter === DEFAULT_PHOTO_FILTER ? undefined : filter;
 }
 
 // The input image is already upright (orientation 1): imports are decoded

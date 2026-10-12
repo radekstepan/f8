@@ -289,6 +289,25 @@ describe("routes", () => {
     expect((await json<LibrarySnapshot>(await ctx.app.request("/api/library"))).photos).toHaveLength(0);
   });
 
+  it("404s deleting an unknown or already-removed photo", async () => {
+    expect((await ctx.app.request("/api/photos/does-not-exist", { method: "DELETE" })).status).toBe(404);
+
+    const file = path.join(ctx.dir, "twice.bmp");
+    await fs.writeFile(file, makeBmp(4, 4));
+    const report = await json<ImportReport>(
+      await ctx.app.request("/api/imports/by-path", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paths: [file] }),
+      }),
+    );
+    const id = report.imported[0]?.id as string;
+    expect((await ctx.app.request(`/api/photos/${id}`, { method: "DELETE" })).status).toBe(200);
+    expect((await ctx.app.request(`/api/photos/${id}`, { method: "DELETE" })).status).toBe(404);
+    // The original survives even a repeated delete attempt.
+    expect(await fs.stat(file).then(() => true)).toBe(true);
+  });
+
   it("manages albums without orphaning their photos", async () => {
     const created = await json<{ album: { id: string; name: string } }>(
       await ctx.app.request("/api/albums", {

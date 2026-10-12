@@ -22,7 +22,9 @@ import { BrowseError, browse } from "./fs-browse.ts";
 import { ImportError, importUpload, scanPaths } from "./importer.ts";
 import type { ImportOutcome } from "./importer.ts";
 import type { PhotoRow, Store, StoredEdit } from "./store.ts";
-import type { DecodeRawFullRes } from "./raw-decode.ts";
+import type { DecodeRawFullRes, RawDecodeDeps } from "./raw-decode.ts";
+import { defaultToolDeps } from "./raw-decode.ts";
+import { ensureThumb, thumbPathFor } from "./thumbs.ts";
 
 export interface AppContext {
   config: ServerConfig;
@@ -31,6 +33,8 @@ export interface AppContext {
   // Full-res RAW decode override; undefined means the LibRaw toolchain.
   // Tests inject a stub so route tests never depend on system binaries.
   decodeRaw?: DecodeRawFullRes;
+  // Encoder toolchain for rendered-image thumbnails; same deal as decodeRaw.
+  thumbDeps?: RawDecodeDeps;
 }
 
 const IMAGE_MIME: Record<string, string> = {
@@ -80,7 +84,9 @@ function toApiPhoto(row: PhotoRow, edit: StoredEdit): LibraryPhoto {
     name: row.filename,
     title: row.title,
     src: file ? endpoint : (row.url ?? ""),
-    thumbnail: file ? endpoint : (row.thumbnail_url ?? row.url ?? ""),
+    // Grids and the filmstrip read the small cached thumb (embedded RAW
+    // preview or downscaled render); the editor keeps full-res src.
+    thumbnail: file ? `/api/photos/${row.id}/thumb` : (row.thumbnail_url ?? row.url ?? ""),
     albumId: row.album_id,
     // Legacy rows stored auto-generated "Imported from ..." provenance here;
     // everything comes from this device, so only real locations are served.
@@ -314,16 +320,9 @@ export function createApp(ctx: AppContext): Hono {
     return existsSync(row.path) ? row.path : null;
   };
 
-  app.get("/api/photos/:id/file", async (c) => {
-    const found = photoOr404(c, c.req.param("id"));
-    if (found instanceof Response) return found;
-    if (found.kind === "url") {
-      if (!found.url) return c.json({ error: "Photo not found." }, 404);
-      return c.redirect(found.url, 302);
-    }
-    if (isMissing(found)) {
-      return c.json({ error: "The original file is missing. Reimport it to relink.", missing: true }, 404);
-    }
+  // Full display bytes for a file row: the decoded preview for RAW, the
+  // referenced original otherwise. Shared by /file and the /thumb fallback.
+  const serveDisplayBytes = async (c: Context, found: PhotoRow): Promise<Response> => {
     const file = displayPath(found);
     if (!file) return c.json({ error: "The preview is missing." }, 404);
     // Previews are content-addressed and immutable; referenced originals can
@@ -338,6 +337,52 @@ export function createApp(ctx: AppContext): Hono {
       ETag: `"${found.mtime}-${found.file_size}"`,
       "Cache-Control": "private, max-age=0, must-revalidate",
     });
+  };
+
+  app.get("/api/photos/:id/file", async (c) => {
+    const found = photoOr404(c, c.req.param("id"));
+    if (found instanceof Response) return found;
+    if (found.kind === "url") {
+      if (!found.url) return c.json({ error: "Photo not found." }, 404);
+      return c.redirect(found.url, 302);
+    }
+    if (isMissing(found)) {
+      return c.json({ error: "The original file is missing. Reimport it to relink.", missing: true }, 404);
+    }
+    return serveDisplayBytes(c, found);
+  });
+
+  // Small grid/filmstrip bytes: the embedded RAW preview or a downscaled
+  // render, generated lazily and cached by hash. Anything the thumbnailer
+  // cannot handle (missing encoder, CR3, corrupt file) falls back to the
+  // display bytes, so /thumb never 404s a photo /file would serve.
+  app.get("/api/photos/:id/thumb", async (c) => {
+    const found = photoOr404(c, c.req.param("id"));
+    if (found instanceof Response) return found;
+    if (found.kind === "url") {
+      if (!found.thumbnail_url && !found.url) return c.json({ error: "Photo not found." }, 404);
+      return c.redirect((found.thumbnail_url ?? found.url) as string, 302);
+    }
+    if (isMissing(found) || !found.path) {
+      return c.json({ error: "The original file is missing. Reimport it to relink.", missing: true }, 404);
+    }
+    if (found.hash) {
+      const thumb = await ensureThumb({
+        absPath: found.path,
+        raw: found.raw === 1,
+        hash: found.hash,
+        previewsDir: config.previewsDir,
+        tmpDir: config.tmpDir,
+        deps: ctx.thumbDeps ?? defaultToolDeps,
+      });
+      if (thumb) {
+        return sendFile(c, thumb, "image/jpeg", {
+          ETag: `"${found.hash}-thumb"`,
+          "Cache-Control": "private, max-age=31536000, immutable",
+        });
+      }
+    }
+    return serveDisplayBytes(c, found);
   });
 
   app.get("/api/photos/:id/original", async (c) => {
@@ -441,6 +486,7 @@ export function createApp(ctx: AppContext): Hono {
     // preview go away, even for files the server placed in the library.
     if (found.hash) {
       await fs.unlink(path.join(config.previewsDir, `${found.hash}.jpg`)).catch(() => undefined);
+      await fs.unlink(thumbPathFor(config.previewsDir, found.hash)).catch(() => undefined);
     }
     // Heal overlays are a cache of inference output: drop them with the photo.
     await purgeHealOverlays(config.dataDir, found.id);

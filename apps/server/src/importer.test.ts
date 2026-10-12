@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_EDIT } from "@photomator/core";
+import { DEFAULT_EDIT, MAX_IMPORTS_PER_REQUEST } from "@photomator/core";
+import type { ImportProgress } from "@photomator/core";
 import { loadConfig } from "./config.ts";
 import { createTestContext, makeBmp, makeJpeg, makeJpegWithOrientation, makeTiffWithJpeg } from "./fixtures.ts";
 import type { TestContext } from "./fixtures.ts";
@@ -244,4 +245,50 @@ describe("scanPaths", () => {
     expect(report.outcomes).toHaveLength(0);
     expect(report.skipped[0]?.reason).toContain("outside the allowed folders");
   });
+
+  it("reports per-file progress from 0 to the batch total", async () => {
+    const inbox = path.join(ctx.dir, "progress");
+    await fs.mkdir(inbox, { recursive: true });
+    await fs.writeFile(path.join(inbox, "a.bmp"), makeBmp(3, 3));
+    await fs.writeFile(path.join(inbox, "b.bmp"), makeBmp(3, 3));
+    await fs.writeFile(path.join(inbox, "c.bmp"), makeBmp(3, 3));
+    const config = { ...loadConfig({}), previewsDir: path.join(ctx.dir, "data", "previews") };
+    const seen: ImportProgress[] = [];
+
+    const report = await scanPaths(ctx.store, config, [ctx.dir], [inbox], {
+      onProgress: (progress) => seen.push({ ...progress }),
+    });
+
+    expect(report.outcomes).toHaveLength(3);
+    expect(seen).toEqual([
+      { done: 0, total: 3 },
+      { done: 1, total: 3 },
+      { done: 2, total: 3 },
+      { done: 3, total: 3 },
+    ]);
+  });
+
+  it("stops at the per-request cap and flags the batch truncated", async () => {
+    const inbox = path.join(ctx.dir, "bulk");
+    await fs.mkdir(inbox, { recursive: true });
+    const bytes = makeBmp(2, 2);
+    const total = MAX_IMPORTS_PER_REQUEST + 5;
+    for (let index = 0; index < total; index += 1) {
+      // Trailing byte keeps the BMP header valid while giving each file a distinct hash.
+      const distinct = Buffer.concat([bytes, Buffer.from([index & 0xff, (index >> 8) & 0xff])]);
+      await fs.writeFile(path.join(inbox, `bulk-${String(index).padStart(3, "0")}.bmp`), distinct);
+    }
+    const config = { ...loadConfig({}), previewsDir: path.join(ctx.dir, "data", "previews") };
+    let last: ImportProgress | null = null;
+
+    const report = await scanPaths(ctx.store, config, [ctx.dir], [inbox], {
+      onProgress: (progress) => {
+        last = { ...progress };
+      },
+    });
+
+    expect(report.outcomes).toHaveLength(MAX_IMPORTS_PER_REQUEST);
+    expect(report.truncated).toBe(true);
+    expect(last).toEqual({ done: MAX_IMPORTS_PER_REQUEST, total: MAX_IMPORTS_PER_REQUEST });
+  }, 30000);
 });

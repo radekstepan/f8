@@ -73,7 +73,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 | `packages/ui/src/components/PhotoCanvas.tsx` | Responsive canvas, histogram sampling, comparison, and pointer-based retouching. |
 | `packages/ui/src/components/PhotoStrips.tsx` | Presets, filmstrip, and photo browser. |
 | `packages/ui/src/components/Inspector.tsx` | Color adjustments, crop controls, and brush controls. |
-| `packages/ui/src/components/EditorDialogs.tsx` | Export, metadata, album, preset, shortcut, and about dialogs. |
+| `packages/ui/src/components/EditorDialogs.tsx` | Export, metadata, album, preset, shortcut, remove-confirm, and about dialogs. |
 
 ## Extending the Demo
 

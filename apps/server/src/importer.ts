@@ -4,12 +4,14 @@ import path from "node:path";
 import { imageSizeFromFile } from "image-size/fromFile";
 import {
   DEFAULT_EDIT,
+  MAX_IMPORTS_PER_REQUEST,
   isImportableFilename,
   isRawFilename,
   readOrientation,
   readRawMetadata,
   resolveImportSelection,
 } from "@photomator/core";
+import type { ImportProgress } from "@photomator/core";
 import type { ServerConfig } from "./config.ts";
 import { resolveWithinRoots } from "./fs-browse.ts";
 import { RawDecodeError, decodeRawFullRes } from "./raw-decode.ts";
@@ -41,7 +43,6 @@ export interface ScanReport {
 const HEAD_SIZE = 1024 * 1024;
 const FULL_META_BYTES = 32 * 1024 * 1024;
 const MAX_SCAN_FILES = 2000;
-const MAX_IMPORTS_PER_REQUEST = 200;
 
 async function hashFile(absPath: string): Promise<string> {
   const hash = createHash("sha256");
@@ -260,13 +261,15 @@ async function collectImportable(dir: string, into: string[]): Promise<boolean> 
 
 // Import explicit files and folders. Folders are scanned recursively;
 // RAW+JPEG sidecar pairs collapse across the whole batch; every file imports
-// sequentially so one bad file (or one huge RAW) cannot break the batch.
+// sequentially so one bad file (or one huge RAW) cannot break the batch. The
+// loop yields between files so hundreds of sequential imports never starve
+// the event loop, and reports per-file progress for status UIs.
 export async function scanPaths(
   store: Store,
   config: ServerConfig,
   roots: string[],
   paths: string[],
-  opts: { albumId?: string; decodeRaw?: DecodeRawFullRes } = {},
+  opts: { albumId?: string; decodeRaw?: DecodeRawFullRes; onProgress?: (progress: ImportProgress) => void } = {},
 ): Promise<ScanReport> {
   const expanded: string[] = [];
   const skipped: { path: string; reason: string }[] = [];
@@ -302,8 +305,10 @@ export async function scanPaths(
   }));
   const { files: selected, suppressedSidecars } = resolveImportSelection(shims);
   const outcomes: ImportOutcome[] = [];
+  const batch = selected.slice(0, MAX_IMPORTS_PER_REQUEST);
   truncated = truncated || selected.length > MAX_IMPORTS_PER_REQUEST;
-  for (const shim of selected.slice(0, MAX_IMPORTS_PER_REQUEST)) {
+  opts.onProgress?.({ done: 0, total: batch.length });
+  for (const [index, shim] of batch.entries()) {
     try {
       outcomes.push(
         await importFileAtPath(store, config, shim.file, { albumId: opts.albumId, decodeRaw: opts.decodeRaw }),
@@ -314,6 +319,8 @@ export async function scanPaths(
         reason: error instanceof ImportError ? error.message : "This file could not be imported.",
       });
     }
+    opts.onProgress?.({ done: index + 1, total: batch.length });
+    await new Promise<void>((resolve) => setImmediate(resolve));
   }
   return { outcomes, skipped, suppressedSidecars, truncated };
 }

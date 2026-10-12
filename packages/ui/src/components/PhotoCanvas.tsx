@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@photomator/core';
-import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@photomator/core';
+import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@photomator/core';
 import type { CachedHealPatch, ChangeEdit, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@photomator/core';
 import { IconButton } from './EditorUI.js';
+import { ToolHint } from './ToolHint.js';
 
 /** Same-origin library client for persisted heal overlays (fire-and-forget cache I/O). */
 const overlayClient = createLibraryClient();
@@ -57,6 +58,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const originalRef = useRef<HTMLCanvasElement>(null);
   const painting = useRef(false);
+  /** Active drag-pan gesture: press point + stage scroll it is measured from. */
+  const panDrag = useRef<{ pointerId: number; clientX: number; clientY: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const [panning, setPanning] = useState(false);
+  /** Space held with the canvas focused: the grab-tool override that pans even in the repair brush. */
+  const [spaceHeld, setSpaceHeld] = useState(false);
   const points = useRef<RetouchPoint[]>([]);
   const lastStamp = useRef<{ x: number; y: number } | null>(null);
   const strokeCounter = useRef(1);
@@ -906,10 +912,34 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   /** Visible viewport as frame fractions; null while the frame fits the stage. */
   const [viewport, setViewport] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
+  // Space is the grab-tool override: holding it (with the canvas focused,
+  // never inside a field) turns the next brush drag into a pan. Tracked on
+  // window so the press can start outside the frame; the default scroll is
+  // suppressed so holding Space never moves the page behind the canvas.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space') return;
+      const target = event.target as HTMLElement | null;
+      if (!target || target.matches('input, textarea, select') || target.isContentEditable) return;
+      if (target !== document.body && !stageRef.current?.contains(target)) return;
+      event.preventDefault();
+      if (!event.repeat) setSpaceHeld(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== 'Space') return;
+      setSpaceHeld(false);
+    };
+    const onBlur = () => setSpaceHeld(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur); };
+  }, []);
+
   // Scroll-wheel zoom: the wheel never scrolls the stage — it zooms toward
   // the hovered image point instead. Attached natively (non-passive) so the
-  // scroll can be suppressed; panning stays available via the scrollbars and
-  // the minimap below.
+  // scroll can be suppressed; panning stays available via drag, the
+  // scrollbars, and the minimap below.
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -1072,10 +1102,41 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     onChange({ retouches: points.current }, `retouch-stroke:${activeStrokeRef.current ?? 0}`);
   };
 
+  // ML tiers must be warmed before painting: no round cursor, no strokes.
+  const paintBlocked = tool === 'repair' && inpaintRepair?.method === 'ml-heal' && inpaintRepair.mlEngine !== 'classic' && inpaintRepair.mlReady === false;
+  /** True when a primary press on the frame paints a repair stroke. */
+  const canPaint = isBrush && !compare && !showOriginal && !paintBlocked;
+
+  /** Direct scrollability check for the press moment (viewport state can lag a fresh zoom). */
+  const stagePannable = () => {
+    const stage = stageRef.current;
+    return !!stage && (stage.scrollWidth > stage.clientWidth + 1 || stage.scrollHeight > stage.clientHeight + 1);
+  };
+
+  /** Middle-drag pans, so swallow the press before the browser starts its autoscroll overlay. */
+  const swallowMiddleClick = (event: { button: number; preventDefault: () => void }) => {
+    if (event.button === 1) event.preventDefault();
+  };
+
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!isBrush || compare || showOriginal) return;
-    // ML tiers must be warmed before painting: no round cursor, no strokes.
-    if (tool === 'repair' && inpaintRepair?.method === 'ml-heal' && inpaintRepair.mlEngine !== 'classic' && inpaintRepair.mlReady === false) return;
+    const native = event.nativeEvent as PointerEvent;
+    const action = resolveCanvasDrag({
+      canPaint,
+      pannable: viewport !== null || stagePannable(),
+      button: event.button,
+      pointerType: native.pointerType ?? 'mouse',
+      spaceHeld,
+    });
+    if (action === 'none') return;
+    if (action === 'pan') {
+      if (panDrag.current) return;
+      const stage = stageRef.current;
+      if (!stage) return;
+      panDrag.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, scrollLeft: stage.scrollLeft, scrollTop: stage.scrollTop };
+      setPanning(true);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
     points.current = [...edit.retouches];
     painting.current = true;
     const id = Math.max(nextRetouchStrokeId(edit.retouches), strokeCounter.current);
@@ -1088,6 +1149,12 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   };
 
   const endStroke = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (panDrag.current && event.pointerId === panDrag.current.pointerId) {
+      panDrag.current = null;
+      setPanning(false);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      return;
+    }
     painting.current = false;
     activeStrokeRef.current = null;
     setActiveStroke(null);
@@ -1108,6 +1175,8 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   };
 
   const frameHeight = frameWidth / aspect;
+  /** Grab cursor when a drag would pan: the frame overflows the stage and the brush isn't painting (Space/pan override it). */
+  const pannableCursor = viewport !== null && (!isBrush || spaceHeld || panning);
   const showOverlay = isBrush && !loading && !compare && !showOriginal;
   // ML-gated repair: hide the round brush until the tier is warmed, and block
   // strokes outright on a failed tier (user must pick a working tier first).
@@ -1146,7 +1215,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const miniWidth = Math.round(Math.min(148, 104 * aspect));
   const miniHeight = Math.round(Math.min(104, 148 / aspect));
 
-  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{!isDefaultEdit(edit) && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton></div></div><div className="canvas-stage-wrap"><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} data-testid="photo-frame" style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onPointerMove={(event) => { if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
+  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{!isDefaultEdit(edit) && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton></div></div><div className="canvas-stage-wrap"><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${pannableCursor ? 'is-pannable' : ''} ${panning ? 'is-panning' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} data-testid="photo-frame" style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onMouseDown={swallowMiddleClick} onPointerMove={(event) => { const pan = panDrag.current; if (pan && event.pointerId === pan.pointerId) { const stage = stageRef.current; if (stage) { const next = panScrollFromDrag(pan, { clientX: event.clientX, clientY: event.clientY }); stage.scrollLeft = next.scrollLeft; stage.scrollTop = next.scrollTop; } return; } if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
       <canvas className="edited-canvas" ref={canvasRef} data-testid="edited-canvas" role="img" aria-label={`${photo.title}, with current adjustments`} />
       {previewUrl && <img className="cached-preview" src={previewUrl} alt="" aria-hidden="true" draggable={false} />}
       <div className="original-layer" style={{ clipPath: `inset(0 ${showOriginal ? 0 : compare ? 100 - split : 100}% 0 0)` }}><canvas ref={originalRef} role="img" aria-label="Original photo" />{compare && !showOriginal && !loading && <span className="comparison-label original-label">Original</span>}</div>
@@ -1161,7 +1230,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       {showBrushCursor && <div className="brush-cursor" style={{ left: cursor!.x, top: cursor!.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
       {(activePoints.length > 0 || hoverPoints.length > 0) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}</svg>}
     </div></div>
-      {isBrush && <div className="tool-hint">{compare ? 'Comparing — turn off Compare to keep repairing.' : mlRepairWarming ? 'Loading the ML engine… painting unlocks when ready.' : mlRepairBlocked ? 'This ML engine is unavailable — pick Balanced in the inspector.' : 'Click and drag to repair — hover a repair in the list to locate it.'}</div>}
+      {isBrush && <ToolHint photoId={photo.id} hintId="repair">{compare ? 'Comparing — turn off Compare to keep repairing.' : mlRepairWarming ? 'Loading the ML engine… painting unlocks when ready.' : mlRepairBlocked ? 'This ML engine is unavailable — pick Balanced in the inspector.' : 'Click and drag to repair — hover a repair in the list to locate it.'}</ToolHint>}
     </div>
       {viewport && <div
         className="minimap"

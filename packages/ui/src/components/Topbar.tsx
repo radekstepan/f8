@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ArrowLeft, Bandage, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Sparkles, Undo2 } from 'lucide-react';
 import type { DialogType, Tool, VisionWorkerStatus } from '@photomator/core';
+import { APP_EDITION_SHORT, APP_NAME } from '@photomator/core';
 import { BrandMark, IconButton, MenuItem } from './EditorUI.js';
 
-export type MenuAction = 'import' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'rotate' | 'favorite' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'fit' | 'fullscreen' | 'shortcuts' | 'about';
+export type MenuAction = 'import' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'fit' | 'fullscreen' | 'shortcuts' | 'about';
 
 interface MenuBarProps {
   onAction: (action: MenuAction) => void;
@@ -28,15 +29,15 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
     return () => { document.removeEventListener('pointerdown', onPointer); document.removeEventListener('keydown', onKey); };
   }, []);
   const action = (value: MenuAction) => { onAction(value); setOpen(null); };
-  const item = (name: string, value: MenuAction, shortcut?: string, disabled?: boolean, checked?: boolean) => <MenuItem key={value} onClick={() => action(value)} shortcut={shortcut} disabled={disabled} checked={checked}>{name}</MenuItem>;
+  const item = (name: string, value: MenuAction, shortcut?: string, disabled?: boolean, checked?: boolean, danger?: boolean) => <MenuItem key={value} onClick={() => action(value)} shortcut={shortcut} disabled={disabled} checked={checked} danger={danger}>{name}</MenuItem>;
   const menus: Record<string, ReactNode> = {
-    Photomator: <>{item('About this demo', 'about')}<div className="menu-separator" />{item('Keyboard Shortcuts', 'shortcuts', '?')}</>,
+    [APP_NAME]: <>{item(`About ${APP_NAME}`, 'about')}<div className="menu-separator" />{item('Keyboard Shortcuts', 'shortcuts', '?')}</>,
     File: <>{item('Import Photos...', 'import', 'Ctrl O')}{item('Import from Folder...', 'import-folder', 'Ctrl Shift O')}{item('New Album...', 'album')}<div className="menu-separator" />{item('Export Photo...', 'export', 'Ctrl Shift E')}</>,
     Edit: <>{item('Undo', 'undo', 'Ctrl Z', !canUndo)}{item('Redo', 'redo', 'Ctrl Shift Z', !canRedo)}<div className="menu-separator" />{item('Copy Adjustments', 'copy', 'Ctrl Shift C')}{item('Paste Adjustments', 'paste', 'Ctrl Shift V', !canPaste)}<div className="menu-separator" />{item('Reset All Adjustments', 'reset')}</>,
-    Image: <>{item('Auto Enhance', 'enhance', 'A')}{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<div className="menu-separator" />{item('Compare with Original', 'compare', 'B', compareDisabled)}</>,
+    Image: <>{item('Auto Enhance', 'enhance', 'A')}{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<div className="menu-separator" />{item('Compare with Original', 'compare', 'B', compareDisabled)}<div className="menu-separator" />{item('Remove from Library…', 'remove', 'Del', false, undefined, true)}</>,
     View: <>{item('Show Library', 'sidebar', undefined, false, sidebar)}{item('Show Adjustments', 'inspector', undefined, false, inspector)}{item('Show Presets', 'presets', undefined, false, presets)}{item('Show Filmstrip', 'filmstrip', undefined, false, filmstrip)}<div className="menu-separator" />{item('Photo Browser', 'grid', 'G')}{item('Zoom to Fit', 'fit', '0')}</>,
     Window: <>{item('Focus Mode', 'fullscreen', 'Shift F')}{item('Photo Browser', 'grid')}</>,
-    Help: <>{item('Keyboard Shortcuts', 'shortcuts', '?')}{item('About the Kitchen Sink', 'about')}</>,
+    Help: <>{item('Keyboard Shortcuts', 'shortcuts', '?')}{item(`About ${APP_NAME}`, 'about')}</>,
   };
   const focusFirstItem = () => window.requestAnimationFrame(() => ref.current?.querySelector<HTMLButtonElement>('[role="menu"] button:not([disabled])')?.focus());
   const handleMenuKey = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -74,7 +75,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
         {Object.entries(menus).map(([name, content]) => (
           <div className="menu-anchor" key={name}>
             <button
-              className={`menu-trigger ${name === 'Photomator' ? 'brand-name' : ''} ${open === name ? 'is-open' : ''}`}
+              className={`menu-trigger ${name === APP_NAME ? 'brand-name' : ''} ${open === name ? 'is-open' : ''}`}
               aria-haspopup="menu"
               aria-expanded={open === name}
               onClick={() => setOpen(open === name ? null : name)}
@@ -84,7 +85,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
           </div>
         ))}
       </nav>
-      <div className="demo-indicator"><span />KITCHEN SINK <span className="demo-version">v1.0</span></div>
+      <div className="demo-indicator"><span />{APP_EDITION_SHORT}</div>
     </div>
   );
 }

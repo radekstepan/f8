@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isRecentlyEdited, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@photomator/core';
-import { RAW_ACCEPT } from '@photomator/core';
+import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isRecentlyEdited, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@photomator/core';
+import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent } from '@photomator/core';
 import { useEditor, useLibrary } from '@photomator/ui';
 import type { DialogType, EditState, Tool, ViewMode } from '@photomator/core';
 import { Sidebar } from '@photomator/ui';
@@ -20,38 +20,78 @@ const collectionTitles: Record<string, string> = { all: 'All Photos', favorites:
 
 type FolderDialog = { mode: 'import' } | { mode: 'locate'; photoId: string };
 
-const TOOLS: Tool[] = ['adjust', 'crop', 'repair'];
-
-function initialPhotoId(): string {
-  try {
-    return new URLSearchParams(window.location.search).get('photo') || 'photo-1';
-  } catch {
-    return 'photo-1';
-  }
+interface InitialUrl {
+  view: ViewMode;
+  photoId: string;
+  collectionId: string;
+  tool: Tool;
 }
 
-function initialTool(): Tool {
+// The deep-link decides the starting view: ?photo= opens the editor (the
+// album is inferred from the photo), ?album= opens that album's grid.
+// Bare or malformed URLs open the editor on the seed photo, as before.
+function initialUrl(): InitialUrl {
+  const fallback: InitialUrl = { view: 'editor', photoId: 'photo-1', collectionId: 'all', tool: 'adjust' };
   try {
-    const tool = new URLSearchParams(window.location.search).get('tool') as Tool | null;
-    return tool && TOOLS.includes(tool) ? tool : 'adjust';
+    const parsed = parseLibraryUrl(window.location.search);
+    if (parsed.photoId) {
+      return { view: 'editor', photoId: parsed.photoId, collectionId: 'all', tool: parsed.tool ?? 'adjust' };
+    }
+    if (parsed.collectionId) {
+      return { view: 'library', photoId: 'photo-1', collectionId: parsed.collectionId, tool: 'adjust' };
+    }
   } catch {
-    return 'adjust';
+    /* Non-browser context — fall through to defaults. */
   }
+  return fallback;
 }
 
 export type EditedFilter = 'all' | 'edited' | 'unedited';
 export type FavoriteFilter = 'all' | 'favorited' | 'not';
 
+// Live import status: determinate file counts for dropped/picked files, or a
+// bare label (total 0) for folder scans, which resolve to one long request.
+interface ImportStatus {
+  done: number;
+  total: number;
+  label?: string;
+}
+
+// Persistent progress toast: unlike notify() toasts it never auto-dismisses,
+// so bulk imports keep their status line until the final summary lands.
+function ImportProgressToast({ status }: { status: ImportStatus }) {
+  const determinate = status.total > 0;
+  const text = status.label ?? formatImportProgress(status.done, status.total);
+  return <div
+    className="toast importing"
+    role="progressbar"
+    aria-label={text}
+    aria-valuemin={0}
+    aria-valuemax={determinate ? status.total : undefined}
+    aria-valuenow={determinate ? status.done : undefined}
+  >
+    <span className="loading-spinner small" aria-hidden="true" />
+    <span className="importing-body">
+      <span>{text}</span>
+      <span className={`import-bar${determinate ? '' : ' is-indeterminate'}`} aria-hidden="true">
+        <span style={determinate ? { width: `${importPercent(status.done, status.total)}%` } : undefined} />
+      </span>
+    </span>
+  </div>;
+}
+
 export default function App() {
   const library = useLibrary();
   const { photos, albums, customPresets } = library;
-  const [selectedId, setSelectedId] = useState(initialPhotoId);
-  const [collection, setCollection] = useState('all');
+  // Parsed once: the deep-link decides the starting view.
+  const [start] = useState(initialUrl);
+  const [selectedId, setSelectedId] = useState(start.photoId);
+  const [collection, setCollection] = useState(start.collectionId);
   const [search, setSearch] = useState('');
   const [editedFilter, setEditedFilter] = useState<EditedFilter>('all');
   const [favoriteFilter, setFavoriteFilter] = useState<FavoriteFilter>('all');
-  const [view, setView] = useState<ViewMode>('editor');
-  const [tool, setTool] = useState<Tool>(initialTool);
+  const [view, setView] = useState<ViewMode>(start.view);
+  const [tool, setTool] = useState<Tool>(start.tool);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 1080);
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth > 760);
   const [presetsOpen, setPresetsOpen] = useState(() => readToolPrefs().presetsOpen);
@@ -67,11 +107,14 @@ export default function App() {
   const [highlightStroke, setHighlightStroke] = useState<number | null>(null);
   const [clipboard, setClipboard] = useState<EditState | null>(null);
   const [dialog, setDialog] = useState<DialogType>(null);
+  const [removeTargetId, setRemoveTargetId] = useState<string | null>(null);
   const [folderDialog, setFolderDialog] = useState<FolderDialog | null>(null);
   const [toast, setToast] = useState('');
+  const [importProgress, setImportProgress] = useState<ImportStatus | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const dragCount = useRef(0);
+  const importRun = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const photo = photos.find((item) => item.id === selectedId) || photos[0];
   const editor = useEditor(photo?.id ?? selectedId, { initial: library.editsSeed, onPersist: library.saveEdit });
@@ -108,46 +151,85 @@ export default function App() {
       /* Private mode / quota — prefs stay session-only. */
     }
   }, [brushSize, brushStrength, presetsOpen, filmstripOpen]);
-  // Deep-link the open image + tool so a reload or shared URL restores
-  // them. View-only pointer: edits still live on the server. replaceState
-  // avoids spamming history on every filmstrip click. The collection is
-  // deliberately not in the URL — it is inferred from the open photo below,
-  // so sidebar, toolbar, and filmstrip can never disagree with the photo.
-  // Writing fresh params also strips stale ?collection= links.
+  // Deep-link the view so a reload or shared URL restores it. View-only
+  // pointer: edits still live on the server. Inside a photo the URL names
+  // the photo (?photo=&tool=) and the album is inferred from it below, so
+  // sidebar, toolbar, and filmstrip can never disagree with the photo. In
+  // an album the URL names the collection (?album=) instead: there is no
+  // open photo to infer from, so a stale photo id would lie about what's
+  // on screen. Same-view updates replaceState (no history spam on every
+  // filmstrip click); view switches pushState so Back returns to the
+  // previous view with its URL. Writing fresh params also strips stale
+  // mixed ?photo=&album= pairs and legacy ?collection= links.
   const photoIdForUrl = photo?.id ?? selectedId;
+  const lastUrlView = useRef(start.view);
   useEffect(() => {
     try {
-      const params = new URLSearchParams();
-      params.set('photo', photoIdForUrl);
-      params.set('tool', tool);
-      window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+      const query = view === 'library'
+        ? buildLibraryUrl({ view: 'library', collectionId: collection })
+        : buildLibraryUrl({ view: 'editor', photoId: photoIdForUrl, tool });
+      const url = `${window.location.pathname}${query}`;
+      // Back/forward already landed on this URL: the popstate handler set
+      // the state, so there is nothing to write (and pushing would fork
+      // the history stack the user is walking).
+      if (`${window.location.pathname}${window.location.search}` === url) {
+        lastUrlView.current = view;
+        return;
+      }
+      if (lastUrlView.current === view) {
+        window.history.replaceState(null, '', url);
+      } else {
+        lastUrlView.current = view;
+        window.history.pushState(null, '', url);
+      }
     } catch {
       /* Non-browser / restricted context — URL stays as-is. */
     }
-  }, [photoIdForUrl, tool]);
+  }, [view, photoIdForUrl, tool, collection]);
   // The open photo decides the collection: sidebar, toolbar, and filmstrip
   // always agree with what's on screen. Gated on photo change (not
   // collection change) so picking a collection in the sidebar — same photo,
   // library view — is never yanked back. The first photo always adopts its
   // album: the 'all' default contains everything, so the outside-check alone
-  // would never fire on load.
+  // would never fire on load. Editor-only: in the grid the collection is
+  // user- or URL-driven, and adopting here would clobber a deep-linked
+  // ?album= on load. The photo id is still recorded, so opening a photo
+  // from the grid infers normally once the view flips to editor.
   const lastPhotoId = useRef<string | null>(null);
   useEffect(() => {
     if (!photo) return;
     const firstPhoto = lastPhotoId.current === null;
     if (lastPhotoId.current === photo.id) return;
     lastPhotoId.current = photo.id;
+    if (view !== 'editor') return;
     if (firstPhoto || !photoInCollection(photo, collection)) setCollection(collectionForPhoto(photo));
-  }, [photo, collection]);
+  }, [photo, collection, view]);
+  // A deep-linked album may not exist (removed, or a hand-typed URL):
+  // fall back to All Photos once the library is in, instead of an empty
+  // grid titled 'Your Photos'. Built-ins always resolve.
+  useEffect(() => {
+    if (view !== 'library' || library.status !== 'ready') return;
+    if (collection === 'all' || collection === 'favorites' || collection === 'edited') return;
+    if (!albums.some((album) => album.id === collection)) setCollection('all');
+  }, [view, collection, albums, library.status]);
   useEffect(() => {
     const onPopState = () => {
       try {
-        const params = new URLSearchParams(window.location.search);
-        const nextPhoto = params.get('photo');
-        const nextTool = params.get('tool') as Tool | null;
-        if (nextTool && TOOLS.includes(nextTool)) setTool(nextTool);
-        if (nextPhoto) setSelectedId(nextPhoto);
-        setView('editor');
+        const parsed = parseLibraryUrl(window.location.search);
+        if (parsed.photoId) {
+          // The photo wins over any album param (stale pairs resolve to
+          // the photo); the collection follows via the inference effect.
+          setSelectedId(parsed.photoId);
+          if (parsed.tool) setTool(parsed.tool);
+          setView('editor');
+        } else if (parsed.collectionId) {
+          setCollection(parsed.collectionId);
+          setView('library');
+        } else {
+          // Bare URL: the default view is the editor; keep the open photo
+          // rather than yanking back to the seed.
+          setView('editor');
+        }
       } catch {
         /* Keep current state on malformed URLs. */
       }
@@ -157,6 +239,13 @@ export default function App() {
   }, []);
   const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
+  // Live session recipes per photo: thumbnails prefer these over the last
+  // persisted edit so the grid and filmstrip match the canvas immediately
+  // instead of lagging the 500 ms save debounce.
+  const liveEdits = useMemo(
+    () => Object.fromEntries(Object.entries(editor.histories).map(([id, history]) => [id, history.present] as const)),
+    [editor.histories],
+  );
 
   const notify = useCallback((message: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -248,6 +337,29 @@ export default function App() {
     void library.updatePhoto(photo.id, { rating }).catch((reason: unknown) => notifyError(reason, 'Could not update the rating.'));
   };
 
+  // Removal is always confirmed: the dialog names the photo and promises the
+  // original file stays on disk. The browser trash can target a photo other
+  // than the open one, so the target id travels with the dialog.
+  const requestRemove = useCallback((id: string) => {
+    setRemoveTargetId(id);
+    setDialog('remove');
+  }, []);
+
+  const confirmRemovePhoto = useCallback((id: string) => {
+    const list = filteredPhotos.some((item) => item.id === id) ? filteredPhotos : photos;
+    const index = list.findIndex((item) => item.id === id);
+    const next = list[index + 1] ?? list[index - 1] ?? photos.find((item) => item.id !== id);
+    setDialog(null);
+    setRemoveTargetId(null);
+    void library.removePhoto(id).then(
+      () => {
+        if (next && next.id !== id) setSelectedId(next.id);
+        notify('Removed from your library. The original file is untouched.');
+      },
+      (reason: unknown) => notifyError(reason, 'Could not remove the photo.'),
+    );
+  }, [filteredPhotos, photos, library, notify, notifyError]);
+
   const selectTool = (next: Tool) => {
     setTool(next);
     setView('editor');
@@ -332,27 +444,32 @@ export default function App() {
     const list = Array.from(files);
     if (!list.length) return;
     const albumId = albums.some((album) => album.id === collection) ? collection : 'imports';
-    notify('Importing your photos…');
-    const summary = await library.uploadFiles(list, albumId);
+    // Overlapping imports each run to completion; only the latest drives the
+    // progress toast, and a stale finish must not clear a live one.
+    const run = ++importRun.current;
+    const alive = () => importRun.current === run;
+    setImportProgress({ done: 0, total: list.length });
+    const summary = await library.uploadFiles(list, albumId, (progress) => {
+      if (alive()) setImportProgress(progress);
+    });
+    if (alive()) setImportProgress(null);
     if (summary.firstId) {
       setCollection(albumId);
       setSearch('');
       selectPhoto(summary.firstId);
     }
-    const notes = [
-      summary.imported ? `${summary.imported} ${summary.imported === 1 ? 'photo' : 'photos'} imported.` : '',
-      summary.deduplicated ? `${summary.deduplicated} ${summary.deduplicated === 1 ? 'was' : 'were'} already in your library.` : '',
-      summary.suppressedSidecars ? `${summary.suppressedSidecars} JPEG sidecar${summary.suppressedSidecars === 1 ? ' was' : 's were'} skipped: the RAW original was kept.` : '',
-      summary.failed ? `${summary.failed} could not be imported.` : '',
-    ];
-    notify(notes.filter(Boolean).join(' ') || 'Nothing to import.');
+    notify(formatUploadSummary(summary));
   };
 
   const importFromPaths = async (paths: string[]) => {
     const albumId = albums.some((album) => album.id === collection) ? collection : 'imports';
     const locating = folderDialog?.mode === 'locate' ? folderDialog.photoId : null;
     setFolderDialog(null);
-    notify('Importing from disk…');
+    const run = ++importRun.current;
+    const alive = () => importRun.current === run;
+    // Folder scans arrive as one request with no per-file ticks, so the toast
+    // stays up with an indeterminate bar until the report lands.
+    setImportProgress({ done: 0, total: 0, label: locating ? 'Relinking original…' : 'Importing from disk…' });
     try {
       const report = await library.importPaths(paths, albumId);
       const first = report.imported[0] ?? report.relinked[0] ?? report.duplicates[0];
@@ -379,6 +496,8 @@ export default function App() {
       notify(notes.filter(Boolean).join(' ') || 'Nothing to import.');
     } catch (reason) {
       notifyError(reason, 'Could not import from disk.');
+    } finally {
+      if (alive()) setImportProgress(null);
     }
   };
 
@@ -407,6 +526,7 @@ export default function App() {
       case 'enhance': editor.autoEnhance(photo?.src); setView('editor'); break;
       case 'rotate': rotateImage(-1); break;
       case 'favorite': toggleFavorite(); break;
+      case 'remove': if (photo) requestRemove(photo.id); break;
       case 'sidebar': setSidebarOpen((current) => !current); if (window.innerWidth < 760) setInspectorOpen(false); break;
       case 'inspector': setInspectorOpen((current) => !current); break;
       case 'presets': setPresetsOpen((current) => !current); break;
@@ -437,6 +557,7 @@ export default function App() {
         return;
       }
       if (event.key === '\\') { event.preventDefault(); setShowOriginal(true); return; }
+      if (key === 'delete' || key === 'backspace') { event.preventDefault(); actionRef.current('remove'); return; }
       if (event.altKey) return;
       if (key === 'f' && event.shiftKey) { event.preventDefault(); actionRef.current('fullscreen'); return; }
       if (key === '?') { setDialog('shortcuts'); return; }
@@ -526,6 +647,7 @@ export default function App() {
       <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
       {folderDialog && <FsBrowser title="Import from folder" subtitle="Referenced in place — nothing is copied." actionLabel="Import selected" onClose={() => setFolderDialog(null)} onSelect={(paths) => void importFromPaths(paths)} />}
       {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
+      {importProgress && <ImportProgressToast status={importProgress} />}
     </div>;
   }
 
@@ -536,7 +658,7 @@ export default function App() {
       {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onImport={() => fileInput.current?.click()} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} edits={liveEdits} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${reversed}`} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (
@@ -566,7 +688,7 @@ export default function App() {
               onSelect={editor.applyPreset} onAdd={() => setDialog('preset')} onToggle={() => setPresetsOpen(false)}
             />}
             {filmstripOpen && <Filmstrip
-              photos={filteredPhotos} selectedId={photo.id} collectionName={collectionName}
+              photos={filteredPhotos} selectedId={photo.id} collectionName={collectionName} edits={liveEdits}
               onSelect={selectPhoto} onGrid={() => setView('library')}
               onSort={() => setReversed(!reversed)} reversed={reversed}
               showPresets={presetsOpen} onShowPresets={() => setPresetsOpen(true)}
@@ -597,7 +719,7 @@ export default function App() {
       }}
     />
     <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
-    <EditorDialogs dialog={dialog} photo={photo} edit={editor.edit} inpaintRepair={canvasRepairBinding} onClose={() => setDialog(null)} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} />
+    <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : photo} edit={editor.edit} inpaintRepair={canvasRepairBinding} onClose={() => { setDialog(null); setRemoveTargetId(null); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} />
     {folderDialog && <FsBrowser
       title={folderDialog.mode === 'locate' ? 'Locate original' : 'Import from folder'}
       subtitle={folderDialog.mode === 'locate' ? 'Find the file in its new home.' : 'Referenced in place — nothing is copied.'}
@@ -606,6 +728,7 @@ export default function App() {
       onSelect={(paths) => void importFromPaths(paths)}
     />}
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
+    {importProgress && <ImportProgressToast status={importProgress} />}
     {dragging && <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos anywhere to start creating.</p><span>JPEG, PNG, WebP, RAW and more</span></div></div>}
   </div>;
 }

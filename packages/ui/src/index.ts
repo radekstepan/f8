@@ -4,6 +4,7 @@ export * from "./components/Inspector.js";
 export * from "./components/PhotoCanvas.js";
 export * from "./components/PhotoStrips.js";
 export * from "./components/Sidebar.js";
+export * from "./components/ToolHint.js";
 export * from "./components/Topbar.js";
 export * from "./hooks/useEditor.js";
 export * from "./hooks/useLibrary.js";

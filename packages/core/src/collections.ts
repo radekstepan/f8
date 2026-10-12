@@ -1,10 +1,11 @@
 // Collection matching for the library sidebar, filmstrip, and grid.
 //
 // A photo's home collection is its album; the three built-in collections
-// match by flag or recency. The app keeps no collection in the URL: the open
-// photo decides the collection (sidebar, toolbar, and filmstrip always agree
-// with what's on screen), so this predicate is the single source of truth
-// for both listing and inference.
+// match by flag or recency. Inside a photo the open photo decides the
+// collection (sidebar, toolbar, and filmstrip always agree with what's on
+// screen — see libraryUrl.ts), so this predicate is the single source of
+// truth for both listing and inference; the album grid itself deep-links
+// via ?album=.
 
 import type { Photo } from "./types.js";
 

@@ -74,3 +74,56 @@ test("wheel zooms at the cursor and the minimap jumps the viewport", async ({ pa
   await expect(zoom).toHaveValue("0.5");
   await expect(page.getByTestId("minimap")).toHaveCount(0);
 });
+
+test("dragging a zoomed photo pans the viewport", async ({ page }) => {
+  await stubLibraryImages(page);
+  await page.goto("/");
+  await resetPhoto(page, PHOTO_ID);
+  await gotoEditor(page);
+
+  const frame = page.getByTestId("photo-frame");
+  const stageCenter = async () => {
+    const box = await page.locator(".canvas-stage").boundingBox();
+    if (!box) throw new Error(".canvas-stage has no bounding box.");
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+
+  // At fit zoom the frame fills the stage: a drag has nowhere to go.
+  await expect(frame).not.toHaveClass(/is-pannable/);
+  const before = await stageScroll(page);
+  const fit = await stageCenter();
+  await page.mouse.move(fit.x, fit.y);
+  await page.mouse.down();
+  await page.mouse.move(fit.x - 120, fit.y - 60, { steps: 8 });
+  await page.mouse.up();
+  const unzoomed = await stageScroll(page);
+  expect(unzoomed.left).toBe(before.left);
+  expect(unzoomed.top).toBe(before.top);
+
+  // Zoomed in, the grab affordance appears and a drag moves the viewport
+  // with the pointer (vertical movement depends on the fixture aspect, so
+  // only its direction is asserted).
+  await page.getByLabel("Zoom level").selectOption("2");
+  await expect(page.getByLabel("Zoom level")).toHaveValue("2");
+  await expect(page.getByTestId("minimap")).toBeVisible();
+  await expect(frame).toHaveClass(/is-pannable/);
+  const start = await stageScroll(page);
+  expect(start.maxLeft).toBeGreaterThan(0);
+  const origin = await stageCenter();
+  await page.mouse.move(origin.x, origin.y);
+  await page.mouse.down();
+  await page.mouse.move(origin.x - 150, origin.y - 80, { steps: 10 });
+  await page.mouse.up();
+  const moved = await stageScroll(page);
+  expect(moved.left - start.left).toBeGreaterThan(100);
+  expect(moved.top).toBeGreaterThanOrEqual(start.top);
+
+  // Dragging back returns toward the start.
+  await page.mouse.move(origin.x - 150, origin.y - 80);
+  await page.mouse.down();
+  await page.mouse.move(origin.x, origin.y, { steps: 10 });
+  await page.mouse.up();
+  const back = await stageScroll(page);
+  expect(back.left).toBeLessThan(moved.left);
+  expect(back.top).toBeLessThanOrEqual(moved.top);
+});

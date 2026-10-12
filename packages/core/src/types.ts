@@ -37,7 +37,7 @@ export interface Album {
 
 export type Tool = 'adjust' | 'crop' | 'repair';
 export type ViewMode = 'editor' | 'library';
-export type DialogType = 'export' | 'info' | 'shortcuts' | 'about' | 'album' | 'preset' | null;
+export type DialogType = 'export' | 'info' | 'shortcuts' | 'about' | 'album' | 'preset' | 'remove' | null;
 
 export interface RetouchPoint {
   x: number;

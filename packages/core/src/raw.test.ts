@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_IMPORTS_PER_REQUEST,
   RAW_ACCEPT,
+  formatImportProgress,
   formatRawMetadata,
+  formatUploadSummary,
+  importPercent,
   isRawFilename,
   readOrientation,
   readRawMetadata,
@@ -167,6 +171,71 @@ function jpegWithOrientation(orientation: number): Buffer {
     0xff, 0xd9,
   ]);
 }
+
+describe("MAX_IMPORTS_PER_REQUEST", () => {
+  it("caps one batch at hundreds, not dozens", () => {
+    expect(MAX_IMPORTS_PER_REQUEST).toBe(200);
+  });
+});
+
+describe("importPercent", () => {
+  it("floors to whole percent and clamps at 100", () => {
+    expect(importPercent(0, 120)).toBe(0);
+    expect(importPercent(12, 120)).toBe(10);
+    expect(importPercent(1, 3)).toBe(33);
+    expect(importPercent(120, 120)).toBe(100);
+    expect(importPercent(150, 120)).toBe(100);
+  });
+
+  it("reads unknown or empty totals as 0", () => {
+    expect(importPercent(0, 0)).toBe(0);
+    expect(importPercent(5, 0)).toBe(0);
+    expect(importPercent(-1, 10)).toBe(0);
+    expect(importPercent(Number.NaN, 10)).toBe(0);
+    expect(importPercent(5, Number.NaN)).toBe(0);
+  });
+});
+
+describe("formatImportProgress", () => {
+  it("shows file counts with a % estimate", () => {
+    expect(formatImportProgress(0, 120)).toBe("Importing 0 of 120 (0%)…");
+    expect(formatImportProgress(12, 120)).toBe("Importing 12 of 120 (10%)…");
+    expect(formatImportProgress(120, 120)).toBe("Importing 120 of 120 (100%)…");
+  });
+
+  it("clamps overruns instead of printing impossible counts", () => {
+    expect(formatImportProgress(150, 120)).toBe("Importing 120 of 120 (100%)…");
+  });
+
+  it("collapses unknown totals to a bare label", () => {
+    expect(formatImportProgress(0, 0)).toBe("Importing…");
+    expect(formatImportProgress(5, -1)).toBe("Importing…");
+  });
+});
+
+describe("formatUploadSummary", () => {
+  it("reports each nonzero bucket and nothing else", () => {
+    expect(
+      formatUploadSummary({ imported: 2, deduplicated: 1, failed: 0, suppressedSidecars: 1, truncated: 0 }),
+    ).toBe("2 photos imported. 1 was already in your library. 1 JPEG sidecar was skipped: the RAW original was kept.");
+  });
+
+  it("uses singular forms and reports failures plus truncation", () => {
+    expect(
+      formatUploadSummary({ imported: 1, deduplicated: 2, failed: 1, suppressedSidecars: 2, truncated: 5 }),
+    ).toBe(
+      "1 photo imported. 2 were already in your library. " +
+        "2 JPEG sidecars were skipped: the RAW original was kept. " +
+        "1 could not be imported. Stopped at the per-import limit; run it again for the rest.",
+    );
+  });
+
+  it("reports an empty batch as nothing to import", () => {
+    expect(formatUploadSummary({ imported: 0, deduplicated: 0, failed: 0, suppressedSidecars: 0, truncated: 0 })).toBe(
+      "Nothing to import.",
+    );
+  });
+});
 
 describe("readOrientation", () => {
   it("reads the EXIF orientation", async () => {

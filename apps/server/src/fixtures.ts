@@ -4,7 +4,7 @@ import path from "node:path";
 import { createApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
-import type { DecodeRawFullRes } from "./raw-decode.ts";
+import type { DecodeRawFullRes, RawDecodeDeps } from "./raw-decode.ts";
 import { createStore } from "./store.ts";
 import type { Store } from "./store.ts";
 
@@ -99,7 +99,7 @@ export function stubRawDecode(width = 61, height = 41): DecodeRawFullRes {
   };
 }
 
-export function createTestContext(overrides: { decodeRaw?: DecodeRawFullRes } = {}): TestContext {
+export function createTestContext(overrides: { decodeRaw?: DecodeRawFullRes; thumbDeps?: RawDecodeDeps } = {}): TestContext {
   // realpath: tmpdir can sit behind a symlink (/var -> /private/var), and
   // root confinement compares real paths.
   const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "photomator-test-")));
@@ -115,7 +115,15 @@ export function createTestContext(overrides: { decodeRaw?: DecodeRawFullRes } = 
   };
   const db = openDatabase(config.dbPath);
   const store = createStore(db);
-  const app = createApp({ config, store, roots: [dir], decodeRaw: overrides.decodeRaw ?? stubRawDecode() });
+  const app = createApp({
+    config,
+    store,
+    roots: [dir],
+    decodeRaw: overrides.decodeRaw ?? stubRawDecode(),
+    // Route tests never touch the real encoder toolchain either: rendered
+    // thumbs fall back to the original unless a test injects thumbDeps.
+    thumbDeps: overrides.thumbDeps ?? { which: async () => null, run: async () => ({ status: 1, stderr: "no encoder" }) },
+  });
   return {
     dir,
     store,

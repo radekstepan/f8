@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_EDIT, LibraryError, createLibraryClient, resolveImportSelection } from "@photomator/core";
+import {
+  DEFAULT_EDIT,
+  LibraryError,
+  MAX_IMPORTS_PER_REQUEST,
+  createLibraryClient,
+  resolveImportSelection,
+} from "@photomator/core";
 import type {
   Album,
   EditState,
   HistoryState,
+  ImportProgress,
   ImportReport,
   LibraryClient,
   LibraryPhoto,
@@ -20,8 +27,17 @@ export interface UploadSummary {
   deduplicated: number;
   failed: number;
   suppressedSidecars: number;
+  /** Files beyond the per-batch cap; run the import again for the rest. */
+  truncated: number;
+  /** Files attempted this batch (capped at MAX_IMPORTS_PER_REQUEST). */
+  total: number;
   firstId: string | null;
 }
+
+// Imported photos flush into React state this many at a time: one render per
+// photo would stutter through hundreds, while one giant flush would leave the
+// grid empty until the whole batch lands.
+const IMPORT_STATE_FLUSH_EVERY = 10;
 
 const LEGACY_EDITS_KEY = "photomator-demo-edits-v1";
 const LEGACY_LIBRARY_KEY = "photomator-demo-library-v1";
@@ -167,16 +183,29 @@ export function useLibrary() {
   }, [load]);
 
   const uploadFiles = useCallback(
-    async (files: File[], albumId: string): Promise<UploadSummary> => {
+    async (
+      files: File[],
+      albumId: string,
+      onProgress?: (progress: ImportProgress) => void,
+    ): Promise<UploadSummary> => {
       const { files: selected, suppressedSidecars } = resolveImportSelection(files);
+      const batch = selected.slice(0, MAX_IMPORTS_PER_REQUEST);
+      const total = batch.length;
+      const truncated = selected.length - total;
       let imported = 0;
       let deduplicated = 0;
       let failed = 0;
       let firstId: string | null = null;
-      for (const file of selected.slice(0, 30)) {
+      const pending: LibraryPhoto[] = [];
+      const flush = (): void => {
+        if (!pending.length) return;
+        upsertPhotos(pending.splice(0, pending.length));
+      };
+      onProgress?.({ done: 0, total });
+      for (const [index, file] of batch.entries()) {
         try {
           const { photo, deduplicated: dupe } = await client.upload(file, file.name, albumId);
-          upsertPhotos([photo]);
+          pending.push(photo);
           if (dupe) deduplicated += 1;
           else imported += 1;
           firstId ??= photo.id;
@@ -184,8 +213,14 @@ export function useLibrary() {
           failed += 1;
           markOfflineIfDown(reason);
         }
+        // Chunked state flushes plus a yielded frame between files keep the
+        // tab responsive and the progress bar painting across hundreds.
+        if (pending.length >= IMPORT_STATE_FLUSH_EVERY || index === total - 1) flush();
+        onProgress?.({ done: index + 1, total });
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
-      return { imported, deduplicated, failed, suppressedSidecars, firstId };
+      flush();
+      return { imported, deduplicated, failed, suppressedSidecars, truncated, total, firstId };
     },
     [client, markOfflineIfDown, upsertPhotos],
   );
@@ -215,6 +250,19 @@ export function useLibrary() {
       }
     },
     [client, markOfflineIfDown, upsertPhotos],
+  );
+
+  const removePhoto = useCallback(
+    async (id: string) => {
+      try {
+        await client.deletePhoto(id);
+        setPhotos((current) => current.filter((photo) => photo.id !== id));
+      } catch (reason) {
+        markOfflineIfDown(reason);
+        throw reason;
+      }
+    },
+    [client, markOfflineIfDown],
   );
 
   const saveEdit = useCallback(
@@ -266,6 +314,7 @@ export function useLibrary() {
     uploadFiles,
     importPaths,
     updatePhoto,
+    removePhoto,
     saveEdit,
     createAlbum,
     createPreset,

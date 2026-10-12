@@ -65,6 +65,10 @@ async function runCommand(cmd: string, args: string[]): Promise<{ status: number
 
 const defaultDeps: RawDecodeDeps = { which: findOnPath, run: runCommand };
 
+// Real toolchain probes for production routes (thumbnail downscaling);
+// tests inject stubs through AppContext instead.
+export const defaultToolDeps: RawDecodeDeps = defaultDeps;
+
 // LibRaw decode: camera white balance, sRGB output, AHD interpolation,
 // TIFF intermediate (libraw cannot write JPEG). Quality 92 keeps a 24MP
 // decode around 3-5MB — the preview cache stays proportional to the library.

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Camera, Check, Download, Folder, FolderPlus, Info, Keyboard, MapPin, Save, Share } from 'lucide-react';
-import { downloadBlob, exportPhoto, getPhotoFilter, isDefaultEdit, loadStoredHealOverlays, createLibraryClient } from '@photomator/core';
+import { Camera, Check, Download, Folder, FolderPlus, Info, Keyboard, MapPin, Save, Share, Trash2 } from 'lucide-react';
+import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_EDITION, APP_NAME, APP_TAGLINE, EXTENSION_POINTS, downloadBlob, exportPhoto, getPhotoFilter, isDefaultEdit, loadStoredHealOverlays, createLibraryClient } from '@photomator/core';
 import type { DialogType, EditState, Photo, RepairInpaintBinding } from '@photomator/core';
 import { BrandMark, Modal, RangeControl, SelectField } from './EditorUI.js';
 
@@ -14,6 +14,7 @@ interface EditorDialogsProps {
   onToast: (message: string) => void;
   onCreateAlbum: (name: string, includePhoto: boolean) => void;
   onSavePreset: (name: string) => void;
+  onRemovePhoto: (id: string) => void;
 }
 
 function ExportDialog({ photo, edit, inpaintRepair, onClose, onToast }: Pick<EditorDialogsProps, 'photo' | 'edit' | 'inpaintRepair' | 'onClose' | 'onToast'>) {
@@ -57,19 +58,24 @@ function PresetDialog({ onClose, onSavePreset }: Pick<EditorDialogsProps, 'onClo
 }
 
 const shortcuts = [
-  ['Navigation', [['Photo browser', 'G'], ['Previous / next photo', 'Left / Right'], ['Search library', '/'], ['Photo information', 'I'], ['Focus mode', 'Shift F']]],
+  ['Navigation', [['Photo browser', 'G'], ['Previous / next photo', 'Left / Right'], ['Search library', '/'], ['Photo information', 'I'], ['Remove from library', 'Del'], ['Focus mode', 'Shift F']]],
   ['Editing', [['Auto Enhance', 'A'], ['Color adjustments', 'V'], ['Crop & straighten', 'C'], ['Repair tool', 'J'], ['Rotate left', 'R'], ['Favorite photo', 'F']]],
   ['Preview', [['Compare before & after', 'B'], ['Hold to show original', '\\'], ['Zoom in / out', '+ / -'], ['Zoom to fit', '0']]],
   ['Your workflow', [['Undo', 'Ctrl / Cmd Z'], ['Redo', 'Ctrl / Cmd Shift Z or Ctrl / Cmd Y'], ['Import photos', 'Ctrl / Cmd O'], ['Export photo', 'Ctrl / Cmd Shift E'], ['Copy adjustments', 'Ctrl / Cmd Shift C'], ['Paste adjustments', 'Ctrl / Cmd Shift V']]],
 ] as const;
 
+function RemoveDialog({ photo, onClose, onRemovePhoto }: Pick<EditorDialogsProps, 'photo' | 'onClose' | 'onRemovePhoto'>) {
+  return <Modal title="Remove from Library" subtitle={photo.name} onClose={onClose} className="small-modal"><div className="dialog-feature-icon"><Trash2 size={28} strokeWidth={1.3} /></div><p className="dialog-note"><Info size={14} /><span>This removes the photo and its edits from your library. The original file on disk is never deleted — you can import it again any time.</span></p><div className="modal-footer"><button className="secondary-button" type="button" onClick={onClose}>Keep photo</button><button className="danger-button" type="button" onClick={() => onRemovePhoto(photo.id)}>Remove</button></div></Modal>;
+}
+
 export function EditorDialogs(props: EditorDialogsProps) {
   const { dialog, photo, onClose } = props;
   if (!dialog) return null;
+  if (dialog === 'remove') return <RemoveDialog {...props} />;
   if (dialog === 'export') return <ExportDialog {...props} />;
   if (dialog === 'album') return <AlbumDialog {...props} />;
   if (dialog === 'preset') return <PresetDialog {...props} />;
   if (dialog === 'info') return <Modal title="Photo Information" subtitle={photo.title} onClose={onClose} className="info-modal"><img className="info-photo" src={photo.src} alt={photo.title} /><div className="info-filename"><h3>{photo.name}</h3><span className="file-type">{photo.raw ? 'RAW' : 'IMAGE'}</span></div><div className="photo-info-section"><h4><Camera size={14} />Camera</h4><strong>{photo.camera}</strong><p>{photo.lens}</p><div className="photo-info-grid"><div><small>ISO</small><span>{photo.iso || 'Not available'}</span></div><div><small>Aperture</small><span>{photo.aperture}</span></div><div><small>Shutter Speed</small><span>{photo.shutter}</span></div><div><small>Focal Length</small><span>{photo.focalLength}</span></div><div><small>Dimensions</small><span>{photo.width.toLocaleString()} x {photo.height.toLocaleString()}</span></div><div><small>Date Taken</small><span>{new Date(photo.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></div></div></div>{photo.location && <div className="photo-info-location"><MapPin size={15} />{photo.location}</div>}{photo.path && <div className="photo-info-location" title={photo.path}><Folder size={15} /><span className="photo-info-path">{photo.path}</span></div>}{photo.missing && <p className="form-error" role="alert">The original file is missing. Reimport it from its new location to relink your edits.</p>}{photo.photographer && <p className="photo-credit">Photo by {photo.photographer} / Pexels<br /><span>Camera details are illustrative sample data.</span></p>}</Modal>;
   if (dialog === 'shortcuts') return <Modal title="A faster way to create." subtitle="Keep your hands on the keyboard, and your eyes on the photo." onClose={onClose} className="shortcuts-modal"><div className="shortcuts-symbol"><Keyboard size={27} strokeWidth={1.4} /></div><div className="shortcuts-grid">{shortcuts.map(([name, items]) => <section key={name}><h3>{name}</h3>{items.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</section>)}</div></Modal>;
-  return <Modal title="About This Workspace" onClose={onClose} className="about-modal"><div className="about-brand"><BrandMark size={64} /><h2>Photomator</h2><span>THE KITCHEN SINK EDITION</span><p>A little darkroom. A lot of possibilities.</p></div><p className="about-copy">An independent, interactive interface study inspired by Photomator. Import a photo, find your look, and make this workspace your own.</p><div className="extension-points"><h3>Built to be extended.</h3><p><code>editor/data.ts</code><span>Photos, albums & presets</span></p><p><code>editor/image.ts</code><span>Preview & export pipeline</span></p><p><code>components/</code><span>Reusable editor controls</span></p></div><p className="about-disclaimer">Not affiliated with Apple or Pixelmator. All processing happens in your browser. Automatic adjustments are histogram-based; RAW development, AI processing, and machine-learning models are not included.</p><button className="primary-button full-width" onClick={onClose}>Back to creating</button></Modal>;
+  return <Modal title={`About ${APP_NAME}`} onClose={onClose} className="about-modal"><div className="about-brand"><BrandMark size={64} /><h2>{APP_NAME}</h2><span>{APP_EDITION}</span><p>{APP_TAGLINE}</p></div><p className="about-copy">{APP_DESCRIPTION}</p><div className="extension-points"><h3>Built to be extended.</h3>{EXTENSION_POINTS.map((entry) => <p key={entry.path}><code>{entry.path}</code><span>{entry.label}</span></p>)}</div><p className="about-disclaimer">{ABOUT_DISCLAIMER}</p><button className="primary-button full-width" onClick={onClose}>Back to creating</button></Modal>;
 }
