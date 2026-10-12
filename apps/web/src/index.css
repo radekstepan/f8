@@ -372,6 +372,7 @@ img { display: block; }
 .ml-badge { display: inline-block; font-size: 8px; font-weight: 700; letter-spacing: .04em; color: #f0d397; border: 1px solid #8b7650; border-radius: 3px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
 .object-removal { margin-top: 4px; }
 .object-removal > .secondary-button { width: 100%; }
+.dust-spots .retouch-group-list { max-height: 220px; }
 
 .app-status { height: 23px; flex-shrink: 0; background: #242426; border-top: 1px solid #36363b; padding: 0 17px; display: flex; align-items: center; justify-content: space-between; font-size: 8px; color: #85858f; position: relative; }
 .status-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; font-size: 7.5px; color: #74747e; gap: 8px; }

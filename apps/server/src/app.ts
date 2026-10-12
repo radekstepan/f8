@@ -12,6 +12,7 @@ import { getHealProgress, getMlHealHealth, kickEngineReady, runRemoteHeal, valid
 import type { RemoteHealEngine } from "./ml-heal.ts";
 import { getStraightenHealth, kickStraightenReady, runStraightenEstimate, validateStraightenBody } from "./straighten-ml.ts";
 import { getObjectDetectHealth, kickObjectDetectReady, runObjectDetect, validateDetectBody } from "./object-detect.ts";
+import { getDustSpotsHealth, runDustSpotsDetect, validateDustSpotsBody } from "./dust-spots.ts";
 import {
   deleteHealOverlay,
   listHealOverlays,
@@ -274,6 +275,33 @@ export function createApp(ctx: AppContext): Hono {
       if (error instanceof RangeError) return c.json({ error: error.message }, 400);
       console.error(error);
       return c.json({ error: "Object detect failed." }, 503);
+    }
+  });
+
+  app.get("/api/dust-spots/health", async (c) => c.json(await getDustSpotsHealth(config.dataDir)));
+
+  app.post("/api/dust-spots/warmup", async (c) => {
+    // No weights to provision (the tiny classifier ships embedded), so
+    // warmup answers health immediately; the route exists for symmetry with
+    // the other ML assists and their shared client polling.
+    return c.json(await getDustSpotsHealth(config.dataDir));
+  });
+
+  app.post("/api/dust-spots/detect", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    const parsed = validateDustSpotsBody(body);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    try {
+      return c.json(await runDustSpotsDetect(config.dataDir, parsed.value));
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 400);
+      console.error(error);
+      return c.json({ error: "Dust-spots detect failed." }, 503);
     }
   });
 

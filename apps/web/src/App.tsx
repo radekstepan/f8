@@ -13,6 +13,7 @@ import { EditorDialogs } from '@f8/ui';
 import { useVisionWorker } from './vision/useVisionWorker';
 import { useStraighten } from './vision/useStraighten';
 import { useObjectRemoval } from './vision/useObjectRemoval';
+import { useDustSpots } from './vision/useDustSpots';
 import { useInpaintRepair } from './vision/useInpaintRepair';
 import { FsBrowser } from './components/FsBrowser';
 import { readToolPrefs, writeToolPrefsRaw } from './hooks/useToolPrefs';
@@ -124,6 +125,7 @@ export default function App() {
   const vision = useVisionWorker();
   const straighten = useStraighten(photo?.id ?? selectedId);
   const objectRemoval = useObjectRemoval(photo?.id ?? selectedId);
+  const dustSpots = useDustSpots(photo?.id ?? selectedId);
   const inpaintRepair = useInpaintRepair();
   // Canvas binding: ML strokes are gated until the tier is warmed, so the
   // brush cursor stays hidden and painting is ignored while loading.
@@ -419,6 +421,19 @@ export default function App() {
     objectRemoval.dismiss();
     notify(`Removing ${people} ${people === 1 ? 'person' : 'people'} — healing with ${inpaintRepair.method === 'ml-heal' ? 'ML Repair' : 'the current repair method'}.`);
   }, [photo, editor, handleEditChange, objectRemoval, inpaintRepair.method]);
+
+  // Auto dust spots: checked spots become repair strokes in one atomic
+  // history entry (one stroke id per spot, so each repair stays
+  // individually deletable); the existing pipeline heals them from there.
+  const applyDustSpots = useCallback(() => {
+    if (!photo) return;
+    const points = dustSpots.apply(editor.edit.retouches);
+    if (points.length === 0) return;
+    const count = dustSpots.spots.filter((spot) => spot.checked).length;
+    handleEditChange({ retouches: [...editor.edit.retouches, ...points] });
+    dustSpots.dismiss();
+    notify(`Repairing ${count} ${count === 1 ? 'spot' : 'spots'} — healing with ${inpaintRepair.method === 'ml-heal' ? 'ML Repair' : 'the current repair method'}.`);
+  }, [photo, editor, handleEditChange, dustSpots, inpaintRepair.method]);
 
   // Rotation turns repairs with the image in one atomic history entry, so
   // undo restores both together and they can never drift apart. The edit is
@@ -736,7 +751,7 @@ export default function App() {
         photo={photo} edit={editor.edit} tool={tool} histogram={histogram}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, source: straighten.source, runId: straighten.runId, mlProgress: straighten.mlProgress, mlWarming: straighten.mlWarming, mlNote: straighten.mlNote, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss, onCancelMl: straighten.cancelMl }}
-        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, serverDown: inpaintRepair.serverDown, onCancelHeal: inpaintRepair.cancelHeal, onRetry: () => { void inpaintRepair.warmup().catch(() => { /* Failure is recorded in mlProgress/serverDown. */ }); }, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx, removal: { state: objectRemoval.state, detections: objectRemoval.detections, source: objectRemoval.source, progress: objectRemoval.progress, note: objectRemoval.note, message: objectRemoval.message, onDetect: () => objectRemoval.detect(photo.src), onToggle: objectRemoval.toggle, onApply: applyObjectRemoval, onDismiss: objectRemoval.dismiss } }}
+        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, serverDown: inpaintRepair.serverDown, onCancelHeal: inpaintRepair.cancelHeal, onRetry: () => { void inpaintRepair.warmup().catch(() => { /* Failure is recorded in mlProgress/serverDown. */ }); }, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx, removal: { state: objectRemoval.state, detections: objectRemoval.detections, source: objectRemoval.source, progress: objectRemoval.progress, note: objectRemoval.note, message: objectRemoval.message, onDetect: () => objectRemoval.detect(photo.src), onToggle: objectRemoval.toggle, onApply: applyObjectRemoval, onDismiss: objectRemoval.dismiss }, dustSpots: { state: dustSpots.state, spots: dustSpots.spots, source: dustSpots.source, progress: dustSpots.progress, note: dustSpots.note, message: dustSpots.message, onDetect: () => dustSpots.detect(photo.src), onToggle: dustSpots.toggle, onApply: applyDustSpots, onDismiss: dustSpots.dismiss } }}
         onStraightenDragging={setStraightenDragging}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={handleEditChange} onRotate={rotateImage} onStraighten={changeStraighten} onReset={() => handleAction('reset')}
