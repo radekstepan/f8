@@ -110,7 +110,12 @@ export function stubRawDecode(width = 61, height = 41): DecodeRawFullRes {
 }
 
 export function createTestContext(
-  overrides: { decodeRaw?: DecodeRawFullRes; thumbDeps?: RawDecodeDeps; semanticEnqueue?: (photoId: string) => void } = {},
+  overrides: {
+    decodeRaw?: DecodeRawFullRes;
+    thumbDeps?: RawDecodeDeps;
+    semanticEnqueue?: (photoId: string) => void;
+    cullEnqueue?: (photoId: string) => void;
+  } = {},
 ): TestContext {
   // realpath: tmpdir can sit behind a symlink (/var -> /private/var), and
   // root confinement compares real paths.
@@ -138,6 +143,8 @@ export function createTestContext(
     // ...nor the background embedder: imports enqueue into the void unless a
     // test injects its own hook (the queue itself is tested directly).
     semanticEnqueue: overrides.semanticEnqueue ?? (() => {}),
+    // Same for the background cull assessor.
+    cullEnqueue: overrides.cullEnqueue ?? (() => {}),
   });
   return {
     dir,

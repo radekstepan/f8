@@ -28,6 +28,7 @@ import {
   SEMANTIC_SEARCH_MAX_RESULTS,
   SEMANTIC_SEARCH_MODEL_ID,
   SEMANTIC_SEARCH_MODEL_VERSION,
+  SEMANTIC_CONCEPT_VOCAB,
   assignSemanticLabels,
   conceptsOfQuery,
   packSemanticInput,
@@ -461,7 +462,9 @@ export async function embedPhoto(
   }
   ctx.store.saveEmbedding(photoId, SEMANTIC_SEARCH_MODEL_ID, SEMANTIC_SEARCH_MODEL_VERSION, embedding);
   const labels = assignSemanticLabels(embedding);
-  ctx.store.setMlLabels(photoId, labels);
+  // Scoped to the concept vocabulary: cull-assist flags share the ML label
+  // table and must survive a semantic pass (and vice versa).
+  ctx.store.setMlLabels(photoId, labels, { only: SEMANTIC_CONCEPT_VOCAB });
   return { ok: true, outcome: { photoId, labels } };
 }
 
@@ -512,7 +515,7 @@ export async function labelAlbum(ctx: EmbedContext, albumId: string): Promise<La
       // Raced the background queue (or a re-run): embedding landed without
       // labels, so make sure the labels land too before counting it done.
       const stored = ctx.store.getEmbedding(photoId);
-      if (stored) ctx.store.setMlLabels(photoId, assignSemanticLabels(stored.embedding));
+      if (stored) ctx.store.setMlLabels(photoId, assignSemanticLabels(stored.embedding), { only: SEMANTIC_CONCEPT_VOCAB });
       report.labeled.push(photoId);
     } else if (result.reason === "failed") {
       report.failed.push({ photoId, error: result.error });

@@ -17,6 +17,7 @@ import { useDustSpots } from './vision/useDustSpots';
 import { useFaceEnhance } from './vision/useFaceEnhance';
 import { useSelectiveMask } from './vision/useSelectiveMask';
 import { useSemanticSearch } from './vision/useSemanticSearch';
+import { useCullAssist } from './vision/useCullAssist';
 import type { SelectiveMaskDraft } from '@f8/ui';
 import { useInpaintRepair } from './vision/useInpaintRepair';
 import { FsBrowser } from './components/FsBrowser';
@@ -54,6 +55,7 @@ function initialUrl(): InitialUrl {
 
 export type EditedFilter = 'all' | 'edited' | 'unedited';
 export type FavoriteFilter = 'all' | 'favorited' | 'not';
+export type CullFilter = 'all' | 'blurry' | 'keepers';
 
 // Live import status: determinate file counts for dropped/picked files, or a
 // bare label (total 0) for folder scans, which resolve to one long request.
@@ -96,6 +98,7 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [editedFilter, setEditedFilter] = useState<EditedFilter>('all');
   const [favoriteFilter, setFavoriteFilter] = useState<FavoriteFilter>('all');
+  const [cullFilter, setCullFilter] = useState<CullFilter>('all');
   const [view, setView] = useState<ViewMode>(start.view);
   const [tool, setTool] = useState<Tool>(start.tool);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 1080);
@@ -133,6 +136,7 @@ export default function App() {
   const faceEnhance = useFaceEnhance(photo?.id ?? selectedId);
   const selectiveMask = useSelectiveMask(photo?.id ?? selectedId);
   const semantic = useSemanticSearch();
+  const cull = useCullAssist();
   const inpaintRepair = useInpaintRepair();
   // Canvas binding: ML strokes are gated until the tier is warmed, so the
   // brush cursor stays hidden and painting is ignored while loading.
@@ -294,10 +298,13 @@ export default function App() {
     else if (editedFilter === 'unedited') items = items.filter((item) => !item.edited);
     if (favoriteFilter === 'favorited') items = items.filter((item) => item.favorite);
     else if (favoriteFilter === 'not') items = items.filter((item) => !item.favorite);
+    // Cull flags ride the shared labels (ML-assigned or hand-added alike).
+    if (cullFilter === 'blurry') items = items.filter((item) => (item.labels ?? []).some((entry) => entry.label === 'blurry'));
+    else if (cullFilter === 'keepers') items = items.filter((item) => (item.labels ?? []).some((entry) => entry.label === 'keeper'));
     // Semantic ranks carry their own relevance order; everything else sorts.
     if (searchRank?.mode === 'semantic') return items;
     return sortAlbumPhotos(items, sortKey, sortDir);
-  }, [photos, collection, search, searchRank, sortKey, sortDir, editedFilter, favoriteFilter]);
+  }, [photos, collection, search, searchRank, sortKey, sortDir, editedFilter, favoriteFilter, cullFilter]);
   const searchNote = searchRank?.mode === 'semantic'
     ? `Semantic matches${searchRank.matched.length ? ` for “${searchRank.matched.join(', ')}”` : ''} · ML`
     : null;
@@ -330,6 +337,7 @@ export default function App() {
     semantic.search('');
     setEditedFilter(id === 'edited' ? 'edited' : 'all');
     setFavoriteFilter(id === 'favorites' ? 'favorited' : 'all');
+    setCullFilter('all');
     setView('library');
     if (window.innerWidth < 760) setSidebarOpen(false);
   };
@@ -350,10 +358,17 @@ export default function App() {
     setFavoriteFilter(value);
   };
 
+  const handleCullFilter = (value: CullFilter) => {
+    if (value === cullFilter) return;
+    if (collection === 'favorites' || collection === 'edited') setCollection('all');
+    setCullFilter(value);
+  };
+
   const clearFilters = () => {
     if (collection === 'favorites' || collection === 'edited') setCollection('all');
     setEditedFilter('all');
     setFavoriteFilter('all');
+    setCullFilter('all');
   };
 
   const toggleFavorite = useCallback((id?: string) => {
@@ -425,6 +440,34 @@ export default function App() {
       }
     })();
   }, [albums, library, notify, notifyError, semantic]);
+
+  // Album ML cull assist: flags blurry photos, near-duplicate groups, and
+  // keepers (files the server already assessed are never re-detected). The
+  // library reloads afterwards so the new flags land everywhere.
+  const cullAlbumPhotos = useCallback((albumId: string) => {
+    const album = albums.find((entry) => entry.id === albumId);
+    void (async () => {
+      try {
+        const report = await cull.cullAlbum(albumId);
+        await library.retry();
+        const name = album ? `"${album.name}"` : 'Album';
+        const duplicates = report.groups.reduce((total, group) => total + group.members.length - 1, 0);
+        const checked = report.labeled.length;
+        const head = checked
+          ? `${name}: checked ${checked} ${checked === 1 ? 'photo' : 'photos'} with ML — ${report.blurry.length} blurry, ${duplicates} ${duplicates === 1 ? 'duplicate' : 'duplicates'}, ${report.keepers.length} ${report.keepers.length === 1 ? 'keeper' : 'keepers'}.`
+          : `${name}: everything already checked.`;
+        const notes = [
+          head,
+          report.alreadyLabeled.length > 0 && checked > 0 ? `${report.alreadyLabeled.length} already checked.` : '',
+          report.skipped.length ? `${report.skipped.length} skipped.` : '',
+          report.failed.length ? `${report.failed.length} failed.` : '',
+        ];
+        notify(notes.filter(Boolean).join(' '));
+      } catch (reason) {
+        notifyError(reason, 'Could not check the album.');
+      }
+    })();
+  }, [albums, library, notify, notifyError, cull]);
 
   const confirmRemovePhoto = useCallback((id: string) => {
     const list = filteredPhotos.some((item) => item.id === id) ? filteredPhotos : photos;
@@ -882,10 +925,10 @@ export default function App() {
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} presetsOpen={presetsOpen} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
-      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} />}
+      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onCullAlbum={cullAlbumPhotos} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onCullAlbum={cullAlbumPhotos} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (
@@ -958,6 +1001,7 @@ export default function App() {
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
     {importProgress && <ImportProgressToast status={importProgress} />}
     {semantic.labeling && <ImportProgressToast status={{ done: 0, total: 0, label: semantic.labelProgress?.stage ?? 'Labeling album…' }} />}
+    {cull.culling && <ImportProgressToast status={{ done: 0, total: 0, label: 'Finding blurry photos…' }} />}
     {dragging && <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos anywhere to start creating.</p><span>JPEG, PNG, WebP, RAW and more</span></div></div>}
   </div>;
 }

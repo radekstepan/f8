@@ -69,6 +69,21 @@ describe("library client semantic search", () => {
     expect(labelInit?.method).toBe("PATCH");
   });
 
+  it("culls an album against the cull-assist endpoint", async () => {
+    const report = {
+      albumId: "a1", assessed: ["p1"], alreadyAssessed: [], labeled: ["p1"], alreadyLabeled: [],
+      blurry: [], keepers: ["p1"], groups: [], skipped: [], failed: [],
+    };
+    const fetch = vi.fn(async () => jsonResponse(report));
+    vi.stubGlobal("fetch", fetch);
+    const client = createLibraryClient();
+    expect(await client.cullAlbum("a1")).toEqual(report);
+    const [input, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(input).toBe("/api/cull-assist/cull");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toContain("a1");
+  });
+
   it("reads semantic health and kicks warmup", async () => {
     const health = { ok: true, ready: false, weightsReady: false };
     const fetch = vi.fn(async () => jsonResponse(health));

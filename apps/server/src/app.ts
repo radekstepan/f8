@@ -25,6 +25,7 @@ import {
   validateLabelBody,
   validateSearchBody,
 } from "./semantic-search.ts";
+import { createCullQueue, cullAlbum, validateCullBody } from "./cull-assist.ts";
 import {
   deleteHealOverlay,
   listHealOverlays,
@@ -52,6 +53,8 @@ export interface AppContext {
   // Import-time semantic embedding hook; defaults to the background queue.
   // Tests inject a spy so imports never spin the real embedder.
   semanticEnqueue?: (photoId: string) => void;
+  // Import-time cull-assist hook; same deal as semanticEnqueue.
+  cullEnqueue?: (photoId: string) => void;
 }
 
 const IMAGE_MIME: Record<string, string> = {
@@ -177,6 +180,16 @@ export function createApp(ctx: AppContext): Hono {
     thumbDeps: ctx.thumbDeps,
   });
   const enqueueSemantic = ctx.semanticEnqueue ?? ((photoId: string): void => semanticQueue?.enqueue(photoId));
+  // Import-time cull assessment: same fire-and-forget shape, but classical
+  // (no weights), so it always attempts instead of draining silently.
+  const cullQueue = ctx.cullEnqueue ? null : createCullQueue({
+    dataDir: config.dataDir,
+    previewsDir: config.previewsDir,
+    tmpDir: config.tmpDir,
+    store,
+    thumbDeps: ctx.thumbDeps,
+  });
+  const enqueueCull = ctx.cullEnqueue ?? ((photoId: string): void => cullQueue?.enqueue(photoId));
 
   app.onError((error, c) => {
     console.error(error);
@@ -450,6 +463,30 @@ export function createApp(ctx: AppContext): Hono {
     }
   });
 
+  app.post("/api/cull-assist/cull", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    const parsed = validateCullBody(body);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    try {
+      return c.json(await cullAlbum({
+        dataDir: config.dataDir,
+        previewsDir: config.previewsDir,
+        tmpDir: config.tmpDir,
+        store,
+        thumbDeps: ctx.thumbDeps,
+      }, parsed.value.albumId));
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 404);
+      console.error(error);
+      return c.json({ error: "Cull assist failed." }, 500);
+    }
+  });
+
   app.get("/api/library", (c) => {
     const rows = store.listPhotos();
     const labels = store.getLabelsBatch(rows.map((row) => row.id));
@@ -480,8 +517,12 @@ export function createApp(ctx: AppContext): Hono {
       }
       const outcome = await importUpload(store, config, tmpPath, filename, { albumId, decodeRaw: ctx.decodeRaw });
       // Fresh bytes queue a background CLIP embedding (amortized, skippable
-      // offline); duplicates and relinks keep their existing catalog rows.
-      if (outcome.status === "imported") enqueueSemantic(outcome.row.id);
+      // offline) plus a classical cull assessment; duplicates and relinks
+      // keep their existing catalog rows.
+      if (outcome.status === "imported") {
+        enqueueSemantic(outcome.row.id);
+        enqueueCull(outcome.row.id);
+      }
       return c.json({
         photo: toApiPhoto(outcome.row, outcome.edit, store.getLabels(outcome.row.id)),
         deduplicated: outcome.status !== "imported",
@@ -508,7 +549,10 @@ export function createApp(ctx: AppContext): Hono {
     }
     const report = await scanPaths(store, config, roots, paths, { albumId, decodeRaw: ctx.decodeRaw });
     for (const outcome of report.outcomes) {
-      if (outcome.status === "imported") enqueueSemantic(outcome.row.id);
+      if (outcome.status === "imported") {
+        enqueueSemantic(outcome.row.id);
+        enqueueCull(outcome.row.id);
+      }
     }
     const photos = (outcomes: ImportOutcome[]): LibraryPhoto[] =>
       outcomes.map((outcome) => toApiPhoto(outcome.row, outcome.edit, store.getLabels(outcome.row.id)));

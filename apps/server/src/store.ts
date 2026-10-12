@@ -77,6 +77,38 @@ interface LabelRow {
   source: string;
 }
 
+export interface StoredCull {
+  hash: string;
+  blur: number;
+  blurry: boolean;
+  phash: string;
+  aesthetic: number;
+  version: string;
+  updatedAt: string;
+}
+
+interface CullRow {
+  hash: string;
+  blur: number;
+  blurry: number;
+  phash: string;
+  aesthetic: number;
+  version: string;
+  updated_at: string;
+}
+
+function cullRowToStored(row: CullRow): StoredCull {
+  return {
+    hash: row.hash,
+    blur: row.blur,
+    blurry: row.blurry === 1,
+    phash: row.phash,
+    aesthetic: row.aesthetic,
+    version: row.version,
+    updatedAt: row.updated_at,
+  };
+}
+
 function embeddingRowToStored(row: EmbeddingRow): StoredEmbedding | undefined {
   const bytes = row.embedding instanceof Uint8Array ? row.embedding : new Uint8Array(0);
   if (bytes.length !== row.dim * 4) return undefined;
@@ -310,10 +342,23 @@ export function createStore(db: DatabaseSync) {
       return map;
     },
 
-    /** Replace the ML labels on a photo (user labels are never touched). */
-    setMlLabels: (photoId: string, labels: PhotoLabel[]): void => {
+    /**
+     * Replace the ML labels on a photo (user labels are never touched).
+     * `only` scopes the replacement to one ML feature's vocabulary (the
+     * semantic labeler passes its concepts, cull assist its flags), so two
+     * ML passes never wipe each other's labels. Without it every ML label
+     * is replaced, as before.
+     */
+    setMlLabels: (photoId: string, labels: PhotoLabel[], opts: { only?: readonly string[] } = {}): void => {
       const stamp = now();
-      const remove = db.prepare("DELETE FROM photo_labels WHERE photo_id = ? AND source = 'ml'");
+      const scope = opts.only;
+      const remove = scope === undefined
+        ? db.prepare("DELETE FROM photo_labels WHERE photo_id = ? AND source = 'ml'")
+        : scope.length
+          ? db.prepare(
+            `DELETE FROM photo_labels WHERE photo_id = ? AND source = 'ml' AND label IN (${scope.map(() => "?").join(", ")})`,
+          )
+          : null;
       // ML rows were just deleted, so any conflict is a user label with the
       // same text — the user's claim wins and the insert stands down.
       const insert = db.prepare(
@@ -322,7 +367,10 @@ export function createStore(db: DatabaseSync) {
       );
       db.exec("BEGIN IMMEDIATE");
       try {
-        remove.run(photoId);
+        if (remove) {
+          if (scope === undefined) remove.run(photoId);
+          else remove.run(photoId, ...scope);
+        }
         for (const entry of labels) insert.run(photoId, entry.label, entry.score, stamp);
         db.exec("COMMIT");
       } catch (error) {
@@ -361,6 +409,80 @@ export function createStore(db: DatabaseSync) {
 
     countMlLabeled: (): number =>
       (db.prepare("SELECT COUNT(DISTINCT photo_id) AS n FROM photo_labels WHERE source = 'ml'").get() as { n: number }).n,
+
+    /** Cached cull assessment for one content hash (undefined when never assessed). */
+    getCull: (hash: string): StoredCull | undefined => {
+      const row = db
+        .prepare("SELECT hash, blur, blurry, phash, aesthetic, version, updated_at FROM photo_cull WHERE hash = ?")
+        .get(hash) as CullRow | undefined;
+      return row ? cullRowToStored(row) : undefined;
+    },
+
+    /** Cached assessments for a batch of content hashes (chunked IN-list). */
+    listCull: (hashes: string[]): Map<string, StoredCull> => {
+      const map = new Map<string, StoredCull>();
+      for (let i = 0; i < hashes.length; i += 500) {
+        const chunk = hashes.slice(i, i + 500);
+        const rows = db.prepare(
+          `SELECT hash, blur, blurry, phash, aesthetic, version, updated_at FROM photo_cull WHERE hash IN (${chunk.map(() => "?").join(", ")})`,
+        ).all(...chunk) as unknown as CullRow[];
+        for (const row of rows) map.set(row.hash, cullRowToStored(row));
+      }
+      return map;
+    },
+
+    /** Cache one assessment (assessments are deterministic, so re-saves are idempotent). */
+    saveCull: (
+      hash: string,
+      assessment: { blur: number; blurry: boolean; phash: string; aesthetic: number; version: string },
+    ): void => {
+      db.prepare(
+        `INSERT INTO photo_cull (hash, blur, blurry, phash, aesthetic, version, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (hash) DO UPDATE SET blur = excluded.blur, blurry = excluded.blurry,
+           phash = excluded.phash, aesthetic = excluded.aesthetic, version = excluded.version,
+           updated_at = excluded.updated_at`,
+      ).run(hash, assessment.blur, assessment.blurry ? 1 : 0, assessment.phash, assessment.aesthetic, assessment.version, now());
+    },
+
+    countCull: (): number =>
+      (db.prepare("SELECT COUNT(*) AS n FROM photo_cull").get() as { n: number }).n,
+
+    /** True once a photo's cull labels were assigned (from cache or fresh pixels). */
+    isCullLabeled: (photoId: string): boolean =>
+      (db.prepare("SELECT 1 AS hit FROM photo_cull_labels WHERE photo_id = ?").get(photoId) as { hit: number } | undefined) !== undefined,
+
+    /** Photo ids (of the given set) whose cull labels were already assigned. */
+    listCullLabeled: (photoIds: string[]): Set<string> => {
+      const labeled = new Set<string>();
+      for (let i = 0; i < photoIds.length; i += 500) {
+        const chunk = photoIds.slice(i, i + 500);
+        if (!chunk.length) continue;
+        const rows = db.prepare(
+          `SELECT photo_id FROM photo_cull_labels WHERE photo_id IN (${chunk.map(() => "?").join(", ")})`,
+        ).all(...chunk) as unknown as { photo_id: string }[];
+        for (const row of rows) labeled.add(row.photo_id);
+      }
+      return labeled;
+    },
+
+    /** Mark photos cull-labeled (assigned zero or more flags — processed either way). */
+    markCullLabeled: (photoIds: string | string[]): void => {
+      const ids = Array.isArray(photoIds) ? photoIds : [photoIds];
+      if (!ids.length) return;
+      const stamp = now();
+      const insert = db.prepare(
+        "INSERT INTO photo_cull_labels (photo_id, updated_at) VALUES (?, ?) ON CONFLICT (photo_id) DO NOTHING",
+      );
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        for (const id of ids) insert.run(id, stamp);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
 
     getMeta: (key: string): string | undefined => {
       const row = db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as { value: string } | undefined;

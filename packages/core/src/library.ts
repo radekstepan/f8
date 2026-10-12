@@ -105,6 +105,33 @@ export interface LabelAlbumReport {
   failed: { photoId: string; error: string }[];
 }
 
+/** One near-duplicate group: the group best plus every member id. */
+export interface CullGroup {
+  keeper: string;
+  members: string[];
+}
+
+/** Album cull report, as served by POST /api/cull-assist/cull. */
+export interface CullAlbumReport {
+  albumId: string;
+  /** Photos whose metrics this run computed. */
+  assessed: string[];
+  /** Photos whose metrics the cache already covered (never re-detected). */
+  alreadyAssessed: string[];
+  /** Photos this run cull-labeled (whether or not any flag fired). */
+  labeled: string[];
+  /** Photos already cull-labeled before this run (never relabeled). */
+  alreadyLabeled: string[];
+  /** Labeled blurry by this run. */
+  blurry: string[];
+  /** Labeled keeper by this run. */
+  keepers: string[];
+  /** Near-duplicate groups across the album's assessed photos. */
+  groups: CullGroup[];
+  skipped: { photoId: string; reason: string }[];
+  failed: { photoId: string; error: string }[];
+}
+
 /** Labeling health: labeling readiness plus catalog coverage counts. */
 export interface SemanticSearchHealth {
   ok: boolean;
@@ -154,6 +181,7 @@ export interface LibraryClient {
   labelAlbum: (albumId: string) => Promise<LabelAlbumReport>;
   semanticHealth: () => Promise<SemanticSearchHealth>;
   semanticWarmup: () => Promise<SemanticSearchHealth>;
+  cullAlbum: (albumId: string) => Promise<CullAlbumReport>;
   listHealOverlays: (id: string) => Promise<{ patches: HealOverlayRecord[] }>;
   saveHealOverlay: (id: string, groupId: number, body: HealOverlayBody) => Promise<{ patch: HealOverlayRecord }>;
   deleteHealOverlay: (id: string, groupId: number) => Promise<{ deleted: boolean }>;
@@ -216,6 +244,8 @@ export function createLibraryClient(baseUrl = ""): LibraryClient {
         headers: { "Content-Type": "application/json" },
         body: "{}",
       }),
+    cullAlbum: (albumId) =>
+      request<CullAlbumReport>(url("/api/cull-assist/cull"), json({ albumId })),
     listHealOverlays: (id) =>
       request<{ patches: HealOverlayRecord[] }>(url(`/api/photos/${encodeURIComponent(id)}/heal-overlays`)),
     saveHealOverlay: (id, groupId, body) =>

@@ -17,15 +17,18 @@ interface SidebarProps {
   onRemoveAlbum?: (id: string) => void;
   /** Label the album's unlabeled photos with ML. Omit to hide the label item. */
   onLabelAlbum?: (id: string) => void;
+  /** Find the album's blurry photos with ML cull assist. Omit to hide the item. */
+  onCullAlbum?: (id: string) => void;
 }
 
-function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, onLabelAlbum }: {
+function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, onLabelAlbum, onCullAlbum }: {
   album: Album;
   count: number;
   selected: boolean;
   onSelect: (id: string) => void;
   onRemoveAlbum?: (id: string) => void;
   onLabelAlbum?: (id: string) => void;
+  onCullAlbum?: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -37,7 +40,7 @@ function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, onLabelAlbu
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('pointerdown', onPointer); document.removeEventListener('keydown', onKey); };
   }, [open ]);
-  const showMenu = Boolean(onRemoveAlbum || onLabelAlbum);
+  const showMenu = Boolean(onRemoveAlbum || onLabelAlbum || onCullAlbum);
   return (
     <div className={`album-row ${open ? 'is-menu-open' : ''}`} ref={ref}>
       <button className={`sidebar-item album-item ${selected ? 'is-selected' : ''}`} onClick={() => onSelect(album.id)}>
@@ -59,7 +62,8 @@ function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, onLabelAlbu
       {showMenu && open && (
         <div className="dropdown-menu album-menu" role="menu" aria-label={`Album actions for ${album.name}`}>
           {onLabelAlbum && <MenuItem onClick={() => { setOpen(false); onLabelAlbum(album.id); }}><span>Label unlabeled photos <span className="ml-badge" title="Photos are labeled by a machine-learning model on the photo server">ML</span></span></MenuItem>}
-          {onLabelAlbum && onRemoveAlbum && <div className="menu-separator" role="separator" />}
+          {onCullAlbum && <MenuItem onClick={() => { setOpen(false); onCullAlbum(album.id); }}><span>Find blurry photos <span className="ml-badge" title="Blurry photos, near-duplicates, and keepers are flagged by ML cull assist on the photo server">ML</span></span></MenuItem>}
+          {(onLabelAlbum || onCullAlbum) && onRemoveAlbum && <div className="menu-separator" role="separator" />}
           {onRemoveAlbum && <MenuItem danger onClick={() => { setOpen(false); onRemoveAlbum(album.id); }}>Delete album…</MenuItem>}
         </div>
       )}
@@ -67,7 +71,7 @@ function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, onLabelAlbu
   );
 }
 
-export function Sidebar({ photos, albums, collection, search, onSearch, onSelect, onImport, onNewAlbum, onRemoveAlbum, onLabelAlbum }: SidebarProps) {
+export function Sidebar({ photos, albums, collection, search, onSearch, onSelect, onImport, onNewAlbum, onRemoveAlbum, onLabelAlbum, onCullAlbum }: SidebarProps) {
   const libraryItems = [
     { id: 'all', label: 'All Photos', icon: Images, count: photos.length },
     { id: 'favorites', label: 'Favorites', icon: Heart, count: photos.filter((photo) => photo.favorite).length },
@@ -78,7 +82,7 @@ export function Sidebar({ photos, albums, collection, search, onSearch, onSelect
       <div className="sidebar-search"><Search size={14} /><input id="photo-search" aria-label="Search photos" placeholder="Search photos" value={search} onChange={(event) => onSearch(event.target.value)} /><kbd>/</kbd></div>
       <div className="sidebar-scroll">
         <section className="sidebar-section"><h2>Library</h2><nav>{libraryItems.map(({ id, label, icon: Icon, count }) => <button key={id} className={`sidebar-item ${collection === id ? 'is-selected' : ''}`} onClick={() => onSelect(id)}><Icon size={17} strokeWidth={1.6} /><span>{label}</span><span className="item-count">{count}</span></button>)}</nav></section>
-        <section className="sidebar-section albums-section"><div className="sidebar-section-heading"><h2>Albums</h2><IconButton label="Create album" onClick={onNewAlbum}><Plus size={14} /></IconButton></div><nav>{albums.map((album) => <AlbumRow key={album.id} album={album} count={photos.filter((photo) => photo.albumId === album.id).length} selected={collection === album.id} onSelect={onSelect} onRemoveAlbum={onRemoveAlbum} onLabelAlbum={onLabelAlbum} />)}</nav></section>
+        <section className="sidebar-section albums-section"><div className="sidebar-section-heading"><h2>Albums</h2><IconButton label="Create album" onClick={onNewAlbum}><Plus size={14} /></IconButton></div><nav>{albums.map((album) => <AlbumRow key={album.id} album={album} count={photos.filter((photo) => photo.albumId === album.id).length} selected={collection === album.id} onSelect={onSelect} onRemoveAlbum={onRemoveAlbum} onLabelAlbum={onLabelAlbum} onCullAlbum={onCullAlbum} />)}</nav></section>
       </div>
       <div className="sidebar-bottom"><button className="import-button" onClick={onImport}><Import size={16} />Import Photos<span>+</span></button></div>
     </aside>
