@@ -73,6 +73,77 @@ export function filmstripArrowIndex(key: string, currentIndex: number, itemCount
   return -1;
 }
 
+/** Geometry for revealing the active filmstrip item (Filmstrip).
+ *
+ * Item edges are in list content coordinates: the caller measures them with
+ * `getBoundingClientRect` on the item and the list
+ * (`itemRect - listRect - list.clientLeft/Top + list.scrollLeft/Top`) so the
+ * math stays correct regardless of which ancestor is the offsetParent.
+ */
+export interface FilmstripCenterIntent {
+  /** Current list scrollLeft in px. */
+  scrollLeft: number;
+  /** Current list scrollTop in px. */
+  scrollTop: number;
+  /** List clientWidth in px. */
+  clientWidth: number;
+  /** List clientHeight in px. */
+  clientHeight: number;
+  /** List scrollWidth in px. */
+  scrollWidth: number;
+  /** List scrollHeight in px. */
+  scrollHeight: number;
+  /** Active item's left edge in content px. */
+  itemLeft: number;
+  /** Active item's top edge in content px. */
+  itemTop: number;
+  /** Active item's width in px. */
+  itemWidth: number;
+  /** Active item's height in px. */
+  itemHeight: number;
+}
+
+/** Scroll offset the filmstrip list should move to. */
+export interface FilmstripScrollOffset {
+  scrollLeft: number;
+  scrollTop: number;
+}
+
+/** Scroll offset that centers the active item horizontally.
+ *
+ * Horizontal: the item's center lands on the viewport's center, clamped to
+ * `[0, scrollWidth - clientWidth]` so the first items pin to the start and
+ * the last items pin to the end instead of showing empty space. Always
+ * recenters (like `scrollIntoView({ inline: 'center' })`), even when the
+ * item is already visible — opening a photo is an explicit jump, so the
+ * strip settles with context (photos before and after) on both sides.
+ *
+ * Vertical: nearest-row reveal (like `block: 'nearest'`): rows above the
+ * viewport align their top, rows below align their bottom, visible rows
+ * stay put. The wrapped strip's overflow is vertical, so this is the axis
+ * that actually moves there.
+ *
+ * Axes without overflow (within `FILMSTRIP_OVERFLOW_TOLERANCE_PX`, or a
+ * non-positive viewport) keep the current offset rather than snapping.
+ */
+export function filmstripCenteredScrollOffset(intent: FilmstripCenterIntent): FilmstripScrollOffset {
+  let scrollLeft = intent.scrollLeft;
+  if (intent.clientWidth > 0 && filmstripOverflows(intent.scrollWidth, intent.clientWidth)) {
+    const target = intent.itemLeft + intent.itemWidth / 2 - intent.clientWidth / 2;
+    scrollLeft = Math.min(Math.max(target, 0), Math.max(intent.scrollWidth - intent.clientWidth, 0));
+  }
+  let scrollTop = intent.scrollTop;
+  if (intent.clientHeight > 0 && filmstripOverflows(intent.scrollHeight, intent.clientHeight)) {
+    const max = Math.max(intent.scrollHeight - intent.clientHeight, 0);
+    if (intent.itemTop < intent.scrollTop) scrollTop = intent.itemTop;
+    else if (intent.itemTop + intent.itemHeight > intent.scrollTop + intent.clientHeight) {
+      scrollTop = intent.itemTop + intent.itemHeight - intent.clientHeight;
+    }
+    scrollTop = Math.min(Math.max(scrollTop, 0), max);
+  }
+  return { scrollLeft, scrollTop };
+}
+
 /** Index of the filmstrip item to focus for a key press in a wrapped grid.
  *
  * Left/Right/Home/End behave exactly as {@link filmstripArrowIndex} (DOM

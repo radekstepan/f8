@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filmstripArrowIndex, filmstripGridArrowIndex, filmstripOverflows, filmstripWheelShift, type FilmstripWheelIntent } from "./filmstripScroll.js";
+import { filmstripArrowIndex, filmstripCenteredScrollOffset, filmstripGridArrowIndex, filmstripOverflows, filmstripWheelShift, type FilmstripCenterIntent, type FilmstripWheelIntent } from "./filmstripScroll.js";
 
 const base: FilmstripWheelIntent = { deltaX: 0, deltaY: 120, deltaMode: 0, zoomChord: false, canScrollX: true, clientWidth: 800 };
 
@@ -120,5 +120,65 @@ describe("filmstripGridArrowIndex", () => {
     expect(filmstripGridArrowIndex("ArrowDown", 0, 0, 4)).toBe(-1);
     expect(filmstripGridArrowIndex("ArrowDown", -1, 10, 4)).toBe(-1);
     expect(filmstripGridArrowIndex("ArrowDown", 10, 10, 4)).toBe(-1);
+  });
+});
+
+describe("filmstripCenteredScrollOffset", () => {
+  // Single-row strip, 800px viewport over 2000px of content; item 91px wide.
+  const row: FilmstripCenterIntent = {
+    scrollLeft: 0, scrollTop: 0, clientWidth: 800, clientHeight: 80,
+    scrollWidth: 2000, scrollHeight: 80,
+    itemLeft: 1000, itemTop: 0, itemWidth: 91, itemHeight: 72,
+  };
+
+  it("centers a middle item on the viewport", () => {
+    // Item center 1045.5 - viewport half 400 = 645.5.
+    expect(filmstripCenteredScrollOffset(row)).toEqual({ scrollLeft: 645.5, scrollTop: 0 });
+  });
+
+  it("recenters even when the item is already fully visible", () => {
+    // Visible at the right edge (the old inline:nearest landing spot).
+    const atEdge = { ...row, scrollLeft: 200, itemLeft: 900 };
+    expect(filmstripCenteredScrollOffset(atEdge).scrollLeft).toBe(545.5);
+  });
+
+  it("clamps to the start and end instead of showing empty space", () => {
+    expect(filmstripCenteredScrollOffset({ ...row, itemLeft: 0 }).scrollLeft).toBe(0);
+    expect(filmstripCenteredScrollOffset({ ...row, itemLeft: 100 }).scrollLeft).toBe(0);
+    expect(filmstripCenteredScrollOffset({ ...row, itemLeft: 1909 }).scrollLeft).toBe(1200);
+    expect(filmstripCenteredScrollOffset({ ...row, itemLeft: 1800 }).scrollLeft).toBe(1200);
+  });
+
+  it("keeps the current offset on axes without overflow", () => {
+    const fits = { ...row, scrollWidth: 800, scrollLeft: 0 };
+    expect(filmstripCenteredScrollOffset(fits)).toEqual({ scrollLeft: 0, scrollTop: 0 });
+    // Sub-pixel overflow within tolerance still counts as fitting.
+    expect(filmstripCenteredScrollOffset({ ...fits, scrollWidth: 800.5 })).toEqual({ scrollLeft: 0, scrollTop: 0 });
+    // A non-positive viewport never scrolls.
+    expect(filmstripCenteredScrollOffset({ ...row, clientWidth: 0, scrollLeft: 7 }).scrollLeft).toBe(7);
+  });
+
+  // Wrapped strip: 3+ rows over an 800x160 viewport, 72px rows + 9px gaps.
+  const grid: FilmstripCenterIntent = {
+    scrollLeft: 0, scrollTop: 0, clientWidth: 800, clientHeight: 160,
+    scrollWidth: 800, scrollHeight: 400,
+    itemLeft: 400, itemTop: 0, itemWidth: 91, itemHeight: 72,
+  };
+
+  it("reveals rows below and above with nearest semantics", () => {
+    // Third row (top 162) below the 160px viewport: bottom-align it.
+    expect(filmstripCenteredScrollOffset({ ...grid, itemTop: 162 })).toEqual({ scrollLeft: 0, scrollTop: 74 });
+    // First row while scrolled down: top-align it.
+    expect(filmstripCenteredScrollOffset({ ...grid, scrollTop: 100, itemTop: 0 })).toEqual({ scrollLeft: 0, scrollTop: 0 });
+  });
+
+  it("leaves a visible row alone vertically", () => {
+    expect(filmstripCenteredScrollOffset({ ...grid, itemTop: 81 })).toEqual({ scrollLeft: 0, scrollTop: 0 });
+    expect(filmstripCenteredScrollOffset({ ...grid, scrollTop: 74, itemTop: 81 })).toEqual({ scrollLeft: 0, scrollTop: 74 });
+  });
+
+  it("clamps the vertical reveal at the content end", () => {
+    // Last row bottom 400 with a 160px viewport pins to max 240.
+    expect(filmstripCenteredScrollOffset({ ...grid, itemTop: 328 })).toEqual({ scrollLeft: 0, scrollTop: 240 });
   });
 });

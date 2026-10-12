@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownWideNarrow, Check, ChevronDown, ChevronUp, Grid2X2, Heart, MoreHorizontal, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { ALBUM_SORT_KEYS, ALBUM_SORT_LABELS, DEFAULT_ALBUM_SORT_DIR, DEFAULT_ALBUM_SORT_KEY, DEFAULT_EDIT } from '@f8/core';
-import { computeGridWindow, filmstripGridArrowIndex, filmstripOverflows, filmstripWheelShift, getPhotoFilter, isBuiltInCollection, isPortraitPhoto, thumbnailFilterForPhoto } from '@f8/core';
+import { computeGridWindow, filmstripCenteredScrollOffset, filmstripGridArrowIndex, filmstripOverflows, filmstripWheelShift, getPhotoFilter, isBuiltInCollection, isPortraitPhoto, thumbnailFilterForPhoto } from '@f8/core';
 import type { Album, AlbumSortDir, AlbumSortKey, EditState, Photo, Preset } from '@f8/core';
 
 /** A grid/filmstrip photo with its edit recipe attached when known (library photos carry `edit`). */
@@ -56,9 +56,27 @@ function filmstripSortLabel(sortKey: AlbumSortKey, reversed: boolean): string {
 
 export function Filmstrip({ photos, selectedId, collectionName, edits, onSelect, onGrid, onSort, reversed, sortKey = DEFAULT_ALBUM_SORT_KEY, showPresets, onShowPresets }: { photos: PhotoWithEdit[]; selectedId: string; collectionName: string; edits?: Record<string, EditState>; onSelect: (id: string) => void; onGrid: () => void; onSort: () => void; reversed: boolean; sortKey?: AlbumSortKey; showPresets: boolean; onShowPresets: () => void }) {
   const listRef = useRef<HTMLDivElement>(null);
+  // Opening a photo centers it horizontally (clamped at both ends) so
+  // neighbors stay visible on both sides; vertically the row reveals with
+  // nearest semantics. One computed scrollTo replaces scrollIntoView so
+  // both axes settle together. Rects (not offsetLeft) measure the item so
+  // the math holds whatever the offsetParent is.
   useEffect(() => {
+    const list = listRef.current;
+    const item = list?.querySelector<HTMLElement>(`[data-photo-id="${selectedId}"]`);
+    if (!list || !item) return;
     const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    listRef.current?.querySelector<HTMLElement>(`[data-photo-id="${selectedId}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+    const listRect = list.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    const offset = filmstripCenteredScrollOffset({
+      scrollLeft: list.scrollLeft, scrollTop: list.scrollTop,
+      clientWidth: list.clientWidth, clientHeight: list.clientHeight,
+      scrollWidth: list.scrollWidth, scrollHeight: list.scrollHeight,
+      itemLeft: itemRect.left - listRect.left - list.clientLeft + list.scrollLeft,
+      itemTop: itemRect.top - listRect.top - list.clientTop + list.scrollTop,
+      itemWidth: itemRect.width, itemHeight: itemRect.height,
+    });
+    list.scrollTo({ left: offset.scrollLeft, top: offset.scrollTop, behavior: reduceMotion ? 'auto' : 'smooth' });
   }, [selectedId]);
   // With a single row a plain mouse wheel (vertical delta only) would do
   // nothing over the strip, so vertical-dominant wheels translate into
