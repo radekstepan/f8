@@ -41,6 +41,15 @@ export type Tool = 'adjust' | 'crop' | 'repair';
 export type ViewMode = 'editor' | 'library';
 export type DialogType = 'export' | 'info' | 'shortcuts' | 'about' | 'album' | 'preset' | 'remove' | 'remove-album' | null;
 
+/** Scenes the ML subject-aware enhance classifier distinguishes. */
+export type SceneLabel = 'portrait' | 'landscape' | 'night' | 'document';
+
+/** The scene an ML enhance was applied with, plus classifier confidence 0..1. */
+export interface SceneEnhanceResult {
+  scene: SceneLabel;
+  confidence: number;
+}
+
 export interface RetouchPoint {
   x: number;
   y: number;
@@ -82,10 +91,18 @@ export interface EditState {
   retouches: RetouchPoint[];
   preset: string;
   autoEnhanced: boolean;
+  /**
+   * Set when ML scene enhance applied this recipe (the detected scene +
+   * confidence for the UI badge). Null/absent for classic enhances and
+   * legacy server recipes. Shown only while autoEnhanced is true.
+   */
+  sceneEnhance?: SceneEnhanceResult | null;
 }
 
 export type NumericAdjustment = {
-  [K in keyof EditState]: EditState[K] extends number ? K : never;
+  // -? keeps optional EditState fields (e.g. sceneEnhance) from leaking
+  // `undefined` into the indexed union via preserved optionality.
+  [K in keyof EditState]-?: EditState[K] extends number ? K : never;
 }[keyof EditState];
 
 export interface Preset {

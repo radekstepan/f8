@@ -575,6 +575,7 @@ export default function App() {
       case 'copy': copyAdjustments(); break;
       case 'paste': pasteAdjustments(); break;
       case 'enhance': editor.autoEnhance(photo?.src); setView('editor'); break;
+      case 'enhance-scene': editor.autoEnhanceScene(photo?.src); setView('editor'); break;
       case 'rotate': rotateImage(-1); break;
       case 'favorite': toggleFavorite(); break;
       case 'remove': if (photo) requestRemove(photo.id); break;
@@ -624,6 +625,7 @@ export default function App() {
         if (next) selectPhoto(next.id);
         return;
       }
+      if (key === 'a' && event.shiftKey) { event.preventDefault(); actionRef.current('enhance-scene'); return; }
       const actions: Record<string, MenuAction> = { a: 'enhance', f: 'favorite', b: 'compare', g: 'grid', r: 'rotate' };
       const tools: Record<string, Tool> = { v: 'adjust', c: 'crop', j: 'repair' };
       if (actions[key]) actionRef.current(actions[key]);
@@ -637,6 +639,22 @@ export default function App() {
     window.addEventListener('blur', onBlur);
     return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur); };
   }, [dialog, filteredPhotos, selectedId, selectPhoto]);
+
+  // ML scene enhance requested from a library-grid or filmstrip context
+  // menu: the editor hook is bound to the selected photo, so the request
+  // parks until the newly selected photo is open and seeded, then runs once.
+  const pendingSceneEnhance = useRef<string | null>(null);
+  const requestSceneEnhance = (id: string) => {
+    pendingSceneEnhance.current = id;
+    selectPhoto(id);
+    setView('editor');
+  };
+  useEffect(() => {
+    if (pendingSceneEnhance.current === null || !photo || photo.id !== pendingSceneEnhance.current) return;
+    if (view !== 'editor' || !editor.ready) return;
+    pendingSceneEnhance.current = null;
+    editor.autoEnhanceScene(photo.src);
+  });
 
   const createAlbum = (name: string, includePhoto: boolean) => {
     void (async () => {
@@ -709,7 +727,7 @@ export default function App() {
       {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { setSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onSceneEnhance={requestSceneEnhance} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (
@@ -743,6 +761,7 @@ export default function App() {
               onSelect={selectPhoto} onGrid={() => setView('library')}
               onSort={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')} reversed={sortDir === 'desc'} sortKey={sortKey}
               showPresets={presetsOpen} onShowPresets={() => setPresetsOpen(true)}
+              onSceneEnhance={requestSceneEnhance} onFavorite={toggleFavorite}
             />}
           </>
         )}
@@ -755,7 +774,7 @@ export default function App() {
         onStraightenDragging={setStraightenDragging}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={handleEditChange} onRotate={rotateImage} onStraighten={changeStraighten} onReset={() => handleAction('reset')}
-        onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
+        onAuto={() => editor.autoEnhance(photo.src)} onAutoScene={() => editor.autoEnhanceScene(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
         onClose={() => setInspectorOpen(false)}
       />}

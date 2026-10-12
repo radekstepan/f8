@@ -33,6 +33,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 - Live temperature, tint, lightness, hue, saturation, vibrance, detail, tone, grain, vignette, and fade adjustments.
 - Editable numeric values, keyboard-accessible sliders, section toggles, automatic adjustment examples, and double-click slider resets.
 - A live RGB histogram derived from the rendered image.
+- One-click Enhance (histogram-based) and ML Scene Enhance: an on-device scene classifier (portrait / landscape / night / document) picks per-scene enhance parameters over the 160px analysis image — portraits protect skin tones, landscapes allow stronger contrast. Available from the Image menu, the inspector, the Shift+A shortcut, or a photo's right-click menu; the result always labels the detected scene and confidence.
 - Per-photo undo/redo with up to fifty history entries. Consecutive slider changes are grouped into a single edit.
 - Draggable before/after comparison and hold-to-preview-original behavior.
 - Centered aspect-ratio cropping, rotation, flips, and straightening with automatic horizon detection, plus a rule-of-thirds overlay.
@@ -143,7 +144,7 @@ Everything stays on your machine: the server binds to localhost, originals stay 
 
 ## Demo Boundaries
 
-- The Enhance control and per-section Auto buttons apply histogram-based adjustments; no machine-learning model is included.
+- The classic Enhance control and per-section Auto buttons apply histogram-based adjustments with no machine-learning model. The separate ML Scene Enhance option classifies portrait / landscape / night / document on-device with a tiny logistic-regression model over the 160px analysis image (no download, no server) and applies per-scene parameters; its coefficients are set by inspection rather than fitted on labeled photos, so ambiguous scenes may misclassify — the detected scene and confidence always show next to the result.
 - Color adjustments are lightweight browser-filter approximations, not a color-managed RAW engine. Tone, clarity, and sharpness are simplified contrast mappings.
 - Repair reconstructs masked regions in a worker — Heal transplants matching nearby texture adapted to local light (default), on-device ML Heal inpaints larger removals via a locally cached ONNX model with Heal fallback, Telea or Navier-Stokes diffusion remain available — falling back to a local blur when the vision engine is unavailable. Clone copies pixels from a source region. ML weights download once (LaMa ~208MB, Moebius ~1.3GB) and are cached for offline use; opening the Repair tool prefetches the selected tier while you paint. One-click people removal detects on the source framing, so remove before rotating/cropping (detection boxes do not remap through rotation or crop yet), and people only; power lines and other classes are follow-ups. Auto dust-spot detection shares the source-framing boundary, scans a 1280px downsample (sub-pixel specks at full resolution are out of reach), and caps at 60 spots per scan. Photos never leave the device.
 - Crop supports centered ratios rather than a freely movable crop rectangle. The overlay is a rule-of-thirds framing guide.

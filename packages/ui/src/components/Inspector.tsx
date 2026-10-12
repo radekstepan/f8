@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Bandage, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, FlipHorizontal2, FlipVertical2, Focus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, X } from 'lucide-react';
-import { CROP_RATIOS, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, groupRetouchStrokes, strokeIdForPoint } from '@f8/core';
+import { CROP_RATIOS, SCENE_DISPLAY_NAMES, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, groupRetouchStrokes, strokeIdForPoint } from '@f8/core';
 import type { ChangeEdit, DetectedObject, DustSpot, DustSpotsSource, EditState, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { IconButton, MenuItem, RangeControl, SelectField, Toggle } from './EditorUI.js';
@@ -414,6 +414,8 @@ interface InspectorProps {
   onStraighten: (next: number, mergeKey?: string) => void;
   onReset: () => void;
   onAuto: () => void;
+  /** ML subject-aware enhance; omit to hide the scene row. */
+  onAutoScene?: () => void;
   onAutoWhiteBalance: () => void;
   onAutoLightness: () => void;
   onCopy: () => void;
@@ -424,7 +426,7 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
   const [extraSections, setExtraSections] = useState<string[]>([]);
@@ -471,7 +473,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="auto-enhance-row"><button onClick={onAuto}><Sparkles size={17} /><span>Auto Enhance</span></button><Toggle checked={edit.autoEnhanced} label="Auto Enhance" onChange={onAuto} /></div><Histogram data={histogram} photo={photo} />
+    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="auto-enhance-row"><button onClick={onAuto}><Sparkles size={17} /><span>Auto Enhance</span></button><Toggle checked={edit.autoEnhanced} label="Auto Enhance" onChange={onAuto} /></div>{onAutoScene && <div className="auto-enhance-row scene-enhance-row" data-testid="scene-enhance"><button data-testid="scene-enhance-apply" title="Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings" onClick={onAutoScene}><Sparkles size={17} /><span>Scene Enhance</span><span className="ml-badge" title="The scene is classified by a machine-learning model on your device">ML</span></button>{edit.autoEnhanced && edit.sceneEnhance && <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}% · ML</span>}</div>}<Histogram data={histogram} photo={photo} />
       <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} enabled={edit.whiteBalanceEnabled} onToggle={() => onChange({ whiteBalanceEnabled: !edit.whiteBalanceEnabled })} onAuto={onAutoWhiteBalance} onReset={() => onChange({ temperature: 5500, tint: 0 })}>
         {range('temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false, disabled: !edit.whiteBalanceEnabled })}
         {range('tint', 'Tint', { color: 'tint', disabled: !edit.whiteBalanceEnabled })}

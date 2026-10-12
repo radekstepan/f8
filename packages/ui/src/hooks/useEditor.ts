@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeWhiteBalanceAuto, decodeDownsampled, isDefaultEdit, isOriginalLook, presetForPatch } from '@f8/core';
+import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeSceneAwareEnhance, computeWhiteBalanceAuto, decodeDownsampled, isDefaultEdit, isOriginalLook, presetForPatch } from '@f8/core';
 import type { EditState, HistoryState, Preset } from '@f8/core';
 
 const initialHistory = (_id?: string): HistoryState => ({
@@ -139,23 +139,47 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
 
   const reset = useCallback(() => {
     if (isDefaultEdit(history.present)) return false;
-    change({ ...DEFAULT_EDIT });
+    change({ ...DEFAULT_EDIT, sceneEnhance: null });
     return true;
   }, [change, history.present]);
+  // Classic and ML scene enhance share one toggle: each button activates its
+  // own mode, and clicking the active mode's button restores the snapshot.
+  // Switching modes keeps the pre-enhance snapshot, so toggling off from
+  // either mode returns to the same un-enhanced recipe.
   const autoEnhance = useCallback((src?: string) => {
     const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
     const geometry = { rotation, flipH, flipV, straighten, cropRatio, retouches };
-    if (history.present.autoEnhanced) {
-      change({ ...(enhanceSnapshots.current[photoId] || DEFAULT_EDIT), ...geometry, autoEnhanced: false });
+    if (history.present.autoEnhanced && !history.present.sceneEnhance) {
+      change({ ...(enhanceSnapshots.current[photoId] || DEFAULT_EDIT), ...geometry, autoEnhanced: false, sceneEnhance: null });
       return;
     }
-    enhanceSnapshots.current[photoId] = history.present;
-    const fallback = () => change({ ...INITIAL_EDIT, ...geometry, exposure: 0.22, clarity: 12, autoEnhanced: true, preset: 'Auto Enhance' });
+    if (!history.present.autoEnhanced) enhanceSnapshots.current[photoId] = history.present;
+    const fallback = () => change({ ...INITIAL_EDIT, ...geometry, exposure: 0.22, clarity: 12, autoEnhanced: true, preset: 'Auto Enhance', sceneEnhance: null });
     if (!src) { fallback(); return; }
     void (async () => {
       try {
         const patch = computeAutoEnhance(await decodeDownsampled(src));
-        change({ ...INITIAL_EDIT, ...geometry, ...patch, autoEnhanced: true, preset: 'Auto Enhance' });
+        change({ ...INITIAL_EDIT, ...geometry, ...patch, autoEnhanced: true, preset: 'Auto Enhance', sceneEnhance: null });
+      } catch { fallback(); }
+    })();
+  }, [change, history.present, photoId]);
+
+  const autoEnhanceScene = useCallback((src?: string) => {
+    const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
+    const geometry = { rotation, flipH, flipV, straighten, cropRatio, retouches };
+    if (history.present.autoEnhanced && history.present.sceneEnhance) {
+      change({ ...(enhanceSnapshots.current[photoId] || DEFAULT_EDIT), ...geometry, autoEnhanced: false, sceneEnhance: null });
+      return;
+    }
+    if (!history.present.autoEnhanced) enhanceSnapshots.current[photoId] = history.present;
+    // Decode failure falls back to the classic fixed patch and claims no
+    // scene: a fallback result is never presented as ML.
+    const fallback = () => change({ ...INITIAL_EDIT, ...geometry, exposure: 0.22, clarity: 12, autoEnhanced: true, preset: 'Auto Enhance', sceneEnhance: null });
+    if (!src) { fallback(); return; }
+    void (async () => {
+      try {
+        const { scene, confidence, patch } = computeSceneAwareEnhance(await decodeDownsampled(src));
+        change({ ...INITIAL_EDIT, ...geometry, ...patch, autoEnhanced: true, preset: 'Auto Enhance (ML)', sceneEnhance: { scene, confidence } });
       } catch { fallback(); }
     })();
   }, [change, history.present, photoId]);
@@ -180,5 +204,5 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     })();
   }, [change]);
 
-  return { edit: history.present, ready: seedApplied, histories, change, endMerge, flushPersist, undo, redo, reset, autoEnhance, autoWhiteBalance, autoLightness, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
+  return { edit: history.present, ready: seedApplied, histories, change, endMerge, flushPersist, undo, redo, reset, autoEnhance, autoEnhanceScene, autoWhiteBalance, autoLightness, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
 }
