@@ -135,7 +135,7 @@ function MlProgressView({ progress, onCancel }: { progress: { fraction: number; 
   </div>;
 }
 
-function StraightenControl({ value, assist, onChange, onDraggingChange }: { value: number; assist: StraightenAssist; onChange: ChangeEdit; onDraggingChange?: (dragging: boolean) => void }) {
+function StraightenControl({ value, assist, onStraighten, onDraggingChange }: { value: number; assist: StraightenAssist; onStraighten: (next: number, mergeKey?: string) => void; onDraggingChange?: (dragging: boolean) => void }) {
   const working = assist.state === 'loading' || assist.state === 'detecting';
   const mlActive = Boolean(working && assist.mlProgress);
   // Pre-Auto slider value for one-click Revert. Captured in the Auto click
@@ -158,16 +158,16 @@ function StraightenControl({ value, assist, onChange, onDraggingChange }: { valu
         appliedKey.current = key;
         // Discrete step: Auto must stay independently undoable and never
         // coalesce with adjacent manual slider drags sharing 'straighten'.
-        onChange({ straighten: readyAngle });
+        onStraighten(readyAngle);
       }
     }
-  }, [assist.state, readyAngle, runId, onChange]);
+  }, [assist.state, readyAngle, runId, onStraighten]);
   const suggestion = assist.state === 'ready' && assist.angle !== null && assist.confidence !== null
     ? { angle: assist.angle, confidence: assist.confidence }
     : null;
   const formatAngle = (angle: number) => `${angle > 0 ? '+' : ''}${angle.toFixed(1)}°`;
   return <div className="straighten-assist">
-    <RangeControl label="Straighten" value={value} min={-15} max={15} step={0.1} suffix="deg" signed valueHint="Click to type an exact value in degrees" onDraggingChange={onDraggingChange} onChange={(next) => { assist.onDismiss(); onChange({ straighten: next }, 'straighten'); }} />
+    <RangeControl label="Straighten" value={value} min={-15} max={15} step={0.1} suffix="deg" signed valueHint="Click to type an exact value in degrees" onDraggingChange={onDraggingChange} onChange={(next) => { assist.onDismiss(); onStraighten(next, 'straighten'); }} />
     <div className="straighten-auto-row">
       <button className="auto-small straighten-auto" disabled={working} title="Detect the horizon tilt automatically and apply it" onClick={() => { setSnapshot(value); assist.onDetect(); }}>{working ? (assist.state === 'loading' ? 'Loading…' : mlActive ? 'Estimating…' : 'Detecting…') : 'Auto'}</button>
       {working && !mlActive && <span className="straighten-status" role="status">{assist.state === 'loading' ? 'Loading vision engine…' : 'Detecting horizon tilt…'}</span>}
@@ -179,7 +179,7 @@ function StraightenControl({ value, assist, onChange, onDraggingChange }: { valu
       {suggestion.confidence < STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD && <p className="inspector-note">Low confidence — no clear horizon found. Adjust the slider or revert below.</p>}
       {assist.mlNote && <p className="inspector-note">{assist.mlNote}</p>}
       <div className="suggestion-actions">
-        {snapshot !== null && <button className="secondary-button" title={`Restore straighten to ${formatAngle(snapshot)}`} onClick={() => { onChange({ straighten: snapshot }); assist.onDismiss(); }}>Revert</button>}
+        {snapshot !== null && <button className="secondary-button" title={`Restore straighten to ${formatAngle(snapshot)}`} onClick={() => { onStraighten(snapshot); assist.onDismiss(); }}>Revert</button>}
         <button className="secondary-button" onClick={assist.onDismiss}>Dismiss</button>
       </div>
     </div>}
@@ -284,6 +284,8 @@ interface InspectorProps {
   onChange: ChangeEdit;
   /** Rotate 90 degrees, turning repairs with the image. */
   onRotate: (direction: 1 | -1) => void;
+  /** Set straighten degrees, turning repairs with the image. Merge key preserves slider-drag undo coalescing. */
+  onStraighten: (next: number, mergeKey?: string) => void;
   onReset: () => void;
   onAuto: () => void;
   onAutoWhiteBalance: () => void;
@@ -296,7 +298,7 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onReset, onAuto, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
   const [extraSections, setExtraSections] = useState<string[]>([]);
@@ -372,7 +374,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </AdjustmentSection>
       {extraSections.includes('Black & White') && <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} enabled={edit.blackAndWhite} onToggle={() => onChange({ blackAndWhite: !edit.blackAndWhite })}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>}
       <div className="inspector-end-note"><Circle size={10} />Every change. Always reversible.</div>
-    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onRotate(-1)}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onRotate(1)}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onChange={onChange} onDraggingChange={onStraightenDragging} /> : range('straighten', 'Straighten', { min: -15, max: 15, step: 0.1, suffix: 'deg', onDraggingChange: onStraightenDragging })}<button className="secondary-button full-width reset-crop" onClick={() => onChange({ cropRatio: 'Original', rotation: 0, flipH: false, flipV: false, straighten: 0 })}><RotateCcw size={13} />Reset Composition</button><p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <div className="tool-inspector"><div className="tool-intro"><Bandage size={30} strokeWidth={1.3} /><h3>Less distraction. More photo.</h3><p>Rebuild small distractions from the surrounding photo.</p></div><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} />{repairAssist && <RepairMethodControl assist={repairAssist} />}<RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></div>}</div>
+    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onRotate(-1)}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onRotate(1)}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onStraighten={onStraighten} onDraggingChange={onStraightenDragging} /> : <RangeControl label="Straighten" value={edit.straighten} min={-15} max={15} step={0.1} suffix="deg" signed onDraggingChange={onStraightenDragging} onChange={(next) => onStraighten(next, 'straighten')} />}<button className="secondary-button full-width reset-crop" onClick={() => onChange({ cropRatio: 'Original', rotation: 0, flipH: false, flipV: false, straighten: 0 })}><RotateCcw size={13} />Reset Composition</button><p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <div className="tool-inspector"><div className="tool-intro"><Bandage size={30} strokeWidth={1.3} /><h3>Less distraction. More photo.</h3><p>Rebuild small distractions from the surrounding photo.</p></div><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} />{repairAssist && <RepairMethodControl assist={repairAssist} />}<RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></div>}</div>
     {tool === 'adjust' && <div className="inspector-footer"><button className="add-adjustment" onClick={() => setAddMenu(!addMenu)} aria-expanded={addMenu}><Plus size={15} />Add Adjustment<ChevronDown size={12} /></button>{addMenu && <div className="dropdown-menu add-adjustment-menu" role="menu">{['Black & White'].filter((name) => !extraSections.includes(name)).map((name) => <MenuItem key={name} onClick={() => addSection(name)}>{name}</MenuItem>)}{!extraSections.includes('Black & White') && <div className="menu-separator" />}<MenuItem onClick={() => { onSavePreset(); setAddMenu(false); }}>Save as Preset...</MenuItem></div>}</div>}
   </aside>;
 }

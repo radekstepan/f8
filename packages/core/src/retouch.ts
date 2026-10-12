@@ -138,3 +138,80 @@ export function rotateRetouches(
     };
   });
 }
+
+// Straighten turns the content by a free angle, so repair stamps must turn
+// with it or they heal the wrong pixels. Unlike quarter turns the content
+// zoom changes too (geometryCanvas scales by straightenScale), and flips
+// cancel out (same mirror both sides, and the scalar zoom commutes through
+// it). Rotation, crop, and canvas size are identical on both sides — only
+// the straighten delta moves stamps, about the canvas center.
+
+export interface RemapStraightenOptions {
+  fromStraighten: number;
+  toStraighten: number;
+  /** User rotation (quarter turns); canvas dims derive from it. */
+  rotation: number;
+  /** Resolved crop ratio (width/height); null/unknown means Original. */
+  cropRatio: number | null;
+  /** Upright source aspect (width/height); without it stamps stay put. */
+  sourceAspect?: number;
+}
+
+/** Content zoom geometryCanvas applies for a straighten angle; mirrored exactly. */
+function straightenZoom(straighten: number, sourceAspect: number): number {
+  return (
+    1 +
+    Math.abs(Math.sin((straighten * Math.PI) / 180)) *
+      Math.max(sourceAspect, 1 / sourceAspect)
+  );
+}
+
+/**
+ * Remap stamps so each stays on its image feature across a straighten
+ * change. A zero delta, a non-finite angle, or a missing aspect returns
+ * equal copies (never a partial move). The brush rescales with the content
+ * zoom so it keeps covering its feature. Never mutates the input.
+ */
+export function remapRetouchesForStraighten(
+  points: readonly RetouchPoint[],
+  options: RemapStraightenOptions,
+): RetouchPoint[] {
+  const copy = () => points.map((point) => ({ ...point }));
+  const { fromStraighten, toStraighten, rotation, cropRatio } = options;
+  if (!Number.isFinite(fromStraighten) || !Number.isFinite(toStraighten)) return copy();
+  const deltaDeg = toStraighten - fromStraighten;
+  if (deltaDeg === 0) return copy();
+  const aspect = options.sourceAspect;
+  if (typeof aspect !== "number" || !Number.isFinite(aspect) || aspect <= 0) return copy();
+  const rotatedAspect = swapsForRotation(rotation) ? 1 / aspect : aspect;
+  const crop = cropFractions(cropRatio, rotatedAspect);
+  const canvasAspect = (rotatedAspect * crop.cw) / crop.ch;
+  if (!Number.isFinite(canvasAspect) || canvasAspect <= 0) return copy();
+  const k1 = straightenZoom(fromStraighten, aspect);
+  const k2 = straightenZoom(toStraighten, aspect);
+  if (!(k1 > 0) || !(k2 > 0) || !Number.isFinite(k1) || !Number.isFinite(k2)) return copy();
+  // Symbolic canvas (unit height): rotation needs aspect-true pixel space,
+  // normalized coordinates would skew it on non-square canvases.
+  const W = canvasAspect;
+  const theta = (deltaDeg * Math.PI) / 180;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  const sizeRatio = k2 / k1;
+  return points.map((point) => {
+    const X = ((1 - crop.cw) / 2 + point.x * crop.cw) * W;
+    const Y = (1 - crop.ch) / 2 + point.y * crop.ch;
+    // Unzoom (old content scale), turn with the content by the delta angle
+    // in canvas convention (y-down, positive clockwise, matching ctx.rotate),
+    // then rezoom (new content scale).
+    const dx = (X - W / 2) / k1;
+    const dy = (Y - 1 / 2) / k1;
+    const turnedX = W / 2 + (dx * cos - dy * sin) * k2;
+    const turnedY = 1 / 2 + (dx * sin + dy * cos) * k2;
+    return {
+      ...point,
+      x: (turnedX / W - (1 - crop.cw) / 2) / crop.cw,
+      y: (turnedY - (1 - crop.ch) / 2) / crop.ch,
+      size: point.size * sizeRatio,
+    };
+  });
+}

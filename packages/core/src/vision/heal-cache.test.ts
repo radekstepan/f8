@@ -3,6 +3,7 @@ import type { PixelImage } from "./analyze.js";
 import { solidColor } from "./fixtures.js";
 import {
   bboxForMask,
+  clockwiseStepsForRotation,
   enforceHealCacheLimit,
   featheredBboxForGroup,
   geometryKeyForHealCache,
@@ -13,13 +14,14 @@ import {
   pointsHashForGroup,
   pointsKeyForGroup,
   reusableOverlayForGroup,
+  rotateHealPatch,
   signatureForHealGroup,
   signaturePointsHash,
   type CachedHealPatch,
   type HealCacheParams,
   type StoredHealPatch,
 } from "./heal-cache.js";
-import { groupRetouchStrokes } from "../retouch.js";
+import { groupRetouchStrokes, rotateRetouches } from "../retouch.js";
 import type { RetouchPoint } from "../types.js";
 
 function repair(
@@ -294,5 +296,103 @@ describe("reusableOverlayForGroup", () => {
     const moved = [repair(0.6, 0.6, 0.1, 1)];
     const movedGroup = groupRetouchStrokes(moved).filter((g) => g.kind === "repair")[0]!;
     expect(reusableOverlayForGroup([overlay], movedGroup, p)).toBeNull();
+  });
+});
+
+describe("clockwiseStepsForRotation", () => {
+  it("maps quarter-turn deltas to 0-3 clockwise steps", () => {
+    expect(clockwiseStepsForRotation(0, 90)).toBe(1);
+    expect(clockwiseStepsForRotation(0, -90)).toBe(3);
+    expect(clockwiseStepsForRotation(0, 180)).toBe(2);
+    expect(clockwiseStepsForRotation(-90, -180)).toBe(3);
+    expect(clockwiseStepsForRotation(90, 90)).toBe(0);
+  });
+
+  it("returns null when the delta is not a quarter turn", () => {
+    expect(clockwiseStepsForRotation(0, 45)).toBeNull();
+    expect(clockwiseStepsForRotation(0, Number.NaN)).toBeNull();
+  });
+});
+
+describe("rotateHealPatch", () => {
+  // 2x3 patch with distinct red values per pixel (row-major 1..6).
+  function labeledPatch(x0 = 1, y0 = 2): CachedHealPatch {
+    const data = new Uint8ClampedArray(2 * 3 * 4);
+    for (let i = 0; i < 6; i += 1) {
+      data[i * 4] = i + 1;
+      data[i * 4 + 1] = 10;
+      data[i * 4 + 2] = 20;
+      data[i * 4 + 3] = 255;
+    }
+    return { signature: "sig", x0, y0, width: 2, height: 3, data };
+  }
+
+  function reds(patch: CachedHealPatch): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < patch.data.length; i += 4) out.push(patch.data[i] ?? -1);
+    return out;
+  }
+
+  it("turns bbox and pixels clockwise and round-trips back", () => {
+    const patch = labeledPatch(1, 2);
+    const turned = rotateHealPatch(patch, 10, 8, 8, 10, 1)!;
+    expect(turned).not.toBeNull();
+    expect([turned.x0, turned.y0, turned.width, turned.height]).toEqual([8 - 2 - 3, 1, 3, 2]);
+    // CW: old columns become rows reversed.
+    expect(reds(turned)).toEqual([5, 3, 1, 6, 4, 2]);
+    const back = rotateHealPatch(turned, 8, 10, 10, 8, 3)!;
+    expect([back.x0, back.y0, back.width, back.height]).toEqual([1, 2, 2, 3]);
+    expect(reds(back)).toEqual([1, 2, 3, 4, 5, 6]);
+    // Input untouched.
+    expect(reds(patch)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it("turns counter-clockwise for rotate left", () => {
+    const turned = rotateHealPatch(labeledPatch(1, 2), 10, 8, 8, 10, 3)!;
+    expect([turned.x0, turned.y0, turned.width, turned.height]).toEqual([2, 10 - 1 - 2, 3, 2]);
+    expect(reds(turned)).toEqual([2, 4, 6, 1, 3, 5]);
+  });
+
+  it("turns 180 degrees in place", () => {
+    const turned = rotateHealPatch(labeledPatch(1, 2), 10, 8, 10, 8, 2)!;
+    expect([turned.x0, turned.y0, turned.width, turned.height]).toEqual([10 - 1 - 2, 8 - 2 - 3, 2, 3]);
+    expect(reds(turned)).toEqual([6, 5, 4, 3, 2, 1]);
+  });
+
+  it("returns null for crop-window changes, bad dims, and corrupt patches", () => {
+    const patch = labeledPatch();
+    // Same dims on a 90-degree turn means the crop window changed: reheal.
+    expect(rotateHealPatch(patch, 10, 8, 10, 8, 1)).toBeNull();
+    // Swapped dims on a 180-degree turn: reheal.
+    expect(rotateHealPatch(patch, 10, 8, 8, 10, 2)).toBeNull();
+    expect(rotateHealPatch(patch, 10, 8, 8, 10, 1.5 as unknown as number)).toBeNull();
+    const outside = labeledPatch(9, 7);
+    expect(rotateHealPatch(outside, 10, 8, 8, 10, 1)).toBeNull();
+    const corrupt = { ...labeledPatch(), data: new Uint8ClampedArray(4) };
+    expect(rotateHealPatch(corrupt, 10, 8, 8, 10, 1)).toBeNull();
+  });
+
+  it("keeps a healed group cache-valid across heal-then-rotate (no rerun)", () => {
+    const oldPoints = [repair(0.2, 0.3, 0.1, 1)];
+    const oldEdit = { cropRatio: "Original", rotation: 0, straighten: 0, flipH: false, flipV: false };
+    const oldParams = params({ geometryKey: geometryKeyForHealCache("src", oldEdit, 120, 80) });
+    const oldGroup = groupRetouchStrokes(oldPoints).filter((g) => g.kind === "repair")[0]!;
+    const bbox = featheredBboxForGroup(oldGroup, 120, 80, oldParams.featherPx)!;
+    const cache = new Map<number, CachedHealPatch>([
+      [1, { signature: signatureForHealGroup(oldGroup, oldParams), x0: bbox.x0, y0: bbox.y0, width: bbox.width, height: bbox.height, data: new Uint8ClampedArray(bbox.width * bbox.height * 4).fill(9) }],
+    ]);
+
+    const newPoints = rotateRetouches(oldPoints, { fromRotation: 0, toRotation: 90, cropRatio: null, sourceAspect: 1.5 });
+    const newEdit = { ...oldEdit, rotation: 90 };
+    const newParams = params({ geometryKey: geometryKeyForHealCache("src", newEdit, 80, 120) });
+    const newGroup = groupRetouchStrokes(newPoints).filter((g) => g.kind === "repair")[0]!;
+    const steps = clockwiseStepsForRotation(0, 90)!;
+    const rotated = rotateHealPatch(cache.get(1)!, 120, 80, 80, 120, steps)!;
+    rotated.signature = signatureForHealGroup(newGroup, newParams);
+    cache.set(1, rotated);
+
+    const { valid, dirty } = partitionHealGroups(newPoints, cache, newParams, 80, 120);
+    expect(dirty).toEqual([]);
+    expect(valid.map((g) => g.id)).toEqual([1]);
   });
 });

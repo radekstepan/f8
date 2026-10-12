@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDefaultEdit, photoInCollection, rotateRetouches } from '@photomator/core';
+import { CROP_RATIOS, PRESETS, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDefaultEdit, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@photomator/core';
 import { RAW_ACCEPT } from '@photomator/core';
 import { useEditor, useLibrary } from '@photomator/ui';
 import type { DialogType, EditState, Tool, ViewMode } from '@photomator/core';
@@ -256,23 +256,52 @@ export default function App() {
   }, [editor]);
 
   // Rotation turns repairs with the image in one atomic history entry, so
-  // undo restores both together and they can never drift apart.
+  // undo restores both together and they can never drift apart. The edit is
+  // flushed immediately (rotation/retouches keep the preset label, so the
+  // snapshot below is exactly what the history entry will hold): the heal
+  // overlays for the new geometry are PUT right away, and a restart in the
+  // debounce window must not find a stale edit that mismatches them.
   const rotateImage = useCallback((direction: 1 | -1) => {
     const from = editor.edit.rotation;
     const to = (from + direction * 90) % 360;
     if (!editor.edit.retouches.length) {
       handleEditChange({ rotation: to });
+      editor.flushPersist({ ...editor.edit, rotation: to });
+      return;
+    }
+    const retouches = rotateRetouches(editor.edit.retouches, {
+      fromRotation: from,
+      toRotation: to,
+      cropRatio: CROP_RATIOS[editor.edit.cropRatio] ?? null,
+      sourceAspect: photo ? photo.width / photo.height : Number.NaN,
+    });
+    handleEditChange({ rotation: to, retouches });
+    editor.flushPersist({ ...editor.edit, rotation: to, retouches });
+  }, [editor, handleEditChange, photo]);
+
+  // Straighten turns repairs with the image in one atomic history entry, so
+  // free-angle turns keep healing the same features. The merge key passes
+  // through untouched, preserving slider-drag undo coalescing. No persist
+  // flush: straighten always resamples the content, so the reheal lands
+  // seconds after the debounce has resolved.
+  const changeStraighten = useCallback((next: number, mergeKey?: string) => {
+    if (!Number.isFinite(next)) return;
+    const from = editor.edit.straighten;
+    if (from === next) return;
+    if (!editor.edit.retouches.length) {
+      handleEditChange({ straighten: next }, mergeKey);
       return;
     }
     handleEditChange({
-      rotation: to,
-      retouches: rotateRetouches(editor.edit.retouches, {
-        fromRotation: from,
-        toRotation: to,
+      straighten: next,
+      retouches: remapRetouchesForStraighten(editor.edit.retouches, {
+        fromStraighten: from,
+        toStraighten: next,
+        rotation: editor.edit.rotation,
         cropRatio: CROP_RATIOS[editor.edit.cropRatio] ?? null,
         sourceAspect: photo ? photo.width / photo.height : Number.NaN,
       }),
-    });
+    }, mergeKey);
   }, [editor, handleEditChange, photo]);
 
   const copyAdjustments = () => { setClipboard({ ...editor.edit, retouches: [] }); notify('Adjustments copied. Pick another photo to paste them.'); };
@@ -535,7 +564,7 @@ export default function App() {
         repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, serverDown: inpaintRepair.serverDown, onCancelHeal: inpaintRepair.cancelHeal, onRetry: () => { void inpaintRepair.warmup().catch(() => { /* Failure is recorded in mlProgress/serverDown. */ }); }, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
         onStraightenDragging={setStraightenDragging}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
-        onChange={handleEditChange} onRotate={rotateImage} onReset={() => handleAction('reset')}
+        onChange={handleEditChange} onRotate={rotateImage} onStraighten={changeStraighten} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
         onClose={() => setInspectorOpen(false)}

@@ -317,6 +317,133 @@ export function enforceHealCacheLimit(
 }
 
 /**
+ * Clockwise quarter-turns from one rotation to another (0-3), or null when
+ * the delta is not a quarter turn. Mirrors rotateRetouches step math.
+ */
+export function clockwiseStepsForRotation(fromRotation: number, toRotation: number): number | null {
+  const delta = toRotation - fromRotation;
+  const steps = Math.round(delta / 90);
+  if (!Number.isFinite(steps) || Math.abs(delta - steps * 90) > 1e-6) return null;
+  return ((steps % 4) + 4) % 4;
+}
+
+/**
+ * Rotate a cached heal patch with the image across a quarter-turn rotation
+ * change, so heal-then-rotate reuses pixels instead of re-running inference.
+ * Both the cropped pixel block and its bbox turn together; 90-degree turns
+ * require swapped canvas dims, 180 requires identical dims. Anything else
+ * (crop-window changes, out-of-bounds patches, corrupt data) returns null
+ * and the caller reheals that group. The signature is preserved verbatim —
+ * the caller must restamp it for the rotated strokes and new geometry key.
+ * Inputs are never mutated.
+ */
+export function rotateHealPatch(
+  patch: CachedHealPatch,
+  oldWidth: number,
+  oldHeight: number,
+  newWidth: number,
+  newHeight: number,
+  clockwiseSteps: number,
+): CachedHealPatch | null {
+  if (!Number.isInteger(clockwiseSteps)) return null;
+  const steps = ((clockwiseSteps % 4) + 4) % 4;
+  if (
+    !Number.isInteger(oldWidth) || !Number.isInteger(oldHeight) ||
+    !Number.isInteger(newWidth) || !Number.isInteger(newHeight) ||
+    oldWidth <= 0 || oldHeight <= 0 || newWidth <= 0 || newHeight <= 0
+  ) {
+    return null;
+  }
+  if (
+    !Number.isInteger(patch.x0) || !Number.isInteger(patch.y0) ||
+    !Number.isInteger(patch.width) || !Number.isInteger(patch.height) ||
+    patch.width <= 0 || patch.height <= 0
+  ) {
+    return null;
+  }
+  if (
+    patch.x0 < 0 || patch.y0 < 0 ||
+    patch.x0 + patch.width > oldWidth ||
+    patch.y0 + patch.height > oldHeight
+  ) {
+    return null;
+  }
+  if (patch.data.length !== patch.width * patch.height * 4) return null;
+  if (steps === 0) {
+    if (oldWidth !== newWidth || oldHeight !== newHeight) return null;
+    return { ...patch, data: patch.data.slice() };
+  }
+  const w = patch.width;
+  const h = patch.height;
+  if (steps === 2) {
+    if (oldWidth !== newWidth || oldHeight !== newHeight) return null;
+    const out = new Uint8ClampedArray(patch.data.length);
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const src = (y * w + x) * 4;
+        const dst = ((h - 1 - y) * w + (w - 1 - x)) * 4;
+        out[dst] = patch.data[src] ?? 0;
+        out[dst + 1] = patch.data[src + 1] ?? 0;
+        out[dst + 2] = patch.data[src + 2] ?? 0;
+        out[dst + 3] = patch.data[src + 3] ?? 0;
+      }
+    }
+    return {
+      ...patch,
+      x0: oldWidth - patch.x0 - patch.width,
+      y0: oldHeight - patch.y0 - patch.height,
+      data: out,
+    };
+  }
+  // 90-degree turns swap canvas dims; anything else is a crop-window change
+  // that needs a reheal.
+  if (newWidth !== oldHeight || newHeight !== oldWidth) return null;
+  const nw = h;
+  const nh = w;
+  const out = new Uint8ClampedArray(patch.data.length);
+  if (steps === 1) {
+    // CW: old (x,y) -> new (h-1-y, x).
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const src = (y * w + x) * 4;
+        const dst = (x * nw + (h - 1 - y)) * 4;
+        out[dst] = patch.data[src] ?? 0;
+        out[dst + 1] = patch.data[src + 1] ?? 0;
+        out[dst + 2] = patch.data[src + 2] ?? 0;
+        out[dst + 3] = patch.data[src + 3] ?? 0;
+      }
+    }
+    return {
+      ...patch,
+      x0: oldHeight - patch.y0 - patch.height,
+      y0: patch.x0,
+      width: nw,
+      height: nh,
+      data: out,
+    };
+  }
+  // CCW: old (x,y) -> new (y, w-1-x).
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const src = (y * w + x) * 4;
+      const dst = ((w - 1 - x) * nw + y) * 4;
+      out[dst] = patch.data[src] ?? 0;
+      out[dst + 1] = patch.data[src + 1] ?? 0;
+      out[dst + 2] = patch.data[src + 2] ?? 0;
+      out[dst + 3] = patch.data[src + 3] ?? 0;
+    }
+  }
+  return {
+    ...patch,
+    x0: patch.y0,
+    y0: oldWidth - patch.x0 - patch.width,
+    width: nw,
+    height: nh,
+    data: out,
+  };
+}
+
+/**
  * Heal one stroke group against the clean base and return its cropped patch.
  * Returns null when the group rasterizes empty. Transport errors propagate
  * so the caller can keep the blur fallback for this group and continue.

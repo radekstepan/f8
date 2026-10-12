@@ -3,6 +3,7 @@ import {
   LEGACY_REPAIR_STROKE,
   groupRetouchStrokes,
   nextRetouchStrokeId,
+  remapRetouchesForStraighten,
   rotateRetouches,
   strokeIdForPoint,
 } from "./retouch.js";
@@ -219,5 +220,142 @@ describe("rotateRetouches", () => {
     const input = [stamp({ x: 0.1, y: 0.2, size: 0.1 })];
     const out = rotateRetouches(input, { fromRotation: 0, toRotation: 45, cropRatio: ORIGINAL });
     expect(out).toEqual(input);
+  });
+});
+
+describe("remapRetouchesForStraighten", () => {
+  const ORIGINAL: number | null = null;
+
+  it("keeps the canvas center fixed for any angle", () => {
+    for (const [from, to] of [[0, 10], [-6, 4.2], [12, -12]] as const) {
+      const out = remapRetouchesForStraighten([stamp({ x: 0.5, y: 0.5 })], {
+        fromStraighten: from,
+        toStraighten: to,
+        rotation: 0,
+        cropRatio: ORIGINAL,
+        sourceAspect: 1.5,
+      });
+      expect(out[0]?.x).toBeCloseTo(0.5, 9);
+      expect(out[0]?.y).toBeCloseTo(0.5, 9);
+    }
+  });
+
+  it("turns stamps clockwise for positive angles, matching canvas convention", () => {
+    // Top-of-frame point swings right under a clockwise (+5deg) turn.
+    const out = remapRetouchesForStraighten([stamp({ x: 0.5, y: 0.2 })], {
+      fromStraighten: 0,
+      toStraighten: 5,
+      rotation: 0,
+      cropRatio: ORIGINAL,
+      sourceAspect: 1.5,
+    });
+    expect(out[0]?.x ?? 0).toBeGreaterThan(0.5);
+    expect(out[0]?.y ?? 1).toBeLessThan(0.2);
+  });
+
+  it("matches hand-computed rotation plus content zoom on a square canvas", () => {
+    // Square, no crop, aspect 1: canvas is unit square, k1 = 1,
+    // k2 = 1 + sin(10deg) = 1.173648. Point (0.6, 0.5) sits 0.1 right of
+    // center: unzoomed (0.1, 0), turned 10deg, rezoomed, uncentered.
+    const out = remapRetouchesForStraighten([stamp({ x: 0.6, y: 0.5, size: 0.1 })], {
+      fromStraighten: 0,
+      toStraighten: 10,
+      rotation: 0,
+      cropRatio: ORIGINAL,
+      sourceAspect: 1,
+    });
+    expect(out[0]?.x).toBeCloseTo(0.615582, 5);
+    expect(out[0]?.y).toBeCloseTo(0.52038, 5);
+    expect(out[0]?.size).toBeCloseTo(0.117365, 5);
+  });
+
+  it("rescales the brush with the content zoom and preserves it across symmetric angles", () => {
+    const grown = remapRetouchesForStraighten([stamp({ size: 0.1 })], {
+      fromStraighten: 0,
+      toStraighten: 10,
+      rotation: 0,
+      cropRatio: ORIGINAL,
+      sourceAspect: 1.5,
+    });
+    // k = 1 + sin(10deg) * 1.5 = 1.260472.
+    expect(grown[0]?.size).toBeCloseTo(0.126047, 5);
+    // |sin| is symmetric: -5deg and +5deg zoom identically, so no rescale.
+    const symmetric = remapRetouchesForStraighten([stamp({ size: 0.1 })], {
+      fromStraighten: -5,
+      toStraighten: 5,
+      rotation: 0,
+      cropRatio: ORIGINAL,
+      sourceAspect: 1.5,
+    });
+    expect(symmetric[0]?.size).toBeCloseTo(0.1, 9);
+  });
+
+  it("round-trips back to the start values", () => {
+    const start = [stamp({ x: 0.25, y: 0.4, size: 0.1 })];
+    const opts = { rotation: 0, cropRatio: ORIGINAL, sourceAspect: 1.5 } as const;
+    const turned = remapRetouchesForStraighten(start, { ...opts, fromStraighten: 0, toStraighten: 7.3 });
+    const back = remapRetouchesForStraighten(turned, { ...opts, fromStraighten: 7.3, toStraighten: 0 });
+    expect(back[0]?.x).toBeCloseTo(0.25, 9);
+    expect(back[0]?.y).toBeCloseTo(0.4, 9);
+    expect(back[0]?.size).toBeCloseTo(0.1, 9);
+  });
+
+  it("maps through a square crop with the crop center fixed", () => {
+    const out = remapRetouchesForStraighten(
+      [stamp({ x: 0.5, y: 0.5 }), stamp({ x: 0.5, y: 0.2 })],
+      { fromStraighten: 0, toStraighten: 8, rotation: 0, cropRatio: 1, sourceAspect: 1.5 },
+    );
+    expect(out[0]?.x).toBeCloseTo(0.5, 9);
+    expect(out[0]?.y).toBeCloseTo(0.5, 9);
+    expect(out[1]?.x ?? 0).toBeGreaterThan(0.5);
+  });
+
+  it("uses the rotation for the canvas aspect", () => {
+    // Off-centerline point: aspect skews the rotation radius, so landscape
+    // and portrait canvases must disagree. (Centerline points are
+    // aspect-independent because the canvas width cancels out.)
+    const input = [stamp({ x: 0.6, y: 0.3 })];
+    const landscape = remapRetouchesForStraighten(input, {
+      fromStraighten: 0, toStraighten: 6, rotation: 0, cropRatio: ORIGINAL, sourceAspect: 1.5,
+    });
+    const portrait = remapRetouchesForStraighten(input, {
+      fromStraighten: 0, toStraighten: 6, rotation: 90, cropRatio: ORIGINAL, sourceAspect: 1.5,
+    });
+    expect(portrait[0]?.x).not.toBeCloseTo(landscape[0]?.x ?? 0, 3);
+  });
+
+  it("returns equal copies for a zero delta, bad angles, or a missing aspect", () => {
+    const input = [stamp({ x: 0.3, y: 0.3, size: 0.1 })];
+    const base = { rotation: 0, cropRatio: ORIGINAL, sourceAspect: 1.5 } as const;
+    expect(remapRetouchesForStraighten(input, { ...base, fromStraighten: 2, toStraighten: 2 })).toEqual(input);
+    for (const [from, to] of [[Number.NaN, 5], [0, Number.NaN], [0, Number.POSITIVE_INFINITY]] as const) {
+      expect(
+        remapRetouchesForStraighten(input, { ...base, fromStraighten: from, toStraighten: to }),
+      ).toEqual(input);
+    }
+    for (const sourceAspect of [undefined, Number.NaN, 0, -2]) {
+      expect(
+        remapRetouchesForStraighten(input, {
+          rotation: 0, cropRatio: ORIGINAL, sourceAspect,
+          fromStraighten: 0, toStraighten: 5,
+        }),
+      ).toEqual(input);
+    }
+    expect(remapRetouchesForStraighten([], {
+      ...base, fromStraighten: 0, toStraighten: 5,
+    })).toEqual([]);
+  });
+
+  it("preserves stroke identity and never mutates the input", () => {
+    const input = [stamp({ x: 0.3, y: 0.3, size: 0.1, strength: 80, stroke: 3 })];
+    const snapshot = structuredClone(input);
+    const out = remapRetouchesForStraighten(input, {
+      fromStraighten: 0, toStraighten: 5, rotation: 0, cropRatio: ORIGINAL, sourceAspect: 1.5,
+    });
+    expect(input).toEqual(snapshot);
+    expect(out[0]).not.toBe(input[0]);
+    expect(out[0]?.strength).toBe(80);
+    expect(out[0]?.kind).toBe("repair");
+    expect(out[0]?.stroke).toBe(3);
   });
 });

@@ -64,6 +64,26 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     lastChange.current.key = '';
   }, []);
 
+  // Persist an edit now instead of waiting out the debounce. Discrete
+  // geometry gestures (rotate) pass the new present explicitly — the history
+  // updater runs async, so latest.current would still hold the previous
+  // edit — so a fast restart finds the new rotation on the server. Without
+  // it the edit can lag the heal overlays (PUT immediately) and reopening
+  // reheals from the mismatch. A later debounced persist of the same bytes
+  // is idempotent and harmless.
+  const flushPersist = useCallback((present?: EditState) => {
+    const id = photoId;
+    const timer = timers.current[id];
+    if (timer) {
+      clearTimeout(timer);
+      delete timers.current[id];
+    }
+    const snapshot = present ?? latest.current[id];
+    if (snapshot) latest.current[id] = snapshot;
+    const persist = persistRef.current;
+    if (persist && snapshot) persist(id, snapshot);
+  }, [photoId]);
+
   const change = useCallback((patch: Partial<EditState>, mergeKey = '') => {
     const now = Date.now();
     const sticky = mergeKey.startsWith(STICKY_MERGE_PREFIX);
@@ -155,5 +175,5 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     })();
   }, [change]);
 
-  return { edit: history.present, ready: seedApplied, histories, change, endMerge, undo, redo, reset, autoEnhance, autoWhiteBalance, autoLightness, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
+  return { edit: history.present, ready: seedApplied, histories, change, endMerge, flushPersist, undo, redo, reset, autoEnhance, autoWhiteBalance, autoLightness, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
 }

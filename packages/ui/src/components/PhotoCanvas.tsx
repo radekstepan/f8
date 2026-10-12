@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@photomator/core';
-import { LibraryError, applyInpaintRepair, clearTestHealCalls, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, reusableOverlayForGroup, savePreviewRender, signatureForHealGroup, strokeIdForPoint } from '@photomator/core';
-import type { CachedHealPatch, ChangeEdit, EditState, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RunInpaint, StoredHealPatch, Tool } from '@photomator/core';
+import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, signatureForHealGroup, strokeIdForPoint } from '@photomator/core';
+import type { CachedHealPatch, ChangeEdit, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@photomator/core';
 import { IconButton } from './EditorUI.js';
 
 /** Same-origin library client for persisted heal overlays (fire-and-forget cache I/O). */
@@ -62,6 +62,8 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   /** In-memory heal patches per stroke group; cleared on photo change. */
   const healCache = useRef(new Map<number, CachedHealPatch>());
   const healCachePhoto = useRef<string | null>(null);
+  /** Geometry the heal cache was built at; a pure quarter-turn rotates patches instead of rehealing. */
+  const healGeometry = useRef<{ rotation: number; cropRatio: string; flipH: boolean; flipV: boolean; straighten: number; width: number; height: number } | null>(null);
   /** Serial heal job queue: one group at a time, repeat clicks schedule follow-ups. */
   const healQueue = useRef<ReturnType<typeof createHealQueue> | null>(null);
   if (!healQueue.current) healQueue.current = createHealQueue();
@@ -149,7 +151,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => { setLoading(true); setError(''); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src, retry]);
+  useEffect(() => { setLoading(true); setError(''); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; healGeometry.current = null; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src, retry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -194,6 +196,73 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         if (!orphans.length) return;
         overlayStore.current = overlayStore.current.filter((entry) => live.has(entry.groupId));
         for (const orphan of orphans) void overlayClient.deleteHealOverlay(photo.id, orphan.groupId).catch(() => undefined);
+      };
+      // Heal-then-rotate reuses pixels: a pure quarter-turn rotates the
+      // in-memory patches and persisted overlays (bbox + pixels + signatures)
+      // instead of re-running inference. Any other geometry change, a
+      // crop-window resize, or a corrupt patch skips rotation and that group
+      // reheals below. Returns the rotated overlays so the caller persists
+      // the new geometry to the server; a reload otherwise reheals.
+      const rotateHealCachesForGeometry = (
+        baseEdit: { cropRatio: string; rotation: number; flipH: boolean; flipV: boolean; straighten: number },
+        width: number,
+        height: number,
+        groups: RetouchStrokeGroup[],
+        params: HealCacheParams,
+      ): StoredHealPatch[] => {
+        const prev = healGeometry.current;
+        const next = { rotation: baseEdit.rotation, cropRatio: baseEdit.cropRatio, flipH: baseEdit.flipH, flipV: baseEdit.flipV, straighten: baseEdit.straighten, width, height };
+        if (!prev) {
+          healGeometry.current = next;
+          return [];
+        }
+        if (prev.cropRatio !== next.cropRatio || prev.flipH !== next.flipH || prev.flipV !== next.flipV || prev.straighten !== next.straighten) {
+          healGeometry.current = next;
+          return [];
+        }
+        const steps = clockwiseStepsForRotation(prev.rotation, next.rotation);
+        if (steps === null || steps === 0) {
+          healGeometry.current = next;
+          return [];
+        }
+        const groupById = new Map(groups.map((group) => [group.id, group]));
+        const rotatedOverlays: StoredHealPatch[] = [];
+        const nextOverlays: StoredHealPatch[] = [];
+        for (const overlay of overlayStore.current) {
+          const group = groupById.get(overlay.groupId);
+          if (!group) {
+            nextOverlays.push(overlay);
+            continue;
+          }
+          // Already current (a drifted completion landed ahead of this run):
+          // the signature embeds the full geometry key, so equality means no
+          // rotation is needed. Without this the patch would be turned twice.
+          if (overlay.signature === signatureForHealGroup(group, params) && overlay.canvasWidth === width && overlay.canvasHeight === height) {
+            nextOverlays.push(overlay);
+            continue;
+          }
+          const rotated = rotateHealPatch(overlay, overlay.canvasWidth, overlay.canvasHeight, width, height, steps);
+          if (!rotated) continue;
+          const fresh: StoredHealPatch = { ...rotated, groupId: overlay.groupId, geometryKey: params.geometryKey, canvasWidth: width, canvasHeight: height, signature: signatureForHealGroup(group, params) };
+          nextOverlays.push(fresh);
+          rotatedOverlays.push(fresh);
+        }
+        overlayStore.current = nextOverlays;
+        for (const [id, patch] of [...healCache.current.entries()]) {
+          const group = groupById.get(id);
+          if (!group) continue;
+          const sig = signatureForHealGroup(group, params);
+          if (patch.signature === sig) continue;
+          const rotated = rotateHealPatch(patch, prev.width, prev.height, width, height, steps);
+          if (!rotated) {
+            healCache.current.delete(id);
+            continue;
+          }
+          rotated.signature = sig;
+          healCache.current.set(id, rotated);
+        }
+        healGeometry.current = next;
+        return rotatedOverlays;
       };
       // First paint waits for saved work: no clean flash, no pop-in. Photos
       // without repairs skip the wait (nothing to composite, and an offline
@@ -309,6 +378,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
           if (healCachePhoto.current !== photo.src) {
             healCache.current.clear();
             healCachePhoto.current = photo.src;
+            healGeometry.current = null;
           }
           const cleanOne = geometryCanvas(image, baseEditSync);
           const syncWidth = cleanOne.width;
@@ -322,6 +392,14 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
               geometryKey: geometryKeyForHealCache(photo.src, baseEditSync, syncWidth, syncHeight),
             };
             const syncGroups = groupRetouchStrokes(repairs).filter((group) => group.kind === 'repair');
+            const rotatedSync = rotateHealCachesForGeometry(baseEditSync, syncWidth, syncHeight, syncGroups, syncParams);
+            if (rotatedSync.length) {
+              await Promise.all(rotatedSync.map((entry) => overlayClient.saveHealOverlay(photo.id, entry.groupId, overlayBodyFromPatch(entry, { geometryKey: entry.geometryKey, canvasWidth: entry.canvasWidth, canvasHeight: entry.canvasHeight, method, quality: syncParams.quality, featherPx: syncParams.featherPx })).catch((reason: unknown) => {
+                if (reason instanceof LibraryError && reason.status >= 400 && reason.status < 500) {
+                  console.warn(`[heal] Overlay rotate rejected for group ${entry.groupId}: ${reason.message}`);
+                }
+              })));
+            }
             for (const group of syncGroups) {
               if (healCache.current.has(group.id)) continue;
               const overlay = reusableOverlayForGroup(overlayStore.current, group, syncParams);
@@ -439,6 +517,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
                   if (healCachePhoto.current !== myPhotoSrc) {
                     healCache.current.clear();
                     healCachePhoto.current = myPhotoSrc;
+                    healGeometry.current = null;
                   }
                   const cacheParams = {
                     method: methodAtEnqueue,
@@ -453,6 +532,14 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
                   // are stable per edit, so only exact-size overlays seed
                   // here (export rescales instead).
                   const groups = groupRetouchStrokes(currentRepairs).filter((group) => group.kind === 'repair');
+                  const rotatedQueued = rotateHealCachesForGeometry(baseEdit, width, height, groups, cacheParams);
+                  for (const entry of rotatedQueued) {
+                    void overlayClient.saveHealOverlay(myPhotoId, entry.groupId, overlayBodyFromPatch(entry, { geometryKey: entry.geometryKey, canvasWidth: entry.canvasWidth, canvasHeight: entry.canvasHeight, method: methodAtEnqueue, quality: latest.quality, featherPx: latest.featherPx })).catch((reason: unknown) => {
+                      if (reason instanceof LibraryError && reason.status >= 400 && reason.status < 500) {
+                        console.warn(`[heal] Overlay rotate rejected for group ${entry.groupId}: ${reason.message}`);
+                      }
+                    });
+                  }
                   for (const group of groups) {
                     if (healCache.current.has(group.id)) continue;
                     const overlay = reusableOverlayForGroup(overlayStore.current, group, cacheParams);
@@ -508,6 +595,45 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
                       // A stroke deleted mid-heal leaves no overlay behind.
                       const liveIds = new Set((latestHealState.current?.edit.retouches ?? []).map((point) => strokeIdForPoint(point)));
                       if (!liveIds.has(group.id)) { setPendingRepairIds((prev) => (prev.includes(group.id) ? prev.filter((id) => id !== group.id) : prev)); return; }
+                      // Geometry drifted mid-heal (e.g. rotated while this job
+                      // ran): job-geometry pixels must never be cached,
+                      // persisted, or painted as current — that clobbers the
+                      // rotated state and forces a reheal. A pure quarter-turn
+                      // rotates the fresh patch onto the current geometry
+                      // (the queued newer job paints it); anything else drops
+                      // it so the newer job reheals. Either way this handler
+                      // must not render: its source is job-geometry sized.
+                      const curEdit = latestHealState.current?.edit;
+                      const jobGeo = { rotation: baseEdit.rotation, cropRatio: baseEdit.cropRatio, flipH: baseEdit.flipH, flipV: baseEdit.flipV, straighten: baseEdit.straighten };
+                      const drifted = !curEdit || curEdit.rotation !== jobGeo.rotation || curEdit.cropRatio !== jobGeo.cropRatio || curEdit.flipH !== jobGeo.flipH || curEdit.flipV !== jobGeo.flipV || curEdit.straighten !== jobGeo.straighten;
+                      if (drifted) {
+                        if (curEdit) {
+                          const curRepairs = curEdit.retouches.filter((point) => point.kind === 'repair');
+                          const curGroup = groupRetouchStrokes(curRepairs).filter((entry) => entry.kind === 'repair').find((entry) => entry.id === group.id);
+                          const sameOtherwise = curEdit.cropRatio === jobGeo.cropRatio && curEdit.flipH === jobGeo.flipH && curEdit.flipV === jobGeo.flipV && curEdit.straighten === jobGeo.straighten;
+                          const turnSteps = curGroup && sameOtherwise ? clockwiseStepsForRotation(jobGeo.rotation, curEdit.rotation) : null;
+                          if (curGroup && turnSteps !== null && turnSteps !== 0) {
+                            const curBase = { ...curEdit, retouches: curEdit.retouches.filter((point) => point.kind !== 'repair') };
+                            const curClean = geometryCanvas(image, curBase);
+                            const curKey = geometryKeyForHealCache(myPhotoSrc, curBase, curClean.width, curClean.height);
+                            const curParams = { method: methodAtEnqueue, quality: latest.quality, seamlessLight: latest.seamlessLight, featherPx: latest.featherPx, geometryKey: curKey };
+                            const turned = rotateHealPatch(patch, width, height, curClean.width, curClean.height, turnSteps);
+                            if (turned) {
+                              turned.signature = signatureForHealGroup(curGroup, curParams);
+                              healCache.current.set(group.id, turned);
+                              enforceHealCacheLimit(healCache.current);
+                              overlayStore.current = overlayStore.current.filter((entry) => entry.groupId !== group.id && healCache.current.has(entry.groupId));
+                              overlayStore.current.push({ ...turned, data: turned.data.slice(), groupId: group.id, geometryKey: curKey, canvasWidth: curClean.width, canvasHeight: curClean.height });
+                              await overlayClient.saveHealOverlay(myPhotoId, group.id, overlayBodyFromPatch(turned, { geometryKey: curKey, canvasWidth: curClean.width, canvasHeight: curClean.height, method: methodAtEnqueue, quality: latest.quality, featherPx: latest.featherPx })).catch((reason: unknown) => {
+                                if (reason instanceof LibraryError && reason.status >= 400 && reason.status < 500) {
+                                  console.warn(`[heal] Overlay drift-rotate rejected for group ${group.id}: ${reason.message}`);
+                                }
+                              });
+                            }
+                          }
+                        }
+                        return;
+                      }
                       patch.signature = signatureForHealGroup(group, cacheParams);
                       healCache.current.set(group.id, patch);
                       fresh.push(patch);
