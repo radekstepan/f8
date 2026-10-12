@@ -43,34 +43,21 @@ export interface StraightenAssist {
   angle: number | null;
   /** Confidence 0..1; set only when state is ready. */
   confidence: number | null;
+  /** "ml" when the suggestion was refined on the photo server. */
+  source?: "classic" | "ml" | null;
+  /** Per-run id, bumped on every Auto click; 0 when idle. */
+  runId?: number;
+  /** Live server fallback progress; same shape as ML-heal progress. */
+  mlProgress?: { fraction: number; stage: string; updatedAt?: number } | null;
+  /** True while the server fallback is warming/estimating. */
+  mlWarming?: boolean;
+  /** Note when the server run failed or was cancelled but classic is kept. */
+  mlNote?: string | null;
   /** Human-readable error; set only when state is error. */
   message: string | null;
   onDetect: () => void;
   onDismiss: () => void;
-}
-
-function StraightenControl({ value, assist, onChange }: { value: number; assist: StraightenAssist; onChange: ChangeEdit }) {
-  const working = assist.state === 'loading' || assist.state === 'detecting';
-  const suggestion = assist.state === 'ready' && assist.angle !== null && assist.confidence !== null
-    ? { angle: assist.angle, confidence: assist.confidence }
-    : null;
-  const formatAngle = (angle: number) => `${angle > 0 ? '+' : ''}${angle.toFixed(1)}°`;
-  return <div className="straighten-assist">
-    <RangeControl label="Straighten" value={value} min={-15} max={15} step={0.1} suffix="deg" signed onChange={(next) => { assist.onDismiss(); onChange({ straighten: next }, 'straighten'); }} />
-    <div className="straighten-auto-row">
-      <button className="secondary-button straighten-auto" disabled={working} title="Detect the horizon tilt automatically" onClick={assist.onDetect}>{working ? (assist.state === 'loading' ? 'Loading…' : 'Detecting…') : 'Auto'}</button>
-      {working && <span className="straighten-status" role="status">{assist.state === 'loading' ? 'Loading vision engine…' : 'Detecting horizon tilt…'}</span>}
-      {assist.state === 'error' && assist.message && <span className="straighten-status is-error" role="alert">{assist.message}</span>}
-    </div>
-    {suggestion && <div className="straighten-suggestion" role="status">
-      <div className="suggestion-text"><span>Suggested <strong>{formatAngle(suggestion.angle)}</strong></span><span className="suggestion-confidence">{Math.round(suggestion.confidence * 100)}% confidence</span></div>
-      {suggestion.confidence < STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD && <p className="inspector-note">Low confidence — no clear horizon found. You can still apply it or dismiss.</p>}
-      <div className="suggestion-actions">
-        <button className="primary-button" onClick={() => { onChange({ straighten: suggestion.angle }); assist.onDismiss(); }}>Apply</button>
-        <button className="secondary-button" onClick={assist.onDismiss}>Dismiss</button>
-      </div>
-    </div>}
-  </div>;
+  onCancelMl?: () => void;
 }
 
 /** View model for repair inpainting, driven by the app's vision hook. */
@@ -115,7 +102,7 @@ function isMlSteppedStage(stage: string): boolean {
   return /^Healing \d+ of \d+/.test(stage);
 }
 
-function MlProgressView({ progress, onCancel }: { progress: NonNullable<RepairAssist['mlProgress']>; onCancel?: () => void }) {
+function MlProgressView({ progress, onCancel }: { progress: { fraction: number; stage: string; job?: string; areas?: number | null; updatedAt?: number }; onCancel?: () => void }) {
   const isError = isMlErrorStage(progress.stage);
   const isDone = isMlDoneStage(progress.stage, progress.fraction);
   const [, setTick] = useState(0);
@@ -146,6 +133,55 @@ function MlProgressView({ progress, onCancel }: { progress: NonNullable<RepairAs
     <p className="inspector-note" data-testid="ml-progress-stage">{headline}</p>
     {areaNote && <p className="inspector-note ml-area-note" data-testid="ml-area-note">{areaNote}</p>}
     {!isError && !isDone && onCancel && <button className="text-button" data-testid="ml-cancel" title="Stop this heal and restart the worker" onClick={onCancel}>Cancel heal</button>}
+  </div>;
+}
+
+function StraightenControl({ value, assist, onChange }: { value: number; assist: StraightenAssist; onChange: ChangeEdit }) {
+  const working = assist.state === 'loading' || assist.state === 'detecting';
+  const mlActive = Boolean(working && assist.mlProgress);
+  // Pre-Auto slider value for one-click Revert. Captured in the Auto click
+  // handler (the vision hook never sees the edit); cleared whenever the
+  // assist returns to idle (dismiss, manual edit, photo switch).
+  const [snapshot, setSnapshot] = useState<number | null>(null);
+  // Applied key `${runId}:${angle}`: classic auto-applies on arrival, the
+  // server fallback overwrites with the same runId but a new angle, and
+  // StrictMode double-effects never double-apply.
+  const appliedKey = useRef('');
+  useEffect(() => {
+    if (assist.state === 'idle') { setSnapshot(null); appliedKey.current = ''; }
+  }, [assist.state]);
+  const runId = assist.runId ?? 0;
+  const readyAngle = assist.state === 'ready' ? assist.angle : null;
+  useEffect(() => {
+    if (assist.state === 'ready' && readyAngle !== null && runId !== 0) {
+      const key = `${runId}:${readyAngle}`;
+      if (appliedKey.current !== key) {
+        appliedKey.current = key;
+        onChange({ straighten: readyAngle }, 'straighten');
+      }
+    }
+  }, [assist.state, readyAngle, runId, onChange]);
+  const suggestion = assist.state === 'ready' && assist.angle !== null && assist.confidence !== null
+    ? { angle: assist.angle, confidence: assist.confidence }
+    : null;
+  const formatAngle = (angle: number) => `${angle > 0 ? '+' : ''}${angle.toFixed(1)}°`;
+  return <div className="straighten-assist">
+    <RangeControl label="Straighten" value={value} min={-15} max={15} step={0.1} suffix="deg" signed valueHint="Click to type an exact value in degrees" onChange={(next) => { assist.onDismiss(); onChange({ straighten: next }, 'straighten'); }} />
+    <div className="straighten-auto-row">
+      <button className="secondary-button straighten-auto" disabled={working} title="Detect the horizon tilt automatically and apply it" onClick={() => { setSnapshot(value); assist.onDetect(); }}>{working ? (assist.state === 'loading' ? 'Loading…' : mlActive ? 'Estimating…' : 'Detecting…') : 'Auto'}</button>
+      {working && !mlActive && <span className="straighten-status" role="status">{assist.state === 'loading' ? 'Loading vision engine…' : 'Detecting horizon tilt…'}</span>}
+      {assist.state === 'error' && assist.message && <span className="straighten-status is-error" role="alert">{assist.message}</span>}
+    </div>
+    {mlActive && assist.mlProgress && <MlProgressView progress={assist.mlProgress} onCancel={assist.mlWarming && assist.onCancelMl ? assist.onCancelMl : undefined} />}
+    {suggestion && <div className="straighten-suggestion" role="status">
+      <div className="suggestion-text"><span>Applied <strong>{formatAngle(suggestion.angle)}</strong></span><span className="suggestion-confidence">{Math.round(suggestion.confidence * 100)}% confidence{assist.source === 'ml' ? ' · ML' : ''}</span></div>
+      {suggestion.confidence < STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD && <p className="inspector-note">Low confidence — no clear horizon found. Adjust the slider or revert below.</p>}
+      {assist.mlNote && <p className="inspector-note">{assist.mlNote}</p>}
+      <div className="suggestion-actions">
+        {snapshot !== null && <button className="secondary-button" title={`Restore straighten to ${formatAngle(snapshot)}`} onClick={() => { onChange({ straighten: snapshot }, 'straighten'); assist.onDismiss(); }}>Revert</button>}
+        <button className="secondary-button" onClick={assist.onDismiss}>Dismiss</button>
+      </div>
+    </div>}
   </div>;
 }
 

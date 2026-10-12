@@ -10,6 +10,7 @@ export * from "./orientation.js";
 export * from "./poisson.js";
 export * from "./preview-render-cache.js";
 export * from "./straighten.js";
+export * from "./straighten-ml.js";
 export * from "./test-hooks.js";
 export * from "./worker-client.js";
 export * from "./worker-protocol.js";

@@ -460,7 +460,7 @@ export default function App() {
       {inspectorOpen && <Inspector
         photo={photo} edit={editor.edit} tool={tool} histogram={histogram}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
-        straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss }}
+        straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, source: straighten.source, runId: straighten.runId, mlProgress: straighten.mlProgress, mlWarming: straighten.mlWarming, mlNote: straighten.mlNote, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss, onCancelMl: straighten.cancelMl }}
         repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, mlReady: inpaintRepair.mlReady, mlEngine: inpaintRepair.mlEngine, mlWarming: inpaintRepair.mlWarming, onCancelHeal: inpaintRepair.cancelHeal, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={handleEditChange} onTool={selectTool} onReset={() => handleAction('reset')}

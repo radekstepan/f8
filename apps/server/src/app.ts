@@ -10,6 +10,7 @@ import type { EditState, LibraryPhoto } from "@photomator/core";
 import type { ServerConfig } from "./config.ts";
 import { getMlHealHealth, kickEngineReady, runRemoteHeal, validateRemoteBody } from "./ml-heal.ts";
 import type { RemoteHealEngine } from "./ml-heal.ts";
+import { getStraightenHealth, kickStraightenReady, runStraightenEstimate, validateStraightenBody } from "./straighten-ml.ts";
 import {
   deleteHealOverlay,
   listHealOverlays,
@@ -186,6 +187,34 @@ export function createApp(ctx: AppContext): Hono {
       if (error instanceof RangeError) return c.json({ error: error.message }, 400);
       console.error(error);
       return c.json({ error: "Remote heal failed." }, 503);
+    }
+  });
+
+  app.get("/api/straighten/health", async (c) => c.json(await getStraightenHealth(config.dataDir)));
+
+  app.post("/api/straighten/warmup", async (c) => {
+    // Kick provisioning into the background and return immediately: the
+    // client polls health for download/session progress, like ml-heal.
+    kickStraightenReady(config.dataDir);
+    return c.json(await getStraightenHealth(config.dataDir));
+  });
+
+  app.post("/api/straighten/estimate", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    const parsed = validateStraightenBody(body);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    try {
+      const result = await runStraightenEstimate(config.dataDir, parsed.value);
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 400);
+      console.error(error);
+      return c.json({ error: "Straighten estimate failed." }, 503);
     }
   });
 

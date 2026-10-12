@@ -42,10 +42,12 @@ interface RangeControlProps {
   disabled?: boolean;
   /** Stable selector for e2e; no visual or behavior change. */
   testId?: string;
+  /** Tooltip hint on the typeable value (e.g. click-to-type discoverability). */
+  valueHint?: string;
   onChange: (value: number) => void;
 }
 
-export function RangeControl({ label, value, min = -100, max = 100, step = 1, defaultValue = 0, suffix = '', signed = false, color, disabled, testId, onChange }: RangeControlProps) {
+export function RangeControl({ label, value, min = -100, max = 100, step = 1, defaultValue = 0, suffix = '', signed = false, color, disabled, testId, valueHint, onChange }: RangeControlProps) {
   const id = useId();
   const [draft, setDraft] = useState<string | null>(null);
   const digits = step < 1 ? 2 : 0;
@@ -68,6 +70,7 @@ export function RangeControl({ label, value, min = -100, max = 100, step = 1, de
             step={step}
             value={draft ?? displayed}
             disabled={disabled}
+            {...(valueHint ? { title: valueHint } : {})}
             style={{ width: `${Math.max(2, (draft ?? displayed).length) + 0.3}ch` }}
             onFocus={(event) => { setDraft(displayed); event.currentTarget.select(); }}
             onChange={(event) => setDraft(event.target.value)}
