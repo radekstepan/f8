@@ -24,7 +24,8 @@ import {
   type VisionWorkerStatus,
 } from "@photomator/core";
 import { getVisionWorkerClient } from "./visionClient";
-import { runRemoteHeal, warmupRemoteHeal } from "./remoteMlHeal";
+import { RemoteHealError, runRemoteHeal, warmupRemoteHeal } from "./remoteMlHeal";
+import { TOOL_PREFS_KEY } from "../hooks/useToolPrefs";
 
 export interface MlProgress {
   fraction: number;
@@ -59,6 +60,8 @@ export interface InpaintRepairState {
   mlEngine: MlHealEngine;
   /** True while the current tier's weights/sessions are being prefetched. */
   mlWarming: boolean;
+  /** True when the last ML attempt found the photo server down (unreachable/timeout). */
+  serverDown: boolean;
   /** Stable worker transport for core's applyInpaintRepair/exportPhoto. */
   run: RunInpaint;
   /** Prefetch weights + sessions for the current tier (Repair tool opened). */
@@ -75,17 +78,21 @@ function isErrorStage(stage: string): boolean {
   return stage.startsWith("Model unavailable");
 }
 
+/** Only unreachable/timeout failures mean the server is down; a server that
+ * answers with an error (failed heal, bad snapshot) is up but unhappy. */
+function isServerDownError(error: unknown): boolean {
+  return error instanceof RemoteHealError && error.code !== "failed";
+}
+
 /** Tool prefs live in one localStorage object (see hooks/useToolPrefs); the
  * repair hook reads its slice lazily and writes back on change. Adjust
  * sliders are excluded by design — those persist per-photo on the server. */
-const PREFS_KEY = "photomator.tool-prefs-v1";
-
 function readPref<K extends "repairMethod" | "repairQuality" | "seamlessLight" | "featherPx", V>(
   key: K,
   fallback: V,
 ): V {
   try {
-    const raw = localStorage.getItem(PREFS_KEY);
+    const raw = localStorage.getItem(TOOL_PREFS_KEY);
     if (!raw) return fallback;
     const value = (JSON.parse(raw) as Record<string, unknown>)[key];
     return (value === undefined ? fallback : value) as V;
@@ -96,9 +103,9 @@ function readPref<K extends "repairMethod" | "repairQuality" | "seamlessLight" |
 
 function writePrefs(patch: Record<string, unknown>): void {
   try {
-    const raw = localStorage.getItem(PREFS_KEY);
+    const raw = localStorage.getItem(TOOL_PREFS_KEY);
     const current = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ ...current, ...patch }));
+    localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify({ ...current, ...patch }));
   } catch {
     /* Private mode / quota — prefs stay session-only. */
   }
@@ -135,6 +142,7 @@ export function useInpaintRepair(): InpaintRepairState {
   const [mlProgress, setMlProgress] = useState<MlProgress | null>(null);
   const [mlReady, setMlReady] = useState<MlReadyState | null>(null);
   const [mlWarming, setMlWarming] = useState(false);
+  const [serverDown, setServerDown] = useState(false);
   const progressRef = useRef(mlProgress);
   progressRef.current = mlProgress;
   /** Set before an intentional cancel so the rejection isn't recorded as a stall. */
@@ -173,6 +181,8 @@ export function useInpaintRepair(): InpaintRepairState {
       if (clamped >= 1 && !isErrorStage(stage)) {
         const engine = mlHealEngineForQuality(qualityOverride ?? quality);
         setMlReady({ engine, cached: true, serving: true, updatedAt: Date.now() });
+        // A neural success proves the server is back.
+        if (engine !== "classic") setServerDown(false);
       }
     },
     [quality],
@@ -207,6 +217,7 @@ export function useInpaintRepair(): InpaintRepairState {
             cancelledRef.current = false;
             throw error;
           }
+          if (isServerDownError(error)) setServerDown(true);
           const detail = error instanceof Error ? error.message : String(error);
           record(0, `Model unavailable: ${detail}`, "heal", areas);
           throw error;
@@ -253,6 +264,7 @@ export function useInpaintRepair(): InpaintRepairState {
     // Every ML tier warms the photo server, never the browser worker: kick
     // provisioning and poll until it serves, with real download %.
     setMlWarming(true);
+    setServerDown(false);
     return warmupRemoteHeal(engine, {
       onProgress: (fraction, stage) => record(fraction, stage, "warmup", null, warmedQuality),
     })
@@ -263,10 +275,11 @@ export function useInpaintRepair(): InpaintRepairState {
         return ready;
       })
       .catch((error: unknown) => {
-        // Keep a not-serving marker so the Inspector's persistent warning
-        // stays up alongside the error (which never auto-dismisses).
+        // Keep a not-serving marker so painting stays gated; the Inspector
+        // shows one offline line (server down) or the error below.
         setMlReady({ engine, cached: false, serving: false, updatedAt: Date.now() });
         setMlWarming(false);
+        if (isServerDownError(error)) setServerDown(true);
         record(0, error instanceof Error ? `Model unavailable: ${error.message}` : "Model unavailable", "warmup", null);
         throw error;
       });
@@ -284,6 +297,7 @@ export function useInpaintRepair(): InpaintRepairState {
     client.terminate();
     setMlProgress(null);
     setMlWarming(false);
+    setServerDown(false);
     setMlReady((prev) => (prev?.engine === mlEngine ? null : prev));
   }, [client, mlEngine]);
 
@@ -299,6 +313,7 @@ export function useInpaintRepair(): InpaintRepairState {
         const cur = progressRef.current;
         if (cur && (isErrorStage(cur.stage) || cur.job === "warmup")) setMlProgress(null);
         setMlWarming(false);
+        setServerDown(false);
       }
       setQuality(coerced);
     },
@@ -315,13 +330,14 @@ export function useInpaintRepair(): InpaintRepairState {
         if (cur && (isErrorStage(cur.stage) || cur.job === "warmup")) setMlProgress(null);
         setMlWarming(false);
       }
+      setServerDown(false);
       setMethod(next);
     },
     [],
   );
 
   return useMemo(
-    () => ({ method, quality: exposedQuality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, cancelHeal, setMethod: setMethodAndMigrate, setQuality: setQualityAndClearStale, setSeamlessLight, setFeatherPx }),
-    [method, exposedQuality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, run, warmup, cancelHeal, setQualityAndClearStale, setMethodAndMigrate],
+    () => ({ method, quality: exposedQuality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, serverDown, run, warmup, cancelHeal, setMethod: setMethodAndMigrate, setQuality: setQualityAndClearStale, setSeamlessLight, setFeatherPx }),
+    [method, exposedQuality, seamlessLight, featherPx, status, mlProgress, mlReady, mlEngine, mlWarming, serverDown, run, warmup, cancelHeal, setQualityAndClearStale, setMethodAndMigrate],
   );
 }

@@ -112,9 +112,18 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   /** Mirror of pendingRepairIds for the read-only e2e hook (state is async). */
   const pendingRef = useRef<number[]>([]);
   pendingRef.current = pendingRepairIds;
+  /** Mirror of the ML repair binding: specs wait on readiness, never pixels. */
+  const repairReadiness = useRef<{ method: string | null; engine: string | null; ready: boolean | null; warming: boolean }>({ method: null, engine: null, ready: null, warming: false });
+  repairReadiness.current = {
+    method: inpaintRepair?.method ?? null,
+    engine: inpaintRepair?.mlEngine ?? null,
+    ready: inpaintRepair?.mlReady ?? null,
+    warming: inpaintRepair?.mlWarming ?? false,
+  };
   // Read-only Playwright observability: queue depth, cached group ids,
-  // pending (still-healing) group ids, persisted overlay group ids, and the
-  // recorded transport calls. No behavior change; specs read, never write.
+  // pending (still-healing) group ids, persisted overlay group ids, ML tier
+  // readiness, and the recorded transport calls. No behavior change; specs
+  // read, never write.
   useEffect(() => {
     (window as unknown as { __photomatorTest?: unknown }).__photomatorTest = {
       healCalls: () => readTestHealCalls(),
@@ -123,6 +132,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       cacheKeys: () => [...healCache.current.keys()],
       pendingRepairIds: () => [...pendingRef.current],
       overlayGroupIds: () => overlayStore.current.map((entry) => entry.groupId),
+      mlReady: () => ({ ...repairReadiness.current }),
     };
   }, []);
 

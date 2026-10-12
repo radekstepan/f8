@@ -1,9 +1,11 @@
 // apps/web/tests/e2e/collection-filters.spec.ts
 //
 // Locks two behaviors (App.tsx + PhotoStrips.tsx):
-//   - collection deep-linking: reloading on a photo highlights that photo's
-//     album in the sidebar and filmstrip (not the hardcoded default), an
-//     explicit ?collection= is honored, and sidebar clicks persist it.
+//   - collection inference: the open photo decides the collection —
+//     reloading on a photo highlights that photo's album in the sidebar
+//     and filmstrip, the URL never carries a collection (stale
+//     ?collection= params are ignored and stripped), and sidebar clicks
+//     switch the grid without touching the URL.
 //   - library edited/favorite chip filters: they narrow the grid and the
 //     filmstrip (shared filteredPhotos), combine, clear, and empty-state.
 //
@@ -84,7 +86,8 @@ test("reload on a coast photo highlights Coastal Escape in sidebar and filmstrip
   await page.goto("/?photo=photo-9");
   await awaitEditor(page);
 
-  await expect(page).toHaveURL(/collection=coast/);
+  // The collection is inferred, never deep-linked.
+  await expect(page).not.toHaveURL(/collection=/);
   await expect(
     sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
   ).toHaveClass(/is-selected/);
@@ -99,7 +102,7 @@ test("reload on a coast photo highlights Coastal Escape in sidebar and filmstrip
   await page.reload();
   await awaitEditor(page);
 
-  await expect(page).toHaveURL(/collection=coast/);
+  await expect(page).not.toHaveURL(/collection=/);
   await expect(
     sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
   ).toHaveClass(/is-selected/);
@@ -109,22 +112,24 @@ test("reload on a coast photo highlights Coastal Escape in sidebar and filmstrip
   ).toHaveClass(/is-selected/);
 });
 
-test("explicit collection param is honored, not overridden", async ({
+test("stale collection param is ignored and stripped", async ({
   page,
 }) => {
   await page.goto("/?photo=photo-9&collection=favorites");
   await awaitEditor(page);
 
-  await expect(
-    sidebar(page).getByRole("button", { name: /^Favorites/ }),
-  ).toHaveClass(/is-selected/);
+  // The photo's album wins over the stale param, which is dropped.
   await expect(
     sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
+  ).toHaveClass(/is-selected/);
+  await expect(
+    sidebar(page).getByRole("button", { name: /^Favorites/ }),
   ).not.toHaveClass(/is-selected/);
-  await expect(page).toHaveURL(/collection=favorites/);
+  await expect(page).not.toHaveURL(/collection=/);
+  await expect(filmstrip(page).locator("h2")).toHaveText("Coastal Escape");
 });
 
-test("sidebar album click persists collection to the URL", async ({
+test("sidebar album click switches the grid without touching the URL", async ({
   page,
 }) => {
   await page.goto("/?photo=photo-1");
@@ -132,7 +137,7 @@ test("sidebar album click persists collection to the URL", async ({
 
   await sidebar(page).getByRole("button", { name: /Coastal Escape/ }).click();
 
-  await expect(page).toHaveURL(/collection=coast/);
+  await expect(page).not.toHaveURL(/collection=/);
   await expect(grid(page).locator("h1")).toHaveText("Coastal Escape");
 });
 

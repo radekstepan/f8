@@ -7,7 +7,10 @@ import {
   type InpaintMethod,
 } from "@photomator/core";
 
-export const TOOL_PREFS_KEY = "photomator.tool-prefs-v1";
+// v2: the default repair method moved from classic heal to ML Repair. v1
+// stored the old implicit "heal" for every user, so a fresh key is the only
+// way existing browsers pick up the new default.
+export const TOOL_PREFS_KEY = "photomator.tool-prefs-v2";
 
 export interface ToolPrefs {
   brushSize: number;

@@ -17,10 +17,15 @@ import {
   type RepairMask,
 } from "@photomator/core";
 
+/** Machine-readable failure class: only unreachable/timeout mean the server is down. */
+export type RemoteHealErrorCode = "unreachable" | "timeout" | "failed";
+
 export class RemoteHealError extends Error {
-  constructor(message: string) {
+  readonly code: RemoteHealErrorCode;
+  constructor(message: string, code: RemoteHealErrorCode = "failed") {
     super(message);
     this.name = "RemoteHealError";
+    this.code = code;
   }
 }
 
@@ -102,9 +107,9 @@ export async function runRemoteHeal(
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new RemoteHealError(`Photo server timed out after ${Math.round(timeoutMs / 1000)}s.`);
+      throw new RemoteHealError(`Photo server timed out after ${Math.round(timeoutMs / 1000)}s.`, "timeout");
     }
-    throw new RemoteHealError("Photo server unreachable — start it with yarn dev.");
+    throw new RemoteHealError("Photo server unreachable — start it with yarn dev.", "unreachable");
   } finally {
     clearTimeout(timer);
   }
@@ -176,7 +181,7 @@ export async function warmupRemoteHeal(
     try {
       snapshot = await readEngineSnapshot(remoteEngine);
     } catch {
-      throw new RemoteHealError("Photo server unreachable — start it with yarn dev.");
+      throw new RemoteHealError("Photo server unreachable — start it with yarn dev.", "unreachable");
     }
     if (typeof snapshot.error === "string" && snapshot.error) {
       throw new RemoteHealError(snapshot.error.slice(0, 220));

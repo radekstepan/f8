@@ -1,4 +1,5 @@
 export * from "./adjustments.js";
+export * from "./collections.js";
 export * from "./data.js";
 export * from "./image.js";
 export * from "./library.js";

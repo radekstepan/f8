@@ -171,8 +171,8 @@ describe("inpaintRadiusForBrush", () => {
 });
 
 describe("INPAINT_DEFAULT_METHOD", () => {
-  it("heals by transplanting texture instead of smudging it", () => {
-    expect(INPAINT_DEFAULT_METHOD).toBe("heal");
+  it("defaults to neural ML Repair on the photo server", () => {
+    expect(INPAINT_DEFAULT_METHOD).toBe("ml-heal");
   });
 });
 

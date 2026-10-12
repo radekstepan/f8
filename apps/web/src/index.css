@@ -364,8 +364,8 @@ img { display: block; }
 .ml-area-note { color: #a8a8b2; }
 .ml-progress.is-error .ml-progress-bar > span { background: #c96a63; }
 .ml-progress.is-error .inspector-note { color: #df9a94; }
-.ml-warning { display: flex; align-items: center; gap: 6px; color: #d9a441; }
-.ml-warning > svg { flex-shrink: 0; }
+.ml-offline { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.ml-offline > p { font-size: 9px; line-height: 1.8; color: #df9a94; margin: 0; }
 
 .app-status { height: 23px; flex-shrink: 0; background: #242426; border-top: 1px solid #36363b; padding: 0 17px; display: flex; align-items: center; justify-content: space-between; font-size: 8px; color: #85858f; position: relative; }
 .status-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; font-size: 7.5px; color: #74747e; gap: 8px; }

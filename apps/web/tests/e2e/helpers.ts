@@ -2,8 +2,9 @@
 //
 // Shared heal e2e helpers: deterministic image stubbing, stroke painting,
 // heal-completion waits, per-photo resets, and the read-only
-// `window.__photomatorTest` hook (queue depth, cached groups, transport
-// calls) published by PhotoCanvas (no behavior change, specs read only).
+// `window.__photomatorTest` hook (queue depth, cached groups, ML readiness,
+// transport calls) published by PhotoCanvas (no behavior change, specs read
+// only).
 
 import { expect, type Page } from "@playwright/test";
 import { DEFAULT_EDIT, type EditState } from "@photomator/core";
@@ -28,6 +29,14 @@ interface TestHookValues {
   cacheKeys: () => number[];
   pendingRepairIds: () => number[];
   overlayGroupIds: () => number[];
+  mlReady: () => { method: string | null; engine: string | null; ready: boolean | null; warming: boolean };
+}
+
+export interface MlReadiness {
+  method: string | null;
+  engine: string | null;
+  ready: boolean | null;
+  warming: boolean;
 }
 
 declare global {
@@ -42,6 +51,18 @@ async function hook<T>(page: Page, expr: string): Promise<T> {
 
 export const getHealCalls = (page: Page) => hook<TestHealCall[]>(page, "healCalls()");
 export const clearHealCalls = (page: Page) => hook<void>(page, "clearHealCalls()");
+export const getMlReady = (page: Page) => hook<MlReadiness>(page, "mlReady()");
+
+/**
+ * Wait until the ML tier finishes warming and painting unlocks. Auto-warmup
+ * runs on entering ML Repair; strokes painted earlier are ignored, so ML
+ * specs must await this before the first stroke.
+ */
+export async function waitForMlReady(page: Page, timeout = 30_000): Promise<void> {
+  await expect
+    .poll(async () => (await getMlReady(page)).ready, { timeout, intervals: [250, 500] })
+    .toBe(true);
+}
 export const getQueue = (page: Page) => hook<{ active: boolean; pendingJobs: number }>(page, "queue()");
 export const getCacheKeys = (page: Page) => hook<number[]>(page, "cacheKeys()");
 export const getPendingIds = (page: Page) => hook<number[]>(page, "pendingRepairIds()");

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { PRESETS, createLibraryClient, groupRetouchStrokes } from '@photomator/core';
+import { PRESETS, collectionForPhoto, createLibraryClient, groupRetouchStrokes, photoInCollection } from '@photomator/core';
 import { RAW_ACCEPT } from '@photomator/core';
 import { useEditor, useLibrary } from '@photomator/ui';
 import type { DialogType, EditState, Tool, ViewMode } from '@photomator/core';
@@ -39,14 +39,6 @@ function initialTool(): Tool {
   }
 }
 
-function initialCollection(): string | null {
-  try {
-    return new URLSearchParams(window.location.search).get('collection');
-  } catch {
-    return null;
-  }
-}
-
 export type EditedFilter = 'all' | 'edited' | 'unedited';
 export type FavoriteFilter = 'all' | 'favorited' | 'not';
 
@@ -54,7 +46,7 @@ export default function App() {
   const library = useLibrary();
   const { photos, albums, customPresets } = library;
   const [selectedId, setSelectedId] = useState(initialPhotoId);
-  const [collection, setCollection] = useState(() => initialCollection() || 'dolomites');
+  const [collection, setCollection] = useState('all');
   const [search, setSearch] = useState('');
   const [editedFilter, setEditedFilter] = useState<EditedFilter>('all');
   const [favoriteFilter, setFavoriteFilter] = useState<FavoriteFilter>('all');
@@ -115,45 +107,45 @@ export default function App() {
       /* Private mode / quota — prefs stay session-only. */
     }
   }, [brushSize, brushStrength, presetsOpen, filmstripOpen]);
-  // Deep-link the open image + tool + collection so a reload or shared URL
-  // restores them. View-only pointer: edits still live on the server.
-  // replaceState avoids spamming history on every filmstrip click.
+  // Deep-link the open image + tool so a reload or shared URL restores
+  // them. View-only pointer: edits still live on the server. replaceState
+  // avoids spamming history on every filmstrip click. The collection is
+  // deliberately not in the URL — it is inferred from the open photo below,
+  // so sidebar, toolbar, and filmstrip can never disagree with the photo.
+  // Writing fresh params also strips stale ?collection= links.
   const photoIdForUrl = photo?.id ?? selectedId;
   useEffect(() => {
     try {
-      const params = new URLSearchParams(window.location.search);
+      const params = new URLSearchParams();
       params.set('photo', photoIdForUrl);
       params.set('tool', tool);
-      params.set('collection', collection);
       window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
     } catch {
       /* Non-browser / restricted context — URL stays as-is. */
     }
-  }, [photoIdForUrl, tool, collection]);
-  // On first library load, align the sidebar/filmstrip collection with the
-  // deep-linked photo when the URL carries no explicit collection. Without
-  // this the sidebar stays stuck on the hardcoded default while editing a
-  // photo from another album.
-  const collectionSynced = useRef(initialCollection() !== null);
+  }, [photoIdForUrl, tool]);
+  // The open photo decides the collection: sidebar, toolbar, and filmstrip
+  // always agree with what's on screen. Gated on photo change (not
+  // collection change) so picking a collection in the sidebar — same photo,
+  // library view — is never yanked back. The first photo always adopts its
+  // album: the 'all' default contains everything, so the outside-check alone
+  // would never fire on load.
+  const lastPhotoId = useRef<string | null>(null);
   useEffect(() => {
-    if (collectionSynced.current) return;
-    if (!photos.length || !photo) return;
-    if (photo.albumId && photo.albumId !== collection) setCollection(photo.albumId);
-    collectionSynced.current = true;
-  }, [photos, photo, collection]);
+    if (!photo) return;
+    const firstPhoto = lastPhotoId.current === null;
+    if (lastPhotoId.current === photo.id) return;
+    lastPhotoId.current = photo.id;
+    if (firstPhoto || !photoInCollection(photo, collection)) setCollection(collectionForPhoto(photo));
+  }, [photo, collection]);
   useEffect(() => {
     const onPopState = () => {
       try {
         const params = new URLSearchParams(window.location.search);
         const nextPhoto = params.get('photo');
         const nextTool = params.get('tool') as Tool | null;
-        const nextCollection = params.get('collection');
         if (nextTool && TOOLS.includes(nextTool)) setTool(nextTool);
         if (nextPhoto) setSelectedId(nextPhoto);
-        if (nextCollection) {
-          setCollection(nextCollection);
-          collectionSynced.current = true;
-        }
         setView('editor');
       } catch {
         /* Keep current state on malformed URLs. */
@@ -204,6 +196,10 @@ export default function App() {
   const selectPhoto = useCallback((id: string) => {
     setSelectedId(id);
     setView('editor');
+    // Search is a library-finding aid: once a photo is open, the editor
+    // context is its collection, so the filmstrip below agrees with the
+    // sidebar. Chip filters persist (grid and filmstrip share them).
+    setSearch('');
     setZoom(1);
     setShowOriginal(false);
     setHighlightStroke(null);
@@ -211,7 +207,6 @@ export default function App() {
 
   const selectCollection = (id: string) => {
     setCollection(id);
-    collectionSynced.current = true;
     setSearch('');
     setEditedFilter('all');
     setFavoriteFilter('all');
@@ -274,7 +269,6 @@ export default function App() {
     const summary = await library.uploadFiles(list, albumId);
     if (summary.firstId) {
       setCollection(albumId);
-      collectionSynced.current = true;
       setSearch('');
       selectPhoto(summary.firstId);
     }
@@ -298,7 +292,6 @@ export default function App() {
       if (first) {
         if (!locating) {
           setCollection(albumId);
-          collectionSynced.current = true;
         }
         setSearch('');
         selectPhoto(first.id);
@@ -518,7 +511,7 @@ export default function App() {
         photo={photo} edit={editor.edit} tool={tool} histogram={histogram}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, source: straighten.source, runId: straighten.runId, mlProgress: straighten.mlProgress, mlWarming: straighten.mlWarming, mlNote: straighten.mlNote, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss, onCancelMl: straighten.cancelMl }}
-        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, mlReady: inpaintRepair.mlReady, mlEngine: inpaintRepair.mlEngine, mlWarming: inpaintRepair.mlWarming, onCancelHeal: inpaintRepair.cancelHeal, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
+        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, serverDown: inpaintRepair.serverDown, onCancelHeal: inpaintRepair.cancelHeal, onRetry: () => { void inpaintRepair.warmup().catch(() => { /* Failure is recorded in mlProgress/serverDown. */ }); }, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx }}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={handleEditChange} onReset={() => handleAction('reset')}
         onAuto={() => editor.autoEnhance(photo.src)} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}

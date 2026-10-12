@@ -11,17 +11,16 @@ import type { RetouchPoint } from "../types.js";
 import { assertValidImage, type PixelImage } from "./analyze.js";
 
 /**
- * Repair reconstruction algorithm: exemplar heal (transplants matching
- * texture, the default) or a cv.inpaint diffusion method (Telea's fast
- * marching method, Navier-Stokes). Diffusion suits tiny smooth blemishes;
- * heal preserves texture and grain on everything else. `ml-heal` runs local
- * ONNX inpainting in the vision worker (LaMa now, diffusion-class next) and
- * falls back to exemplar heal when the model runtime is unavailable.
+ * Repair reconstruction algorithm: neural ml-heal (the default, served by
+ * the photo server), exemplar heal (transplants matching texture), or a
+ * cv.inpaint diffusion method (Telea's fast marching method,
+ * Navier-Stokes). Diffusion suits tiny smooth blemishes; heal preserves
+ * texture and grain on everything else.
  */
 export type InpaintMethod = "telea" | "ns" | "heal" | "ml-heal";
 
-/** Default algorithm: heal transplants real texture instead of smudging it. */
-export const INPAINT_DEFAULT_METHOD: InpaintMethod = "heal";
+/** Default algorithm: neural repair on the photo server. */
+export const INPAINT_DEFAULT_METHOD: InpaintMethod = "ml-heal";
 
 /** Minimum inpaint radius: the OpenCV tutorial default. */
 export const INPAINT_RADIUS_MIN = 3;

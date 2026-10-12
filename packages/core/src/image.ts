@@ -224,8 +224,8 @@ export interface RepairInpaintBinding {
 }
 
 /**
- * Reconstruct the canvas's repair strokes with worker reconstruction (heal
- * by default, ml-heal or Telea/NS on request) instead of the blur fallback in
+ * Reconstruct the canvas's repair strokes with worker reconstruction
+ * (ml-heal by default, heal or Telea/NS on request) instead of the blur fallback in
  * geometryCanvas. Reads the canvas pixels, rasterizes the repair mask at
  * canvas resolution, runs the injected worker call, and composites the
  * result back honoring per-stroke strength. The composite mask is feathered
@@ -261,7 +261,7 @@ export async function applyInpaintRepair(
 }
 
 export interface ExportRepairOptions {
-  /** Inpaint algorithm; defaults to Telea. */
+  /** Inpaint algorithm; defaults to INPAINT_DEFAULT_METHOD (ML Repair). */
   method?: InpaintMethod;
   /** Worker transport; when absent, repairs render with the blur fallback. */
   runInpaint?: RunInpaint;

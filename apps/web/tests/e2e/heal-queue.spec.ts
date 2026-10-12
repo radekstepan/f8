@@ -25,6 +25,7 @@ import {
   stubLibraryImages,
   waitForHealingDone,
   waitForHealingStart,
+  waitForMlReady,
 } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
@@ -35,9 +36,7 @@ test.beforeEach(async ({ page }) => {
   await gotoEditor(page);
   await selectRepairMethod(page, "ml-heal");
   // Auto-warmup runs on entering ML Heal; painting is gated until ready.
-  await expect(page.getByTestId("ml-engine-note")).toContainText("server ready", {
-    timeout: 30_000,
-  });
+  await waitForMlReady(page);
   await clearHealCalls(page);
 });
 
