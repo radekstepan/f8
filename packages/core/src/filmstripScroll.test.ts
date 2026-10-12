@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filmstripArrowIndex, filmstripWheelShift, type FilmstripWheelIntent } from "./filmstripScroll.js";
+import { filmstripArrowIndex, filmstripGridArrowIndex, filmstripOverflows, filmstripWheelShift, type FilmstripWheelIntent } from "./filmstripScroll.js";
 
 const base: FilmstripWheelIntent = { deltaX: 0, deltaY: 120, deltaMode: 0, zoomChord: false, canScrollX: true, clientWidth: 800 };
 
@@ -24,6 +24,17 @@ describe("filmstripWheelShift", () => {
     expect(filmstripWheelShift({ ...base, canScrollX: false })).toBe(0);
   });
 
+  it("leaves the wheel native when rows overflow vertically", () => {
+    expect(filmstripWheelShift({ ...base, canScrollY: true })).toBe(0);
+    expect(filmstripWheelShift({ ...base, canScrollY: true, canScrollX: false })).toBe(0);
+  });
+
+  it("still translates when only horizontal overflow exists", () => {
+    expect(filmstripWheelShift({ ...base, canScrollY: false })).toBe(120);
+    // Legacy callers omit canScrollY: no vertical overflow is assumed.
+    expect(filmstripWheelShift(base)).toBe(120);
+  });
+
   it("scales line-mode deltas to pixels", () => {
     expect(filmstripWheelShift({ ...base, deltaMode: 1, deltaY: 3 })).toBe(48);
   });
@@ -31,6 +42,17 @@ describe("filmstripWheelShift", () => {
   it("scales page-mode deltas to one viewport in the wheel direction", () => {
     expect(filmstripWheelShift({ ...base, deltaMode: 2, deltaY: 1 })).toBe(800);
     expect(filmstripWheelShift({ ...base, deltaMode: 2, deltaY: -2 })).toBe(-800);
+  });
+});
+
+describe("filmstripOverflows", () => {
+  it("reports overflow only past the sub-pixel tolerance", () => {
+    expect(filmstripOverflows(200, 100)).toBe(true);
+    expect(filmstripOverflows(100, 100)).toBe(false);
+    expect(filmstripOverflows(100.5, 100)).toBe(false);
+    expect(filmstripOverflows(101, 100)).toBe(false);
+    expect(filmstripOverflows(101.5, 100)).toBe(true);
+    expect(filmstripOverflows(50, 100)).toBe(false);
   });
 });
 
@@ -58,5 +80,45 @@ describe("filmstripArrowIndex", () => {
     expect(filmstripArrowIndex("ArrowRight", 0, 0)).toBe(-1);
     expect(filmstripArrowIndex("ArrowRight", -1, 5)).toBe(-1);
     expect(filmstripArrowIndex("ArrowRight", 5, 5)).toBe(-1);
+  });
+});
+
+describe("filmstripGridArrowIndex", () => {
+  // 10 items in 4 columns: rows [0-3], [4-7], [8-9] (last row partial).
+  it("steps up and down one row in the same column", () => {
+    expect(filmstripGridArrowIndex("ArrowDown", 1, 10, 4)).toBe(5);
+    expect(filmstripGridArrowIndex("ArrowUp", 5, 10, 4)).toBe(1);
+    expect(filmstripGridArrowIndex("ArrowDown", 5, 10, 4)).toBe(9);
+    expect(filmstripGridArrowIndex("ArrowUp", 9, 10, 4)).toBe(5);
+  });
+
+  it("holds at the first and last rows instead of wrapping", () => {
+    expect(filmstripGridArrowIndex("ArrowUp", 2, 10, 4)).toBe(-1);
+    expect(filmstripGridArrowIndex("ArrowDown", 8, 10, 4)).toBe(-1);
+    expect(filmstripGridArrowIndex("ArrowDown", 9, 10, 4)).toBe(-1);
+  });
+
+  it("holds when the partial last row has no cell below", () => {
+    expect(filmstripGridArrowIndex("ArrowDown", 6, 10, 4)).toBe(-1);
+    expect(filmstripGridArrowIndex("ArrowDown", 7, 10, 4)).toBe(-1);
+  });
+
+  it("matches the linear helper for Left, Right, Home, and End", () => {
+    for (const [key, index] of [["ArrowRight", 2], ["ArrowLeft", 2], ["ArrowRight", 9], ["ArrowLeft", 0], ["Home", 3], ["End", 3], ["Enter", 2]] as const) {
+      expect(filmstripGridArrowIndex(key, index, 10, 4)).toBe(filmstripArrowIndex(key, index, 10));
+    }
+  });
+
+  it("holds Up and Down in a single row or with unknown columns", () => {
+    expect(filmstripGridArrowIndex("ArrowDown", 2, 5, 5)).toBe(-1);
+    expect(filmstripGridArrowIndex("ArrowUp", 2, 5, 5)).toBe(-1);
+    expect(filmstripGridArrowIndex("ArrowDown", 2, 5, 0)).toBe(-1);
+    expect(filmstripGridArrowIndex("ArrowUp", 2, 5, -1)).toBe(-1);
+  });
+
+  it("ignores empty grids and focus outside the grid", () => {
+    expect(filmstripGridArrowIndex("ArrowDown", 0, 0, 4)).toBe(-1);
+    expect(filmstripGridArrowIndex("ArrowDown", -1, 10, 4)).toBe(-1);
+    expect(filmstripGridArrowIndex("ArrowDown", 10, 10, 4)).toBe(-1);
   });
 });

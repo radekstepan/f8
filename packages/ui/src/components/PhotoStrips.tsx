@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownWideNarrow, Check, ChevronDown, ChevronUp, Grid2X2, Heart, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT } from '@f8/core';
-import { computeGridWindow, filmstripArrowIndex, filmstripWheelShift, getPhotoFilter, isPortraitPhoto, thumbnailFilterForPhoto } from '@f8/core';
+import { computeGridWindow, filmstripGridArrowIndex, filmstripOverflows, filmstripWheelShift, getPhotoFilter, isPortraitPhoto, thumbnailFilterForPhoto } from '@f8/core';
 import type { EditState, Photo, Preset } from '@f8/core';
 
 /** A grid/filmstrip photo with its edit recipe attached when known (library photos carry `edit`). */
@@ -31,15 +31,30 @@ export function PresetStrip({ photo, presets, selected, onSelect, onAdd, onToggl
   })}</div></section>;
 }
 
+// Live column count for Up/Down focus math: the items sharing the first
+// item's row (offsetTop within a pixel, for sub-pixel layout). Zero when
+// unmeasurable — the grid helper then holds Up/Down rather than guessing.
+function firstRowCount(items: HTMLButtonElement[]): number {
+  if (items.length === 0) return 0;
+  const top = items[0]?.offsetTop ?? 0;
+  let count = 0;
+  for (const item of items) {
+    if (Math.abs(item.offsetTop - top) > 1) break;
+    count += 1;
+  }
+  return count;
+}
+
 export function Filmstrip({ photos, selectedId, collectionName, edits, onSelect, onGrid, onSort, reversed, showPresets, onShowPresets }: { photos: PhotoWithEdit[]; selectedId: string; collectionName: string; edits?: Record<string, EditState>; onSelect: (id: string) => void; onGrid: () => void; onSort: () => void; reversed: boolean; showPresets: boolean; onShowPresets: () => void }) {
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     listRef.current?.querySelector<HTMLElement>(`[data-photo-id="${selectedId}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
   }, [selectedId]);
-  // The strip hides its scrollbar, so a plain mouse wheel (vertical delta
-  // only) would do nothing over it. Translate vertical-dominant wheels into
-  // horizontal scroll; horizontal gestures and zoom chords stay native.
+  // With a single row a plain mouse wheel (vertical delta only) would do
+  // nothing over the strip, so vertical-dominant wheels translate into
+  // horizontal scroll; once rows overflow vertically the wheel scrolls them
+  // natively instead. Horizontal gestures and zoom chords stay native.
   // A non-passive listener is required to preventDefault the wheel.
   useEffect(() => {
     const list = listRef.current;
@@ -48,20 +63,22 @@ export function Filmstrip({ photos, selectedId, collectionName, edits, onSelect,
       const shift = filmstripWheelShift({
         deltaX: event.deltaX, deltaY: event.deltaY, deltaMode: event.deltaMode,
         zoomChord: event.ctrlKey || event.metaKey,
-        canScrollX: list.scrollWidth > list.clientWidth + 1, clientWidth: list.clientWidth,
+        canScrollX: filmstripOverflows(list.scrollWidth, list.clientWidth),
+        canScrollY: filmstripOverflows(list.scrollHeight, list.clientHeight),
+        clientWidth: list.clientWidth,
       });
       if (shift !== 0) { event.preventDefault(); list.scrollLeft += shift; }
     };
     list.addEventListener('wheel', onWheel, { passive: false });
     return () => { list.removeEventListener('wheel', onWheel); };
   }, []);
-  // Arrow keys walk focus through the row (focusing an item scrolls it into
+  // Arrow keys walk focus through the rows (focusing an item scrolls it into
   // view), so keyboard users can reach photos past the visible edge.
   const onListKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const list = listRef.current;
     if (!list) return;
     const items = Array.from(list.querySelectorAll<HTMLButtonElement>('[data-photo-id]'));
-    const next = filmstripArrowIndex(event.key, items.indexOf(document.activeElement as HTMLButtonElement), items.length);
+    const next = filmstripGridArrowIndex(event.key, items.indexOf(document.activeElement as HTMLButtonElement), items.length, firstRowCount(items));
     if (next === -1) return;
     event.preventDefault();
     items[next]?.focus();

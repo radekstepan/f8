@@ -1,11 +1,14 @@
 /** Album-footer filmstrip scroll routing (Filmstrip).
  *
- * The filmstrip is a single-row horizontal scroller with a visually hidden
- * scrollbar. A plain mouse wheel over it only carries a vertical delta, so
- * without help the strip feels "not scrollable". The wheel routing rule and
- * the arrow-key focus math live here as pure functions so both are
- * unit-testable without a DOM; the component only applies the verdict
- * (shift scrollLeft, move focus).
+ * The filmstrip wraps its items into rows and grows up to a capped height;
+ * past the cap it scrolls vertically (thin app-standard scrollbar). A plain
+ * mouse wheel over it only carries a vertical delta, so when the strip fits
+ * vertically but overflows horizontally (narrow viewport) the wheel is
+ * translated into horizontal scroll instead — otherwise the strip would feel
+ * "not scrollable". The wheel routing rule, the overflow predicate, and the
+ * arrow-key focus math live here as pure functions so all are unit-testable
+ * without a DOM; the component only applies the verdict (shift scrollLeft,
+ * move focus).
  */
 
 /** Wheel intent over the filmstrip list. Deltas follow WheelEvent semantics. */
@@ -20,6 +23,9 @@ export interface FilmstripWheelIntent {
   zoomChord: boolean;
   /** True when the list overflows horizontally (scrollWidth > clientWidth). */
   canScrollX: boolean;
+  /** True when the list overflows vertically (scrollHeight > clientHeight).
+   * Absent (legacy callers) means no vertical overflow. */
+  canScrollY?: boolean;
   /** List clientWidth in px; only used to scale page-mode deltas. */
   clientWidth: number;
 }
@@ -27,16 +33,25 @@ export interface FilmstripWheelIntent {
 /** Pixels per wheel line when deltaMode is lines (matches a typical row). */
 export const FILMSTRIP_WHEEL_LINE_PX = 16;
 
+/** Sub-pixel slack (px) before scroll overflow counts as scrollable. */
+export const FILMSTRIP_OVERFLOW_TOLERANCE_PX = 1;
+
+/** True when a scroll container's content overflows its viewport edge. */
+export function filmstripOverflows(scrollSize: number, clientSize: number): boolean {
+  return scrollSize > clientSize + FILMSTRIP_OVERFLOW_TOLERANCE_PX;
+}
+
 /** Horizontal scroll (px, +right) the strip should apply for one wheel event.
  *
  * Returns 0 to let the browser handle the event natively:
  * - zoom chords are never hijacked (pinch/browser zoom must keep working);
+ * - with vertical overflow the wheel scrolls the rows natively instead;
  * - without horizontal overflow there is nowhere to go;
  * - horizontal-dominant gestures (trackpad swipe, Shift+wheel) already
  *   scroll the strip natively, so only vertical-dominant ones translate.
  */
 export function filmstripWheelShift(intent: FilmstripWheelIntent): number {
-  if (intent.zoomChord || !intent.canScrollX) return 0;
+  if (intent.zoomChord || intent.canScrollY || !intent.canScrollX) return 0;
   if (!(Math.abs(intent.deltaY) > Math.abs(intent.deltaX))) return 0;
   if (intent.deltaMode === 2) return Math.sign(intent.deltaY) * Math.max(intent.clientWidth, 0);
   if (intent.deltaMode === 1) return intent.deltaY * FILMSTRIP_WHEEL_LINE_PX;
@@ -56,4 +71,27 @@ export function filmstripArrowIndex(key: string, currentIndex: number, itemCount
   if (key === 'Home') return currentIndex === 0 ? -1 : 0;
   if (key === 'End') return currentIndex === itemCount - 1 ? -1 : itemCount - 1;
   return -1;
+}
+
+/** Index of the filmstrip item to focus for a key press in a wrapped grid.
+ *
+ * Left/Right/Home/End behave exactly as {@link filmstripArrowIndex} (DOM
+ * order across rows). Up/Down step one row in the same column; there is no
+ * wrapping (first/last row holds) and a partial last row holds when the
+ * column has no cell below. `columns` is the live first-row item count;
+ * values < 1 mean "unknown" and Up/Down hold rather than guess.
+ */
+export function filmstripGridArrowIndex(key: string, currentIndex: number, itemCount: number, columns: number): number {
+  if (itemCount <= 0 || currentIndex < 0 || currentIndex >= itemCount) return -1;
+  if (key === 'ArrowUp') {
+    if (!(columns >= 1)) return -1;
+    const target = currentIndex - Math.floor(columns);
+    return target >= 0 ? target : -1;
+  }
+  if (key === 'ArrowDown') {
+    if (!(columns >= 1)) return -1;
+    const target = currentIndex + Math.floor(columns);
+    return target < itemCount ? target : -1;
+  }
+  return filmstripArrowIndex(key, currentIndex, itemCount);
 }
