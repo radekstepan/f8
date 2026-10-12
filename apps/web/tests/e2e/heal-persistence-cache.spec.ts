@@ -111,7 +111,7 @@ test("final composite is stashed in the preview render cache", async ({ page }) 
         page.evaluate(async () => {
           const db = await new Promise<IDBDatabase | null>((resolve) => {
             try {
-              const req = indexedDB.open("photomator-preview-cache", 1);
+              const req = indexedDB.open("f8-preview-cache", 1);
               req.onupgradeneeded = () => {
                 if (!req.result.objectStoreNames.contains("previews")) {
                   req.result.createObjectStore("previews", { keyPath: "photoId" });

@@ -22,11 +22,11 @@ export const STRAIGHTEN_ML_SIZE = 224;
 export const STRAIGHTEN_ML_FILE = "straighten_regressor.onnx";
 /** Approximate fp32 download size once weights are published. */
 export const STRAIGHTEN_ML_FILE_SIZE = 15 * 1024 * 1024;
-/** Override env for the weight URL (mirrors PHOTOMATOR_ML_HEAL_*). */
-export const STRAIGHTEN_ML_URL_ENV = "PHOTOMATOR_STRAIGHTEN_ML_URL";
-export const STRAIGHTEN_ML_DIR_ENV = "PHOTOMATOR_STRAIGHTEN_ML_DIR";
+/** Override env for the weight URL (mirrors F8_ML_HEAL_*). */
+export const STRAIGHTEN_ML_URL_ENV = "F8_STRAIGHTEN_ML_URL";
+export const STRAIGHTEN_ML_DIR_ENV = "F8_STRAIGHTEN_ML_DIR";
 /** Set to "1" to disable weight downloads (server still serves the fallback). */
-export const STRAIGHTEN_ML_OFFLINE_ENV = "PHOTOMATOR_STRAIGHTEN_ML_OFFLINE";
+export const STRAIGHTEN_ML_OFFLINE_ENV = "F8_STRAIGHTEN_ML_OFFLINE";
 
 /** ImageNet normalization for the regressor grid. */
 export const STRAIGHTEN_ML_MEAN = [0.485, 0.456, 0.406] as const;

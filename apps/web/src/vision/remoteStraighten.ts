@@ -6,7 +6,7 @@
 // this transport mirrors remoteMlHeal's warmup/health polling and stage copy
 // — the Inspector reuses the same MlProgressView.
 
-import { STRAIGHTEN_MAX_ANGLE, type PixelImage } from "@photomator/core";
+import { STRAIGHTEN_MAX_ANGLE, type PixelImage } from "@f8/core";
 
 export class RemoteStraightenError extends Error {
   constructor(message: string) {

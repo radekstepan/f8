@@ -53,17 +53,22 @@ describe("defaultMoebiusSteps", () => {
     expect(defaultMoebiusSteps({})).toBe(10);
   });
 
-  it("honors PHOTOMATOR_ML_HEAL_STEPS inside 1..50", () => {
-    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "6" })).toBe(6);
-    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "1" })).toBe(1);
-    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "50" })).toBe(50);
+  it("honors F8_ML_HEAL_STEPS inside 1..50", () => {
+    expect(defaultMoebiusSteps({ F8_ML_HEAL_STEPS: "6" })).toBe(6);
+    expect(defaultMoebiusSteps({ F8_ML_HEAL_STEPS: "1" })).toBe(1);
+    expect(defaultMoebiusSteps({ F8_ML_HEAL_STEPS: "50" })).toBe(50);
   });
 
   it("falls back on missing or out-of-range values", () => {
-    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "" })).toBe(10);
-    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "0" })).toBe(10);
-    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "51" })).toBe(10);
-    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "fast" })).toBe(10);
+    expect(defaultMoebiusSteps({ F8_ML_HEAL_STEPS: "" })).toBe(10);
+    expect(defaultMoebiusSteps({ F8_ML_HEAL_STEPS: "0" })).toBe(10);
+    expect(defaultMoebiusSteps({ F8_ML_HEAL_STEPS: "51" })).toBe(10);
+    expect(defaultMoebiusSteps({ F8_ML_HEAL_STEPS: "fast" })).toBe(10);
+  });
+
+  it("keeps the pre-rename PHOTOMATOR_ML_HEAL_STEPS as an alias", () => {
+    expect(defaultMoebiusSteps({ PHOTOMATOR_ML_HEAL_STEPS: "7" })).toBe(7);
+    expect(defaultMoebiusSteps({ F8_ML_HEAL_STEPS: "6", PHOTOMATOR_ML_HEAL_STEPS: "7" })).toBe(6);
   });
 });
 
@@ -111,8 +116,8 @@ describe("remote heal", () => {
 
   it("answers 503 for lama when weights cannot download", async () => {
     const ctx = createTestContext();
-    const prev = process.env["PHOTOMATOR_ML_HEAL_LAMA_URL"];
-    process.env["PHOTOMATOR_ML_HEAL_LAMA_URL"] = "http://127.0.0.1:9/lama_fp32.onnx";
+    const prev = process.env["F8_ML_HEAL_LAMA_URL"];
+    process.env["F8_ML_HEAL_LAMA_URL"] = "http://127.0.0.1:9/lama_fp32.onnx";
     try {
       const size = 24;
       const response = await ctx.app.request("/api/ml-heal/inpaint", {
@@ -129,16 +134,16 @@ describe("remote heal", () => {
       });
       expect(response.status).toBe(503);
     } finally {
-      if (prev === undefined) delete process.env["PHOTOMATOR_ML_HEAL_LAMA_URL"];
-      else process.env["PHOTOMATOR_ML_HEAL_LAMA_URL"] = prev;
+      if (prev === undefined) delete process.env["F8_ML_HEAL_LAMA_URL"];
+      else process.env["F8_ML_HEAL_LAMA_URL"] = prev;
       ctx.close();
     }
   });
 
   it("rejects moebius without downloadable weights instead of silent fallback", async () => {
     const ctx = createTestContext();
-    const prev = process.env["PHOTOMATOR_ML_HEAL_OFFLINE"];
-    process.env["PHOTOMATOR_ML_HEAL_OFFLINE"] = "1";
+    const prev = process.env["F8_ML_HEAL_OFFLINE"];
+    process.env["F8_ML_HEAL_OFFLINE"] = "1";
     try {
       const size = 24;
       const image = new Uint8Array(size * size * 4);
@@ -156,8 +161,8 @@ describe("remote heal", () => {
         }),
       ).rejects.toThrow(/OFFLINE/);
     } finally {
-      if (prev === undefined) delete process.env["PHOTOMATOR_ML_HEAL_OFFLINE"];
-      else process.env["PHOTOMATOR_ML_HEAL_OFFLINE"] = prev;
+      if (prev === undefined) delete process.env["F8_ML_HEAL_OFFLINE"];
+      else process.env["F8_ML_HEAL_OFFLINE"] = prev;
       ctx.close();
     }
   });
@@ -174,8 +179,8 @@ describe("remote heal", () => {
       image.fill(200);
       const mask = new Uint8Array(size * size);
       mask[12 * size + 12] = 255;
-      const prevOffline = process.env["PHOTOMATOR_ML_HEAL_OFFLINE"];
-      process.env["PHOTOMATOR_ML_HEAL_OFFLINE"] = "1";
+      const prevOffline = process.env["F8_ML_HEAL_OFFLINE"];
+      process.env["F8_ML_HEAL_OFFLINE"] = "1";
       try {
         const response = await ctx.app.request("/api/ml-heal/inpaint", {
           method: "POST",
@@ -193,8 +198,8 @@ describe("remote heal", () => {
         expect(response.status).toBe(503);
         expect(((await response.json()) as { error: string }).error).toMatch(/failed/i);
       } finally {
-        if (prevOffline === undefined) delete process.env["PHOTOMATOR_ML_HEAL_OFFLINE"];
-        else process.env["PHOTOMATOR_ML_HEAL_OFFLINE"] = prevOffline;
+        if (prevOffline === undefined) delete process.env["F8_ML_HEAL_OFFLINE"];
+        else process.env["F8_ML_HEAL_OFFLINE"] = prevOffline;
       }
 
       const bad = await ctx.app.request("/api/ml-heal/inpaint", {
@@ -213,8 +218,8 @@ describe("remote heal", () => {
 
       // Offline: the kick fails in the background without touching the
       // network, but the route still answers immediately.
-      const prevOfflineWarm = process.env["PHOTOMATOR_ML_HEAL_OFFLINE"];
-      process.env["PHOTOMATOR_ML_HEAL_OFFLINE"] = "1";
+      const prevOfflineWarm = process.env["F8_ML_HEAL_OFFLINE"];
+      process.env["F8_ML_HEAL_OFFLINE"] = "1";
       try {
         const warmup = await ctx.app.request("/api/ml-heal/warmup", {
           method: "POST",
@@ -225,8 +230,8 @@ describe("remote heal", () => {
         const snapshot = (await warmup.json()) as { engines: { moebius: { serving: boolean } } };
         expect(snapshot.engines.moebius.serving).toBe(false);
       } finally {
-        if (prevOfflineWarm === undefined) delete process.env["PHOTOMATOR_ML_HEAL_OFFLINE"];
-        else process.env["PHOTOMATOR_ML_HEAL_OFFLINE"] = prevOfflineWarm;
+        if (prevOfflineWarm === undefined) delete process.env["F8_ML_HEAL_OFFLINE"];
+        else process.env["F8_ML_HEAL_OFFLINE"] = prevOfflineWarm;
       }
     } finally {
       ctx.close();

@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ImportReport, LibraryPhoto } from "@photomator/core";
+import type { ImportReport, LibraryPhoto } from "@f8/core";
 import { createTestContext, makeBmp, makeJpeg, makeTiffWithJpeg } from "./fixtures.ts";
 import type { TestContext } from "./fixtures.ts";
 import type { RawDecodeDeps } from "./raw-decode.ts";

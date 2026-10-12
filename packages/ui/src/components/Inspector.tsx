@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Bandage, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, FlipHorizontal2, FlipVertical2, Focus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, X } from 'lucide-react';
-import { CROP_RATIOS, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, groupRetouchStrokes, strokeIdForPoint } from '@photomator/core';
-import type { ChangeEdit, EditState, HealQuality, InpaintMethod, NumericAdjustment, Photo, Tool, VisionWorkerStatus } from '@photomator/core';
+import { CROP_RATIOS, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, groupRetouchStrokes, strokeIdForPoint } from '@f8/core';
+import type { ChangeEdit, EditState, HealQuality, InpaintMethod, NumericAdjustment, Photo, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { IconButton, MenuItem, RangeControl, SelectField, Toggle } from './EditorUI.js';
 

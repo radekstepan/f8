@@ -2,12 +2,12 @@
 //
 // Shared heal e2e helpers: deterministic image stubbing, stroke painting,
 // heal-completion waits, per-photo resets, and the read-only
-// `window.__photomatorTest` hook (queue depth, cached groups, ML readiness,
+// `window.__f8Test` hook (queue depth, cached groups, ML readiness,
 // transport calls) published by PhotoCanvas (no behavior change, specs read
 // only).
 
 import { expect, type Page } from "@playwright/test";
-import { DEFAULT_EDIT, type EditState } from "@photomator/core";
+import { DEFAULT_EDIT, type EditState } from "@f8/core";
 
 export const PHOTO_ID = "photo-1";
 
@@ -50,12 +50,12 @@ export interface MlReadiness {
 
 declare global {
   interface Window {
-    __photomatorTest: TestHookValues;
+    __f8Test: TestHookValues;
   }
 }
 
 async function hook<T>(page: Page, expr: string): Promise<T> {
-  return page.evaluate(`window.__photomatorTest.${expr}`) as Promise<T>;
+  return page.evaluate(`window.__f8Test.${expr}`) as Promise<T>;
 }
 
 export const getHealCalls = (page: Page) => hook<TestHealCall[]>(page, "healCalls()");
@@ -138,7 +138,7 @@ export async function awaitEditor(page: Page): Promise<void> {
   await expect(page.getByTestId("photo-frame")).toBeVisible();
   // Published by PhotoCanvas; every heal assertion reads through it.
   await expect
-    .poll(() => page.evaluate(() => typeof window.__photomatorTest), { timeout: 10_000 })
+    .poll(() => page.evaluate(() => typeof window.__f8Test), { timeout: 10_000 })
     .toBe("object");
 }
 

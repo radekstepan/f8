@@ -5,12 +5,33 @@ import {
   INPAINT_DEFAULT_METHOD,
   type HealQuality,
   type InpaintMethod,
-} from "@photomator/core";
+} from "@f8/core";
 
-// v2: the default repair method moved from classic heal to ML Repair. v1
-// stored the old implicit "heal" for every user, so a fresh key is the only
-// way existing browsers pick up the new default.
-export const TOOL_PREFS_KEY = "photomator.tool-prefs-v2";
+export const TOOL_PREFS_KEY = "f8.tool-prefs-v1";
+/** Pre-rename prefs key; read once as a fallback, then migrated forward and cleared. */
+export const LEGACY_TOOL_PREFS_KEY = "photomator.tool-prefs-v2";
+
+/** Raw stored prefs object: the new key wins, the pre-rename key is a one-shot fallback. */
+export function readToolPrefsRaw(): Record<string, unknown> {
+  try {
+    const raw = localStorage.getItem(TOOL_PREFS_KEY) ?? localStorage.getItem(LEGACY_TOOL_PREFS_KEY);
+    if (!raw) return {};
+    return (JSON.parse(raw) as Record<string, unknown>) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+/** Merge a patch into the stored prefs, migrating any pre-rename entry forward. */
+export function writeToolPrefsRaw(patch: Record<string, unknown>): void {
+  try {
+    const current = readToolPrefsRaw();
+    localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify({ ...current, ...patch }));
+    localStorage.removeItem(LEGACY_TOOL_PREFS_KEY);
+  } catch {
+    /* Private mode / quota — prefs stay session-only. */
+  }
+}
 
 export interface ToolPrefs {
   brushSize: number;
@@ -73,18 +94,14 @@ function sanitize(raw: unknown): ToolPrefs {
 }
 
 export function readToolPrefs(): ToolPrefs {
-  try {
-    const raw = localStorage.getItem(TOOL_PREFS_KEY);
-    if (!raw) return DEFAULTS;
-    return sanitize(JSON.parse(raw));
-  } catch {
-    return DEFAULTS;
-  }
+  const raw = readToolPrefsRaw();
+  return Object.keys(raw).length ? sanitize(raw) : DEFAULTS;
 }
 
 function writeToolPrefs(prefs: ToolPrefs): void {
   try {
     localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify(prefs));
+    localStorage.removeItem(LEGACY_TOOL_PREFS_KEY);
   } catch {
     /* Private mode / quota — prefs stay session-only. */
   }

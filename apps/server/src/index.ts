@@ -29,7 +29,7 @@ const store = createStore(db);
 const seeded = seedIfNeeded(store);
 const app = createApp({ config, store, roots });
 
-console.log(`Photomator library: ${config.dbPath}`);
+console.log(`f/8 library: ${config.dbPath}`);
 console.log(`ML heal runtime: ${mlRuntimeSummary()}`);
 if (seeded) console.log("Seeded the sample library.");
 if (existsSync(path.join(config.webDistDir, "index.html"))) {

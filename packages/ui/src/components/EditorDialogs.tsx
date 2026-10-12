@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Camera, Check, Download, Folder, FolderPlus, Info, Keyboard, MapPin, Save, Share, Trash2 } from 'lucide-react';
-import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_EDITION, APP_NAME, APP_TAGLINE, EXTENSION_POINTS, downloadBlob, exportPhoto, getPhotoFilter, isDefaultEdit, loadStoredHealOverlays, createLibraryClient } from '@photomator/core';
-import type { DialogType, EditState, Photo, RepairInpaintBinding } from '@photomator/core';
+import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_EDITION, APP_NAME, APP_TAGLINE, EXTENSION_POINTS, downloadBlob, exportPhoto, getPhotoFilter, isDefaultEdit, loadStoredHealOverlays, createLibraryClient } from '@f8/core';
+import type { DialogType, EditState, Photo, RepairInpaintBinding } from '@f8/core';
 import { BrandMark, Modal, RangeControl, SelectField } from './EditorUI.js';
 
 interface EditorDialogsProps {

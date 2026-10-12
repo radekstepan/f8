@@ -1,4 +1,4 @@
-import { DEFAULT_EDIT, SAMPLE_ALBUMS, SAMPLE_PHOTOS } from "@photomator/core";
+import { DEFAULT_EDIT, SAMPLE_ALBUMS, SAMPLE_PHOTOS } from "@f8/core";
 import type { Store } from "./store.ts";
 
 // First-run seed: the sample library the browser demo ships with, stored as

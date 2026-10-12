@@ -419,6 +419,76 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@f8/core@workspace:*, @f8/core@workspace:packages/core":
+  version: 0.0.0-use.local
+  resolution: "@f8/core@workspace:packages/core"
+  dependencies:
+    "@techstark/opencv-js": "npm:^5.0.0-release.1"
+    "@types/node": "npm:22.19.17"
+    exifr: "npm:^7.1.3"
+    typescript: "npm:5.9.3"
+    vitest: "npm:^5.0.1"
+  languageName: unknown
+  linkType: soft
+
+"@f8/server@workspace:apps/server":
+  version: 0.0.0-use.local
+  resolution: "@f8/server@workspace:apps/server"
+  dependencies:
+    "@f8/core": "workspace:*"
+    "@hono/node-server": "npm:^1.19.5"
+    "@types/node": "npm:22.19.17"
+    hono: "npm:^4.10.3"
+    image-size: "npm:^2.0.2"
+    onnxruntime-node: "npm:^1.30.0"
+    typescript: "npm:5.9.3"
+    vitest: "npm:^5.0.1"
+  languageName: unknown
+  linkType: soft
+
+"@f8/ui@workspace:*, @f8/ui@workspace:packages/ui":
+  version: 0.0.0-use.local
+  resolution: "@f8/ui@workspace:packages/ui"
+  dependencies:
+    "@f8/core": "workspace:*"
+    "@types/node": "npm:22.19.17"
+    "@types/react": "npm:19.2.7"
+    "@types/react-dom": "npm:19.2.3"
+    clsx: "npm:2.1.1"
+    lucide-react: "npm:^1.55.0"
+    react: "npm:19.2.6"
+    react-dom: "npm:19.2.6"
+    tailwind-merge: "npm:3.4.0"
+    typescript: "npm:5.9.3"
+  peerDependencies:
+    react: 19.2.6
+    react-dom: 19.2.6
+  languageName: unknown
+  linkType: soft
+
+"@f8/web@workspace:apps/web":
+  version: 0.0.0-use.local
+  resolution: "@f8/web@workspace:apps/web"
+  dependencies:
+    "@f8/core": "workspace:*"
+    "@f8/ui": "workspace:*"
+    "@playwright/test": "npm:^1.61.1"
+    "@tailwindcss/vite": "npm:4.1.17"
+    "@techstark/opencv-js": "npm:^5.0.0-release.1"
+    "@types/node": "npm:22.19.17"
+    "@types/react": "npm:19.2.7"
+    "@types/react-dom": "npm:19.2.3"
+    "@vitejs/plugin-react": "npm:5.1.1"
+    lucide-react: "npm:^1.55.0"
+    react: "npm:19.2.6"
+    react-dom: "npm:19.2.6"
+    tailwindcss: "npm:4.1.17"
+    typescript: "npm:5.9.3"
+    vite: "npm:7.3.2"
+    vite-plugin-singlefile: "npm:2.3.0"
+  languageName: unknown
+  linkType: soft
+
 "@hono/node-server@npm:^1.19.5":
   version: 1.19.17
   resolution: "@hono/node-server@npm:1.19.17"
@@ -499,76 +569,6 @@ __metadata:
   checksum: 10c0/dae2bc48077df6da2d59f3c0f3e17b03b99953dbd97fd1fb1f0d261c6036b812538d5905266bd2402182e2709a778d63c8bbb3c2d7fe090fcea863f717954fce
   languageName: node
   linkType: hard
-
-"@photomator/core@workspace:*, @photomator/core@workspace:packages/core":
-  version: 0.0.0-use.local
-  resolution: "@photomator/core@workspace:packages/core"
-  dependencies:
-    "@techstark/opencv-js": "npm:^5.0.0-release.1"
-    "@types/node": "npm:22.19.17"
-    exifr: "npm:^7.1.3"
-    typescript: "npm:5.9.3"
-    vitest: "npm:^5.0.1"
-  languageName: unknown
-  linkType: soft
-
-"@photomator/server@workspace:apps/server":
-  version: 0.0.0-use.local
-  resolution: "@photomator/server@workspace:apps/server"
-  dependencies:
-    "@hono/node-server": "npm:^1.19.5"
-    "@photomator/core": "workspace:*"
-    "@types/node": "npm:22.19.17"
-    hono: "npm:^4.10.3"
-    image-size: "npm:^2.0.2"
-    onnxruntime-node: "npm:^1.30.0"
-    typescript: "npm:5.9.3"
-    vitest: "npm:^5.0.1"
-  languageName: unknown
-  linkType: soft
-
-"@photomator/ui@workspace:*, @photomator/ui@workspace:packages/ui":
-  version: 0.0.0-use.local
-  resolution: "@photomator/ui@workspace:packages/ui"
-  dependencies:
-    "@photomator/core": "workspace:*"
-    "@types/node": "npm:22.19.17"
-    "@types/react": "npm:19.2.7"
-    "@types/react-dom": "npm:19.2.3"
-    clsx: "npm:2.1.1"
-    lucide-react: "npm:^1.55.0"
-    react: "npm:19.2.6"
-    react-dom: "npm:19.2.6"
-    tailwind-merge: "npm:3.4.0"
-    typescript: "npm:5.9.3"
-  peerDependencies:
-    react: 19.2.6
-    react-dom: 19.2.6
-  languageName: unknown
-  linkType: soft
-
-"@photomator/web@workspace:apps/web":
-  version: 0.0.0-use.local
-  resolution: "@photomator/web@workspace:apps/web"
-  dependencies:
-    "@photomator/core": "workspace:*"
-    "@photomator/ui": "workspace:*"
-    "@playwright/test": "npm:^1.61.1"
-    "@tailwindcss/vite": "npm:4.1.17"
-    "@techstark/opencv-js": "npm:^5.0.0-release.1"
-    "@types/node": "npm:22.19.17"
-    "@types/react": "npm:19.2.7"
-    "@types/react-dom": "npm:19.2.3"
-    "@vitejs/plugin-react": "npm:5.1.1"
-    lucide-react: "npm:^1.55.0"
-    react: "npm:19.2.6"
-    react-dom: "npm:19.2.6"
-    tailwindcss: "npm:4.1.17"
-    typescript: "npm:5.9.3"
-    vite: "npm:7.3.2"
-    vite-plugin-singlefile: "npm:2.3.0"
-  languageName: unknown
-  linkType: soft
 
 "@playwright/test@npm:^1.61.1":
   version: 1.64.0
@@ -1393,6 +1393,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"f8@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "f8@workspace:."
+  dependencies:
+    turbo: "npm:2.5.0"
+    typescript: "npm:5.9.3"
+  languageName: unknown
+  linkType: soft
+
 "fdir@npm:^6.5.0":
   version: 6.5.0
   resolution: "fdir@npm:6.5.0"
@@ -1830,15 +1839,6 @@ __metadata:
   conditions: (os=win32 | os=darwin | os=linux)
   languageName: node
   linkType: hard
-
-"photomator@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "photomator@workspace:."
-  dependencies:
-    turbo: "npm:2.5.0"
-    typescript: "npm:5.9.3"
-  languageName: unknown
-  linkType: soft
 
 "picocolors@npm:^1.1.1":
   version: 1.1.1

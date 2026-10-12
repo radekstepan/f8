@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_EDIT, MAX_IMPORTS_PER_REQUEST } from "@photomator/core";
-import type { ImportProgress } from "@photomator/core";
+import { DEFAULT_EDIT, MAX_IMPORTS_PER_REQUEST } from "@f8/core";
+import type { ImportProgress } from "@f8/core";
 import { loadConfig } from "./config.ts";
 import { createTestContext, makeBmp, makeJpeg, makeJpegWithOrientation, makeTiffWithJpeg } from "./fixtures.ts";
 import type { TestContext } from "./fixtures.ts";

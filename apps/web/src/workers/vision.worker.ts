@@ -25,7 +25,7 @@ import {
   type StraightenRequest,
   type VisionWorkerRequest,
   type VisionWorkerResponse,
-} from "@photomator/core";
+} from "@f8/core";
 import { MlHealUnavailableError, runMlHeal, warmupMlHeal } from "./ml-heal-pipeline.js";
 
 /** Minimal structural view of the OpenCV.js runtime used by the worker. */

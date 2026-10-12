@@ -1,7 +1,7 @@
 // Vite wiring for the vision worker: constructs the module worker and adapts
 // the DOM Worker surface to the framework-free VisionWorkerPort.
 
-import { VisionWorkerClient, type VisionWorkerPort, type VisionWorkerRequest } from "@photomator/core";
+import { VisionWorkerClient, type VisionWorkerPort, type VisionWorkerRequest } from "@f8/core";
 
 type PortListener = (event: { readonly data?: unknown }) => void;
 

@@ -3,10 +3,10 @@
 // onnxruntime-node, so the straighten ML fallback lives here too.
 //
 // Today this serves a built-in Sobel gradient vote (OpenCV-free, pure TS in
-// @photomator/core) which complements Hough: long segments vs all strong
+// @f8/core) which complements Hough: long segments vs all strong
 // horizontal edges. The module is ML-ready: when STRAIGHTEN_ML weights are
 // published, drop `straighten_regressor.onnx` into the model dir (or set
-// PHOTOMATOR_STRAIGHTEN_ML_URL) and estimates upgrade to `source: "onnx"`
+// F8_STRAIGHTEN_ML_URL) and estimates upgrade to `source: "onnx"`
 // with zero client changes. Health/warmup/download polling mirrors ml-heal
 // so the client reuses the same progress UI.
 
@@ -20,7 +20,7 @@ import {
   estimateStraightenGradient,
   packStraightenInput,
   parseStraightenOutput,
-} from "@photomator/core";
+} from "@f8/core";
 
 export const STRAIGHTEN_ML_MODEL_DIR_SUFFIX = path.join("models", "straighten-ml");
 export const STRAIGHTEN_ML_MAX_DIM = 2048;
@@ -53,20 +53,20 @@ export function straightenMlDir(
   dataDir: string,
   env: Record<string, string | undefined> = process.env,
 ): string {
-  const override = env["PHOTOMATOR_STRAIGHTEN_ML_DIR"];
+  const override = env["F8_STRAIGHTEN_ML_DIR"] ?? env["PHOTOMATOR_STRAIGHTEN_ML_DIR"];
   if (override && override.trim()) return path.resolve(override.trim());
   return path.join(dataDir, STRAIGHTEN_ML_MODEL_DIR_SUFFIX);
 }
 
 function straightenMlUrl(env: Record<string, string | undefined> = process.env): string | null {
-  const override = env["PHOTOMATOR_STRAIGHTEN_ML_URL"];
+  const override = env["F8_STRAIGHTEN_ML_URL"] ?? env["PHOTOMATOR_STRAIGHTEN_ML_URL"];
   if (override !== undefined) return override.trim() ? override.trim() : null;
   // No published default yet: gradient fallback serves until weights land.
   return null;
 }
 
 function straightenOffline(): boolean {
-  return process.env["PHOTOMATOR_STRAIGHTEN_ML_OFFLINE"] === "1";
+  return process.env["F8_STRAIGHTEN_ML_OFFLINE"] === "1" || process.env["PHOTOMATOR_STRAIGHTEN_ML_OFFLINE"] === "1";
 }
 
 function ortAvailable(): boolean {
@@ -115,7 +115,7 @@ function weightsPath(dataDir: string): string {
 async function downloadWeights(dataDir: string): Promise<string> {
   const url = straightenMlUrl();
   if (!url) throw new Error("Straighten ML weights are not published yet (no URL configured).");
-  if (straightenOffline()) throw new Error("Straighten provisioning is disabled (PHOTOMATOR_STRAIGHTEN_ML_OFFLINE=1).");
+  if (straightenOffline()) throw new Error("Straighten provisioning is disabled (F8_STRAIGHTEN_ML_OFFLINE=1).");
   if (!ortAvailable()) throw new Error("onnxruntime-node is not installed — run yarn install in apps/server.");
   const dir = straightenMlDir(dataDir);
   const dest = path.join(dir, STRAIGHTEN_ML_FILE);

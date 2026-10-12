@@ -1,6 +1,6 @@
 // apps/web/tests/e2e/history.spec.ts
 //
-// Undo/redo/reset e2e for Photomator. Verifies that:
+// Undo/redo/reset e2e for f/8. Verifies that:
 //   - a slider drag is one undo step (toolbar buttons + Ctrl/Cmd+Z, Shift+Z, Y)
 //   - one heal stroke is exactly one undo step, and two strokes are two steps
 //   - rotate is undoable, and reset clears everything + purges heal overlays

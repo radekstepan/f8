@@ -1,5 +1,5 @@
 {
-  "name": "@photomator/server",
+  "name": "@f8/server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,8 +13,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@f8/core": "workspace:*",
     "@hono/node-server": "^1.19.5",
-    "@photomator/core": "workspace:*",
     "hono": "^4.10.3",
     "image-size": "^2.0.2",
     "onnxruntime-node": "^1.30.0"

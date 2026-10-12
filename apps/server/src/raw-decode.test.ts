@@ -18,7 +18,7 @@ describe("decodeRawFullRes", () => {
   let dir: string;
 
   beforeEach(() => {
-    dir = realpathSync(mkdtempSync(path.join(tmpdir(), "photomator-rawdecode-")));
+    dir = realpathSync(mkdtempSync(path.join(tmpdir(), "f8-rawdecode-")));
   });
 
   afterEach(async () => {

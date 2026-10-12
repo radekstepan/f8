@@ -1,8 +1,8 @@
-# Photomator Kitchen Sink
+# f/8
 
 A photo-first, macOS-inspired editing workspace built with React, TypeScript, Vite, and CSS. Tailwind CSS v4 is available for extending the interface. The application starts in the editor, with an alpine photograph and a fully populated sample library.
 
-This is an independent interface study, not the official Photomator application.
+An independent, local-first photo editor. Your library lives in a database on this computer; originals stay in your folders and are never modified.
 
 ## Running Locally
 
@@ -13,8 +13,8 @@ This is a Yarn workspaces + Turborepo monorepo. Use the Node version in `.nvmrc`
 - `yarn dev` starts the Vite development server and the library server together (run `yarn build` once first so the workspace packages exist in `dist/`). Open the printed Vite URL (usually `http://localhost:5173`); API calls proxy to the library server at `http://127.0.0.1:5193`.
 - `yarn build` builds every workspace package, then the application into `apps/web/dist/`.
 - `yarn typecheck` typechecks every workspace package.
-- `yarn workspace @photomator/server start` serves the production build and the API from one process at `http://127.0.0.1:5193` (run `yarn build` first).
-- `yarn workspace @photomator/web preview` serves only the static production build (the library API stays unavailable).
+- `yarn workspace @f8/server start` serves the production build and the API from one process at `http://127.0.0.1:5193` (run `yarn build` first).
+- `yarn workspace @f8/web preview` serves only the static production build (the library API stays unavailable).
 
 ## Build Notes
 
@@ -24,7 +24,7 @@ The production build keeps the single-file main bundle but emits the vision work
 - `dist/opencv-*.js` (~15MB): OpenCV, fetched lazily by the worker on first use — never in the initial page load.
 - `dist/ort-*.js` (tens of KB each): ONNX Runtime Web per-engine JS (wasm backend for LaMa, WebGPU backend for Moebius), fetched lazily by the worker on the first ML Heal only. The `.wasm` backends live in `dist/ort/` (copied from `node_modules` by `vite-plugin-static-copy`, never committed). Model weights load from HuggingFace once and persist in Cache Storage: LaMa (~208MB, Balanced) or Moebius diffusion (~1.3GB, Best).
 
-The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64), so there is no separate `.wasm` asset to serve. Heavy vision entry points must keep this shape: construct the worker via `new Worker(new URL(..., import.meta.url))`, import OpenCV only inside the worker, and never import it from main-thread code. The one exception is Node-only: `@photomator/core` lists the package as a devDependency so the inpaint golden tests can run real `cv.inpaint` outside the browser; test files are never shipped in the app bundle. A networked `yarn install` fetches the package from the npm registry.
+The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64), so there is no separate `.wasm` asset to serve. Heavy vision entry points must keep this shape: construct the worker via `new Worker(new URL(..., import.meta.url))`, import OpenCV only inside the worker, and never import it from main-thread code. The one exception is Node-only: `@f8/core` lists the package as a devDependency so the inpaint golden tests can run real `cv.inpaint` outside the browser; test files are never shipped in the app bundle. A networked `yarn install` fetches the package from the npm registry.
 
 ## Included Interactions
 
@@ -47,10 +47,10 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 
 | Workspace | Responsibility |
 | --- | --- |
-| `apps/web` (`@photomator/web`) | Vite application: workspace composition, keyboard shortcuts, import, and styles. Library state comes from the server. |
-| `apps/server` (`@photomator/server`) | Local library server: SQLite catalog, referenced originals, SHA-256 identity, edit recipes, and preview cache. Serves the production web build when present. |
-| `packages/core` (`@photomator/core`) | Framework-free editor logic: typed models, sample library, presets, the image pipeline, and the library HTTP client. |
-| `packages/ui` (`@photomator/ui`) | React components, the `useEditor` history hook, the `useLibrary` server hook, and shared UI utilities. Depends on `@photomator/core`. |
+| `apps/web` (`@f8/web`) | Vite application: workspace composition, keyboard shortcuts, import, and styles. Library state comes from the server. |
+| `apps/server` (`@f8/server`) | Local library server: SQLite catalog, referenced originals, SHA-256 identity, edit recipes, and preview cache. Serves the production web build when present. |
+| `packages/core` (`@f8/core`) | Framework-free editor logic: typed models, sample library, presets, the image pipeline, and the library HTTP client. |
+| `packages/ui` (`@f8/ui`) | React components, the `useEditor` history hook, the `useLibrary` server hook, and shared UI utilities. Depends on `@f8/core`. |
 
 | File | Responsibility |
 | --- | --- |
@@ -98,9 +98,9 @@ Extend the `Tool` or `DialogType` union in `packages/core/src/types.ts`, add the
 
 ### Library Server
 
-`apps/server` is the library backend. It binds to localhost without authentication (single-user, this device only) and stores its catalog in `apps/server/data/photomator.db` (SQLite, WAL mode) with extracted RAW previews alongside it.
+`apps/server` is the library backend. It binds to localhost without authentication (single-user, this device only) and stores its catalog in `apps/server/data/f8.db` (SQLite, WAL mode) with extracted RAW previews alongside it.
 
-- **Referenced originals.** Folder import (`File → Import from Folder…`, or `Ctrl/⌘ Shift O`) records a file's absolute path and never copies bytes. Uploads (picker or drag and drop) cannot see your paths — browsers hide them — so the server first stores them under `~/Pictures/Photomator/YYYY/MM/` and references them from there.
+- **Referenced originals.** Folder import (`File → Import from Folder…`, or `Ctrl/⌘ Shift O`) records a file's absolute path and never copies bytes. Uploads (picker or drag and drop) cannot see your paths — browsers hide them — so the server first stores them under `~/Pictures/f8/YYYY/MM/` and references them from there.
 - **Hash identity.** Every original is SHA-256 hashed at import. Reimporting a moved file relinks it to its record (edits intact); reimporting the same bytes anywhere reports a duplicate instead of a second record.
 - **Missing files.** A photo whose file is gone shows a Missing badge; opening it offers to locate the original, and any folder import that finds the bytes heals it automatically.
 - **Non-destructive edits.** The original is never written to. Each photo keeps one edit recipe in SQLite, saved ~500ms after each change; undo/redo stacks stay session-only.
@@ -111,14 +111,16 @@ Configuration is all environment variables:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `PORT` / `PHOTOMATOR_PORT` | `5193` | HTTP port. |
-| `HOST` / `PHOTOMATOR_HOST` | `127.0.0.1` | Bind address; keep localhost unless you add authentication. |
-| `PHOTOMATOR_DATA` | `apps/server/data` | Database, previews, and upload staging. |
-| `PHOTOMATOR_LIBRARY` | `~/Pictures/Photomator` | Where uploaded bytes land. |
-| `PHOTOMATOR_ROOTS` | `~` | Colon-separated roots the folder browser and path import may touch. |
-| `PHOTOMATOR_ML_HEAL_STEPS` | `10` | Best (Moebius) diffusion steps, 1–50. Fewer steps is near-linearly faster (~3.7s saved per step on M1 Pro) at some quality cost. |
-| `PHOTOMATOR_ML_THREADS` | ORT default | ONNX intra-op thread override. Unset measured fastest on M1 Pro; set to experiment on other machines. |
-| `PHOTOMATOR_ML_EP` | `cpu` | `coreml` opts Moebius into CoreML, but it measured ~2× slower than CPU on M1 (UNet partitioning overhead). |
+| `PORT` / `F8_PORT` | `5193` | HTTP port. |
+| `HOST` / `F8_HOST` | `127.0.0.1` | Bind address; keep localhost unless you add authentication. |
+| `F8_DATA` | `apps/server/data` | Database, previews, and upload staging. |
+| `F8_LIBRARY` | `~/Pictures/f8` | Where uploaded bytes land. |
+| `F8_ROOTS` | `~` | Colon-separated roots the folder browser and path import may touch. |
+| `F8_ML_HEAL_STEPS` | `10` | Best (Moebius) diffusion steps, 1–50. Fewer steps is near-linearly faster (~3.7s saved per step on M1 Pro) at some quality cost. |
+| `F8_ML_THREADS` | ORT default | ONNX intra-op thread override. Unset measured fastest on M1 Pro; set to experiment on other machines. |
+| `F8_ML_EP` | `cpu` | `coreml` opts Moebius into CoreML, but it measured ~2× slower than CPU on M1 (UNet partitioning overhead). |
+
+The pre-rename `PHOTOMATOR_*` names remain accepted as fallback aliases, and an existing pre-rename catalog (`photomator.db`) or upload folder (`~/Pictures/Photomator`) keeps being used when the new one is absent, so upgrades never orphan a library. Details live in [docs/tasks/01-rename-f8.md](docs/tasks/01-rename-f8.md).
 
 Best runs full diffusion on the server CPU (~45s per repair area on M1 Pro: ~4s VAE encode, ~3.7s per denoise step × 9, ~8s VAE decode). While it runs, the terminal shows per-stage timing (`[ml-heal] moebius step 3/9 …`) plus one line per API call, and the repair bar polls live step progress instead of sitting still.
 
@@ -130,7 +132,7 @@ The primary tokens are at the top of `apps/web/src/index.css`: `--accent`, `--ac
 
 ## Persistence and Privacy
 
-Photos, edits, favorites, ratings, albums, and custom presets live in the server's SQLite database; undo/redo history is session-only. The browser keeps no photo state — everything survives reloads, and edits reapply to the referenced originals every time. On the first run against a fresh database, any pre-server `photomator-demo-*-v1` localStorage state (sample edits, favorites, custom albums and presets) migrates into the library once, then clears.
+Photos, edits, favorites, ratings, albums, and custom presets live in the server's SQLite database; undo/redo history is session-only. The browser keeps no photo state — everything survives reloads, and edits reapply to the referenced originals every time. On the first run against a fresh database, any pre-server, pre-rename `photomator-demo-*-v1` localStorage state (sample edits, favorites, custom albums and presets) migrates into the library once, then clears.
 
 Everything stays on your machine: the server binds to localhost, originals stay in your folders, and nothing is uploaded anywhere. Remote sample images and the optional Inter font require an internet connection.
 

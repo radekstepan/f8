@@ -20,7 +20,7 @@
 // stay seed-stable (photo-1/4/10 favorited) and are never mutated here.
 // Seed images are stubbed to a local SVG (no network), same as basic.spec.ts.
 import { expect, test, type Page } from "@playwright/test";
-import { DEFAULT_EDIT } from "@photomator/core";
+import { DEFAULT_EDIT } from "@f8/core";
 import { awaitEditor, stubLibraryImages } from "./helpers";
 
 const EDITED_ID = "photo-2";

@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
-import { DEFAULT_EDIT } from "@photomator/core";
-import type { Album, EditState, Preset } from "@photomator/core";
+import { DEFAULT_EDIT } from "@f8/core";
+import type { Album, EditState, Preset } from "@f8/core";
 
 export interface PhotoRow {
   id: string;

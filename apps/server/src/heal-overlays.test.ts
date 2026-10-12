@@ -1,7 +1,7 @@
 import { describe, expect, it, afterEach, beforeEach } from "vitest";
 import { createTestContext, makeBmp } from "./fixtures.ts";
 import type { TestContext } from "./fixtures.ts";
-import type { ImportReport } from "@photomator/core";
+import type { ImportReport } from "@f8/core";
 
 function patchBody(signature: string, width = 2, height = 2) {
   const raw = Buffer.alloc(width * height * 4, 7);

@@ -22,10 +22,10 @@ import {
   type RunInpaint,
   type RunInpaintOptions,
   type VisionWorkerStatus,
-} from "@photomator/core";
+} from "@f8/core";
 import { getVisionWorkerClient } from "./visionClient";
 import { RemoteHealError, runRemoteHeal, warmupRemoteHeal } from "./remoteMlHeal";
-import { TOOL_PREFS_KEY } from "../hooks/useToolPrefs";
+import { readToolPrefsRaw, writeToolPrefsRaw } from "../hooks/useToolPrefs";
 
 export interface MlProgress {
   fraction: number;
@@ -91,24 +91,12 @@ function readPref<K extends "repairMethod" | "repairQuality" | "seamlessLight" |
   key: K,
   fallback: V,
 ): V {
-  try {
-    const raw = localStorage.getItem(TOOL_PREFS_KEY);
-    if (!raw) return fallback;
-    const value = (JSON.parse(raw) as Record<string, unknown>)[key];
-    return (value === undefined ? fallback : value) as V;
-  } catch {
-    return fallback;
-  }
+  const value = readToolPrefsRaw()[key];
+  return (value === undefined ? fallback : value) as V;
 }
 
 function writePrefs(patch: Record<string, unknown>): void {
-  try {
-    const raw = localStorage.getItem(TOOL_PREFS_KEY);
-    const current = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-    localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify({ ...current, ...patch }));
-  } catch {
-    /* Private mode / quota — prefs stay session-only. */
-  }
+  writeToolPrefsRaw(patch);
 }
 
 /**

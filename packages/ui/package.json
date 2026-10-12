@@ -1,5 +1,5 @@
 {
-  "name": "@photomator/ui",
+  "name": "@f8/ui",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -25,7 +25,7 @@
     "react-dom": "19.2.6"
   },
   "dependencies": {
-    "@photomator/core": "workspace:*",
+    "@f8/core": "workspace:*",
     "clsx": "2.1.1",
     "lucide-react": "^1.55.0",
     "tailwind-merge": "3.4.0"

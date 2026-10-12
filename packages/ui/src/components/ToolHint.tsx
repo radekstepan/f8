@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { TOOL_HINT_FADE_MS, TOOL_HINT_VISIBLE_MS, createToolHintTracker } from '@photomator/core';
+import { TOOL_HINT_FADE_MS, TOOL_HINT_VISIBLE_MS, createToolHintTracker } from '@f8/core';
 
 /** Session-wide dismissal record: each hint shows once per photo visit. */
 const toolHintTracker = createToolHintTracker();

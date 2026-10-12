@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_EDIT } from "@photomator/core";
-import type { ImportReport, LibraryPhoto, LibrarySnapshot } from "@photomator/core";
+import { DEFAULT_EDIT } from "@f8/core";
+import type { ImportReport, LibraryPhoto, LibrarySnapshot } from "@f8/core";
 import { createTestContext, makeBmp, makeJpeg, makeTiffWithJpeg } from "./fixtures.ts";
 import type { TestContext } from "./fixtures.ts";
 import { RawDecodeError } from "./raw-decode.ts";

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownWideNarrow, Check, ChevronDown, ChevronUp, Grid2X2, Heart, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
-import { DEFAULT_EDIT } from '@photomator/core';
-import { computeGridWindow, filmstripArrowIndex, filmstripWheelShift, getPhotoFilter, thumbnailFilterForPhoto } from '@photomator/core';
-import type { EditState, Photo, Preset } from '@photomator/core';
+import { DEFAULT_EDIT } from '@f8/core';
+import { computeGridWindow, filmstripArrowIndex, filmstripWheelShift, getPhotoFilter, thumbnailFilterForPhoto } from '@f8/core';
+import type { EditState, Photo, Preset } from '@f8/core';
 
 /** A grid/filmstrip photo with its edit recipe attached when known (library photos carry `edit`). */
 export type PhotoWithEdit = Photo & { edit?: EditState | null };
@@ -85,7 +85,7 @@ export interface PhotoBrowserFilters {
 // Module-level so the position survives the library → editor → library
 // remount; sessionStorage mirrors it so a reload restores too.
 const gridScrollMemory = new Map<string, number>();
-const GRID_SCROLL_STORAGE_PREFIX = 'photomator-grid-scroll:';
+const GRID_SCROLL_STORAGE_PREFIX = 'f8-grid-scroll:';
 
 function readSavedScroll(key: string): number | null {
   const live = gridScrollMemory.get(key);

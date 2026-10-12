@@ -8,7 +8,7 @@
 //
 // Runtime only, never persisted. Zero behavior change: recording is a push
 // to an array. Unit tests ignore it. The app publishes a read-only view on
-// `window.__photomatorTest` (see PhotoCanvas); specs may also clear it
+// `window.__f8Test` (see PhotoCanvas); specs may also clear it
 // between strokes to isolate per-action assertions.
 
 import type { InpaintMethod } from "./inpaint.js";

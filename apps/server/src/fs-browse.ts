@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { isImportableFilename } from "@photomator/core";
-import type { BrowseListing } from "@photomator/core";
+import { isImportableFilename } from "@f8/core";
+import type { BrowseListing } from "@f8/core";
 
 export class BrowseError extends Error {
   constructor(message: string) {

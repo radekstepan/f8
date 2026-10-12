@@ -14,7 +14,7 @@
 
 import type { EditState } from "../types.js";
 
-const DB_NAME = "photomator-preview-cache";
+const DB_NAME = "f8-preview-cache";
 const STORE_NAME = "previews";
 /** Upper bound for cached renders; oldest entries are evicted first. */
 export const PREVIEW_RENDER_CACHE_MAX_ENTRIES = 20;

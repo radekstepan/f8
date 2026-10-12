@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeWhiteBalanceAuto, decodeDownsampled, isDefaultEdit, isOriginalLook, presetForPatch } from '@photomator/core';
-import type { EditState, HistoryState, Preset } from '@photomator/core';
+import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeWhiteBalanceAuto, decodeDownsampled, isDefaultEdit, isOriginalLook, presetForPatch } from '@f8/core';
+import type { EditState, HistoryState, Preset } from '@f8/core';
 
 const initialHistory = (_id?: string): HistoryState => ({
   past: [],

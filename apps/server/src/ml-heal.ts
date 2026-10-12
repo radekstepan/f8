@@ -39,8 +39,8 @@ import {
   packMlHealInput,
   seedMoebiusLatents,
   type MlHealRoi,
-} from "@photomator/core";
-import { MOEBIUS_LATENT_SIZE } from "@photomator/core";
+} from "@f8/core";
+import { MOEBIUS_LATENT_SIZE } from "@f8/core";
 
 export const ML_HEAL_MODEL_DIR_SUFFIX = path.join("models", "ml-heal");
 export const ML_HEAL_ROI_MAX_SIZE = 2048;
@@ -89,7 +89,7 @@ export interface RemoteInpaintBody {
 }
 
 export function mlHealDir(dataDir: string, env: Record<string, string | undefined> = process.env): string {
-  const override = env["PHOTOMATOR_ML_HEAL_DIR"];
+  const override = env["F8_ML_HEAL_DIR"] ?? env["PHOTOMATOR_ML_HEAL_DIR"];
   if (override && override.trim()) return path.resolve(override.trim());
   return path.join(dataDir, ML_HEAL_MODEL_DIR_SUFFIX);
 }
@@ -100,7 +100,7 @@ export function mlHealDir(dataDir: string, env: Record<string, string | undefine
  * quality cost. Out-of-range values fall back to the preview default.
  */
 export function defaultMoebiusSteps(env: Record<string, string | undefined> = process.env): number {
-  const raw = env["PHOTOMATOR_ML_HEAL_STEPS"];
+  const raw = env["F8_ML_HEAL_STEPS"] ?? env["PHOTOMATOR_ML_HEAL_STEPS"];
   if (raw !== undefined && raw.trim() !== "") {
     const parsed = Number.parseInt(raw.trim(), 10);
     if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 50) return parsed;
@@ -111,11 +111,11 @@ export function defaultMoebiusSteps(env: Record<string, string | undefined> = pr
 /**
  * ORT intra-op thread override. Unset (the default) lets onnxruntime pick,
  * which measured fastest on M1 Pro (1.79–1.89s/UNet run vs 2.37s forced to
- * 10 threads — the E-cores add contention). Set PHOTOMATOR_ML_THREADS to
+ * 10 threads — the E-cores add contention). Set F8_ML_THREADS to
  * experiment on other machines.
  */
 function ortThreads(env: Record<string, string | undefined> = process.env): number | null {
-  const raw = env["PHOTOMATOR_ML_THREADS"];
+  const raw = env["F8_ML_THREADS"] ?? env["PHOTOMATOR_ML_THREADS"];
   if (raw === undefined || raw.trim() === "") return null;
   const parsed = Number.parseInt(raw.trim(), 10);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 256) return null;
@@ -162,13 +162,13 @@ async function modelsPresent(dir: string): Promise<boolean> {
 }
 
 function moebiusBaseUrl(env: Record<string, string | undefined> = process.env): string {
-  const override = env["PHOTOMATOR_ML_HEAL_MOEBIUS_BASE"];
+  const override = env["F8_ML_HEAL_MOEBIUS_BASE"] ?? env["PHOTOMATOR_ML_HEAL_MOEBIUS_BASE"];
   const base = override && override.trim() ? override.trim() : ML_HEAL_MOEBIUS_DEFAULT_BASE;
   return base.endsWith("/") ? base : `${base}/`;
 }
 
 function provisioningOffline(): boolean {
-  return process.env["PHOTOMATOR_ML_HEAL_OFFLINE"] === "1";
+  return process.env["F8_ML_HEAL_OFFLINE"] === "1" || process.env["PHOTOMATOR_ML_HEAL_OFFLINE"] === "1";
 }
 
 /** Live download progress, shared by health polling and concurrent strokes. */
@@ -231,7 +231,7 @@ export async function ensureMoebiusWeights(dataDir: string): Promise<string> {
     throw new Error("onnxruntime-node is not installed — run yarn install in apps/server.");
   }
   if (provisioningOffline()) {
-    throw new Error("Model provisioning is disabled (PHOTOMATOR_ML_HEAL_OFFLINE=1).");
+    throw new Error("Model provisioning is disabled (F8_ML_HEAL_OFFLINE=1).");
   }
   const dir = mlHealDir(dataDir);
   if (await modelsPresent(dir)) return dir;
@@ -283,7 +283,7 @@ function expectedSizeOf(file: string): number {
 }
 
 function lamaUrl(env: Record<string, string | undefined> = process.env): string {
-  const override = env["PHOTOMATOR_ML_HEAL_LAMA_URL"];
+  const override = env["F8_ML_HEAL_LAMA_URL"] ?? env["PHOTOMATOR_ML_HEAL_LAMA_URL"];
   if (override && override.trim()) return override.trim();
   return ML_HEAL_LAMA_DEFAULT_URL;
 }
@@ -491,12 +491,12 @@ const nodeSessions = new Map<string, { run(feeds: Record<string, unknown>): Prom
  * Winning Moebius providers, determined once. Measured on M1 Max (Oct 2026):
  * CPU ≈46s/area vs CoreML ≈95s/area — CoreML splits the UNet into ~289
  * partitions and the ANE↔CPU copies cost more than the acceleration saves.
- * So CPU is the default; CoreML is opt-in via PHOTOMATOR_ML_EP=coreml.
+ * So CPU is the default; CoreML is opt-in via F8_ML_EP=coreml.
  */
 let moebiusEPWinner: string[] | null = null;
 
 function moebiusProviders(): string[] {
-  if (process.env["PHOTOMATOR_ML_EP"] === "coreml") return moebiusEPWinner ?? ["coreml", "cpu"];
+  if (process.env["F8_ML_EP"] === "coreml" || process.env["PHOTOMATOR_ML_EP"] === "coreml") return moebiusEPWinner ?? ["coreml", "cpu"];
   return ["cpu"];
 }
 

@@ -10,8 +10,8 @@ import {
   readOrientation,
   readRawMetadata,
   resolveImportSelection,
-} from "@photomator/core";
-import type { ImportProgress } from "@photomator/core";
+} from "@f8/core";
+import type { ImportProgress } from "@f8/core";
 import type { ServerConfig } from "./config.ts";
 import { resolveWithinRoots } from "./fs-browse.ts";
 import { RawDecodeError, decodeRawFullRes } from "./raw-decode.ts";

@@ -5,7 +5,7 @@ import {
   MAX_IMPORTS_PER_REQUEST,
   createLibraryClient,
   resolveImportSelection,
-} from "@photomator/core";
+} from "@f8/core";
 import type {
   Album,
   EditState,
@@ -18,7 +18,7 @@ import type {
   Photo,
   PhotoPatch,
   Preset,
-} from "@photomator/core";
+} from "@f8/core";
 
 export type LibraryStatus = "loading" | "ready" | "offline";
 
@@ -39,6 +39,9 @@ export interface UploadSummary {
 // grid empty until the whole batch lands.
 const IMPORT_STATE_FLUSH_EVERY = 10;
 
+// Pre-rename localStorage keys from the browser-only demo. Read once during
+// the one-shot server migration, then cleared; kept so upgrades never lose
+// migrated edits, favorites, albums, or presets.
 const LEGACY_EDITS_KEY = "photomator-demo-edits-v1";
 const LEGACY_LIBRARY_KEY = "photomator-demo-library-v1";
 const LEGACY_ALBUMS_KEY = "photomator-demo-albums-v1";

@@ -1,6 +1,6 @@
 import { Clock3, Folder, Heart, Images, Import, Plus, Search } from 'lucide-react';
-import type { Album, Photo } from '@photomator/core';
-import { isRecentlyEdited } from '@photomator/core';
+import type { Album, Photo } from '@f8/core';
+import { isRecentlyEdited } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 
 interface SidebarProps {

@@ -22,7 +22,7 @@ export const ML_HEAL_ROI_CONTEXT = 0.25;
 /** Minimum context padding in source pixels so tiny blemishes keep surroundings. */
 export const ML_HEAL_ROI_MIN_PAD = 8;
 /** Cache Storage name for downloaded model weights. */
-export const ML_HEAL_CACHE_NAME = "photomator-ml-heal-v1";
+export const ML_HEAL_CACHE_NAME = "f8-ml-heal-v1";
 /** Default LaMa ONNX weights (Apache-2.0 export). Overridable at runtime. */
 export const ML_HEAL_LAMA_DEFAULT_URL =
   "https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx";

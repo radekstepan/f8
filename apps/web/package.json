@@ -1,5 +1,5 @@
 {
-  "name": "@photomator/web",
+  "name": "@f8/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -15,8 +15,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@photomator/core": "workspace:*",
-    "@photomator/ui": "workspace:*",
+    "@f8/core": "workspace:*",
+    "@f8/ui": "workspace:*",
     "@techstark/opencv-js": "^5.0.0-release.1",
     "lucide-react": "^1.55.0",
     "react": "19.2.6",

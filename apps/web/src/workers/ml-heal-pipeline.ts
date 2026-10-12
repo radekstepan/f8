@@ -14,7 +14,7 @@ import {
   type MlHealEngine,
   type PixelImage,
   type RepairMask,
-} from "@photomator/core";
+} from "@f8/core";
 
 export class MlHealUnavailableError extends Error {
   constructor(message: string) {

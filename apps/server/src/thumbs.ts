@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { extractEmbeddedJpeg } from "@photomator/core";
+import { extractEmbeddedJpeg } from "@f8/core";
 import type { RawDecodeDeps } from "./raw-decode.ts";
 
 // Grid thumbnails live next to the full previews, content-addressed by the

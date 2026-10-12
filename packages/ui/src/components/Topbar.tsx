@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ArrowLeft, Bandage, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Sparkles, Undo2 } from 'lucide-react';
-import type { DialogType, Tool, VisionWorkerStatus } from '@photomator/core';
-import { APP_EDITION_SHORT, APP_NAME } from '@photomator/core';
+import type { DialogType, Tool, VisionWorkerStatus } from '@f8/core';
+import { APP_EDITION_SHORT, APP_NAME } from '@f8/core';
 import { BrandMark, IconButton, MenuItem } from './EditorUI.js';
 
 export type MenuAction = 'import' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'fit' | 'fullscreen' | 'shortcuts' | 'about';

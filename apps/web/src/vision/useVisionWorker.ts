@@ -2,7 +2,7 @@
 // self-test that proves OpenCV computes (not just loads) in the browser.
 
 import { useCallback, useEffect, useState } from "react";
-import { grayscaleReference, solidColor, type VisionWorkerStatus } from "@photomator/core";
+import { grayscaleReference, solidColor, type VisionWorkerStatus } from "@f8/core";
 import { getVisionWorkerClient } from "./visionClient";
 
 export interface VisionWorkerState {

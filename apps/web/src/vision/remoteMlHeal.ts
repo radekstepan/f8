@@ -15,7 +15,7 @@ import {
   type MlHealEngine,
   type PixelImage,
   type RepairMask,
-} from "@photomator/core";
+} from "@f8/core";
 
 /** Machine-readable failure class: only unreachable/timeout mean the server is down. */
 export type RemoteHealErrorCode = "unreachable" | "timeout" | "failed";

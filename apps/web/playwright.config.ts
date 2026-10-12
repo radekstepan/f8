@@ -1,15 +1,15 @@
 // apps/web/playwright.config.ts
 //
-// Playwright e2e for Photomator. Mirrors the shape of the sibling
+// Playwright e2e for f/8. Mirrors the shape of the sibling
 // `ynab4-alternative-spa-implementation` config (one config inside the app,
 // chromium-only project, CI-aware retries/workers/reporter, workers: 1).
 //
-// Adaptations for Photomator's split architecture:
+// Adaptations for f/8's split architecture:
 //   - Two webServers: the Hono photo server (source via `yarn dev`, always
 //     current, no build needed) on 5194 backed by an isolated data dir
 //     (apps/server/.e2e), plus Vite dev on 5174 proxying /api at it via
-//     PHOTOMATOR_API. The dev library on 5193 is never touched.
-//   - PHOTOMATOR_ML_HEAL_OFFLINE=1: the test server never downloads real
+//     F8_API. The dev library on 5193 is never touched.
+//   - F8_ML_HEAL_OFFLINE=1: the test server never downloads real
 //     weights (208MB–1.3GB). ML specs route-intercept /api/ml-heal/* with
 //     deterministic tinted outputs (see tests/e2e/heal-mocks.ts).
 //   - E2E_TESTING=true is passed through as a future seam (same as sibling).
@@ -47,7 +47,7 @@ export default defineConfig({
     {
       // Source-run (node type-stripping, same as `yarn dev`): e2e always
       // exercises current server code with no build step.
-      command: "yarn workspace @photomator/server dev",
+      command: "yarn workspace @f8/server dev",
       url: `${API_URL}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
@@ -55,8 +55,8 @@ export default defineConfig({
       stderr: "pipe",
       env: {
         PORT: String(API_PORT),
-        PHOTOMATOR_DATA: E2E_DATA_DIR,
-        PHOTOMATOR_ML_HEAL_OFFLINE: "1",
+        F8_DATA: E2E_DATA_DIR,
+        F8_ML_HEAL_OFFLINE: "1",
       },
     },
     {
@@ -69,7 +69,7 @@ export default defineConfig({
       stdout: "pipe",
       stderr: "pipe",
       env: {
-        PHOTOMATOR_API: API_URL,
+        F8_API: API_URL,
         E2E_TESTING: "true",
       },
     },

@@ -1,6 +1,6 @@
 // apps/web/tests/e2e/basic.spec.ts
 //
-// Smoke e2e for Photomator. Verifies that:
+// Smoke e2e for f/8. Verifies that:
 //   - the Vite dev server boots and serves `/` against the isolated test API
 //   - the library gate clears once /api/library resolves (seeded .e2e data)
 //   - the editor mounts: toolbar, photo frame, inspector

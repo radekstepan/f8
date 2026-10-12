@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronLeft, FileImage, Folder } from 'lucide-react';
-import { createLibraryClient } from '@photomator/core';
-import type { BrowseEntry, BrowseListing } from '@photomator/core';
-import { Modal } from '@photomator/ui';
+import { createLibraryClient } from '@f8/core';
+import type { BrowseEntry, BrowseListing } from '@f8/core';
+import { Modal } from '@f8/ui';
 
 interface FsBrowserProps {
   title: string;

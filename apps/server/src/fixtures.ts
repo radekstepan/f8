@@ -102,11 +102,11 @@ export function stubRawDecode(width = 61, height = 41): DecodeRawFullRes {
 export function createTestContext(overrides: { decodeRaw?: DecodeRawFullRes; thumbDeps?: RawDecodeDeps } = {}): TestContext {
   // realpath: tmpdir can sit behind a symlink (/var -> /private/var), and
   // root confinement compares real paths.
-  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "photomator-test-")));
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "f8-test-")));
   const config = {
     ...loadConfig({}),
     dataDir: path.join(dir, "data"),
-    dbPath: path.join(dir, "data", "photomator.db"),
+    dbPath: path.join(dir, "data", "f8.db"),
     previewsDir: path.join(dir, "data", "previews"),
     tmpDir: path.join(dir, "data", "tmp"),
     libraryRoot: path.join(dir, "library"),

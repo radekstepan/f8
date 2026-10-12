@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isRecentlyEdited, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@photomator/core';
-import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent } from '@photomator/core';
-import { useEditor, useLibrary } from '@photomator/ui';
-import type { DialogType, EditState, Tool, ViewMode } from '@photomator/core';
-import { Sidebar } from '@photomator/ui';
-import { AppStatus, MenuBar, Toolbar, type MenuAction } from '@photomator/ui';
-import { PhotoCanvas, type HistogramData } from '@photomator/ui';
-import { Filmstrip, PhotoBrowser, PresetStrip } from '@photomator/ui';
-import { Inspector } from '@photomator/ui';
-import { EditorDialogs } from '@photomator/ui';
+import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isRecentlyEdited, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@f8/core';
+import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent } from '@f8/core';
+import { useEditor, useLibrary } from '@f8/ui';
+import type { DialogType, EditState, Tool, ViewMode } from '@f8/core';
+import { Sidebar } from '@f8/ui';
+import { AppStatus, MenuBar, Toolbar, type MenuAction } from '@f8/ui';
+import { PhotoCanvas, type HistogramData } from '@f8/ui';
+import { Filmstrip, PhotoBrowser, PresetStrip } from '@f8/ui';
+import { Inspector } from '@f8/ui';
+import { EditorDialogs } from '@f8/ui';
 import { useVisionWorker } from './vision/useVisionWorker';
 import { useStraighten } from './vision/useStraighten';
 import { useInpaintRepair } from './vision/useInpaintRepair';
 import { FsBrowser } from './components/FsBrowser';
-import { readToolPrefs, TOOL_PREFS_KEY } from './hooks/useToolPrefs';
+import { readToolPrefs, writeToolPrefsRaw } from './hooks/useToolPrefs';
 
 const collectionTitles: Record<string, string> = { all: 'All Photos', favorites: 'Favorites', edited: 'Recently Edited' };
 
@@ -143,13 +143,7 @@ export default function App() {
   // Persist tool preferences (brush, panels) across reloads. Adjust sliders
   // are excluded by design — those persist per-photo on the server.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(TOOL_PREFS_KEY);
-      const current = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-      localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify({ ...current, brushSize, brushStrength, presetsOpen, filmstripOpen }));
-    } catch {
-      /* Private mode / quota — prefs stay session-only. */
-    }
+    writeToolPrefsRaw({ brushSize, brushStrength, presetsOpen, filmstripOpen });
   }, [brushSize, brushStrength, presetsOpen, filmstripOpen]);
   // Deep-link the view so a reload or shared URL restores it. View-only
   // pointer: edits still live on the server. Inside a photo the URL names
@@ -373,13 +367,7 @@ export default function App() {
   // the tool-prefs effect and useInpaintRepair; Adjust sliders are excluded.
   const handleEditChange: typeof editor.change = useCallback((patch, mergeKey) => {
     if (patch.cropRatio !== undefined) {
-      try {
-        const raw = localStorage.getItem(TOOL_PREFS_KEY);
-        const current = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-        localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify({ ...current, cropRatio: patch.cropRatio }));
-      } catch {
-        /* Private mode / quota — prefs stay session-only. */
-      }
+      writeToolPrefsRaw({ cropRatio: patch.cropRatio });
     }
     editor.change(patch, mergeKey);
   }, [editor]);

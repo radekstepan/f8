@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star } from 'lucide-react';
-import { DEFAULT_EDIT, isDefaultEdit } from '@photomator/core';
-import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@photomator/core';
-import type { CachedHealPatch, ChangeEdit, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@photomator/core';
+import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
+import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
+import type { CachedHealPatch, ChangeEdit, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 import { ToolHint } from './ToolHint.js';
 
@@ -155,7 +155,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   // readiness, and the recorded transport calls. No behavior change; specs
   // read, never write.
   useEffect(() => {
-    (window as unknown as { __photomatorTest?: unknown }).__photomatorTest = {
+    (window as unknown as { __f8Test?: unknown }).__f8Test = {
       healCalls: () => readTestHealCalls(),
       clearHealCalls: () => clearTestHealCalls(),
       queue: () => ({ active: healQueue.current?.active ?? false, pendingJobs: healQueue.current?.pendingJobs ?? 0 }),

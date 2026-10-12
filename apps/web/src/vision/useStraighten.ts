@@ -11,7 +11,7 @@ import {
   STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD,
   STRAIGHTEN_WORKING_WIDTH,
   decodeDownsampled,
-} from "@photomator/core";
+} from "@f8/core";
 import { getVisionWorkerClient } from "./visionClient";
 import { runRemoteStraighten, warmupRemoteStraighten } from "./remoteStraighten";
 
