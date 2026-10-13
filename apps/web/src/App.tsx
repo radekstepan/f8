@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDeletableCollection, isDenoiseActive, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches, shouldEscapeToLibrary } from '@f8/core';
+import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDenoiseActive, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches, shouldEscapeToLibrary } from '@f8/core';
 import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, Tool, ViewMode } from '@f8/core';
@@ -718,6 +718,10 @@ export default function App() {
   // overlays for the new geometry are PUT right away, and a restart in the
   // debounce window must not find a stale edit that mismatches them.
   const rotateImage = useCallback((direction: 1 | -1) => {
+    // A manual rotate after an ML straighten clears the Auto highlight: the
+    // photo was edited after the detection, so the button no longer claims
+    // the value. The rotation itself stays undoable as before.
+    straighten.dismiss();
     const from = editor.edit.rotation;
     const to = (from + direction * 90) % 360;
     if (!editor.edit.retouches.length) {
@@ -733,7 +737,9 @@ export default function App() {
     });
     handleEditChange({ rotation: to, retouches });
     editor.flushPersist({ ...editor.edit, rotation: to, retouches });
-  }, [editor, handleEditChange, photo]);
+  // straighten.dismiss is stable (the hook memoizes it); the assist result
+  // object itself is recreated each render, so it stays out of the deps.
+  }, [editor, handleEditChange, photo, straighten.dismiss]);
 
   // Straighten turns repairs with the image in one atomic history entry, so
   // free-angle turns keep healing the same features. The merge key passes
@@ -1071,6 +1077,12 @@ export default function App() {
   // class + mount gate keeps the grid full-width. The open/closed
   // preference itself is untouched, so returning to a photo restores it.
   const showInspector = isInspectorVisible(view, inspectorOpen);
+  // Below-horizon detection result: nothing was applied, so the outcome is
+  // flashed over the photo through the shared tool-hint overlay (same
+  // mechanism as the Repair hint). Keyed by runId so every attempt flashes.
+  const straightenFlash = straighten.state === 'ready' && !hasStraightenHorizon(straighten.confidence)
+    ? { runId: straighten.runId, message: 'No clear horizon found — adjust Straighten manually.' }
+    : null;
   return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importFiles(event.dataTransfer.files); }}>
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} presetsOpen={presetsOpen} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
@@ -1095,7 +1107,7 @@ export default function App() {
               <PhotoCanvas
                 photo={viewPhoto ?? photo} edit={editor.edit} tool={tool} zoom={zoom}
                 compare={compare} showOriginal={showOriginal} originalSrc={photo.src}
-                brushSize={brushSize} brushStrength={brushStrength} fineGrid={straightenDragging}
+                brushSize={brushSize} brushStrength={brushStrength} fineGrid={straightenDragging} straightenFlash={straightenFlash}
                 inpaintRepair={canvasRepairBinding}
                 highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke} highlightRegion={removalPreview}
                 onZoom={setZoom} onCompare={() => setCompare(!compare)}

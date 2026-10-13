@@ -47,6 +47,15 @@ export const STRAIGHTEN_HOUGH_MAX_LINE_GAP = 10;
 export const STRAIGHTEN_MAX_ANGLE = 15;
 /** Below this confidence the UI warns that no clear horizon was found. */
 export const STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD = 0.25;
+
+/**
+ * True when the confidence counts as a detected horizon: the suggestion is
+ * applied and the Auto button shows on. Below the threshold nothing is
+ * applied — the app flashes a no-horizon message over the photo instead.
+ */
+export function hasStraightenHorizon(confidence: number | null | undefined): boolean {
+  return typeof confidence === "number" && Number.isFinite(confidence) && confidence >= STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD;
+}
 /** Inlier spread (std dev, degrees) at which agreement reaches zero. */
 const AGREEMENT_FULL_SPREAD = 12;
 

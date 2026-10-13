@@ -45,6 +45,8 @@ interface PhotoCanvasProps {
   highlightRegion?: DetectionPreview | null;
   /** True while the straighten slider is dragged: the crop grid turns into a fine mesh. */
   fineGrid?: boolean;
+  /** Transient no-horizon notice: flashed over the photo through the shared tool-hint overlay. */
+  straightenFlash?: { runId: number; message: string } | null;
   onHighlightStroke?: (stroke: number | null) => void;
   onZoom: (zoom: number) => void;
   onCompare: () => void;
@@ -58,7 +60,7 @@ interface PhotoCanvasProps {
   onHistogram: (data: HistogramData) => void;
 }
 
-export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, originalSrc, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onRemove, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
+export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, originalSrc, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, straightenFlash = null, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onRemove, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1257,6 +1259,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
     </div>
       {/* Overlay on the wrap, outside the scroll stage: showing/hiding it must not shift the photo. */}
       {isBrush && <ToolHint photoId={photo.id} hintId="repair">{compare ? 'Comparing — turn off Compare to keep repairing.' : mlRepairWarming ? 'Loading the ML engine… painting unlocks when ready.' : mlRepairBlocked ? 'This ML engine is unavailable — pick Balanced in the inspector.' : 'Click and drag to repair — hover a repair in the list to locate it.'}</ToolHint>}
+      {tool === 'crop' && straightenFlash && <ToolHint photoId={photo.id} hintId={`straighten-no-horizon-${straightenFlash.runId}`}>{straightenFlash.message}</ToolHint>}
       {viewport && <div
         className="minimap"
         ref={minimapBoxRef}

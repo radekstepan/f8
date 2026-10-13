@@ -44,7 +44,7 @@ const cssRule = (selector: string): string => {
   return css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
 };
 
-const renderCanvas = (tool: 'repair' | 'adjust') =>
+const renderCanvas = (tool: 'repair' | 'adjust' | 'crop', straightenFlash?: { runId: number; message: string } | null) =>
   renderToStaticMarkup(
     <PhotoCanvas
       photo={makePhoto('p1')}
@@ -55,6 +55,7 @@ const renderCanvas = (tool: 'repair' | 'adjust') =>
       showOriginal={false}
       brushSize={40}
       brushStrength={70}
+      {...(straightenFlash ? { straightenFlash } : {})}
       onZoom={noop}
       onCompare={noop}
       onFavorite={noop}
@@ -114,5 +115,31 @@ describe('repair tool hint overlay', () => {
 
   it('renders no hint for non-repair tools', () => {
     expect(renderCanvas('adjust')).not.toContain('data-testid="tool-hint"');
+  });
+});
+
+describe('straighten no-horizon flash', () => {
+  const flash = { runId: 3, message: 'No clear horizon found — adjust Straighten manually.' };
+
+  it('flashes the message over the photo through the shared tool-hint overlay', () => {
+    const html = renderCanvas('crop', flash);
+    expect(html).toContain('data-testid="tool-hint"');
+    expect(html).toContain('No clear horizon found — adjust Straighten manually.');
+  });
+
+  it('renders outside the scroll stage so mount/unmount cannot shift the photo', () => {
+    const ancestors = ancestorClasses(renderCanvas('crop', flash), 'tool-hint');
+    expect(ancestors).not.toBeNull();
+    expect(ancestors!.join(' ')).toContain('canvas-stage-wrap');
+    expect(ancestors!.join(' ')).not.toContain('canvas-stage-inner');
+    expect(ancestors!).not.toContain('canvas-stage');
+  });
+
+  it('renders no hint without a flash, even in the crop tool', () => {
+    expect(renderCanvas('crop')).not.toContain('data-testid="tool-hint"');
+  });
+
+  it('stays hidden outside the crop tool so a late result never surprises another tool', () => {
+    expect(renderCanvas('adjust', flash)).not.toContain('data-testid="tool-hint"');
   });
 });

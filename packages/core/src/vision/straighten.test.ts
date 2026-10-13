@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD,
   foldLineAngle,
+  hasStraightenHorizon,
   segmentAngleDeg,
   voteStraightenAngle,
   type LineSegment,
@@ -114,5 +116,23 @@ describe("voteStraightenAngle", () => {
     ]);
     expect(vote).toEqual({ angle: 0, confidence: 1 });
     expect(voteStraightenAngle([seg(7, 7, 7, 7)])).toEqual({ angle: 0, confidence: 0 });
+  });
+});
+
+describe("hasStraightenHorizon", () => {
+  it("accepts confidence at or above the low-confidence threshold", () => {
+    expect(hasStraightenHorizon(STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD)).toBe(true);
+    expect(hasStraightenHorizon(1)).toBe(true);
+  });
+
+  it("rejects below-threshold confidence so nothing is applied", () => {
+    expect(hasStraightenHorizon(STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD - 0.01)).toBe(false);
+    expect(hasStraightenHorizon(0)).toBe(false);
+  });
+
+  it("rejects missing and non-finite confidence", () => {
+    expect(hasStraightenHorizon(null)).toBe(false);
+    expect(hasStraightenHorizon(undefined)).toBe(false);
+    expect(hasStraightenHorizon(NaN)).toBe(false);
   });
 });
