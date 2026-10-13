@@ -1,11 +1,14 @@
-// Pre-export file-size estimate for the export dialog.
+// Pre-export file-size estimate (and quality preview) for the export dialog.
 //
 // The estimate runs the real export pipeline — renderExportCanvas at the
 // selected size, then encodeExportCanvas with the selected format/quality —
 // and reports the encoded blob's byte size. Accuracy follows by
 // construction: identical pixels through the identical browser encoder
 // produce identical bytes, so the number matches the eventual download
-// exactly, modulo two documented exceptions:
+// exactly, modulo two documented exceptions.
+// The lossy-format quality preview reuses the same run: renderExportPreview
+// returns the encoded blob alongside the numbers, so the on-screen preview
+// pixels are byte-identical to the eventual download (same caveats):
 //
 // 1. Repair strokes estimate with the blur fallback (no worker inpaint
 //    binding is passed), while the real export heals them through the
@@ -44,6 +47,22 @@ export interface ExportEstimate {
 }
 
 /**
+ * True for the dialog's lossy formats (JPEG, WebP), whose compression
+ * artifacts are worth previewing. PNG is lossless — there is nothing to
+ * judge — and unknown values fail closed (no preview) rather than
+ * guessing. Matches the dialog's lowercase format values.
+ */
+export function isLossyExportFormat(format: string): boolean {
+  return format === "jpeg" || format === "webp";
+}
+
+/** One estimate run plus its encoded blob, for the quality preview. */
+export interface ExportPreview extends ExportEstimate {
+  /** The encoded export — the dialog shows it via an object URL. */
+  blob: Blob;
+}
+
+/**
  * Seams for the estimate's pipeline stages. Production callers omit this and
  * get the real render + encode; tests inject fakes (core tests run in node,
  * where the DOM pipeline cannot execute).
@@ -51,6 +70,23 @@ export interface ExportEstimate {
 export interface ExportEstimateDeps {
   render: typeof renderExportCanvas;
   encode: typeof encodeExportCanvas;
+}
+
+export async function renderExportPreview(
+  src: string,
+  edit: EditState,
+  format: string,
+  quality: number,
+  maxSize: number,
+  deps?: ExportEstimateDeps,
+): Promise<ExportPreview> {
+  const render = deps?.render ?? renderExportCanvas;
+  const encode = deps?.encode ?? encodeExportCanvas;
+  // Deliberately no repair binding: the blur fallback keeps the estimate off
+  // the worker heal path (see the module note); repairs barely move the size.
+  const canvas = await render(src, edit, maxSize);
+  const blob = await encode(canvas, format, quality);
+  return { bytes: blob.size, width: canvas.width, height: canvas.height, blob };
 }
 
 export async function estimateExportBytes(
@@ -61,11 +97,6 @@ export async function estimateExportBytes(
   maxSize: number,
   deps?: ExportEstimateDeps,
 ): Promise<ExportEstimate> {
-  const render = deps?.render ?? renderExportCanvas;
-  const encode = deps?.encode ?? encodeExportCanvas;
-  // Deliberately no repair binding: the blur fallback keeps the estimate off
-  // the worker heal path (see the module note); repairs barely move the size.
-  const canvas = await render(src, edit, maxSize);
-  const blob = await encode(canvas, format, quality);
-  return { bytes: blob.size, width: canvas.width, height: canvas.height };
+  const { bytes, width, height } = await renderExportPreview(src, edit, format, quality, maxSize, deps);
+  return { bytes, width, height };
 }

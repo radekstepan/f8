@@ -540,6 +540,16 @@ its chevron glyph off the toggle edge. */
 .export-preview > div > span { font-size: 11px; color: #dddde5; }
 .export-preview > div > small { color: #93939f; font-size: 9px; }
 .export-preview > svg { color: #c8b581; margin-left: auto; }
+.export-quality-preview { margin-top: 14px; }
+.export-quality-title { margin: 0 0 6px; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #a2a2ac; }
+.export-quality-views { display: flex; flex-direction: row; gap: 8px; margin-top: 0; }
+.export-quality-views > figure { flex: 1; min-width: 0; margin: 0; }
+.export-quality-full { cursor: crosshair; }
+.export-quality-views img { display: block; width: 100%; border-radius: 4px; border: 1px solid #3a3a3e; }
+.export-quality-views figcaption { margin-top: 4px; font-size: 9px; color: #85858f; text-align: center; }
+.export-quality-full-wrap { position: relative; }
+.export-quality-focus { position: absolute; width: 6.25%; aspect-ratio: 1 / 1; transform: translate(-50%, -50%); border: 1px solid #ffffff; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55); pointer-events: none; }
+.export-quality-zoom { width: 100%; aspect-ratio: 1 / 1; background-size: 1600%; background-repeat: no-repeat; image-rendering: pixelated; border-radius: 4px; border: 1px solid #3a3a3e; }
 .text-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 19px; font-size: 10px; color: #bdbdc8; }
 .text-field > input, .filename-field { height: 34px; border: 1px solid #51515b; border-radius: 5px; padding: 0 11px; background: #202024; color: #dfdfe7; font-size: 11px; }
 .text-field > input:focus, .filename-field:focus-within { border-color: #c3a670; box-shadow: 0 0 0 2px #b6a06b1f; }

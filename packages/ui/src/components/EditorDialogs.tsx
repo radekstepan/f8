@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, Check, Download, Folder, FolderPlus, Info, Keyboard, MapPin, Save, Share, Tag, Trash2, X } from 'lucide-react';
-import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_EDITION, APP_NAME, APP_TAGLINE, CULL_LABELS, EXTENSION_POINTS, SEMANTIC_CONCEPT_VOCAB, SEMANTIC_SEARCH_EMPTY_LABELS_NOTE, SEMANTIC_SEARCH_ML_BADGE_HINT, SUPERRES_MAX_INPUT_DIM, SUPERRES_SCALE, createLibraryClient, downloadBlob, encodeExportCanvas, estimateExportBytes, exportPhoto, formatByteSize, getPhotoFilter, isDefaultEdit, loadStoredHealOverlays, renderExportCanvas, superresEngineNote } from '@f8/core';
+import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_EDITION, APP_NAME, APP_TAGLINE, CULL_LABELS, EXTENSION_POINTS, SEMANTIC_CONCEPT_VOCAB, SEMANTIC_SEARCH_EMPTY_LABELS_NOTE, SEMANTIC_SEARCH_ML_BADGE_HINT, SUPERRES_MAX_INPUT_DIM, SUPERRES_SCALE, createLibraryClient, downloadBlob, encodeExportCanvas, exportPhoto, formatByteSize, getPhotoFilter, isDefaultEdit, isLossyExportFormat, loadStoredHealOverlays, renderExportCanvas, renderExportPreview, superresEngineNote } from '@f8/core';
 import type { DialogType, EditState, Photo, RepairInpaintBinding, SuperresExportBinding, SuperresHealthSnapshot } from '@f8/core';
 
 export interface RemoveAlbumTarget {
@@ -48,6 +48,63 @@ function PhotoLabelsSection({ photo, onAddLabel, onRemoveLabel, onSearchLabel }:
   return <div className="photo-info-section" data-testid="photo-labels"><h4><Tag size={14} />Labels</h4>{labels.length ? <ul className="photo-label-list">{labels.map((entry) => <li key={entry.label} className={`photo-label${entry.source === 'ml' ? ' is-ml' : ''}`}><button type="button" className="photo-label-name" data-tooltip={onSearchLabel ? `Show photos labeled "${entry.label}"` : entry.label} onClick={() => onSearchLabel?.(entry.label)}>{entry.label}</button>{entry.source === 'ml' && <MlBadge hint={SEMANTIC_SEARCH_ML_BADGE_HINT} />}{onRemoveLabel && <button type="button" className="photo-label-remove" aria-label={`Remove label "${entry.label}"`} onClick={() => onRemoveLabel(photo.id, entry.label)}><X size={11} /></button>}</li>)}</ul> : <p className="inspector-note">{SEMANTIC_SEARCH_EMPTY_LABELS_NOTE}</p>}{onAddLabel && <form className="photo-label-add" onSubmit={(event) => { event.preventDefault(); submit(); }}><input value={draft} maxLength={32} placeholder="Add a label" aria-label="Add a label" list="f8-label-vocab" onChange={(event) => setDraft(event.target.value)} /><datalist id="f8-label-vocab">{SEMANTIC_CONCEPT_VOCAB.map((word) => <option key={word} value={word} />)}{CULL_LABELS.filter((flag) => !SEMANTIC_CONCEPT_VOCAB.includes(flag)).map((flag) => <option key={flag} value={flag} />)}</datalist><button type="submit" className="secondary-button" disabled={!draft.trim()}>Add</button></form>}</div>;
 }
 
+/**
+ * Focus-rect half-size in % of the full-view width — the denoise closeup
+ * geometry: a 16× loupe samples 1/16 of the image width, so the rect is
+ * 6.25% wide and the center stays a half-rect inside each edge. (The rect
+ * is an on-screen square, which is exactly the sampled region: the square
+ * zoom box always shows a W/16 × W/16 patch of the preview, whatever the
+ * photo aspect.)
+ */
+const EXPORT_FOCUS_HALF = 100 / 32;
+
+/** Clamp a focus % so the centered focus rect stays inside the full view. */
+function clampExportFocus(value: number): number {
+  return Math.max(EXPORT_FOCUS_HALF, Math.min(100 - EXPORT_FOCUS_HALF, value));
+}
+
+export interface ExportQualityPreviewProps {
+  format: string;
+  quality: number;
+  /** Object URL of the encoded export; null while rendering or on failure. */
+  previewUrl: string | null;
+  estimating: boolean;
+  /** Focus center in % of the full view; clicking the full view moves it. */
+  focus: { x: number; y: number };
+  onFocus: (focus: { x: number; y: number }) => void;
+}
+
+/**
+ * Lossy-format quality preview: the full encoded export with a focus box,
+ * side by side with a 16× closeup of the focused area (the denoise
+ * closeup pattern). The pixels are the actual encode at the selected
+ * settings — the same run that feeds the size estimate — so what you see
+ * is what the download holds. PNG renders nothing (lossless, nothing to
+ * judge); a failed run hides the section like the size line.
+ */
+export function ExportQualityPreview({ format, quality, previewUrl, estimating, focus, onFocus }: ExportQualityPreviewProps) {
+  if (!isLossyExportFormat(format)) return null;
+  if (!previewUrl) {
+    if (!estimating) return null;
+    return <section className="export-quality-preview" data-testid="export-quality-preview"><p className="export-quality-title" data-testid="export-quality-title">Quality preview</p><p className="inspector-note" role="status" data-testid="export-quality-loading">Rendering quality preview…</p></section>;
+  }
+  const position = `${focus.x}% ${focus.y}%`;
+  return <section className="export-quality-preview" data-testid="export-quality-preview">
+    <p className="export-quality-title" data-testid="export-quality-title">Quality preview</p>
+    <div className="export-quality-views" data-testid="export-quality-views">
+      <figure className="export-quality-full" data-testid="export-quality-full" data-tooltip="Click to move the 16× closeup" onClick={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        const x = Math.round(((event.clientX - rect.left) / rect.width) * 100);
+        const y = Math.round(((event.clientY - rect.top) / rect.height) * 100);
+        onFocus({ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) });
+      }}><div className="export-quality-full-wrap"><img src={previewUrl} alt="Full export preview" data-testid="export-quality-full-img" /><div className="export-quality-focus" data-testid="export-quality-focus" aria-hidden="true" style={{ left: `${clampExportFocus(focus.x)}%`, top: `${clampExportFocus(focus.y)}%` }} /></div><figcaption>Full export</figcaption></figure>
+      <figure><div className="export-quality-zoom" role="img" aria-label="Export closeup at 16x magnification" data-testid="export-quality-zoom" style={{ backgroundImage: `url("${previewUrl}")`, backgroundPosition: position }} /><figcaption>16×</figcaption></figure>
+    </div>
+    <p className="inspector-note" data-testid="export-quality-note">Actual {format.toUpperCase()} output at {quality}% — click the full view to move the closeup.</p>
+  </section>;
+}
+
 function ExportDialog({ photo, edit, inpaintRepair, superres, initialSuperres, onClose, onToast }: Pick<EditorDialogsProps, 'photo' | 'edit' | 'inpaintRepair' | 'superres' | 'initialSuperres' | 'onClose' | 'onToast'>) {
   const [format, setFormat] = useState('jpeg');
   const [quality, setQuality] = useState(90);
@@ -60,8 +117,23 @@ function ExportDialog({ photo, edit, inpaintRepair, superres, initialSuperres, o
   const [error, setError] = useState('');
   const [estimate, setEstimate] = useState<{ bytes: number; width: number; height: number } | null>(null);
   const [estimating, setEstimating] = useState(true);
+  const [previewUrl, setPreviewUrlState] = useState<string | null>(null);
+  // Quality-preview focus in % of the full view. Dialog-owned so switching
+  // presets (format, size, quality) keeps it — % coordinates stay valid
+  // across sizes; only a new photo resets it to the center.
+  const [focus, setFocus] = useState({ x: 50, y: 50 });
+  useEffect(() => { setFocus({ x: 50, y: 50 }); }, [photo.id]);
   const abortRef = useRef<AbortController | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  // Every preview URL goes through here so a superseded one revokes
+  // instead of leaking; the unmount cleanup revokes the last one.
+  const setPreviewUrl = useCallback((url: string | null) => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = url;
+    setPreviewUrlState(url);
+  }, []);
   useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => () => { if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current); }, []);
   // The engine note follows the checkbox: one health read per arming tells
   // whether the ML engine is ready, still downloading, or failed with a
   // cause. A rejected read keeps its message so the note shows the error.
@@ -76,25 +148,34 @@ function ExportDialog({ photo, edit, inpaintRepair, superres, initialSuperres, o
     return () => { live = false; };
   }, [upscale2x, superres]);
   const engineNote = superresHealth ? superresEngineNote(superresHealth) : null;
-  // Pre-export size estimate: the real render + encode at the selected
-  // settings (byte-exact modulo repair pixels — see exportEstimate.ts),
-  // debounced so slider drags settle first. 2x upscales have no accurate
-  // pre-export number (pixels only exist after the ML run), so the line
-  // yields to an "unavailable" note instead of a misleading figure; a
-  // failed estimate hides the line rather than showing a stale number.
+  // Pre-export size estimate + quality preview: one real render + encode
+  // at the selected settings (byte-exact modulo repair pixels — see
+  // exportEstimate.ts), debounced so slider drags settle first. Lossy
+  // formats also show the encoded blob as the quality preview, so the
+  // on-screen pixels are the actual output. 2x upscales have no accurate
+  // pre-export pixels (they only exist after the ML run), so the line
+  // yields to an "unavailable" note and the preview hides instead of a
+  // misleading figure; a failed run hides both rather than showing stale
+  // numbers or pixels.
   useEffect(() => {
-    if (upscale2x) { setEstimate(null); setEstimating(false); return; }
+    if (upscale2x) { setEstimate(null); setEstimating(false); setPreviewUrl(null); return; }
     let live = true;
     setEstimating(true);
     setEstimate(null);
+    setPreviewUrl(null);
     const timer = window.setTimeout(() => {
-      estimateExportBytes(photo.src, edit, format, quality, Number(size)).then(
-        (result) => { if (live) { setEstimate(result); setEstimating(false); } },
-        () => { if (live) { setEstimate(null); setEstimating(false); } },
+      renderExportPreview(photo.src, edit, format, quality, Number(size)).then(
+        (result) => {
+          if (!live) return;
+          setEstimate({ bytes: result.bytes, width: result.width, height: result.height });
+          setPreviewUrl(isLossyExportFormat(format) ? URL.createObjectURL(result.blob) : null);
+          setEstimating(false);
+        },
+        () => { if (live) { setEstimate(null); setPreviewUrl(null); setEstimating(false); } },
       );
     }, 400);
     return () => { live = false; window.clearTimeout(timer); };
-  }, [photo.src, edit, format, quality, size, upscale2x]);
+  }, [photo.src, edit, format, quality, size, upscale2x, setPreviewUrl]);
   // Expected long edge before the 2x (crop/rotation shift it a little; the
   // server enforces the real cap, this only drives the hint and the guard).
   const sourceLongEdge = Math.max(photo.width || 0, photo.height || 0);
@@ -160,7 +241,7 @@ function ExportDialog({ photo, edit, inpaintRepair, superres, initialSuperres, o
     } finally { setExporting(false); setUpscaleProgress(null); }
   };
   const cancelUpscale = () => abortRef.current?.abort();
-  return <Modal title="Export Photo" subtitle="The finishing touch. Ready to share." onClose={onClose} className="export-modal"><div className="export-preview"><img src={photo.src} alt={photo.title} style={{ filter: getPhotoFilter(edit) }} /><div><span>{photo.name}</span><small>{isDefaultEdit(edit) ? 'Original photo' : 'All adjustments applied'}</small></div><Check size={16} /></div><form onSubmit={(event) => { event.preventDefault(); void handleExport(); }}><label className="text-field"><span>Save As</span><div className="filename-field"><input value={filename} onChange={(event) => setFilename(event.target.value)} aria-label="Export filename" /><span>.{format === 'jpeg' ? 'jpg' : format}</span></div></label><SelectField label="Format" value={format} options={[{ value: 'jpeg', label: 'JPEG - Best for sharing' }, { value: 'png', label: 'PNG - Lossless quality' }, { value: 'webp', label: 'WebP - Smaller file size' }]} onChange={setFormat} /><SelectField label="Image Size" value={size} options={[{ value: '10000', label: 'Original source size' }, { value: '2048', label: 'Large - Up to 2048 px' }, { value: '1200', label: 'Medium - Up to 1200 px' }, { value: '800', label: 'Small - Up to 800 px' }]} onChange={setSize} />{format !== 'png' && <RangeControl label="Quality" value={quality} min={10} max={100} suffix="%" onChange={setQuality} />}{!upscale2x && estimating && <p className="inspector-note" data-testid="export-size-estimate">Estimating file size…</p>}{!upscale2x && !estimating && estimate && <p className="inspector-note" data-testid="export-size-estimate">Estimated file size ≈ {formatByteSize(estimate.bytes)} ({estimate.width} × {estimate.height})</p>}{upscale2x && <p className="inspector-note" data-testid="export-size-estimate">File size estimate unavailable for 2x upscales.</p>}{superres && <div className="superres-field" data-testid="export-superres"><CheckField checked={upscale2x} disabled={exporting} onChange={(event) => setUpscale2x(event.target.checked)} label="Super-resolution 2x">Super-resolution 2x <MlBadge hint="Doubled by a machine-learning model on the photo server" /></CheckField>{upscale2x && <p className="inspector-note" data-testid="export-superres-hint">Doubles export dimensions — about {expectedLongEdge * SUPERRES_SCALE}px on the long edge. Large frames take a minute or two.</p>}{upscale2x && !engineNote && <p className="inspector-note">Checking the ML upscale…</p>}{upscale2x && engineNote && engineNote.tone !== 'error' && <p className="inspector-note">{engineNote.text}</p>}{upscale2x && engineNote && engineNote.tone === 'error' && <p className="form-error" role="alert">{engineNote.text}</p>}{upscaleProgress && <div className="ml-progress" role="status"><div className="ml-progress-bar"><span style={{ width: `${Math.round(upscaleProgress.fraction * 100)}%` }} /></div><p className="inspector-note">{upscaleProgress.stage}</p></div>}</div>}{overUpscaleCap && <p className="form-error" role="alert">2x upscales cap at {SUPERRES_MAX_INPUT_DIM}px input — pick Large or smaller.</p>}<p className="dialog-note"><Info size={14} /><span>Your original stays untouched. Sample photos export at their available web resolution.</span></p>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-footer"><button type="button" className="text-button export-settings" onClick={() => { downloadBlob(new Blob([JSON.stringify({ photo: photo.name, adjustments: edit, version: 1 }, null, 2)], { type: 'application/json' }), `${filename || 'photo'}-adjustments.json`); onToast('Adjustment settings downloaded.'); }}><Download size={13} />Settings</button><button type="button" className="secondary-button" onClick={onClose}>Cancel</button>{upscaleProgress && <button type="button" className="secondary-button" onClick={cancelUpscale}>Cancel upscale</button>}<button className="primary-button" type="submit" disabled={exporting || overUpscaleCap}>{exporting ? <span className="loading-spinner small" /> : <Share size={14} />}{exporting ? (upscale2x ? 'Upscaling...' : 'Exporting...') : 'Export Photo'}</button></div></form></Modal>;
+  return <Modal title="Export Photo" subtitle="The finishing touch. Ready to share." onClose={onClose} className="export-modal"><div className="export-preview"><img src={photo.src} alt={photo.title} style={{ filter: getPhotoFilter(edit) }} /><div><span>{photo.name}</span><small>{isDefaultEdit(edit) ? 'Original photo' : 'All adjustments applied'}</small></div><Check size={16} /></div><form onSubmit={(event) => { event.preventDefault(); void handleExport(); }}><label className="text-field"><span>Save As</span><div className="filename-field"><input value={filename} onChange={(event) => setFilename(event.target.value)} aria-label="Export filename" /><span>.{format === 'jpeg' ? 'jpg' : format}</span></div></label><SelectField label="Format" value={format} options={[{ value: 'jpeg', label: 'JPEG - Best for sharing' }, { value: 'png', label: 'PNG - Lossless quality' }, { value: 'webp', label: 'WebP - Smaller file size' }]} onChange={setFormat} /><SelectField label="Image Size" value={size} options={[{ value: '10000', label: 'Original source size' }, { value: '2048', label: 'Large - Up to 2048 px' }, { value: '1200', label: 'Medium - Up to 1200 px' }, { value: '800', label: 'Small - Up to 800 px' }]} onChange={setSize} />{format !== 'png' && <RangeControl label="Quality" value={quality} min={10} max={100} suffix="%" onChange={setQuality} />}{!upscale2x && estimating && <p className="inspector-note" data-testid="export-size-estimate">Estimating file size…</p>}{!upscale2x && !estimating && estimate && <p className="inspector-note" data-testid="export-size-estimate">Estimated file size ≈ {formatByteSize(estimate.bytes)} ({estimate.width} × {estimate.height})</p>}{upscale2x && <p className="inspector-note" data-testid="export-size-estimate">File size estimate unavailable for 2x upscales.</p>}{!upscale2x && <ExportQualityPreview format={format} quality={quality} previewUrl={previewUrl} estimating={estimating} focus={focus} onFocus={setFocus} />}{superres && <div className="superres-field" data-testid="export-superres"><CheckField checked={upscale2x} disabled={exporting} onChange={(event) => setUpscale2x(event.target.checked)} label="Super-resolution 2x">Super-resolution 2x <MlBadge hint="Doubled by a machine-learning model on the photo server" /></CheckField>{upscale2x && <p className="inspector-note" data-testid="export-superres-hint">Doubles export dimensions — about {expectedLongEdge * SUPERRES_SCALE}px on the long edge. Large frames take a minute or two.</p>}{upscale2x && !engineNote && <p className="inspector-note">Checking the ML upscale…</p>}{upscale2x && engineNote && engineNote.tone !== 'error' && <p className="inspector-note">{engineNote.text}</p>}{upscale2x && engineNote && engineNote.tone === 'error' && <p className="form-error" role="alert">{engineNote.text}</p>}{upscaleProgress && <div className="ml-progress" role="status"><div className="ml-progress-bar"><span style={{ width: `${Math.round(upscaleProgress.fraction * 100)}%` }} /></div><p className="inspector-note">{upscaleProgress.stage}</p></div>}</div>}{overUpscaleCap && <p className="form-error" role="alert">2x upscales cap at {SUPERRES_MAX_INPUT_DIM}px input — pick Large or smaller.</p>}<p className="dialog-note"><Info size={14} /><span>Your original stays untouched. Sample photos export at their available web resolution.</span></p>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-footer"><button type="button" className="text-button export-settings" onClick={() => { downloadBlob(new Blob([JSON.stringify({ photo: photo.name, adjustments: edit, version: 1 }, null, 2)], { type: 'application/json' }), `${filename || 'photo'}-adjustments.json`); onToast('Adjustment settings downloaded.'); }}><Download size={13} />Settings</button><button type="button" className="secondary-button" onClick={onClose}>Cancel</button>{upscaleProgress && <button type="button" className="secondary-button" onClick={cancelUpscale}>Cancel upscale</button>}<button className="primary-button" type="submit" disabled={exporting || overUpscaleCap}>{exporting ? <span className="loading-spinner small" /> : <Share size={14} />}{exporting ? (upscale2x ? 'Upscaling...' : 'Exporting...') : 'Export Photo'}</button></div></form></Modal>;
 }
 
 function AlbumDialog({ onClose, onCreateAlbum }: Pick<EditorDialogsProps, 'onClose' | 'onCreateAlbum'>) {
