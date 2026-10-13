@@ -10,6 +10,7 @@ This is a Yarn workspaces + Turborepo monorepo. Use the Node version in `.nvmrc`
 
 - `nvm use` selects the pinned Node version.
 - `yarn install` installs the dependencies.
+- `yarn setup` prefetches every ML weight pack (~1.5GB, mostly the two ML Repair engines) into the server data dir, so first use never waits on — or fails from — an on-demand download. Entries already on disk are skipped; without this step each pack still downloads itself once on first use.
 - `yarn dev` starts the Vite development server and the library server together (run `yarn build` once first so the workspace packages exist in `dist/`). Open the printed Vite URL (usually `http://localhost:5173`); API calls proxy to the library server at `http://127.0.0.1:5193`.
 - `yarn build` builds every workspace package, then the application into `apps/web/dist/`.
 - `yarn typecheck` typechecks every workspace package.

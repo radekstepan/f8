@@ -139,7 +139,11 @@ function weightsPath(dataDir: string): string {
   return path.join(denoiseDir(dataDir), DENOISE_FILE);
 }
 
-async function downloadWeights(dataDir: string): Promise<string> {
+/**
+ * Ensure the DnCNN weights exist on disk, downloading once when missing.
+ * Shared by the warmup path and the `yarn setup` prefetch (fetch-models.ts).
+ */
+export async function ensureDenoiseWeights(dataDir: string): Promise<string> {
   if (!ortAvailable()) throw new Error("onnxruntime-node is not installed — run yarn install in apps/server.");
   if (denoiseOffline()) throw new Error("Denoise provisioning is disabled (F8_DENOISE_OFFLINE=1).");
   const url = denoiseUrl();
@@ -192,7 +196,7 @@ export async function ensureDenoiseReady(dataDir: string): Promise<void> {
     return;
   }
   const job = (async (): Promise<void> => {
-    const modelPath = await downloadWeights(dataDir);
+    const modelPath = await ensureDenoiseWeights(dataDir);
     const mod = require("onnxruntime-node") as {
       InferenceSession: {
         create(

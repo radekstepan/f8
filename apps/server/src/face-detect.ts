@@ -129,7 +129,11 @@ function weightsPath(dataDir: string): string {
   return path.join(faceDetectDir(dataDir), FACE_DETECT_FILE);
 }
 
-async function downloadWeights(dataDir: string): Promise<string> {
+/**
+ * Ensure the YuNet weights exist on disk, downloading once when missing.
+ * Shared by the warmup path and the `yarn setup` prefetch (fetch-models.ts).
+ */
+export async function ensureFaceDetectWeights(dataDir: string): Promise<string> {
   if (!ortAvailable()) throw new Error("onnxruntime-node is not installed — run yarn install in apps/server.");
   if (detectOffline()) throw new Error("Face-detect provisioning is disabled (F8_FACE_DETECT_OFFLINE=1).");
   const url = faceDetectUrl();
@@ -182,7 +186,7 @@ export async function ensureFaceDetectReady(dataDir: string): Promise<void> {
     return;
   }
   const job = (async (): Promise<void> => {
-    const modelPath = await downloadWeights(dataDir);
+    const modelPath = await ensureFaceDetectWeights(dataDir);
     const mod = require("onnxruntime-node") as {
       InferenceSession: { create(p: string, o?: Record<string, unknown>): Promise<{ run(f: Record<string, unknown>): Promise<Record<string, { data: unknown }>> }> };
     };

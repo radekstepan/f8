@@ -163,7 +163,11 @@ function weightsPath(dataDir: string): string {
   return path.join(semanticSearchDir(dataDir), SEMANTIC_SEARCH_FILE);
 }
 
-async function downloadWeights(dataDir: string): Promise<string> {
+/**
+ * Ensure the CLIP vision weights exist on disk, downloading once when missing.
+ * Shared by the warmup path and the `yarn setup` prefetch (fetch-models.ts).
+ */
+export async function ensureSemanticSearchWeights(dataDir: string): Promise<string> {
   if (!ortAvailable()) throw new Error("onnxruntime-node is not installed — run yarn install in apps/server.");
   if (semanticSearchOffline()) throw new Error("Semantic-search provisioning is disabled (F8_SEMANTIC_SEARCH_OFFLINE=1).");
   const url = semanticSearchUrl();
@@ -216,7 +220,7 @@ export async function ensureSemanticSearchReady(dataDir: string): Promise<void> 
     return;
   }
   const job = (async (): Promise<void> => {
-    const modelPath = await downloadWeights(dataDir);
+    const modelPath = await ensureSemanticSearchWeights(dataDir);
     await warmSession(modelPath);
     readyErrors.delete(dir);
   })();

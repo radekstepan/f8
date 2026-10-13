@@ -5,8 +5,9 @@
 // boxes back; it turns them into repair strokes (one stroke id per detection)
 // that the existing ROI→inpaint pipeline heals — no new inference path.
 //
-// Weights (YOLOv8n ONNX, ~12MB, AGPL-3.0) download once into the model dir on
-// first warmup. Until they land — offline, download disabled, ORT missing —
+// Weights (YOLOv8n ONNX, ~12MB, AGPL-3.0) are prefetched by `yarn setup`
+// (see fetch-models.ts) or download once into the model dir on first
+// warmup. Until they land — offline, download disabled, ORT missing —
 // the built-in classical skin-tone proposer serves instead, so detection
 // never 503s for ML reasons; the response always names its source.
 
@@ -131,7 +132,11 @@ function weightsPath(dataDir: string): string {
   return path.join(objectDetectDir(dataDir), OBJECT_DETECT_FILE);
 }
 
-async function downloadWeights(dataDir: string): Promise<string> {
+/**
+ * Ensure the YOLO weights exist on disk, downloading once when missing.
+ * Shared by the warmup path and the `yarn setup` prefetch (fetch-models.ts).
+ */
+export async function ensureObjectDetectWeights(dataDir: string): Promise<string> {
   if (!ortAvailable()) throw new Error("onnxruntime-node is not installed — run yarn install in apps/server.");
   if (detectOffline()) throw new Error("Object-detect provisioning is disabled (F8_OBJECT_DETECT_OFFLINE=1).");
   const url = objectDetectUrl();
@@ -184,7 +189,7 @@ export async function ensureObjectDetectReady(dataDir: string): Promise<void> {
     return;
   }
   const job = (async (): Promise<void> => {
-    const modelPath = await downloadWeights(dataDir);
+    const modelPath = await ensureObjectDetectWeights(dataDir);
     const mod = require("onnxruntime-node") as {
       InferenceSession: { create(p: string, o?: Record<string, unknown>): Promise<{ run(f: Record<string, unknown>): Promise<Record<string, { data: unknown }>> }> };
     };

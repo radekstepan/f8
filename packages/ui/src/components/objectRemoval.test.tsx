@@ -138,4 +138,20 @@ describe('object removal control', () => {
     expect(html).toContain('Photo server unreachable.');
     expect(html).toContain('data-testid="object-removal-retry"');
   });
+
+  it('renders errors as a message box holding both options', () => {
+    const html = renderRepair({ ...idleRemoval, state: 'error', message: 'Model download failed: HTTP 404.' });
+    expect(html).toContain('data-testid="object-removal-error"');
+    expect(html).toContain('assist-message is-error');
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('Model download failed: HTTP 404.');
+    // Both options live inside the message: Retry first, then Dismiss.
+    const box = html.indexOf('data-testid="object-removal-error"');
+    const retry = html.indexOf('data-testid="object-removal-retry"');
+    const dismiss = html.indexOf('data-testid="object-removal-dismiss"');
+    expect(box).toBeGreaterThan(-1);
+    expect(retry).toBeGreaterThan(box);
+    expect(dismiss).toBeGreaterThan(retry);
+    expect(html).toContain('class="slim-button" data-testid="object-removal-retry"');
+  });
 });

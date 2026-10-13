@@ -23,13 +23,18 @@ import { assertValidMask, type RepairMask } from "./inpaint.js";
 
 /** Detector grid: YOLOv8n exports run at 640x640. */
 export const OBJECT_DETECT_SIZE = 640;
-/** Single-file ONNX weights, lazily downloaded once into the model dir. */
+/** Single-file ONNX weights, fetched by `yarn setup` or lazily on first warmup. */
 export const OBJECT_DETECT_FILE = "yolov8n.onnx";
-/** Approximate fp32 download size in bytes. */
-export const OBJECT_DETECT_FILE_SIZE = 12 * 1024 * 1024;
-/** Default weights: official Ultralytics ONNX export (AGPL-3.0). Overridable at runtime. */
+/** Exact download size in bytes (Kalray fp32 export, pinned revision). */
+export const OBJECT_DETECT_FILE_SIZE = 12_834_838;
+/**
+ * Default weights: YOLOv8n COCO detect export, fp32 640px, mirrored by Kalray
+ * (upstream weights by Ultralytics, AGPL-3.0). Pinned to a commit SHA so the
+ * setup prefetch is reproducible; overridable at runtime via F8_OBJECT_DETECT_URL.
+ * Input `images` 1x3x640x640, output [1,84,8400] (cx/cy/w/h + 80 COCO scores).
+ */
 export const OBJECT_DETECT_DEFAULT_URL =
-  "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.onnx";
+  "https://huggingface.co/Kalray/yolov8/resolve/9e0af089be9c2f172e4fd9b724805f8b6514854e/yolov8n.onnx";
 /** License of the default weights (Ultralytics YOLOv8). */
 export const OBJECT_DETECT_LICENSE = "AGPL-3.0";
 /** Override env for the weight URL (mirrors F8_ML_HEAL_*). */

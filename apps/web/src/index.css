@@ -376,6 +376,13 @@ img { display: block; }
 .ml-progress.is-error .inspector-note { color: #df9a94; }
 .ml-offline { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .ml-offline > p { font-size: 9px; line-height: 1.8; color: #df9a94; margin: 0; }
+/* Boxed assist message: an error/note with its action options inside, so a
+   failure never reads as bare links under a note. */
+.assist-message { margin-top: 10px; padding: 10px 12px; border: 1px solid #4a4a50; border-radius: 5px; background: #232326; }
+.assist-message > p { font-size: 9px; line-height: 1.8; color: #c2c2cb; margin: 0; }
+.assist-message.is-error { border-color: #6e3f3a; background: #262023; }
+.assist-message.is-error > p { color: #df9a94; }
+.assist-message .suggestion-actions { margin-top: 8px; }
 .ml-badge { display: inline-block; font-size: 8px; font-weight: 700; letter-spacing: .04em; color: #f0d397; border: 1px solid #8b7650; border-radius: 3px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
 .object-removal { margin-top: 4px; }
 .face-enhance { padding: 10px 18px; border-bottom: 1px solid #3a3a3e; }

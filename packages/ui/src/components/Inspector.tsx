@@ -413,13 +413,15 @@ function ObjectRemovalControl({ assist }: { assist: ObjectRemovalAssist }) {
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>)}
-    {assist.state === 'error' && <>
-      <p className="inspector-note" role="alert">{assist.message ?? 'Detection failed.'}</p>
-      <div className="suggestion-actions">
-        <button className="text-button" data-testid="object-removal-retry" onClick={assist.onDetect}>Retry</button>
-        <button className="text-button" onClick={assist.onDismiss}>Dismiss</button>
+    {assist.state === 'error' && (
+      <div className="assist-message is-error" data-testid="object-removal-error" role="alert">
+        <p>{assist.message ?? 'Detection failed.'}</p>
+        <div className="suggestion-actions">
+          <button className="slim-button" data-testid="object-removal-retry" title="Detect people again" onClick={assist.onDetect}>Retry</button>
+          <button className="text-button" data-testid="object-removal-dismiss" onClick={assist.onDismiss}>Dismiss</button>
+        </div>
       </div>
-    </>}
+    )}
   </div>;
 }
 

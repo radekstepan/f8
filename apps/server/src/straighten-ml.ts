@@ -58,7 +58,8 @@ export function straightenMlDir(
   return path.join(dataDir, STRAIGHTEN_ML_MODEL_DIR_SUFFIX);
 }
 
-function straightenMlUrl(env: Record<string, string | undefined> = process.env): string | null {
+/** Configured regressor weight URL, or null when unpublished (the default). Exported for the `yarn setup` prefetch. */
+export function straightenMlUrl(env: Record<string, string | undefined> = process.env): string | null {
   const override = env["F8_STRAIGHTEN_ML_URL"];
   if (override !== undefined) return override.trim() ? override.trim() : null;
   // No published default yet: gradient fallback serves until weights land.
@@ -112,7 +113,13 @@ function weightsPath(dataDir: string): string {
   return path.join(straightenMlDir(dataDir), STRAIGHTEN_ML_FILE);
 }
 
-async function downloadWeights(dataDir: string): Promise<string> {
+/**
+ * Ensure the tilt-regressor weights exist on disk, downloading once when
+ * missing. Rejects when no weight URL is configured (the default: weights
+ * are unpublished, so the prefetch skips this entry). Shared by the warmup
+ * path and the `yarn setup` prefetch (fetch-models.ts).
+ */
+export async function ensureStraightenWeights(dataDir: string): Promise<string> {
   const url = straightenMlUrl();
   if (!url) throw new Error("Straighten ML weights are not published yet (no URL configured).");
   if (straightenOffline()) throw new Error("Straighten provisioning is disabled (F8_STRAIGHTEN_ML_OFFLINE=1).");
@@ -168,7 +175,7 @@ export async function ensureStraightenReady(dataDir: string): Promise<void> {
   const job = (async (): Promise<void> => {
     const url = straightenMlUrl();
     if (!url) return;
-    const modelPath = await downloadWeights(dataDir);
+    const modelPath = await ensureStraightenWeights(dataDir);
     if (!ortAvailable()) throw new Error("onnxruntime-node is not installed.");
     const mod = require("onnxruntime-node") as {
       InferenceSession: { create(p: string, o?: Record<string, unknown>): Promise<{ run(f: Record<string, unknown>): Promise<Record<string, { data: unknown }>> }> };

@@ -177,7 +177,11 @@ function weightsPath(dataDir: string): string {
   return path.join(superresDir(dataDir), SUPERRES_FILE);
 }
 
-async function downloadWeights(dataDir: string): Promise<string> {
+/**
+ * Ensure the Real-ESRGAN weights exist on disk, downloading once when missing.
+ * Shared by the warmup path and the `yarn setup` prefetch (fetch-models.ts).
+ */
+export async function ensureSuperresWeights(dataDir: string): Promise<string> {
   if (!ortAvailable()) throw new Error("onnxruntime-node is not installed — run yarn install in apps/server.");
   if (superresOffline()) throw new Error("Super-resolution provisioning is disabled (F8_SUPERRES_OFFLINE=1).");
   const url = superresUrl();
@@ -230,7 +234,7 @@ export async function ensureSuperresReady(dataDir: string): Promise<void> {
     return;
   }
   const job = (async (): Promise<void> => {
-    const modelPath = await downloadWeights(dataDir);
+    const modelPath = await ensureSuperresWeights(dataDir);
     const mod = require("onnxruntime-node") as {
       InferenceSession: {
         create(

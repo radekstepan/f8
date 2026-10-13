@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "dev": "turbo run dev",
+    "setup": "yarn workspace @f8/server setup",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",

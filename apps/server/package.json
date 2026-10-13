@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "clean": "rm -rf dist",
     "lint": "echo \"(no lint configured)\" && exit 0",
+    "setup": "yarn workspace @f8/core build && node src/fetch-models.ts",
     "test": "node ../../node_modules/vitest/vitest.mjs run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
