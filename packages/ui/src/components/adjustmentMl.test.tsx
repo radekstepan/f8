@@ -94,13 +94,13 @@ describe('adjustment auto buttons', () => {
       expect(html).not.toContain(`data-testid="${id}-ml"`);
     }
     expect(html).toContain('aria-pressed="false"');
-    // Four Auto pills in the assist-free adjust tool: classic enhance plus
+    // Four Auto pills in the assist-free adjust tool: the header Auto plus
     // the three slider categories. Straighten's pill lives in crop, and no
     // ML button renders at all.
     expect(html).not.toContain('>ML</button>');
     expect(html).not.toContain('ml-button');
     expect(html.match(/auto-small/g)).toHaveLength(4);
-    expect(html).toContain('class="auto-small" data-testid="auto-enhance-auto"');
+    expect(html).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto"');
     expect(html.match(/>Auto<\/button>/g)).toHaveLength(4);
     // No snapshot and default values: no reset renders at all.
     expect(html).not.toContain('-ml-revert');

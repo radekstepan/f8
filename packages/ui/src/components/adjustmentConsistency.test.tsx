@@ -181,7 +181,7 @@ function actionsRows(html: string): string[] {
 
 describe('adjustment styling consistency', () => {
   it('labels heuristic header actions Auto and model runs ML', () => {
-    // Auto Enhance, the slider autos, and the denoise suggestion are
+    // The header Auto, the slider autos, and the denoise suggestion are
     // heuristics (no model runs when clicked); scene, faces, and subject
     // run a model. The header label names the engine, honestly either way.
     const html = renderAdjust({ ...DEFAULT_EDIT }, { scene: true, denoise: true, faceApplied: null, selectiveApplied: null });
@@ -223,19 +223,20 @@ describe('adjustment styling consistency', () => {
 
   it('gives every description note the same tight rhythm', () => {
     // The base note margin used to be 18px top / 9px bottom while five
-    // sections overrode it to 8px top — so notes like Auto Enhance's
-    // "Automatically enhance exposure…" floated in padding its siblings
-    // never had. One tight base rule, zero overrides.
+    // sections overrode it to 8px top — so notes like the retired Auto
+    // Enhance section's "Automatically enhance exposure…" floated in
+    // padding its siblings never had. One tight base rule, zero overrides.
     expect(cssRule('.inspector-note')).toMatch(/margin\s*:\s*8px 0 0/);
     for (const selector of ['.object-removal .inspector-note', '.face-enhance .inspector-note', '.selective-mask .inspector-note', '.denoise .inspector-note', '.superres-field .inspector-note'] as const) {
       expect(cssRule(selector), `${selector} override is gone`).toBe('');
     }
     // The progress note keeps its own flush rhythm (bar above, nothing below).
     expect(cssRule('.ml-progress .inspector-note')).toMatch(/margin\s*:\s*0 0 2px/);
-    // The Auto Enhance description is a plain note — no wrapper, no extra
-    // padding hooks — so it inherits the shared rhythm exactly.
+    // The relocated Auto Enhance carries no description note at all — a
+    // header pill plus tooltip, not a padded section.
     const html = renderAdjust({ ...DEFAULT_EDIT });
-    expect(html).toContain('<p class="inspector-note">Automatically enhance exposure, contrast, and color.</p>');
+    expect(html).not.toContain('<h3>Auto Enhance</h3>');
+    expect(html).not.toContain('Automatically enhance exposure, contrast, and color.');
   });
 
   it('never hides the header reset at any viewport', () => {
@@ -260,6 +261,11 @@ describe('adjustment styling consistency', () => {
     }
     expect(adjust).toContain('aria-label="Enable face enhance"');
     expect(adjust).toContain('aria-label="Enable subject and background enhance"');
+    // The panel header's Auto group follows the same rule: pill plus
+    // revert icon, no switch.
+    const headerGroup = adjust.match(/<div class="inspector-auto-wrap">[\s\S]*?<\/div>/)?.[0] ?? '';
+    expect(headerGroup.length).toBeGreaterThan(0);
+    expect(headerGroup).not.toContain('role="switch"');
     const repair = renderRepair('heal');
     for (const row of actionsRows(repair)) {
       expect(row).not.toContain('role="switch"');

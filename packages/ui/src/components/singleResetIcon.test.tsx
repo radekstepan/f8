@@ -275,7 +275,6 @@ describe('single reset icon', () => {
     expect(count(html, 'ml-revert')).toBe(0);
     const withIcon = headers.filter((header) => header.resets + header.reverts === 1).map((header) => header.title);
     expect(withIcon).toEqual([
-      'Auto Enhance',
       'Enhance Faces',
       'Subject &amp; Background',
       'Denoise',
@@ -286,7 +285,11 @@ describe('single reset icon', () => {
       'Details',
       'Effects',
     ]);
-    // Only the last-used enhance mode carries the shared icon.
+    // The classic enhance icon moved with its button to the panel header:
+    // exactly one, outside every section. Only the last-used enhance mode
+    // carries the shared icon.
+    expect(headers.find((header) => header.title === 'Auto Enhance')).toBeUndefined();
+    expect(html).toContain('aria-label="Reset auto enhance"');
     expect(headers.find((header) => header.title === 'Scene Enhance')).toMatchObject({ resets: 0, reverts: 0 });
     // Collapsed sections keep exactly their one icon (the header action stays visible, like the reset).
     for (const title of ['Curves', 'Details', 'Effects']) {
@@ -301,7 +304,8 @@ describe('single reset icon', () => {
       expect(header.resets + header.reverts, `${header.title} must show at most one revert/reset icon`).toBeLessThanOrEqual(1);
     }
     expect(headers.find((header) => header.title === 'Scene Enhance')).toMatchObject({ resets: 1, reverts: 0 });
-    expect(headers.find((header) => header.title === 'Auto Enhance')).toMatchObject({ resets: 0, reverts: 0 });
+    expect(headers.find((header) => header.title === 'Auto Enhance')).toBeUndefined();
+    expect(html).not.toContain('aria-label="Reset auto enhance"');
     expect(count(html, 'ml-revert')).toBe(0);
   });
 

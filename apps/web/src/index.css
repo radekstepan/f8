@@ -241,6 +241,14 @@ img { display: block; }
 .inspector-title > svg { color: #aaaab3; }
 .inspector-title h2 { font-size: 12px; color: #e3e3e7; font-weight: 550; }
 .inspector-menu-anchor { margin-left: auto; position: relative; }
+/* The Color Adjustments header action: the whole-photo Auto Enhance pill
+   (an auto-small with an icon) plus its revert icon, right-aligned before
+   the options menu. The wrap takes the auto margin; the sibling override
+   keeps the menu anchor's own auto margin from splitting the free space
+   (flex gap still separates the group from the menu). */
+.inspector-auto-wrap { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.inspector-auto-wrap + .inspector-menu-anchor { margin-left: 0; }
+.inspector-auto { display: inline-flex; align-items: center; gap: 4px; }
 .inspector-close { display: none; }
 .inspector-options { left: auto; right: -4px; min-width: 252px; }
 .inspector-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }

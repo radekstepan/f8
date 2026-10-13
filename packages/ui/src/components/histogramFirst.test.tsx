@@ -5,10 +5,10 @@ import type { Photo } from '@f8/core';
 import { Inspector } from './Inspector.js';
 import type { DenoiseAssist, FaceEnhanceAssist, SelectiveMaskAssist } from './Inspector.js';
 
-// The histogram leads the Adjustments panel: it renders before Auto
-// Enhance, every ML section, and every slider section. Rendered on the
-// server (no jsdom): effects never run, so this pins markup order, not
-// click behavior.
+// The histogram leads the Adjustments panel: it renders before every ML
+// section and every slider section. (Auto Enhance is a header pill above
+// the scroll region, not a panel contender.) Rendered on the server (no
+// jsdom): effects never run, so this pins markup order, not click behavior.
 
 function makePhoto(): Photo {
   return {
@@ -128,13 +128,15 @@ function renderAdjust(): string {
 }
 
 describe('histogram leads the adjustments panel', () => {
-  it('renders before auto enhance, every ML section, and every slider section', () => {
+  it('renders before every ML section and every slider section', () => {
     const html = renderAdjust();
     const histogramAt = html.indexOf('histogram-section');
     expect(histogramAt).toBeGreaterThan(-1);
+    // Auto Enhance is no section anymore — a header pill above the scroll
+    // region — so it cannot precede the histogram from inside the panel.
+    expect(html).not.toContain('<h3>Auto Enhance</h3>');
     // Every contender that used to (or could) precede it now follows it.
     for (const marker of [
-      '<h3>Auto Enhance</h3>',
       'data-testid="scene-enhance"',
       'data-testid="face-enhance"',
       'data-testid="selective-mask"',
@@ -147,6 +149,10 @@ describe('histogram leads the adjustments panel', () => {
       expect(at, `${marker} is rendered`).toBeGreaterThan(-1);
       expect(histogramAt, `histogram precedes ${marker}`).toBeLessThan(at);
     }
+    // The header Auto sits above the scroll region, before the histogram.
+    const auto = html.indexOf('data-testid="auto-enhance-auto"');
+    expect(auto).toBeGreaterThan(-1);
+    expect(auto).toBeLessThan(histogramAt);
   });
 
   it('is the first child of the adjust scroll region', () => {
