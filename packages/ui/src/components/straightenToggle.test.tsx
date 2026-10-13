@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD } from '@f8/core';
@@ -9,6 +12,20 @@ import { Inspector, type StraightenAssist } from './Inspector.js';
 // Auto button that highlights when a horizon is applied (reverting on a
 // second click) plus a revert icon whenever a pre-Auto snapshot exists,
 // with no Revert/Dismiss panel — not click behavior.
+
+const here = dirname(fileURLToPath(import.meta.url));
+const cssPath = resolve(here, '../../../../apps/web/src/index.css');
+const css = () => readFileSync(cssPath, 'utf8');
+
+const cssRule = (selector: string): string => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return css().match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+};
+
+const px = (rule: string, prop: string): number | null => {
+  const match = rule.match(new RegExp(`${prop}\\s*:\\s*([\\d.]+)px`));
+  return match ? Number(match[1]) : null;
+};
 
 function makePhoto(): Photo {
   return {
@@ -150,5 +167,16 @@ describe('straighten single-button toggle', () => {
     const html = renderCrop({ ...idleAssist, state: 'error', message: 'Detection timed out.' });
     expect(html).toContain('Detection timed out.');
     expect(html).toContain('class="auto-small straighten-auto" data-testid="straighten-auto"');
+  });
+
+  it('reserves row height for the revert icon so applying Auto cannot shift the button text', () => {
+    // The revert icon only appears after Auto applies. If the row is
+    // shorter than the icon, the row grows and align-items:center drops
+    // the 17px Auto button ~1px — the reported text shift.
+    const rowMinHeight = px(cssRule('.straighten-auto-row'), 'min-height');
+    const revertHeight = px(cssRule('.ml-revert'), 'height');
+    expect(revertHeight).not.toBeNull();
+    expect(rowMinHeight).not.toBeNull();
+    expect(rowMinHeight!).toBeGreaterThanOrEqual(revertHeight!);
   });
 });

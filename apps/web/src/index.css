@@ -336,7 +336,10 @@ img { display: block; }
 .transform-buttons { display: flex; justify-content: space-between; margin-bottom: 26px; gap: 5px; }
 .transform-buttons > button { display: flex; flex: 1; align-items: center; flex-direction: column; gap: 7px; font-size: 8px; color: #ababba; padding: 9px 2px; border: 1px solid #46464e; border-radius: 4px; }
 .transform-buttons > button:hover, .transform-buttons > button.is-active { color: var(--accent); background: #453c2b; border-color: #82704c; }
-.straighten-auto-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.straighten-auto-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; min-height: 19px; }
+/* min-height reserves the 19px revert icon's height: without it the row
+   grows 17px -> 19px when the icon appears after Auto applies, and
+   align-items:center drops the Auto button text ~1px. */
 .straighten-auto:disabled { opacity: .6; cursor: wait; }
 .straighten-status { font-size: 9px; color: #8e8e9b; }
 .straighten-status.is-error { color: #df9a94; line-height: 1.5; }
