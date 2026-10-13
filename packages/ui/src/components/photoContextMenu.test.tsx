@@ -121,6 +121,30 @@ describe('photo context menu', () => {
     expect(html).not.toContain('Remove from Library…');
   });
 
+  it('offers remove in the filmstrip when onRemove is provided', () => {
+    const html = renderToStaticMarkup(
+      <Filmstrip
+        photos={photos}
+        selectedId="p1"
+        collectionName="All Photos"
+        onSelect={noop}
+        onGrid={noop}
+        onSort={noop}
+        reversed={false}
+        showPresets={false}
+        onShowPresets={noop}
+        onSceneEnhance={noop}
+        onFavorite={noop}
+        onRemove={noop}
+        initialContextMenu={{ photoId: 'p1', x: 50, y: 60 }}
+      />,
+    );
+    expect(html).toContain('data-testid="photo-context-menu"');
+    expect(html).toContain('Add Favorite');
+    expect(html).toContain('Remove from Library…');
+    expect(html).toContain('Actions for p1.ARW');
+  });
+
   it('offers ML face enhance when the handler is provided', () => {
     const html = renderToStaticMarkup(
       <PhotoBrowser

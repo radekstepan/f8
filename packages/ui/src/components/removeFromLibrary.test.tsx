@@ -83,6 +83,43 @@ describe('remove from library', () => {
     expect(rule).not.toMatch(/top\s*:/);
   });
 
+  it('anchors the browser remove button to the image frame, above the caption', () => {
+    // The frame wraps the image only (the caption sits below it), so the
+    // bottom-anchored button lands on the photo's bottom-right corner —
+    // mirroring the top-right favorite — instead of under the caption text.
+    const html = renderToStaticMarkup(
+      <PhotoBrowser photos={[makePhoto()]} title="All Photos" search="" onSelect={noop} onFavorite={noop} onRemove={noop} onImport={noop} />,
+    );
+    const frame = html.indexOf('browser-photo-frame');
+    const remove = html.indexOf('browser-remove');
+    const caption = html.indexOf('browser-photo-caption');
+    expect(frame).toBeGreaterThan(-1);
+    expect(remove).toBeGreaterThan(frame);
+    expect(caption).toBeGreaterThan(remove);
+  });
+
+  it('renders the browser caption outside the open button', () => {
+    // Overlay buttons cannot nest inside the open <button>, so the caption
+    // moved out with them; the image still opens the editor and the button
+    // keeps its accessible name.
+    const html = renderToStaticMarkup(
+      <PhotoBrowser photos={[makePhoto()]} title="All Photos" search="" onSelect={noop} onFavorite={noop} onRemove={noop} onImport={noop} />,
+    );
+    expect(html).toContain('aria-label="Edit Alpine morning"');
+    const open = html.indexOf('browser-photo-open');
+    const close = html.indexOf('</button>', open);
+    const caption = html.indexOf('browser-photo-caption');
+    expect(open).toBeGreaterThan(-1);
+    expect(close).toBeGreaterThan(open);
+    expect(caption).toBeGreaterThan(close);
+  });
+
+  it('positions the image frame as the overlay anchor', () => {
+    const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
+    const rule = readFileSync(cssPath, 'utf8').match(/\.browser-photo-frame\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(rule).toMatch(/position\s*:\s*relative/);
+  });
+
   it('renders the remove action in the photo-view heading when onRemove is provided', () => {
     const html = renderToStaticMarkup(
       <PhotoCanvas
