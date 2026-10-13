@@ -94,7 +94,13 @@ which share .dropdown-menu, keep their own anchoring. */
 .export-button:hover { background: #edcf90; }
 .export-button > svg:last-child { margin-left: 4px; opacity: .7; }
 .mobile-focus { display: none; }
-.app-shell:not(.has-sidebar) .window-toolbar { width: 131px; }
+/* Collapsed library: the window-toolbar hugs the sidebar toggle and the
+main-toolbar drops its left gutter, so the collection return button opens
+flush against the toggle instead of stranding ~90px of dead column
+between the two controls. The return button's own 4px left padding keeps
+its chevron glyph off the toggle edge. */
+.app-shell:not(.has-sidebar) .window-toolbar { width: auto; padding-right: 0; }
+.app-shell:not(.has-sidebar) .main-toolbar { padding-left: 0; }
 
 .workspace { display: flex; flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .library-sidebar { width: var(--sidebar-width); flex-shrink: 0; display: flex; flex-direction: column; background: #222225; border-right: 1px solid #333336; animation: sidebar-in 200ms ease-out; overflow: hidden; }
@@ -663,7 +669,8 @@ which share .dropdown-menu, keep their own anchoring. */
   .backlink-name, .collection-name { max-width: 150px; }
   .demo-indicator { display: none; }
   .library-sidebar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 40; width: 213px; box-shadow: 14px 0 32px #0005; }
-  .window-toolbar, .app-shell:not(.has-sidebar) .window-toolbar { width: 124px; padding-right: 12px; }
+  .window-toolbar { width: 124px; padding-right: 12px; }
+  .app-shell:not(.has-sidebar) .window-toolbar { width: auto; padding-right: 0; }
   .status-center { display: none; }
 }
 
