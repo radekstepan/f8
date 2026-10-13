@@ -273,7 +273,7 @@ img { display: block; }
    .range-label), never the gold reserved for links/actions. Shared by the
    scene-enhance label and the enhance-faces applied summary. */
 .scene-enhance-scene { font-size: 10px; color: #bdbdc7; white-space: nowrap; }
-.scene-enhance .scene-enhance-scene { display: block; margin-top: 8px; }
+.scene-enhance .scene-enhance-scene { display: block; margin-top: 0; }
 .toggle { width: 25px; height: 14px; border-radius: 8px; padding: 2px; background: #515155; display: flex; align-items: center; flex-shrink: 0; transition: background-color 180ms ease; }
 .toggle > span { display: block; border-radius: 50%; height: 10px; width: 10px; background: #c2c2c7; box-shadow: 0 1px 2px #0003; transition: transform 180ms cubic-bezier(.2,.7,.3,1), background-color 180ms; }
 .toggle.is-on { background: #8d7a53; }
@@ -369,6 +369,16 @@ img { display: block; }
 .suggestion-actions { display: flex; gap: 8px; margin-top: 10px; }
 .suggestion-actions > button { flex: 1; height: 27px; font-size: 9.5px; }
 .inspector-note { font-size: 9px; color: #8e8e9b; line-height: 1.8; margin: 8px 0 0; }
+/* Section-leading descriptions (Classify the scene, Finds faces, …) sit
+   flush with the content top — exactly where the first slider label
+   (Temperature, Exposure) starts. The generic 8px note margin above stays
+   for notes below other controls; only the leading note aligns. */
+.scene-enhance > .inspector-note:first-child,
+.face-enhance > .inspector-note:first-child,
+.selective-mask > .inspector-note:first-child,
+.object-removal > .inspector-note:first-child {
+  margin-top: 0;
+}
 .segmented-control { display: flex; padding: 3px; background: #1b1b1f; border-radius: 5px; border: 1px solid #38383e; margin-bottom: 26px; }
 .segmented-control > button { flex: 1; border-radius: 3px; height: 25px; font-size: 10px; color: #93939f; }
 .segmented-control > button.is-active { background: #444146; color: #e4d1ad; box-shadow: 0 1px 3px #0003; }
@@ -406,7 +416,7 @@ img { display: block; }
 .assist-message.is-error { border-color: #6e3f3a; background: #262023; }
 .assist-message.is-error > p { color: #df9a94; }
 .ml-badge { display: inline-block; font-size: 8px; font-weight: 700; letter-spacing: .04em; color: #f0d397; border: 1px solid #8b7650; border-radius: 3px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
-.object-removal { margin-top: 4px; }
+.object-removal { margin-top: 0; }
 .face-enhance-row { padding: 0; height: auto; border-bottom: 0; }
 .face-enhance-row .scene-enhance-scene.is-off { opacity: .45; }
 .face-enhance-row > .toggle { flex: none; }
