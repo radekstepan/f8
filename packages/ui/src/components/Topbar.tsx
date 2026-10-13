@@ -117,9 +117,9 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
       <div className="main-toolbar">
         <div className="collection-breadcrumb">
           {showBacklink ? (
-            <button className="photo-backlink" aria-label={`Back to ${collectionName}`} title={`Back to ${collectionName}`} onClick={() => onAction('back')}><span className="backlink-chevron"><ChevronLeft size={16} /></span><span className="backlink-text"><span className="backlink-name">{collectionName}</span><small>{count} photos</small></span></button>
+            <button className="photo-backlink" aria-label={`Back to ${collectionName}`} title={`Back to ${collectionName} (G)`} onClick={() => onAction('back')}><ChevronLeft size={14} className="backlink-chevron" aria-hidden="true" /><span className="backlink-name">{collectionName}</span></button>
           ) : (
-            <div className="collection-title"><span className="collection-name">{collectionName}</span><small>{count} photos</small></div>
+            <div className="collection-title"><span className="collection-name">{collectionName}</span><span className="collection-count">{count} photos</span></div>
           )}
         </div>
         <div className="editing-tools" role="toolbar" aria-label="Editing tools">
