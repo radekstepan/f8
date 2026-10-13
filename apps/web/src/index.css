@@ -275,9 +275,10 @@ img { display: block; }
 .auto-small { height: 17px; padding: 0 5px; font-size: 8px; color: #b6b6c0; border: 1px solid #535359; border-radius: 3px; }
 .auto-small:hover { color: #f0d397; background: #6856383d; border-color: #8b7650; }
 .auto-small.is-active { color: #f0d397; background: #33302a; border-color: #8b7650; box-shadow: inset 0 0 0 1px #8b7650; }
-.ml-button { height: 17px; padding: 0 5px; font-size: 8px; font-weight: 700; letter-spacing: .04em; color: #f0d397; border: 1px solid #8b7650; border-radius: 3px; }
-.ml-button:hover { background: #6856383d; }
-.ml-button.is-active { background: #33302a; box-shadow: inset 0 0 0 1px #8b7650; }
+.ml-button { height: 17px; padding: 0 5px; font-size: 8px; font-weight: 700; letter-spacing: .04em; color: #b6b6c0; border: 1px solid #535359; border-radius: 3px; }
+.ml-button:hover { color: #f0d397; background: #6856383d; border-color: #8b7650; }
+.ml-button.is-active { color: #ffd98a; background: #4d4125; border-color: #c9a44f; box-shadow: inset 0 0 0 1px #c9a44f; }
+.ml-button.is-active:hover { background: #5a4c2c; }
 .ml-revert { width: 14px; height: 19px; color: #f0d397; }
 .section-reset { width: 14px; height: 19px; color: #90909c; opacity: 0; transition: opacity 130ms ease; }
 .adjustment-heading:hover .section-reset, .section-reset:focus-visible { opacity: 1; }

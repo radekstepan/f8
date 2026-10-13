@@ -97,13 +97,13 @@ describe('adjustment ML buttons', () => {
     expect(html).toContain('title="ML white balance applied — click to revert"');
     expect(html).toContain('data-testid="white-balance-ml-revert"');
     expect(html).toContain('aria-label="Revert ML white balance"');
-    // The revert icon sits right beside its ML button, ahead of reset.
+    // The ML button is rightmost with the single revert icon left of it.
+    // (Closing quote: the revert testid shares the ML testid prefix.)
     const ml = html.indexOf('data-testid="white-balance-ml"');
     const revert = html.indexOf('data-testid="white-balance-ml-revert"');
-    const reset = html.indexOf('aria-label="Reset white balance"');
     expect(ml).toBeGreaterThan(-1);
-    expect(revert).toBeGreaterThan(ml);
-    expect(reset).toBeGreaterThan(revert);
+    expect(revert).toBeGreaterThan(-1);
+    expect(revert).toBeLessThan(ml);
     // The other categories stay idle, without revert icons.
     expect(html).toContain('class="ml-button" data-testid="lightness-ml"');
     expect(html).toContain('class="ml-button" data-testid="color-ml"');
@@ -132,6 +132,48 @@ describe('adjustment ML buttons', () => {
     expect(html).toContain('data-testid="color-ml-revert"');
     expect(html).toContain('class="ml-button" data-testid="white-balance-ml"');
     expect(html).not.toContain('data-testid="white-balance-ml-revert"');
+  });
+
+  it('offers one reset control: revert while a snapshot exists, reset otherwise', () => {
+    // A pre-ML snapshot replaces the defaults reset with the revert icon.
+    const applied = renderAdjust({ ...DEFAULT_EDIT }, { lightness: true }, { lightness: true });
+    expect(applied).toContain('data-testid="lightness-ml-revert"');
+    expect(applied).not.toContain('aria-label="Reset lightness"');
+    // No snapshot: the plain defaults reset, no revert icon.
+    const idle = renderAdjust({ ...DEFAULT_EDIT });
+    expect(idle).not.toContain('data-testid="lightness-ml-revert"');
+    expect(idle).toContain('aria-label="Reset lightness"');
+    // The touched-but-unhighlighted state still reverts (snapshot kept).
+    const touched = renderAdjust({ ...DEFAULT_EDIT }, {}, { lightness: true });
+    expect(touched).toContain('data-testid="lightness-ml-revert"');
+    expect(touched).not.toContain('aria-label="Reset lightness"');
+  });
+
+  it('keeps the ML button rightmost with the reset control left of it', () => {
+    for (const html of [
+      renderAdjust({ ...DEFAULT_EDIT }),
+      renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true }, { whiteBalance: true }),
+    ]) {
+      for (const id of ['white-balance', 'lightness', 'color'] as const) {
+        // Closing quote: the revert testid (`${id}-ml-revert`) shares the prefix.
+        const ml = html.indexOf(`data-testid="${id}-ml"`);
+        expect(ml).toBeGreaterThan(-1);
+        const section = html.slice(Math.max(0, ml - 800), ml);
+        // The single reset/revert icon precedes the ML button in its row.
+        const actions = section.slice(section.lastIndexOf('section-actions'));
+        expect(actions).toMatch(/ml-revert|section-reset/);
+        // The ML button closes the row: button end tag, then the row end tag.
+        const after = html.slice(ml, ml + 400);
+        expect(after).toMatch(new RegExp(`data-testid="${id}-ml"[^>]*>ML</button></div>`));
+      }
+    }
+  });
+
+  it('distinguishes ML on from off via highlight plus pressed state', () => {
+    const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true }, { whiteBalance: true });
+    expect(html).toContain('class="ml-button is-active" data-testid="white-balance-ml" aria-pressed="true"');
+    expect(html).toContain('class="ml-button" data-testid="lightness-ml" aria-pressed="false"');
+    expect(html).toContain('class="ml-button" data-testid="color-ml" aria-pressed="false"');
   });
 
   it('gives no ML button to sections without an automatic action', () => {
