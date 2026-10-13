@@ -1,15 +1,18 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across two
+Distilled from per-task writeups and subagent learnings across four
 `tasks.md` runs. Read this before touching the inspector, repair,
-toolbar, or library UI so we don't repeat the same mistakes.
+toolbar, export, or library UI so we don't repeat the same mistakes.
 
 - **R1** = first run (16 tasks). Its `docs/tasks/` writeups were removed
   during the task reset; the index below is preserved for archaeology.
 - **R2** = second run, 2026-10-13 (12 tasks). Writeups live in
   `docs/tasks/01–12`.
-- **R3** = third run, 2026-10-13 (8 tasks). Writeups live in
-  `docs/tasks/task-1.md` … `task-8.md`.
+- **R3** = third run, 2026-10-13 (8 tasks). Its `docs/tasks/`
+  writeups were removed during the task reset; the index below is
+  preserved for archaeology.
+- **R4** = fourth run, 2026-10-13 (8 tasks). Writeups live in
+  `docs/tasks/task-N-<slug>.md`.
 
 ## 1. Honest labels and naming
 
@@ -37,6 +40,19 @@ toolbar, or library UI so we don't repeat the same mistakes.
 - **Keep both spellings greppable** when display convention differs from
   plain text: `Before · 16×` captions with ASCII `16x` retained in
   aria-labels. (R1-2)
+- **Reserve "missing" for actually absent.** A cached-weights/cold-session
+  state is not a setup failure — it reads as ready-with-expectation
+  ("first export warms the engine"), and the "run yarn setup" note fires
+  only when weights are truly off disk. (R4-6)
+- **Every estimate exception needs an honest UI state, not a guess.**
+  No accurate pre-export number for 2x upscales → an explicit
+  "unavailable" line; a failed run hides the line rather than showing a
+  stale number; documented sub-1% caveats (repair blur fallback) go in
+  the writeup. (R4-7)
+- **Rename tooltip-feeding identifiers for coherence** when migrating
+  off native `title` (`SegmentedOption.title` → `hint`) so `title=` in
+  the codebase means headings only and the no-native-title sweep stays
+  exact. (R4-4)
 
 ## 2. Header and component contracts
 
@@ -99,6 +115,20 @@ toolbar, or library UI so we don't repeat the same mistakes.
   The strip's `SwatchBook` is the presets-specific motif while
   `SlidersHorizontal` is generic (and already means "Adjust" in the same
   toolbar) — reusing it made two controls visually ambiguous. (R3-2)
+- **Omit photo-only controls in the library, don't disable them.**
+  A disabled Adjust button asks "how do I enable it?"; an absent one
+  reads as "not applicable here" — same rule as the static grid title.
+  Gate exactly the named controls (hide-presets, compare, info,
+  Adjust/Repair/Crop); reset/undo/redo still operate on the selection
+  and export/focus are view-agnostic. Menus and shortcuts stay
+  reachable — the task is about visible buttons, not actions. (R4-5)
+- **Removing `title` can remove accessible names.** Buttons whose only
+  name was the tooltip need explicit `aria-label`s when migrating to
+  custom tooltips. (R4-4)
+- **A quality preview shows the encoded output, not the source.**
+  A zoom of uncompressed pixels cannot show the compression artifacts
+  under judgment — and it renders `pixelated`, unlike the smooth
+  denoise closeup it mirrors, so blocks read as blocks. (R4-8)
 
 ## 3. Spacing, layout, and motion
 
@@ -175,6 +205,34 @@ toolbar, or library UI so we don't repeat the same mistakes.
   override only the leading position (`> …:first-child`, flush 0 to
   match the content edge) — including sibling sections that share the
   pattern even when the task names only one area. (R3-3)
+- **"Flush" means zero gap between the boxes.** The dropdown/trigger
+  seam precedent (R3-7) extends to the collapsed backlink/toggle seam:
+  internal padding provides glyph clearance, so no extra gutter rule
+  is needed. Keep the term meaning the same thing everywhere. (R4-3)
+- **Square joined edges on open, not on hover.** Task text said "on
+  hover", but squaring a closed trigger leaves square corners with no
+  panel to join — visibly broken. `.is-open` is the hook (it also
+  covers hover-switching between open menus). Record the correction in
+  the writeup. (R4-2)
+- **Scope meeting-edge overrides like the existing flush override.**
+  `.menu-bar .dropdown-menu` carries the radius change so shared
+  inspector/sidebar/browser menus keep their rounding — and change
+  radii only, no border surgery. (R4-2)
+- **Fix alignment in the parent columns, not the constrained
+  component.** The collapsed-toolbar gap was fixed via
+  `.window-toolbar`/`.main-toolbar` widths because the backlink
+  independence contract forbids sidebar-gated backlink selectors —
+  read neighboring test contracts before choosing where to fix.
+  (R4-3)
+- **Split combined responsive selectors per state.** The 1020px rule
+  covered open + collapsed toolbars in one selector; the collapsed
+  fix needed its own branch or the gap survived at that breakpoint.
+  (R4-3)
+- **One delegated tooltip host beats per-trigger components.** A
+  `data-tooltip` attribute + single portal bubble is a one-word
+  migration per site, one positioning implementation to verify, zero
+  new dependencies — and future tooltips work by adding an
+  attribute. (R4-4)
 
 ## 4. Navigation and state
 
@@ -258,6 +316,46 @@ toolbar, or library UI so we don't repeat the same mistakes.
   right on first paint (`loading ? predicted : measured` tracks edits
   streaming in after open); fall back to the last measured aspect, not
   a constant, for corrupt metadata. (R3-6)
+- **Provenance is not look — persist it in its own column.** The Auto
+  action stack lives beside the recipe, never inside `EditState`, so
+  it can't leak into `edited` detection, presets, copy/paste, or
+  export. (R4-1)
+- **Revert snapshots cover only what the action changed.** A
+  full-recipe snapshot made Auto Enhance's revert restore stale
+  face/selective/denoise states, wiping work done after the Auto —
+  narrow the snapshot to the enhanceable look and keep current values
+  for the rest. (R4-1)
+- **No snapshot, no highlight.** Flags alone never seed a revert
+  entry: pre-stack recipes reopen idle rather than stranded, the same
+  honest rule as R3-4, now with a path back to revertible on fresh
+  apply. (R4-1)
+- **Omitted preserves, empty clears.** In partial-update APIs an
+  omitted stack must not wipe the stored one (legacy recipe-only
+  writers), while explicit `[]` clears — pin both directions. (R4-1)
+- **Trace dropped fields end to end before blaming the disk.**
+  The "missing weights" bug was no path mismatch: setup and server
+  shared one resolver, but the client transport dropped the server's
+  `weightsReady` and the note mapped every quiet not-ready to
+  "missing". Verify the suspected cause first; the break was one
+  layer up. (R4-6)
+- **Plumb the finer signal instead of redefining the shared one.**
+  `ready`/`serving` also mean "session serves" to the warmup poller,
+  so the fix carries `weightsReady` alongside rather than narrowing
+  `ready` to weights-only. (R4-6)
+- **Choose coordinates invariant to the changes they must survive.**
+  Dialog-owned `%` focus stays valid across export size presets, so
+  preset switches re-render with the same focus and only a photo
+  change resets to center. (R4-8)
+- **One pipeline run feeding two consumers keeps them consistent by
+  construction.** The size estimate and the quality preview share a
+  single `renderExportPreview` run — the number and the pixels can
+  never disagree, at no extra render cost. (R4-7, R4-8)
+- **While a new run is pending, hide — never show stale pixels under
+  a new label.** The preview shows a loading note (like the size
+  line), which would otherwise mislead under a changed quality.
+  (R4-8)
+- **Every minted object URL goes through a revoking setter** (+
+  unmount cleanup) so superseded previews never leak. (R4-8)
 
 ## 5. Testing practices (repo-specific)
 
@@ -324,7 +422,8 @@ toolbar, or library UI so we don't repeat the same mistakes.
   `?? ''` to avoid a typecheck round-trip. (R2-9)
 - **"Don't run Playwright" ≠ "don't update Playwright specs."** Grep
   e2e for the changed UI and update stale expectations in the same
-  commit, or the next e2e run fails on an intended change. (R2-3)
+  commit, or the next e2e run fails on an intended change. (R2-3,
+  R4-4)
 - **A test pinning "keep X different" is a deliberate contract, not
   incidental coverage.** When a task flips it, update the rationale
   comment too — not just the assertion — and add an explicit match
@@ -352,6 +451,35 @@ toolbar, or library UI so we don't repeat the same mistakes.
   in an effect with post-loading internal state isn't SSR-observable,
   so coverage goes through a pure `@f8/core` helper truth table — the
   same pattern as the existing canvas-drag routing. (R3-5)
+- **Source sweeps match comments too.** A CSS comment mentioning
+  "backlink" tripped the independence test's selector regex — word
+  comments to avoid tripping prose-unaware assertions (or scope the
+  sweep). (R4-3)
+- **A migration sweep is the regression guard.** After moving every
+  tooltip off `title`, a test sweeping all component sources fails on
+  any native tooltip added back — the migration can't silently
+  regress. (R4-4)
+- **Untestable transports get pure parsers in core.** `apps/web` has
+  no unit runner, so the health-payload mapping lives in core as a
+  pure function with node tests — following the `superresTileProgress`
+  precedent — instead of leaving the previously untested mapping
+  uncovered. (R4-6)
+- **Untestable environments get a `deps` seam.** Core tests run in
+  node where the DOM export pipeline can't execute, so the estimate
+  swaps its render/encode stages via an optional seam and pins the
+  wiring (render-at-size → encode-with-settings → bytes+dims). (R4-7)
+- **Pin controlled wiring; behavior follows structurally.** SSR-only
+  tests can't click, so the focus tests inject off-center/edge values
+  and assert both box and zoom follow — persistence across presets
+  then follows from dialog-owned state. (R4-8)
+- **Sanitize at the persistence boundary, never throw.** Unknown
+  kinds/keys, snapshot-less entries, and duplicates are dropped by a
+  sanitizer with garbage-input tests — stored data is untrusted
+  input. (R4-1)
+- **A test build catches what grep misses.** One inline snapshot with
+  the old object shape survived a source grep and only failed at
+  `build` — run the full gate, not just the tests you expect to
+  change. (R4-6)
 
 ## 6. Tooling gotchas
 
@@ -377,7 +505,8 @@ toolbar, or library UI so we don't repeat the same mistakes.
   before UI tests see it. "Tests pass but typecheck fails" is the
   signature of a stale `dist` (unit tests resolve source). Never
   commit `dist/`.
-  (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6)
+  (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6,
+  R4-4, R4-5, R4-6, R4-7, R4-8)
 - **Commit by explicit paths, never `git add -A`.** Stray files
   (e.g. `.DS_Store` under `docs/`) get swept in otherwise. (R1)
 - **No CI, no configured linter** — both packages' `lint` scripts
@@ -432,6 +561,36 @@ toolbar, or library UI so we don't repeat the same mistakes.
   warmup cancel reusing the "Cancel repair" label is a label bug
   for a future task — noted in the R1-15 writeup, not fixed
   there. (R1-15)
+- **Feasibility-conditioned tasks get an explicit verdict.** "If not
+  accurate, don't do it" was answered by construction (background run
+  of the real pipeline → byte-exact), with the rejected heuristic
+  and its error bounds recorded — and where no number exists (2x),
+  nothing shipped. (R4-7)
+- **Answer the real pipeline, not a scaled proxy.** JPEG/WebP size
+  is content- and encoder-dependent; encoding small and scaling errs
+  by tens of percent. A debounced background run of the identical
+  pipeline costs the same work the export does anyway. (R4-7)
+- **Don't double expensive ML work for sub-1% accuracy.** The size
+  estimate uses the blur repair fallback instead of the worker heal —
+  pixel diffs confined to small regions — rather than paying two
+  heal round-trips. (R4-7)
+- **No speculative engine warm on a checkbox tick.** Warming the
+  session when 2x is armed would burn server CPU on a maybe-export —
+  a product call beyond the bug; the note sets the expectation
+  instead. (R4-6)
+- **Sub-perceptual deltas stay out of scope.** The 1.5px backlink/
+  toggle edge delta was left alone — unifying heights would ripple
+  into the open-sidebar state and grid title for no visible gain.
+  (R4-3)
+- **Check for the existing hook before adding state.** The trigger
+  already toggled `is-open`/`aria-expanded`, so the rounding fix was
+  pure CSS with no TSX change — same instinct as the R2-3
+  discriminator check. (R4-2)
+- **Design task N's seam so task N+1 can extend it.**
+  `estimateExportBytes` was reimplemented on the new
+  `renderExportPreview` without breaking callers, so the preview
+  task shared the estimate's run instead of adding a second one.
+  (R4-7, R4-8)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -471,10 +630,10 @@ toolbar, or library UI so we don't repeat the same mistakes.
 | 11 | `7d265b9` | `11-album-click-deselects.md` | Re-clicking a sidebar album returns to All Photos |
 | 12 | `d669239` | `12-photo-backlink-rethink.md` | Editor-only backlink pill, static grid title |
 
-## Per-task index, R3 (writeups in `docs/tasks/`)
+## Per-task index, R3 (writeups removed; commits reachable via git)
 
-| # | Commit | Writeup | One-line summary |
-|---|--------|---------|------------------|
+| # | Commit | Writeup (removed) | One-line summary |
+|---|--------|-------------------|------------------|
 | 1 | `a53eb50` | `task-1.md` | Reset-to-original toolbar action next to presets toggle |
 | 2 | `4372e63` | `task-2.md` | Toolbar presets toggle matches strip SwatchBook icon |
 | 3 | `3e88164` | `task-3.md` | Adjustments descriptions flush with first slider label |
@@ -483,3 +642,16 @@ toolbar, or library UI so we don't repeat the same mistakes.
 | 6 | `66f0ae1` | `task-6.md` | Album preview frame sized at final image aspect |
 | 7 | `ebbd1cb` | `task-7.md` | Top menu dropdowns open flush with trigger pills |
 | 8 | `747a425` | `task-8.md` | Photo backlink becomes single-line ghost back button |
+
+## Per-task index, R4 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `31b07f3` | `task-1-persisted-action-stack.md` | Persisted per-photo Auto action stack; reverts survive reload |
+| 2 | `8446249` | `task-2-menu-dropdown-meeting-rounding.md` | Open trigger/panel meeting edges squared via `.is-open` |
+| 3 | `aa9bf98` | `task-3-collapsed-backlink-flush.md` | Collapsed toolbar hugs toggle; backlink seam has zero gap |
+| 4 | `8fa9df8` | `task-4-themed-viewport-safe-tooltips.md` | Hand-rolled `data-tooltip` + delegated themed bubble |
+| 5 | `011e73f` | `task-5-photo-only-toolbar-gating.md` | Photo-only toolbar buttons omitted in library view |
+| 6 | `7e4c58e` | `task-6-superres-cached-weights-note.md` | Cached-but-cold weights get an honest note, not "missing" |
+| 7 | `2414132` | `task-7-export-size-estimate.md` | Byte-exact size estimate via background real-pipeline run |
+| 8 | `2d09d19` | `task-8-export-jpeg-zoom-preview.md` | 16× lossy quality preview sharing the estimate's run |
