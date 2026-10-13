@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
@@ -7,6 +10,17 @@ import type { SelectiveMaskAssist } from './Inspector.js';
 
 // ML selective-mask control, rendered on the server (no jsdom): effects
 // never run, so this pins the markup + prop wiring, not click behavior.
+
+const here = dirname(fileURLToPath(import.meta.url));
+const cssPath = resolve(here, '../../../../apps/web/src/index.css');
+const css = () => readFileSync(cssPath, 'utf8');
+
+const cssRule = (selector: string): string => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return css().match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+};
+
+const normalize = (body: string): string => body.replace(/\s+/g, ' ').trim();
 
 function makePhoto(): Photo {
   return {
@@ -236,6 +250,29 @@ describe('selective mask control', () => {
     expect(html).toContain('data-testid="selective-mask-subject-exposure"');
     expect(html).toContain('data-testid="selective-mask-background-exposure"');
     expect(html).not.toContain('data-testid="selective-mask-detect"');
+  });
+
+  it('renders the enable toggle as the row first child with standard switch classes', () => {
+    // The toggle leads the row (unlike Enhance Faces, there is no summary
+    // span before it), so row CSS must never target first-child buttons —
+    // that stretched the 25px switch into a wide gold bar.
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
+      assist({ applied: APPLIED }),
+    );
+    expect(html).toContain('<div class="auto-enhance-row selective-mask-row"><button type="button" role="switch"');
+    expect(html).toContain('aria-label="Enable subject and background enhance"');
+    expect(html).toContain('class="toggle is-on"');
+  });
+
+  it('has no first-child button rule that could stretch the leading toggle', () => {
+    expect(css()).not.toMatch(/\.auto-enhance-row > button:first-child/);
+  });
+
+  it('keeps the row toggle at the standard switch size, like Enhance Faces', () => {
+    expect(normalize(cssRule('.selective-mask-row > .toggle'))).toBe(normalize(cssRule('.face-enhance-row > .toggle')));
+    expect(cssRule('.selective-mask-row > .toggle')).toContain('flex: none');
+    expect(cssRule('.toggle')).toContain('width: 25px');
   });
 
   it('toggles the stored adjust off and on without deleting the mask', () => {
