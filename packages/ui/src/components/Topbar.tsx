@@ -1,11 +1,11 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { ArrowLeft, Bandage, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Undo2 } from 'lucide-react';
+import { Bandage, ChevronLeft, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Undo2 } from 'lucide-react';
 import type { DialogType, Tool, VisionWorkerStatus } from '@f8/core';
 import { APP_EDITION_SHORT, APP_NAME } from '@f8/core';
 import { BrandMark, IconButton, MenuItem, MenuSeparator, MlBadge } from './EditorUI.js';
 import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
 
-export type MenuAction = 'import' | 'import-local-folder' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'enhance-scene' | 'enhance-faces' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'fit' | 'fullscreen' | 'shortcuts' | 'about';
+export type MenuAction = 'import' | 'import-local-folder' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'enhance-scene' | 'enhance-faces' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'back' | 'fit' | 'fullscreen' | 'shortcuts' | 'about';
 
 interface MenuBarProps {
   onAction: (action: MenuAction) => void;
@@ -91,7 +91,7 @@ interface ToolbarProps {
   compare: boolean;
   canUndo: boolean;
   canRedo: boolean;
-  libraryView: boolean;
+  showBacklink: boolean;
   presetsOpen?: boolean;
   onTool: (tool: Tool) => void;
   onAction: (action: MenuAction) => void;
@@ -99,7 +99,7 @@ interface ToolbarProps {
   onTogglePresets?: () => void;
 }
 
-export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo, libraryView, presetsOpen, onTool, onAction, onDialog, onTogglePresets }: ToolbarProps) {
+export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo, showBacklink, presetsOpen, onTool, onAction, onDialog, onTogglePresets }: ToolbarProps) {
   // Tools only: the one-shot Auto Enhance lives in the Adjust sidebar
   // (Image menu + A shortcut still reach it from anywhere).
   const tools = [
@@ -114,11 +114,11 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
       </div>
       <div className="main-toolbar">
         <div className="collection-breadcrumb">
-          <IconButton label={libraryView ? 'Open selected photo' : 'Back to photo browser'} onClick={() => onAction('grid')}><ArrowLeft size={19} /></IconButton>
-          <div>
-            <button onClick={() => onAction('grid')} title={libraryView ? 'Return to editor' : 'Browse collection'}>{collectionName}</button>
-            <small>{count} photos</small>
-          </div>
+          {showBacklink ? (
+            <button className="photo-backlink" aria-label={`Back to ${collectionName}`} title={`Back to ${collectionName}`} onClick={() => onAction('back')}><span className="backlink-chevron"><ChevronLeft size={16} /></span><span className="backlink-text"><span className="backlink-name">{collectionName}</span><small>{count} photos</small></span></button>
+          ) : (
+            <div className="collection-title"><span className="collection-name">{collectionName}</span><small>{count} photos</small></div>
+          )}
         </div>
         <div className="editing-tools" role="toolbar" aria-label="Editing tools">
           {tools.map(({ id, label, icon: Icon, active }) => (

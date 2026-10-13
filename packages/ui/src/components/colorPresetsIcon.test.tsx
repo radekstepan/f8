@@ -59,7 +59,7 @@ function renderToolbar(): string {
       compare={false}
       canUndo={false}
       canRedo={false}
-      libraryView={false}
+      showBacklink
       presetsOpen
       onTool={noop}
       onAction={noop}

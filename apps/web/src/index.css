@@ -62,12 +62,18 @@ img { display: block; }
 .toolbar { display: flex; flex-shrink: 0; align-items: stretch; height: 65px; border-bottom: 1px solid #080809; background: linear-gradient(#2a2a2d, #27272a); box-shadow: 0 1px 0 #ffffff04; z-index: 30; }
 .window-toolbar { width: var(--sidebar-width); padding: 0 17px 0 19px; display: flex; align-items: center; justify-content: flex-start; flex-shrink: 0; }
 .main-toolbar { display: flex; align-items: center; justify-content: space-between; flex: 1; min-width: 0; padding: 0 15px 0 7px; gap: 12px; }
-.collection-breadcrumb { display: flex; align-items: center; gap: 7px; min-width: 152px; }
-.collection-breadcrumb > .icon-button { width: 27px; margin-left: 1px; color: #b6b6bd; }
-.collection-breadcrumb > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.collection-breadcrumb button:not(.icon-button) { display: flex; align-items: center; gap: 8px; color: #dedee3; font-size: 11.5px; font-weight: 550; text-align: left; white-space: nowrap; }
-.collection-breadcrumb button > svg { color: #88888f; }
-.collection-breadcrumb small { font-size: 9px; color: #85858e; }
+.collection-breadcrumb { display: flex; align-items: center; min-width: 152px; }
+.photo-backlink { display: flex; align-items: center; gap: 8px; max-width: 100%; padding: 5px 12px 5px 0; border-radius: 9px; text-align: left; }
+.photo-backlink:hover { background: #ffffff0d; }
+.backlink-chevron { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid #ffffff1c; background: #ffffff08; color: #c9c9ce; transition: transform 150ms ease, border-color 150ms ease, color 150ms ease, background-color 150ms ease; }
+.photo-backlink:hover .backlink-chevron { transform: translateX(-2px); border-color: #e2c28266; background: #e2c28214; color: var(--accent); }
+.photo-backlink:active .backlink-chevron { transform: translateX(-3px); }
+.backlink-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.backlink-name { color: #dedee3; font-size: 11.5px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; transition: color 150ms ease; }
+.photo-backlink:hover .backlink-name { color: #f2f2f4; }
+.backlink-text small, .collection-title small { font-size: 9px; color: #85858e; white-space: nowrap; }
+.collection-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 5px 0 5px 32px; }
+.collection-name { color: #dedee3; font-size: 11.5px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; }
 .editing-tools { display: flex; align-items: center; justify-content: center; gap: 5px; }
 .tool-button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; width: 45px; height: 47px; border: 1px solid transparent; border-radius: 6px; color: #bebec5; }
 .tool-button span { font-size: 9.5px; color: #a9a9b0; line-height: 1; }
@@ -617,8 +623,8 @@ img { display: block; }
   .main-toolbar { gap: 6px; padding-right: 8px; }
   .tool-button { width: 41px; }
   .editing-tools { gap: 2px; }
-  .collection-breadcrumb { min-width: 139px; gap: 3px; }
-  .collection-breadcrumb button:not(.icon-button) { font-size: 10.5px; }
+  .collection-breadcrumb { min-width: 139px; }
+  .backlink-name, .collection-name { font-size: 10.5px; }
   .toolbar-actions { gap: 8px; padding: 0 18px; }
   .sidebar-item { font-size: 10px; gap: 8px; }
   .sidebar-item .item-count { font-size: 8px; }
@@ -649,7 +655,6 @@ img { display: block; }
   :root { --inspector-width: 263px; }
   .main-toolbar { gap: 3px; padding-left: 0; padding-right: 6px; }
   .collection-breadcrumb { min-width: 132px; }
-  .collection-breadcrumb > .icon-button { width: 20px; }
   .toolbar-actions { gap: 3px; padding-inline: 10px; }
   .toolbar-actions > .icon-button:nth-of-type(2) { display: none; }
   .tool-button { width: 37px; }
@@ -675,11 +680,10 @@ img { display: block; }
   .toolbar { height: 94px; display: grid; grid-template-columns: 42px 1fr auto; grid-template-rows: 40px 54px; }
   .window-toolbar, .app-shell:not(.has-sidebar) .window-toolbar { width: 42px; grid-row: 1; grid-column: 1; padding: 0; justify-content: center; }
   .main-toolbar { display: contents; }
-  .collection-breadcrumb { grid-row: 1; grid-column: 2; gap: 2px; min-width: 0; }
-  .collection-breadcrumb > .icon-button { display: none; }
-  .collection-breadcrumb > div { gap: 2px; }
-  .collection-breadcrumb button:not(.icon-button) { font-size: 10px; }
-  .collection-breadcrumb small { font-size: 8px; }
+  .collection-breadcrumb { grid-row: 1; grid-column: 2; min-width: 0; }
+  .backlink-text, .collection-title { gap: 2px; }
+  .backlink-name, .collection-name { font-size: 10px; max-width: 140px; }
+  .backlink-text small, .collection-title small { font-size: 8px; }
   .toolbar-actions { grid-column: 3; grid-row: 1; padding: 0 10px 0 3px; gap: 6px; }
   .toolbar-actions > .icon-button { width: 26px; }
   .export-button { height: 25px; font-size: 9px; gap: 6px; padding: 0 9px; }

@@ -60,7 +60,7 @@ function renderToolbar(tool: Tool): string {
       compare={false}
       canUndo
       canRedo={false}
-      libraryView={false}
+      showBacklink
       onTool={noop}
       onAction={noop}
       onDialog={noop}
