@@ -36,3 +36,5 @@ apps/server/.e2e/
 # playwright
 apps/web/test-results/
 apps/web/playwright-report/
+
+repomix-output.xml
