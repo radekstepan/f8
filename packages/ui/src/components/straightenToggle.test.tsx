@@ -102,7 +102,7 @@ describe('straighten single-button toggle', () => {
     const html = renderCrop(idleAssist);
     expect(html).toContain('class="auto-small straighten-auto" data-testid="straighten-auto"');
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('title="Detect the horizon tilt automatically and apply it"');
+    expect(html).toContain('data-tooltip="Detect the horizon tilt automatically and apply it"');
     expect(html).toContain('>Auto</button>');
     // No suggestion panel, no revert icon, and no Dismiss button.
     expect(html).not.toContain('straighten-suggestion');
@@ -122,7 +122,7 @@ describe('straighten single-button toggle', () => {
     });
     expect(html).toContain('class="auto-small straighten-auto is-active" data-testid="straighten-auto"');
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('title="Auto-straighten applied — click to revert"');
+    expect(html).toContain('data-tooltip="Auto-straighten applied — click to revert"');
     expect(html).toContain('data-testid="straighten-auto-revert"');
     expect(html).toContain('aria-label="Revert auto-straighten"');
     expect(html).not.toContain('straighten-suggestion');

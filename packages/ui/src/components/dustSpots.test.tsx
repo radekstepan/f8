@@ -116,7 +116,7 @@ describe('dust spots control', () => {
     expect(header).not.toContain('ml-badge');
     const after = html.slice(html.indexOf('data-testid="dust-spots-ml"'), html.indexOf('data-testid="dust-spots-ml"') + 400);
     expect(after).toMatch(/data-testid="dust-spots-ml"[^>]*>ML<\/button><\/div>/);
-    expect(html).toContain('title="Find dust spots with ML, then review before repairing"');
+    expect(html).toContain('data-tooltip="Find dust spots with ML, then review before repairing"');
   });
 
   it('keeps the header ML idle-styled in every state, disabled only while detecting', () => {
@@ -133,12 +133,12 @@ describe('dust spots control', () => {
       spots: [{ x: 0.2, y: 0.2, radius: 0.01, score: 0.92, polarity: 'dark', checked: true }],
     });
     expect(ready).toContain('class="ml-button" data-testid="dust-spots-ml" aria-pressed="false"');
-    expect(ready).toContain('title="Detect dust spots again"');
+    expect(ready).toContain('data-tooltip="Detect dust spots again"');
     expect(ready).not.toContain('aria-label="Reset dust spots"');
     const failed = renderRepair({ ...idleDustSpots, state: 'error', message: 'Photo server unreachable.' });
-    expect(failed).toContain('title="Detect dust spots again"');
+    expect(failed).toContain('data-tooltip="Detect dust spots again"');
     const working = renderRepair({ ...idleDustSpots, state: 'detecting', progress: { fraction: 0.2, stage: 'Scanning for dust spots…' } });
-    expect(working).toContain('data-testid="dust-spots-ml" aria-pressed="false" title="Detecting dust spots…" disabled=""');
+    expect(working).toContain('data-testid="dust-spots-ml" aria-pressed="false" data-tooltip="Detecting dust spots…" disabled=""');
   });
 
   it('lists ML spots with per-spot checkboxes and a count apply', () => {

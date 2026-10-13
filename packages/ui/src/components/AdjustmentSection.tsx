@@ -18,7 +18,7 @@ export interface AdjustmentMl {
   /** Disable the header action (e.g. Denoise while working or with no ISO suggestion). */
   disabled?: boolean;
   /** Override the computed tooltip (e.g. Denoise names its ISO suggestion). */
-  title?: string;
+  hint?: string;
 }
 
 export interface AdjustmentSectionProps {
@@ -65,7 +65,7 @@ export function AdjustmentSection({ title, icon, children, initiallyOpen = true,
   // ISO suggestion): clicking re-applies fresh instead of reverting, and
   // the tooltip must not promise a revert. Auto actions always carry their
   // persisted stack snapshot, so applied implies canRevert for them.
-  const actionTitle = !ml ? '' : (ml.title ?? (kind === 'auto'
+  const actionHint = !ml ? '' : (ml.hint ?? (kind === 'auto'
     ? (ml.applied ? (ml.canRevert ? `${title} applied — click to revert` : `${title} applied — click to re-apply`) : ml.canRevert ? `Re-apply ${lower}` : `Apply ${lower} automatically`)
     : (ml.applied ? (ml.canRevert ? `ML ${lower} applied — click to revert` : `ML ${lower} applied — click to re-apply`) : ml.canRevert ? `Re-apply automatic ${lower} with ML` : `Automatically adjust ${lower} with ML`)));
   // One reset control per header, left of the action button: while a
@@ -78,5 +78,5 @@ export function AdjustmentSection({ title, icon, children, initiallyOpen = true,
   // the reset — collapsing hides the sliders, never the header controls.
   const resetActive = dirty || Boolean(ml?.canRevert);
   const onResetClick = ml && ml.canRevert ? ml.onRevert : onReset;
-  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onReset && resetActive && <IconButton className="section-reset is-dirty" label={`Reset ${lower}`} onClick={onResetClick}><RotateCcw size={11} /></IconButton>}{ml && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} title={actionTitle} disabled={ml.disabled} onClick={ml.onToggle}>{actionLabel}</button>}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
+  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onReset && resetActive && <IconButton className="section-reset is-dirty" label={`Reset ${lower}`} onClick={onResetClick}><RotateCcw size={11} /></IconButton>}{ml && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} data-tooltip={actionHint} disabled={ml.disabled} onClick={ml.onToggle}>{actionLabel}</button>}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
 }

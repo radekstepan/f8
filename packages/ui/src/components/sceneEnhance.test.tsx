@@ -93,7 +93,7 @@ describe('scene enhance row', () => {
     expect(html).toContain('data-testid="scene-enhance-ml"');
     expect(html).toContain('class="ml-button" data-testid="scene-enhance-ml"');
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('title="Automatically adjust scene enhance with ML"');
+    expect(html).toContain('data-tooltip="Automatically adjust scene enhance with ML"');
     expect(html).toContain('>ML<');
     expect(html).toContain('Classify the scene with ML');
     // No apply bar repeating the section title, and no badge doubling the
@@ -111,8 +111,8 @@ describe('scene enhance row', () => {
     );
     expect(html).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('title="ML scene enhance applied — click to revert"');
-    expect(html).toContain('section-reset is-dirty" title="Reset scene enhance"');
+    expect(html).toContain('data-tooltip="ML scene enhance applied — click to revert"');
+    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset scene enhance"');
   });
 
   it('keeps the section title visible before and after applying', () => {
@@ -303,7 +303,7 @@ describe('scene enhance reload', () => {
     )} />);
     expect(html).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('title="ML scene enhance applied — click to revert"');
+    expect(html).toContain('data-tooltip="ML scene enhance applied — click to revert"');
     expect(html).toContain('aria-label="Reset scene enhance"');
     expect(html).toContain('data-testid="scene-enhance-scene"');
   });
@@ -315,7 +315,7 @@ describe('scene enhance reload', () => {
     );
     expect(html).toContain('class="ml-button" data-testid="scene-enhance-ml"');
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('title="Automatically adjust scene enhance with ML"');
+    expect(html).toContain('data-tooltip="Automatically adjust scene enhance with ML"');
     expect(html).toContain('data-testid="scene-enhance-scene"');
     expect(html).not.toContain('aria-label="Reset scene enhance"');
   });

@@ -99,7 +99,7 @@ function renderRepair(method: InpaintMethod, removal?: ObjectRemovalAssist): str
 describe('shared primitives', () => {
   it('renders the ML badge with its hint tooltip', () => {
     expect(renderToStaticMarkup(<MlBadge hint="Does ML things" />))
-      .toBe('<span class="ml-badge" title="Does ML things">ML</span>');
+      .toBe('<span class="ml-badge" data-tooltip="Does ML things">ML</span>');
   });
 
   it('renders the ML badge without a tooltip when no hint is given', () => {
@@ -128,14 +128,14 @@ describe('shared primitives', () => {
         value="balanced"
         onChange={noop}
         options={[
-          { value: 'fast', label: 'Fast', title: 'Fast fill', testId: 'heal-quality-fast' },
-          { value: 'balanced', label: 'Balanced', title: 'Balanced fill', testId: 'heal-quality-balanced' },
+          { value: 'fast', label: 'Fast', hint: 'Fast fill', testId: 'heal-quality-fast' },
+          { value: 'balanced', label: 'Balanced', hint: 'Balanced fill', testId: 'heal-quality-balanced' },
         ]}
       />,
     );
     expect(html).toContain('<div class="segmented-control" role="group" aria-label="Repair search effort" data-testid="heal-quality-group">');
-    expect(html).toContain('<button data-testid="heal-quality-fast" class="" title="Fast fill">Fast</button>');
-    expect(html).toContain('<button data-testid="heal-quality-balanced" class="is-active" title="Balanced fill">Balanced</button>');
+    expect(html).toContain('<button data-testid="heal-quality-fast" class="" data-tooltip="Fast fill">Fast</button>');
+    expect(html).toContain('<button data-testid="heal-quality-balanced" class="is-active" data-tooltip="Balanced fill">Balanced</button>');
   });
 
   it('renders the checkbox row with a testid for detection confirm lists', () => {
@@ -157,13 +157,13 @@ describe('shared primitive consumers', () => {
   it('renders the repair method and quality groups through the segmented control', () => {
     const html = renderRepair('heal');
     expect(html).toContain('data-testid="repair-method-group"');
-    expect(html).toContain('<button data-testid="repair-method-heal" class="is-active" title="Repair: copies matching texture from nearby">Repair</button>');
+    expect(html).toContain('<button data-testid="repair-method-heal" class="is-active" data-tooltip="Repair: copies matching texture from nearby">Repair</button>');
     expect(html).toContain('data-testid="heal-quality-group"');
-    expect(html).toContain('<button data-testid="heal-quality-balanced" class="is-active" title="Balanced: the default search reach and effort">Balanced</button>');
+    expect(html).toContain('<button data-testid="heal-quality-balanced" class="is-active" data-tooltip="Balanced: the default search reach and effort">Balanced</button>');
     // The neural tier drops the Fast option and renames the remaining hints.
     const ml = renderRepair('ml-heal');
     expect(ml).not.toContain('heal-quality-fast');
-    expect(ml).toContain('title="Balanced: neural fill"');
+    expect(ml).toContain('data-tooltip="Balanced: neural fill"');
   });
 
   it('renders the detection confirm rows through the shared checkbox', () => {
@@ -216,7 +216,7 @@ describe('shared primitive consumers', () => {
       />,
     );
     expect(html).toContain('<label class="checkbox-field"><input type="checkbox" aria-label="Super-resolution 2x"/>');
-    expect(html).toContain('<span class="ml-badge" title="Doubled by a machine-learning model on the photo server">ML</span>');
+    expect(html).toContain('<span class="ml-badge" data-tooltip="Doubled by a machine-learning model on the photo server">ML</span>');
   });
 });
 

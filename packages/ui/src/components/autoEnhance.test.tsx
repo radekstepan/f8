@@ -129,7 +129,7 @@ describe('auto enhance header button', () => {
     // One Auto pill, still the auto-small with the same testid and toggle
     // contract — now with an icon, in the panel header before the menu.
     expect(html).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto" aria-pressed="false"');
-    expect(html).toContain('title="Apply auto enhance automatically"');
+    expect(html).toContain('data-tooltip="Apply auto enhance automatically"');
     const button = autoButton(html);
     expect(button.length).toBeGreaterThan(0);
     expect(button).toContain('<svg');
@@ -149,8 +149,8 @@ describe('auto enhance header button', () => {
   it('highlights the Auto button when applied, with the revert left of it', () => {
     const html = renderInspector('adjust', { mode: 'classic', pure: true });
     expect(html).toContain('class="auto-small inspector-auto is-active" data-testid="auto-enhance-auto" aria-pressed="true"');
-    expect(html).toContain('title="Auto Enhance applied — click to revert"');
-    expect(html).toContain('section-reset is-dirty" title="Reset auto enhance"');
+    expect(html).toContain('data-tooltip="Auto Enhance applied — click to revert"');
+    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset auto enhance"');
     const reset = html.indexOf('aria-label="Reset auto enhance"');
     const auto = html.indexOf('data-testid="auto-enhance-auto"');
     expect(reset).toBeGreaterThan(-1);
@@ -173,7 +173,7 @@ describe('auto enhance header button', () => {
       { ...DEFAULT_EDIT, autoEnhanced: true, exposure: 0.22, clarity: 12 },
     );
     expect(html).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto" aria-pressed="false"');
-    expect(html).toContain('title="Apply auto enhance automatically"');
+    expect(html).toContain('data-tooltip="Apply auto enhance automatically"');
     expect(html).not.toContain('aria-label="Reset auto enhance"');
     expect(html).toContain('aria-label="Reset lightness"');
   });

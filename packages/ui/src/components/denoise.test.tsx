@@ -126,7 +126,7 @@ describe('denoise control', () => {
     expect(html).toContain('data-testid="denoise-preview"');
     expect(html).toContain('ISO 100 looks clean — no suggestion');
     expect(html).toContain('class="auto-small" data-testid="denoise-auto"');
-    expect(html).toContain('title="ISO 100 needs no denoise"');
+    expect(html).toContain('data-tooltip="ISO 100 needs no denoise"');
     const autoTag = html.match(/<button[^>]*data-testid="denoise-auto"[^>]*>/)?.[0] ?? '';
     expect(autoTag).toContain('disabled');
     // The slider itself is never locked: only the suggestion-less auto is off.
@@ -136,7 +136,7 @@ describe('denoise control', () => {
   it('explains the draft → preview → apply flow where the idle button lives', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
     expect(html).toContain('How it works: 1) pick a strength, 2) Preview shows a small before/after below in this panel, 3) Apply denoises the full photo. Only the strength is saved.');
-    expect(html).toContain('title="Show strength 50 as a small before/after below, in this panel"');
+    expect(html).toContain('data-tooltip="Show strength 50 as a small before/after below, in this panel"');
   });
 
   it('shows an After-only first row with a focus rect, then apply and the ML tag', () => {
@@ -171,7 +171,7 @@ describe('denoise control', () => {
     expect(html).toContain('data-testid="denoise-apply"');
     expect(html).toContain('Apply to photo');
     // Apply follows the draft slider (50 here), so its title names it.
-    expect(html).toContain('title="Denoise the full photo at strength 50 and edit from the clean pixels"');
+    expect(html).toContain('data-tooltip="Denoise the full photo at strength 50 and edit from the clean pixels"');
   });
 
   it('flags the preview as stale when the draft moved past it', () => {
@@ -303,7 +303,7 @@ describe('denoise control', () => {
     // suggestion plus its toggle-off.
     const actions = cssRule('.section-actions');
     expect(actions).toMatch(/margin-left\s*:\s*auto/);
-    expect(html).toContain('title="Auto suggestion 50 — click to go manual, or drag the slider to fine-tune"');
+    expect(html).toContain('data-tooltip="Auto suggestion 50 — click to go manual, or drag the slider to fine-tune"');
   });
 
   it('offers a persistent header reset exactly while a denoise is stored', () => {
@@ -314,7 +314,7 @@ describe('denoise control', () => {
       assist({ state: 'applied', applied: APPLIED, hasBase: false }),
     ]) {
       const html = renderAdjust({ ...DEFAULT_EDIT, denoise: APPLIED }, makePhoto(3200), stored);
-      expect(html).toContain('section-reset is-dirty" title="Reset denoise"');
+      expect(html).toContain('section-reset is-dirty" data-tooltip="Reset denoise"');
       expect(html.indexOf('aria-label="Reset denoise"')).toBeLessThan(html.indexOf('data-testid="denoise-auto"'));
     }
     // Nothing stored: no header reset at all (nothing to restore).

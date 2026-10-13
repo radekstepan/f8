@@ -116,7 +116,7 @@ describe('object removal control', () => {
     expect(header).not.toContain('ml-badge');
     const after = html.slice(html.indexOf('data-testid="object-removal-ml"'), html.indexOf('data-testid="object-removal-ml"') + 400);
     expect(after).toMatch(/data-testid="object-removal-ml"[^>]*>ML<\/button><\/div>/);
-    expect(html).toContain('title="Find people with ML, then review before removing"');
+    expect(html).toContain('data-tooltip="Find people with ML, then review before removing"');
   });
 
   it('keeps the header ML idle-styled in every state, disabled only while detecting', () => {
@@ -133,12 +133,12 @@ describe('object removal control', () => {
       detections: [{ label: 'person', score: 0.9, box: { x0: 0, y0: 0, x1: 0.5, y1: 0.5 }, checked: true }],
     });
     expect(ready).toContain('class="ml-button" data-testid="object-removal-ml" aria-pressed="false"');
-    expect(ready).toContain('title="Detect people again"');
+    expect(ready).toContain('data-tooltip="Detect people again"');
     expect(ready).not.toContain('aria-label="Reset one-click removal"');
     const failed = renderRepair({ ...idleRemoval, state: 'error', message: 'Photo server unreachable.' });
-    expect(failed).toContain('title="Detect people again"');
+    expect(failed).toContain('data-tooltip="Detect people again"');
     const working = renderRepair({ ...idleRemoval, state: 'detecting', progress: { fraction: 0.2, stage: 'Detecting people…' } });
-    expect(working).toContain('data-testid="object-removal-ml" aria-pressed="false" title="Detecting people…" disabled=""');
+    expect(working).toContain('data-testid="object-removal-ml" aria-pressed="false" data-tooltip="Detecting people…" disabled=""');
   });
 
   it('lists ML detections with confirm checkboxes and a count apply', () => {

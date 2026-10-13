@@ -105,7 +105,7 @@ describe('semantic search', () => {
     const html = renderToStaticMarkup(
       <PhotoBrowser photos={[makePhoto()]} title="Road Trip" search="beach" searchNote="Semantic matches for “beach” · ML" album={makeAlbum()} onSelect={noop} onFavorite={noop} onImport={noop} />,
     );
-    expect(html).toContain(`title="${SEMANTIC_SEARCH_NOTE_HINT}"`);
+    expect(html).toContain(`data-tooltip="${SEMANTIC_SEARCH_NOTE_HINT}"`);
   });
 
   it('states no-training in the empty-labels note and ML badge tooltips', () => {
@@ -116,7 +116,7 @@ describe('semantic search', () => {
     const labeled = renderToStaticMarkup(
       <EditorDialogs dialog="info" photo={makePhoto({ labels: [{ label: 'beach', score: 0.9, source: 'ml' }] })} edit={{ ...DEFAULT_EDIT }} onClose={noop} onToast={noop} onCreateAlbum={noop} onSavePreset={noop} onRemovePhoto={noop} />,
     );
-    expect(labeled).toContain(`title="${SEMANTIC_SEARCH_ML_BADGE_HINT}"`);
+    expect(labeled).toContain(`data-tooltip="${SEMANTIC_SEARCH_ML_BADGE_HINT}"`);
   });
 
   it('styles the label chips, add field, and search note', () => {

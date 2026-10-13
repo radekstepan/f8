@@ -117,7 +117,7 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
       <div className="main-toolbar">
         <div className="collection-breadcrumb">
           {showBacklink ? (
-            <button className="photo-backlink" aria-label={`Back to ${collectionName}`} title={`Back to ${collectionName} (G)`} onClick={() => onAction('back')}><ChevronLeft size={14} className="backlink-chevron" aria-hidden="true" /><span className="backlink-name">{collectionName}</span></button>
+            <button className="photo-backlink" aria-label={`Back to ${collectionName}`} data-tooltip={`Back to ${collectionName} (G)`} onClick={() => onAction('back')}><ChevronLeft size={14} className="backlink-chevron" aria-hidden="true" /><span className="backlink-name">{collectionName}</span></button>
           ) : (
             <div className="collection-title"><span className="collection-name">{collectionName}</span><span className="collection-count">{count} photos</span></div>
           )}
@@ -129,7 +129,7 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
               className={`tool-button ${active ? 'is-active' : ''}`}
               aria-label={label}
               aria-pressed={active}
-              title={label}
+              data-tooltip={label}
               onClick={() => onTool(id as Tool)}
             ><Icon size={20} strokeWidth={1.55} /><span>{label}</span></button>
           ))}
@@ -161,15 +161,15 @@ export interface VisionIndicator {
 function renderVision(vision: VisionIndicator) {
   switch (vision.status) {
     case 'idle':
-      return <button type="button" className="vision-activate" onClick={vision.onActivate} title="Start the vision engine (lazy OpenCV download)">Vision engine: idle</button>;
+      return <button type="button" className="vision-activate" onClick={vision.onActivate} data-tooltip="Start the vision engine (lazy OpenCV download)">Vision engine: idle</button>;
     case 'loading':
       return <span role="status">Vision engine: downloading…</span>;
     case 'ready':
       return vision.selfTest === false
-        ? <span role="status" title="OpenCV loaded but the grayscale self-test failed">Vision engine: self-test failed</span>
+        ? <span role="status" data-tooltip="OpenCV loaded but the grayscale self-test failed">Vision engine: self-test failed</span>
         : <span>Vision engine ready{vision.version ? ` (OpenCV ${vision.version})` : ''}</span>;
     case 'failed':
-      return <button type="button" className="vision-activate" onClick={vision.onActivate} title="The vision engine failed to load. Retry the download.">Vision engine unavailable — retry</button>;
+      return <button type="button" className="vision-activate" onClick={vision.onActivate} data-tooltip="The vision engine failed to load. Retry the download.">Vision engine unavailable — retry</button>;
   }
 }
 

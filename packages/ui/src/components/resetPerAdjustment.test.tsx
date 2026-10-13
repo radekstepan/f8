@@ -150,7 +150,7 @@ describe('reset per adjustment', () => {
     const labels = ['Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation', 'Reset curves', 'Reset details', 'Reset effects'];
     for (const [patch, label] of cases) {
       const html = renderAdjust({ ...DEFAULT_EDIT, ...patch });
-      expect(html).toContain(`section-reset is-dirty" title="${label}"`);
+      expect(html).toContain(`section-reset is-dirty" data-tooltip="${label}"`);
       for (const other of labels.filter((candidate) => candidate !== label)) {
         expect(html, `${JSON.stringify(patch)} must not render ${other}`).not.toContain(`aria-label="${other}"`);
       }
@@ -173,7 +173,7 @@ describe('reset per adjustment', () => {
     );
     expect(html).toContain('is-collapsed');
     expect(html).not.toContain('slider-stub');
-    expect(html).toContain('section-reset is-dirty" title="Reset lightness"');
+    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset lightness"');
   });
 
   it('carries no separate revert control in any adjust header', () => {
@@ -194,14 +194,14 @@ describe('reset per adjustment', () => {
     expect(html).not.toContain('aria-label="Revert');
     // The snapshot sections still offer their shared-snapshot reset.
     for (const label of ['Reset scene enhance', 'Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation']) {
-      expect(html).toContain(`section-reset is-dirty" title="${label}"`);
+      expect(html).toContain(`section-reset is-dirty" data-tooltip="${label}"`);
     }
   });
 
   it('gives Details a header reset exactly while dirty, and Denoise one exactly while applied', () => {
     // Details (reset added in Task 12): dirty values persist the reset.
     const details = renderAdjust({ ...DEFAULT_EDIT, clarity: 20, sharpness: 30 }, { assists: true });
-    expect(details).toContain('section-reset is-dirty" title="Reset details"');
+    expect(details).toContain('section-reset is-dirty" data-tooltip="Reset details"');
     // Denoise (header rework, Task 4): no stored denoise, no reset.
     const idle = renderAdjust({ ...DEFAULT_EDIT }, { assists: true });
     expect(idle).not.toContain('aria-label="Reset denoise"');
@@ -211,7 +211,7 @@ describe('reset per adjustment', () => {
       { ...DEFAULT_EDIT, denoise: { ...stored } },
       { assists: true, denoise: { state: 'applied', applied: { ...stored }, hasBase: true } },
     );
-    expect(applied).toContain('section-reset is-dirty" title="Reset denoise"');
+    expect(applied).toContain('section-reset is-dirty" data-tooltip="Reset denoise"');
   });
 
   it('keeps the reset box while rendering it only when dirty', () => {

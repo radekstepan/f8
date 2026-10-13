@@ -130,7 +130,7 @@ test("rotate undoes and redoes", async ({ page }) => {
     .getByRole("toolbar", { name: "Editing tools" })
     .getByRole("button", { name: "Crop", exact: true })
     .click();
-  await page.getByTitle("Rotate left 90 degrees").click();
+  await page.getByRole("button", { name: "Rotate left 90 degrees" }).click();
   await expect
     .poll(async () => (await serverEdit(page, PHOTO_ID)).rotation, { timeout: 10_000 })
     .toBe(-90);

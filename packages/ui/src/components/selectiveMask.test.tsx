@@ -120,7 +120,7 @@ describe('selective mask control', () => {
     expect(html).toContain('data-testid="selective-mask-ml"');
     expect(html).toContain('class="ml-button" data-testid="selective-mask-ml"');
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('title="Automatically adjust subject &amp; background with ML"');
+    expect(html).toContain('data-tooltip="Automatically adjust subject &amp; background with ML"');
     expect(html).toContain('>ML<');
     expect(html).toContain('Changes save automatically');
     // No detect bar in the content and no badge doubling the header button.
@@ -153,8 +153,8 @@ describe('selective mask control', () => {
     );
     expect(html).toContain('class="ml-button is-active" data-testid="selective-mask-ml"');
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('title="ML subject &amp; background applied — click to revert"');
-    expect(html).toContain('section-reset is-dirty" title="Reset subject &amp; background"');
+    expect(html).toContain('data-tooltip="ML subject &amp; background applied — click to revert"');
+    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset subject &amp; background"');
   });
 
   it('auto-applies an ML result with no apply step or target toggle', () => {
@@ -295,6 +295,6 @@ describe('selective mask control', () => {
     // The header ML highlight means "mask stored", not "enabled" — the
     // content toggle owns on/off, so bypassing keeps the highlight.
     expect(off).toContain('class="ml-button is-active" data-testid="selective-mask-ml"');
-    expect(off).toContain('section-reset is-dirty" title="Reset subject &amp; background"');
+    expect(off).toContain('section-reset is-dirty" data-tooltip="Reset subject &amp; background"');
   });
 });

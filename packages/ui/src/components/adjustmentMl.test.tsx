@@ -90,7 +90,7 @@ describe('adjustment auto buttons', () => {
       ['color', 'hue &amp; saturation'],
     ] as const) {
       expect(html).toContain(`data-testid="${id}-auto"`);
-      expect(html).toContain(`title="Apply ${title} automatically"`);
+      expect(html).toContain(`data-tooltip="Apply ${title} automatically"`);
       expect(html).not.toContain(`data-testid="${id}-ml"`);
     }
     expect(html).toContain('aria-pressed="false"');
@@ -112,11 +112,11 @@ describe('adjustment auto buttons', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true }, { whiteBalance: true });
     expect(html).toContain('class="auto-small is-active" data-testid="white-balance-auto"');
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('title="White Balance applied — click to revert"');
+    expect(html).toContain('data-tooltip="White Balance applied — click to revert"');
     // One reset control, persistent while the snapshot lives, left of the
     // Auto button. The separate revert icon is gone: reset restores the
     // pre-auto values while a snapshot exists.
-    expect(html).toContain('section-reset is-dirty" title="Reset white balance"');
+    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset white balance"');
     expect(html).not.toContain('-ml-revert');
     const auto = html.indexOf('data-testid="white-balance-auto"');
     const reset = html.indexOf('aria-label="Reset white balance"');
@@ -136,8 +136,8 @@ describe('adjustment auto buttons', () => {
     // reset still beside it.
     const html = renderAdjust({ ...DEFAULT_EDIT }, {}, { whiteBalance: true });
     expect(html).toContain('class="auto-small" data-testid="white-balance-auto"');
-    expect(html).toContain('title="Re-apply white balance"');
-    expect(html).toContain('section-reset is-dirty" title="Reset white balance"');
+    expect(html).toContain('data-tooltip="Re-apply white balance"');
+    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset white balance"');
     expect(html).not.toContain('aria-label="Reset lightness"');
   });
 
@@ -145,8 +145,8 @@ describe('adjustment auto buttons', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, { lightness: true, color: true }, { lightness: true, color: true });
     expect(html).toContain('class="auto-small is-active" data-testid="lightness-auto"');
     expect(html).toContain('class="auto-small is-active" data-testid="color-auto"');
-    expect(html).toContain('section-reset is-dirty" title="Reset lightness"');
-    expect(html).toContain('section-reset is-dirty" title="Reset hue &amp; saturation"');
+    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset lightness"');
+    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset hue &amp; saturation"');
     expect(html).toContain('class="auto-small" data-testid="white-balance-auto"');
     expect(html).not.toContain('aria-label="Reset white balance"');
   });
@@ -154,17 +154,17 @@ describe('adjustment auto buttons', () => {
   it('offers one reset control per header: persistent while non-default, absent at defaults', () => {
     // A pre-auto snapshot keeps the reset persistent even at default slider values.
     const applied = renderAdjust({ ...DEFAULT_EDIT }, { lightness: true }, { lightness: true });
-    expect(applied).toContain('section-reset is-dirty" title="Reset lightness"');
+    expect(applied).toContain('section-reset is-dirty" data-tooltip="Reset lightness"');
     expect(applied).not.toContain('-ml-revert');
     // No snapshot, default values: no reset control at all.
     const idle = renderAdjust({ ...DEFAULT_EDIT });
     expect(idle).not.toContain('aria-label="Reset lightness"');
     // The touched-but-unhighlighted state stays persistent (snapshot kept).
     const touched = renderAdjust({ ...DEFAULT_EDIT }, {}, { lightness: true });
-    expect(touched).toContain('section-reset is-dirty" title="Reset lightness"');
+    expect(touched).toContain('section-reset is-dirty" data-tooltip="Reset lightness"');
     // Dirty sliders persist the reset with no snapshot at all.
     const dirty = renderAdjust({ ...DEFAULT_EDIT, exposure: 0.5 });
-    expect(dirty).toContain('section-reset is-dirty" title="Reset lightness"');
+    expect(dirty).toContain('section-reset is-dirty" data-tooltip="Reset lightness"');
     expect(dirty).not.toContain('aria-label="Reset white balance"');
   });
 
@@ -244,7 +244,7 @@ describe('adjustment header controls', () => {
     const numberInput = html.match(/<input[^>]*aria-label="Temperature value"[^>]*>/);
     expect(numberInput).not.toBeNull();
     expect(numberInput?.[0]).not.toMatch(/disabled/);
-    const slider = html.match(/<input[^>]*title="Double-click to reset temperature"[^>]*>/);
+    const slider = html.match(/<input[^>]*data-tooltip="Double-click to reset temperature"[^>]*>/);
     expect(slider).not.toBeNull();
     expect(slider?.[0]).not.toMatch(/disabled/);
   });
@@ -278,8 +278,8 @@ describe('AdjustmentSection', () => {
   it('keeps the reset persistent while a snapshot exists, highlight or not', () => {
     const html = section({ open: true, onReset: noop, ml: { id: 'white-balance', applied: false, canRevert: true, onToggle: noop, onRevert: noop } });
     expect(html).toContain('class="ml-button" data-testid="white-balance-ml"');
-    expect(html).toContain('title="Re-apply automatic white balance with ML"');
-    expect(html).toContain('section-reset is-dirty" title="Reset white balance"');
+    expect(html).toContain('data-tooltip="Re-apply automatic white balance with ML"');
+    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset white balance"');
     expect(html).not.toContain('-ml-revert');
   });
 
@@ -293,11 +293,11 @@ describe('AdjustmentSection', () => {
     // The shared header action carries the disabled state and a
     // section-specific tooltip instead of the computed one (the contract
     // One-Click Removal and Denoise both use).
-    const html = section({ ml: { id: 'denoise', applied: false, canRevert: false, onToggle: noop, onRevert: noop, disabled: true, title: 'ISO 100 needs no denoise' } });
+    const html = section({ ml: { id: 'denoise', applied: false, canRevert: false, onToggle: noop, onRevert: noop, disabled: true, hint: 'ISO 100 needs no denoise' } });
     expect(html).toContain('data-testid="denoise-ml"');
     const tag = html.match(/<button[^>]*data-testid="denoise-ml"[^>]*>/)?.[0] ?? '';
     expect(tag).toContain('disabled');
-    expect(html).toContain('title="ISO 100 needs no denoise"');
+    expect(html).toContain('data-tooltip="ISO 100 needs no denoise"');
     expect(html).not.toContain('Automatically adjust');
   });
 
@@ -305,7 +305,7 @@ describe('AdjustmentSection', () => {
     const html = section({ ml: { id: 'white-balance', applied: false, canRevert: false, onToggle: noop, onRevert: noop } });
     const tag = html.match(/<button[^>]*data-testid="white-balance-ml"[^>]*>/)?.[0] ?? '';
     expect(tag).not.toContain('disabled');
-    expect(html).toContain('title="Automatically adjust white balance with ML"');
+    expect(html).toContain('data-tooltip="Automatically adjust white balance with ML"');
   });
 
   it('offers no header toggle — on/off lives in the content, not the header', () => {

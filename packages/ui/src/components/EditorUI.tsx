@@ -24,11 +24,11 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export function IconButton({ label, active, className = '', children, ...props }: IconButtonProps) {
-  return <button type="button" className={`icon-button ${active ? 'is-active' : ''} ${className}`} title={label} aria-label={label} aria-pressed={active === undefined ? undefined : active} {...props}>{children}</button>;
+  return <button type="button" className={`icon-button ${active ? 'is-active' : ''} ${className}`} data-tooltip={label} aria-label={label} aria-pressed={active === undefined ? undefined : active} {...props}>{children}</button>;
 }
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
-  return <button type="button" role="switch" aria-checked={checked} aria-label={label} title={label} className={`toggle ${checked ? 'is-on' : ''}`} onClick={onChange}><span /></button>;
+  return <button type="button" role="switch" aria-checked={checked} aria-label={label} data-tooltip={label} className={`toggle ${checked ? 'is-on' : ''}`} onClick={onChange}><span /></button>;
 }
 
 interface RangeControlProps {
@@ -99,7 +99,7 @@ export function RangeControl({ label, value, min = -100, max = 100, step = 1, de
             step={step}
             value={draft ?? displayed}
             disabled={disabled}
-            {...(valueHint ? { title: valueHint } : {})}
+            {...(valueHint ? { 'data-tooltip': valueHint } : {})}
             style={{ width: `${Math.max(2, (draft ?? displayed).length) + 0.3}ch` }}
             onFocus={(event) => { setDraft(displayed); event.currentTarget.select(); }}
             onChange={(event) => setDraft(event.target.value)}
@@ -121,7 +121,7 @@ export function RangeControl({ label, value, min = -100, max = 100, step = 1, de
       </div>
       <div className={`range-track ${color ? `range-${color}` : ''}`} style={style}>
         {showOrigin && <span className="range-origin" />}
-        <input id={id} type="range" min={min} max={max} step={step} value={value} disabled={disabled} title={`Double-click to reset ${label.toLowerCase()}`} onDoubleClick={() => onChange(defaultValue)} onPointerDown={() => { if (onDraggingChange && !draggingRef.current) { draggingRef.current = true; onDraggingChange(true); } }} onChange={(event) => onChange(Number(event.target.value))} />
+        <input id={id} type="range" min={min} max={max} step={step} value={value} disabled={disabled} data-tooltip={`Double-click to reset ${label.toLowerCase()}`} onDoubleClick={() => onChange(defaultValue)} onPointerDown={() => { if (onDraggingChange && !draggingRef.current) { draggingRef.current = true; onDraggingChange(true); } }} onChange={(event) => onChange(Number(event.target.value))} />
       </div>
     </div>
   );
@@ -138,7 +138,7 @@ export function MenuSeparator() {
 
 /** The shared "ML" badge marking machine-learning features. The hint names the model in a tooltip. */
 export function MlBadge({ hint }: { hint?: string }) {
-  return <span className="ml-badge" {...(hint ? { title: hint } : {})}>ML</span>;
+  return <span className="ml-badge" {...(hint ? { 'data-tooltip': hint } : {})}>ML</span>;
 }
 
 /** The shared small undo icon beside ML/auto actions (the revert affordance next to an applied state). */
@@ -149,13 +149,13 @@ export function RevertButton({ testId, label, onClick }: { testId: string; label
 export interface SegmentedOption<T extends string> {
   value: T;
   label: string;
-  title: string;
+  hint: string;
   testId: string;
 }
 
 /** The shared pill-style option group (repair method, search effort). One option is always active. */
 export function SegmentedControl<T extends string>({ label, testId, value, options, onChange }: { label: string; testId: string; value: T; options: SegmentedOption<T>[]; onChange: (value: T) => void }) {
-  return <div className="segmented-control" role="group" aria-label={label} data-testid={testId}>{options.map((option) => <button key={option.value} data-testid={option.testId} className={value === option.value ? 'is-active' : ''} title={option.title} onClick={() => onChange(option.value)}>{option.label}</button>)}</div>;
+  return <div className="segmented-control" role="group" aria-label={label} data-testid={testId}>{options.map((option) => <button key={option.value} data-testid={option.testId} className={value === option.value ? 'is-active' : ''} data-tooltip={option.hint} onClick={() => onChange(option.value)}>{option.label}</button>)}</div>;
 }
 
 /** The shared labeled checkbox row (detection confirm lists, export toggles). */

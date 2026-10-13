@@ -837,3 +837,14 @@ button.fs-name:hover { color: #f0d496; }
 .fs-check.is-checked { background: #e2c382; border-color: #eed49c; color: #3b3020; }
 .fs-count { margin-right: auto; font-size: 9px; color: #767683; }
 .fs-empty { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 26px 12px; font-size: 10px; color: #767683; }
+/* Custom tooltips (TooltipHost in @f8/ui): one fixed bubble portaled to
+   <body>, positioned by positionTooltip so it flips and clamps inside the
+   viewport instead of clipping like native title tooltips. Themed after
+   .dropdown-menu: same panel, border, and shadow, above every overlay. */
+.f8-tooltip { position: fixed; z-index: 300; max-width: 260px; padding: 6px 9px; font-size: 10px; line-height: 1.5; color: #ececef; background: #303033f5; border: 1px solid #515157; border-radius: 5px; box-shadow: 0 8px 24px #0007, 0 1px 3px #0005; pointer-events: none; overflow-wrap: break-word; animation: tooltip-in 120ms ease-out; }
+@keyframes tooltip-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .f8-tooltip { animation: none; }
+}
+/* Opt-in Tooltip wrapper: hugs its trigger without disturbing layout. */
+.tooltip-anchor { display: inline-flex; max-width: 100%; }

@@ -84,7 +84,7 @@ describe('no reset on clean sections', () => {
     expect(clean).not.toContain('section-reset');
     expect(clean).not.toContain('aria-label="Reset curves"');
     const dirty = curvesSection(renderAdjust({ ...DEFAULT_EDIT, curve: 25 }));
-    expect(dirty).toContain('section-reset is-dirty" title="Reset curves"');
+    expect(dirty).toContain('section-reset is-dirty" data-tooltip="Reset curves"');
   });
 
   it('renders no Effects reset until vignette or fade leaves defaults', () => {
@@ -93,7 +93,7 @@ describe('no reset on clean sections', () => {
     expect(clean).not.toContain('aria-label="Reset effects"');
     for (const patch of [{ vignette: 40 }, { fade: 15 }]) {
       const dirty = effectsSection(renderAdjust({ ...DEFAULT_EDIT, ...patch }));
-      expect(dirty, JSON.stringify(patch)).toContain('section-reset is-dirty" title="Reset effects"');
+      expect(dirty, JSON.stringify(patch)).toContain('section-reset is-dirty" data-tooltip="Reset effects"');
     }
   });
 
@@ -115,10 +115,10 @@ describe('no reset on clean sections', () => {
     // onReset alone renders nothing: the hover-tease state is gone.
     expect(section({})).not.toContain('section-reset');
     // Dirty values render the persistent reset.
-    expect(section({ dirty: true })).toContain('section-reset is-dirty" title="Reset curves"');
+    expect(section({ dirty: true })).toContain('section-reset is-dirty" data-tooltip="Reset curves"');
     // A live snapshot renders it even at default values.
     expect(
       section({ ml: { id: 'curves', applied: false, canRevert: true, onToggle: noop, onRevert: noop } }),
-    ).toContain('section-reset is-dirty" title="Reset curves"');
+    ).toContain('section-reset is-dirty" data-tooltip="Reset curves"');
   });
 });

@@ -211,7 +211,7 @@ describe('ml enhance sections', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
     expect(html).not.toContain('<h3>Auto Enhance</h3>');
     expect(html).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto" aria-pressed="false"');
-    expect(html).toContain('title="Apply auto enhance automatically"');
+    expect(html).toContain('data-tooltip="Apply auto enhance automatically"');
     expect(html).toContain('>Auto</button>');
     // No standalone section, no full-width bar, no toggle switches, no
     // loose label rows around the enhance actions.
@@ -224,7 +224,7 @@ describe('ml enhance sections', () => {
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: true });
     expect(classic).toContain('class="auto-small inspector-auto is-active" data-testid="auto-enhance-auto"');
     expect(classic).toContain('class="ml-button" data-testid="scene-enhance-ml"');
-    expect(classic).toContain('title="Auto Enhance applied — click to revert"');
+    expect(classic).toContain('data-tooltip="Auto Enhance applied — click to revert"');
     const scene = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       ALL_ML,
@@ -232,7 +232,7 @@ describe('ml enhance sections', () => {
     );
     expect(scene).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto"');
     expect(scene).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
-    expect(scene).toContain('title="ML scene enhance applied — click to revert"');
+    expect(scene).toContain('data-tooltip="ML scene enhance applied — click to revert"');
     expect(scene).toContain('data-testid="scene-enhance-scene"');
     expect(scene).toContain('Night · 90%');
     expect(scene).not.toContain('· ML');
@@ -240,14 +240,14 @@ describe('ml enhance sections', () => {
 
   it('shows a header reset beside the last-used mode only', () => {
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: true });
-    expect(classic).toContain('section-reset is-dirty" title="Reset auto enhance"');
+    expect(classic).toContain('section-reset is-dirty" data-tooltip="Reset auto enhance"');
     expect(classic).not.toContain('aria-label="Reset scene enhance"');
     const scene = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       ALL_ML,
       { mode: 'scene', pure: true },
     );
-    expect(scene).toContain('section-reset is-dirty" title="Reset scene enhance"');
+    expect(scene).toContain('section-reset is-dirty" data-tooltip="Reset scene enhance"');
     expect(scene).not.toContain('aria-label="Reset auto enhance"');
     // No snapshot, no reset on either enhance section.
     const idle = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
@@ -261,16 +261,16 @@ describe('ml enhance sections', () => {
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: false });
     expect(classic).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto"');
     expect(classic).toContain('class="ml-button" data-testid="scene-enhance-ml"');
-    expect(classic).toContain('title="Re-apply auto enhance"');
-    expect(classic).toContain('section-reset is-dirty" title="Reset auto enhance"');
+    expect(classic).toContain('data-tooltip="Re-apply auto enhance"');
+    expect(classic).toContain('section-reset is-dirty" data-tooltip="Reset auto enhance"');
     const scene = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       ALL_ML,
       { mode: 'scene', pure: false },
     );
     expect(scene).toContain('class="ml-button" data-testid="scene-enhance-ml"');
-    expect(scene).toContain('title="Re-apply automatic scene enhance with ML"');
-    expect(scene).toContain('section-reset is-dirty" title="Reset scene enhance"');
+    expect(scene).toContain('data-tooltip="Re-apply automatic scene enhance with ML"');
+    expect(scene).toContain('section-reset is-dirty" data-tooltip="Reset scene enhance"');
     // The persisted scene badge survives the highlight loss.
     expect(scene).toContain('Night · 90%');
   });

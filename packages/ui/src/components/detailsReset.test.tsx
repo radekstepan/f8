@@ -91,7 +91,7 @@ describe('Details header reset', () => {
   it('persists the Details reset while any of clarity, sharpness, or grain is off defaults', () => {
     for (const patch of [{ clarity: 20 }, { sharpness: 30 }, { grain: 10 }] as const) {
       const details = sectionSlice(renderAdjust({ ...DEFAULT_EDIT, ...patch }), 'Details', 'Effects');
-      expect(details, JSON.stringify(patch)).toContain('section-reset is-dirty" title="Reset details"');
+      expect(details, JSON.stringify(patch)).toContain('section-reset is-dirty" data-tooltip="Reset details"');
     }
   });
 
@@ -104,7 +104,7 @@ describe('Details header reset', () => {
     );
     expect(details).toContain('adjustment-section is-collapsed');
     expect(details).toContain('aria-expanded="false"');
-    expect(details).toContain('section-reset is-dirty" title="Reset details"');
+    expect(details).toContain('section-reset is-dirty" data-tooltip="Reset details"');
   });
 
   it('treats a legacy-disabled Details at default values as clean', () => {
@@ -122,7 +122,7 @@ describe('Details header reset', () => {
       'Details',
       'Effects',
     );
-    expect(dirty).toContain('section-reset is-dirty" title="Reset details"');
+    expect(dirty).toContain('section-reset is-dirty" data-tooltip="Reset details"');
   });
 
   it('renders no other section reset for dirty Details values', () => {

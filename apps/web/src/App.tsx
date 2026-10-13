@@ -10,6 +10,7 @@ import { PhotoCanvas, type HistogramData } from '@f8/ui';
 import { Filmstrip, PhotoBrowser, PresetStrip } from '@f8/ui';
 import { Inspector } from '@f8/ui';
 import { EditorDialogs } from '@f8/ui';
+import { TooltipHost } from '@f8/ui';
 import { useVisionWorker } from './vision/useVisionWorker';
 import { useStraighten } from './vision/useStraighten';
 import { useObjectRemoval } from './vision/useObjectRemoval';
@@ -1125,11 +1126,12 @@ export default function App() {
   };
 
   if (library.status === 'loading' || !library.editsSeed) {
-    return <div className="library-gate" role="status"><span className="loading-spinner" aria-hidden="true" /><p>Opening your library…</p></div>;
+    return <div className="library-gate" role="status"><TooltipHost /><span className="loading-spinner" aria-hidden="true" /><p>Opening your library…</p></div>;
   }
 
   if (library.status === 'offline') {
     return <div className="library-gate">
+      <TooltipHost />
       <CloudOff size={40} strokeWidth={1.25} />
       <h2>The library server is not running.</h2>
       <p>{library.error || 'Start it with yarn dev, then try again.'}</p>
@@ -1139,6 +1141,7 @@ export default function App() {
 
   if (!photo) {
     return <div className="library-gate">
+      <TooltipHost />
       <ImagePlus size={40} strokeWidth={1.25} />
       <h2>A fresh perspective starts here.</h2>
       <p>Import a few photos to make this space your own.</p>
@@ -1170,6 +1173,7 @@ export default function App() {
     ? { runId: straighten.runId, message: 'No clear horizon found — adjust Straighten manually.' }
     : null;
   return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importDrop(event.dataTransfer); }}>
+    <TooltipHost />
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">

@@ -100,7 +100,7 @@ describe('face enhance control', () => {
     expect(html).toContain('data-testid="face-enhance-ml"');
     expect(html).toContain('class="ml-button" data-testid="face-enhance-ml"');
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('title="Automatically adjust enhance faces with ML"');
+    expect(html).toContain('data-tooltip="Automatically adjust enhance faces with ML"');
     expect(html).toContain('>ML<');
     expect(html).toContain('Nothing changes until you apply');
     // No detect bar repeating the section title, and no badge doubling the
@@ -131,8 +131,8 @@ describe('face enhance control', () => {
     );
     expect(html).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('title="ML enhance faces applied — click to revert"');
-    expect(html).toContain('section-reset is-dirty" title="Reset enhance faces"');
+    expect(html).toContain('data-tooltip="ML enhance faces applied — click to revert"');
+    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset enhance faces"');
   });
 
   it('summarizes an ML result with skin WB, lift, and red-eye', () => {
@@ -200,7 +200,7 @@ describe('face enhance control', () => {
     expect(html).toContain('Remove the recorded no-face scan');
     // Stored info highlights the header ML button, like a stored adjust.
     expect(html).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
-    expect(html).toContain('section-reset is-dirty" title="Reset enhance faces"');
+    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset enhance faces"');
   });
 
   it('labels a recorded classical no-face scan without the ML tag', () => {
@@ -255,6 +255,6 @@ describe('face enhance control', () => {
     // The header ML highlight means "face adjust stored", not "enabled" —
     // the content toggle owns on/off, so bypassing keeps the highlight.
     expect(off).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
-    expect(off).toContain('section-reset is-dirty" title="Reset enhance faces"');
+    expect(off).toContain('section-reset is-dirty" data-tooltip="Reset enhance faces"');
   });
 });

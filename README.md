@@ -77,6 +77,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 | `packages/ui/src/hooks/useLibrary.ts` | Server library state: loading, uploads, folder import, and metadata. |
 | `packages/ui/src/components/EditorUI.tsx` | Reusable buttons, sliders, switches, selects, menus, and accessible dialogs. |
 | `packages/ui/src/components/Topbar.tsx` | Application menus, editing toolbar, and status bar. |
+| `packages/ui/src/components/Tooltip.tsx` | Custom themed tooltips: `data-tooltip` triggers, one viewport-safe `TooltipHost` bubble. |
 | `packages/ui/src/components/Sidebar.tsx` | Library, album navigation, search, and import entry point. |
 | `packages/ui/src/components/PhotoCanvas.tsx` | Responsive canvas, histogram sampling, comparison, and pointer-based retouching. |
 | `packages/ui/src/components/PhotoStrips.tsx` | Presets, filmstrip, and photo browser. |

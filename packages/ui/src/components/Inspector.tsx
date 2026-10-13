@@ -260,7 +260,7 @@ function MlProgressView({ progress, onCancel }: { progress: { fraction: number; 
     {!isDone && <div className={`ml-progress-bar${!showPercent && !isError ? ' is-indeterminate' : ''}`}>{showPercent || isError ? <span style={{ width: `${pct}%` }} /> : <span className="ml-progress-pulse" />}</div>}
     <p className="inspector-note" data-testid="ml-progress-stage">{headline}</p>
     {areaNote && <p className="inspector-note ml-area-note" data-testid="ml-area-note">{areaNote}</p>}
-    {!isError && !isDone && onCancel && <div className="suggestion-actions"><button className="text-button" data-testid="ml-cancel" title="Stop this repair and restart the worker" onClick={onCancel}>Cancel repair</button></div>}
+    {!isError && !isDone && onCancel && <div className="suggestion-actions"><button className="text-button" data-testid="ml-cancel" data-tooltip="Stop this repair and restart the worker" onClick={onCancel}>Cancel repair</button></div>}
   </div>;
 }
 
@@ -309,7 +309,7 @@ function StraightenControl({ value, assist, onStraighten, onDraggingChange }: { 
   return <div className="straighten-assist">
     <RangeControl label="Straighten" value={value} min={-15} max={15} step={0.1} suffix="deg" signed valueHint="Click to type an exact value in degrees" onDraggingChange={onDraggingChange} onChange={(next) => { assist.onDismiss(); onStraighten(next, 'straighten'); }} />
     <div className="straighten-auto-row">
-      <button className={`auto-small straighten-auto${applied ? ' is-active' : ''}`} data-testid="straighten-auto" aria-pressed={applied} disabled={working} title={applied ? 'Auto-straighten applied — click to revert' : 'Detect the horizon tilt automatically and apply it'} onClick={onToggle}>{working ? (assist.state === 'loading' ? 'Loading…' : mlActive ? 'Estimating…' : 'Detecting…') : 'Auto'}</button>
+      <button className={`auto-small straighten-auto${applied ? ' is-active' : ''}`} data-testid="straighten-auto" aria-pressed={applied} disabled={working} data-tooltip={applied ? 'Auto-straighten applied — click to revert' : 'Detect the horizon tilt automatically and apply it'} onClick={onToggle}>{working ? (assist.state === 'loading' ? 'Loading…' : mlActive ? 'Estimating…' : 'Detecting…') : 'Auto'}</button>
       {assist.snapshot !== null && <RevertButton testId="straighten-auto-revert" label="Revert auto-straighten" onClick={revert} />}
       {working && !mlActive && <span className="straighten-status" role="status">{assist.state === 'loading' ? 'Loading vision engine…' : 'Detecting horizon tilt…'}</span>}
       {assist.state === 'error' && assist.message && <span className="straighten-status is-error" role="alert">{assist.message}</span>}
@@ -339,23 +339,23 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
   const offline = assist.method === 'ml-heal' && assist.serverDown;
   return <>
     <SegmentedControl label="Repair reconstruction method" testId="repair-method-group" value={assist.method} onChange={assist.onMethodChange} options={[
-      { value: 'ml-heal', label: 'ML Repair', title: 'ML Repair: neural fill on the photo server', testId: 'repair-method-ml-heal' },
-      { value: 'heal', label: 'Repair', title: 'Repair: copies matching texture from nearby', testId: 'repair-method-heal' },
-      { value: 'telea', label: 'Smooth', title: 'Smooth fill: fast, for tiny blemishes', testId: 'repair-method-telea' },
-      { value: 'ns', label: 'Detail', title: 'Detail fill: slower, follows edges', testId: 'repair-method-ns' },
+      { value: 'ml-heal', label: 'ML Repair', hint: 'ML Repair: neural fill on the photo server', testId: 'repair-method-ml-heal' },
+      { value: 'heal', label: 'Repair', hint: 'Repair: copies matching texture from nearby', testId: 'repair-method-heal' },
+      { value: 'telea', label: 'Smooth', hint: 'Smooth fill: fast, for tiny blemishes', testId: 'repair-method-telea' },
+      { value: 'ns', label: 'Detail', hint: 'Detail fill: slower, follows edges', testId: 'repair-method-ns' },
     ]} />
     <p className="inspector-note repair-method-blurb">{methodBlurb}</p>
     {(assist.method === 'heal' || assist.method === 'ml-heal') && <>
       {!offline && <>
         <h4>Repair Quality</h4>
         <SegmentedControl label="Repair search effort" testId="heal-quality-group" value={assist.quality} onChange={assist.onQualityChange} options={[
-          ...(assist.method !== 'ml-heal' ? [{ value: 'fast' as const, label: 'Fast', title: 'Fast: nearby donors only, best for small blemishes', testId: 'heal-quality-fast' }] : []),
-          { value: 'balanced' as const, label: 'Balanced', title: assist.method === 'ml-heal' ? 'Balanced: neural fill' : 'Balanced: the default search reach and effort', testId: 'heal-quality-balanced' },
-          { value: 'best' as const, label: 'Best', title: assist.method === 'ml-heal' ? 'Best: diffusion inpainting, slowest' : 'Best: widest search, slowest — for tricky removals', testId: 'heal-quality-best' },
+          ...(assist.method !== 'ml-heal' ? [{ value: 'fast' as const, label: 'Fast', hint: 'Fast: nearby donors only, best for small blemishes', testId: 'heal-quality-fast' }] : []),
+          { value: 'balanced' as const, label: 'Balanced', hint: assist.method === 'ml-heal' ? 'Balanced: neural fill' : 'Balanced: the default search reach and effort', testId: 'heal-quality-balanced' },
+          { value: 'best' as const, label: 'Best', hint: assist.method === 'ml-heal' ? 'Best: diffusion inpainting, slowest' : 'Best: widest search, slowest — for tricky removals', testId: 'heal-quality-best' },
         ]} />
       </>}
       {offline
-        ? <div className="ml-offline" data-testid="ml-offline" role="alert"><p>Photo server offline.</p><button className="text-button" data-testid="ml-retry" title="Warm the ML tier again" onClick={assist.onRetry}>Retry</button></div>
+        ? <div className="ml-offline" data-testid="ml-offline" role="alert"><p>Photo server offline.</p><button className="text-button" data-testid="ml-retry" data-tooltip="Warm the ML tier again" onClick={assist.onRetry}>Retry</button></div>
         : visibleProgress && <MlProgressView progress={visibleProgress} onCancel={assist.onCancelHeal} />}
       {assist.method === 'heal' && <>
       <div className="repair-toggle-row" data-testid="seamless-light-row"><span>Seamless light</span><Toggle checked={assist.seamlessLight} onChange={() => assist.onSeamlessLightChange(!assist.seamlessLight)} label="Seamless light adaptation" /></div>
@@ -398,7 +398,7 @@ function ObjectRemovalControl({ assist }: { assist: ObjectRemovalAssist }) {
       </ul>
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="text-button" data-testid="object-removal-apply" disabled={checked === 0} title="Heal the checked people with the current repair method" onClick={assist.onApply}>Remove {checked} selected</button>
+        <button className="text-button" data-testid="object-removal-apply" disabled={checked === 0} data-tooltip="Heal the checked people with the current repair method" onClick={assist.onApply}>Remove {checked} selected</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>)}
@@ -406,7 +406,7 @@ function ObjectRemovalControl({ assist }: { assist: ObjectRemovalAssist }) {
       <div className="assist-message is-error" data-testid="object-removal-error" role="alert">
         <p>{assist.message ?? 'Detection failed.'}</p>
         <div className="suggestion-actions">
-          <button className="text-button" data-testid="object-removal-retry" title="Detect people again" onClick={assist.onDetect}>Retry</button>
+          <button className="text-button" data-testid="object-removal-retry" data-tooltip="Detect people again" onClick={assist.onDetect}>Retry</button>
           <button className="text-button" data-testid="object-removal-dismiss" onClick={assist.onDismiss}>Dismiss</button>
         </div>
       </div>
@@ -450,7 +450,7 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
       </ul>
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="text-button" data-testid="dust-spots-apply" disabled={checked === 0} title="Repair the checked spots with the current repair method" onClick={assist.onApply}>Repair {checked} selected</button>
+        <button className="text-button" data-testid="dust-spots-apply" disabled={checked === 0} data-tooltip="Repair the checked spots with the current repair method" onClick={assist.onApply}>Repair {checked} selected</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>)}
@@ -470,7 +470,7 @@ function SceneEnhanceControl({ edit }: { edit: EditState }) {
   // the persisted scene label, or the explanatory note before the first run.
   return <div className="scene-enhance" data-testid="scene-enhance">
     {edit.sceneEnhance
-      ? <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}%</span>
+      ? <span className="scene-enhance-scene" data-testid="scene-enhance-scene" data-tooltip={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}%</span>
       : <p className="inspector-note">Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings.</p>}
   </div>;
 }
@@ -508,11 +508,11 @@ function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
       <p className="inspector-note">Finds faces with ML, then anchors white balance on skin, lifts dark faces, and fixes red-eye. Nothing changes until you apply.</p>
     }
     {assist.state === 'idle' && assist.applied && <div className="auto-enhance-row face-enhance-row">
-      <span className={`scene-enhance-scene${assist.applied.enabled ? '' : ' is-off'}`} data-testid="face-enhance-applied" title={assist.applied.faces === 0 ? 'Checked — no faces found. Rescan to run detection again.' : assist.applied.enabled ? `Face enhance on: ${appliedSummary(assist.applied)}` : 'Face enhance off — the lift and red-eye fixes are bypassed'}>{appliedSummary(assist.applied)}</span>
+      <span className={`scene-enhance-scene${assist.applied.enabled ? '' : ' is-off'}`} data-testid="face-enhance-applied" data-tooltip={assist.applied.faces === 0 ? 'Checked — no faces found. Rescan to run detection again.' : assist.applied.enabled ? `Face enhance on: ${appliedSummary(assist.applied)}` : 'Face enhance off — the lift and red-eye fixes are bypassed'}>{appliedSummary(assist.applied)}</span>
       {assist.applied.faces > 0 && <Toggle checked={assist.applied.enabled} onChange={assist.onToggle} label="Enable face enhance" />}
       <div className="suggestion-actions">
-        <button className="text-button" data-testid="face-enhance-redetect" title="Detect faces again" onClick={assist.onDetect}>Rescan</button>
-        <button className="text-button" data-testid="face-enhance-clear" title={assist.applied.faces === 0 ? 'Remove the recorded no-face scan' : 'Remove the masked face lift and red-eye fixes (white balance stays)'} onClick={assist.onClear}>Clear</button>
+        <button className="text-button" data-testid="face-enhance-redetect" data-tooltip="Detect faces again" onClick={assist.onDetect}>Rescan</button>
+        <button className="text-button" data-testid="face-enhance-clear" data-tooltip={assist.applied.faces === 0 ? 'Remove the recorded no-face scan' : 'Remove the masked face lift and red-eye fixes (white balance stays)'} onClick={assist.onClear}>Clear</button>
       </div>
     </div>}
     {working && <MlProgressView progress={assist.progress ?? { fraction: 0, stage: 'Preparing photo…' }} />}
@@ -524,7 +524,7 @@ function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
       <p className="inspector-note" role="status" data-testid="face-enhance-summary">{summary}</p>
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="text-button" data-testid="face-enhance-apply" title="Set white balance from faces and store the masked lift plus red-eye fixes" onClick={assist.onApply}>Apply face enhance</button>
+        <button className="text-button" data-testid="face-enhance-apply" data-tooltip="Set white balance from faces and store the masked lift plus red-eye fixes" onClick={assist.onApply}>Apply face enhance</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>)}
@@ -564,8 +564,8 @@ function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
       <div className="auto-enhance-row selective-mask-row">
         <Toggle checked={assist.applied.enabled !== false} onChange={assist.onToggle} label="Enable subject and background enhance" />
         <div className="suggestion-actions">
-          <button className="text-button" data-testid="selective-mask-redetect" title="Segment the subject again (keeps your slider values)" onClick={assist.onDetect}>Rescan</button>
-          <button className="text-button" data-testid="selective-mask-clear" title="Remove the subject mask and its adjustments" onClick={assist.onClear}>Clear</button>
+          <button className="text-button" data-testid="selective-mask-redetect" data-tooltip="Segment the subject again (keeps your slider values)" onClick={assist.onDetect}>Rescan</button>
+          <button className="text-button" data-testid="selective-mask-clear" data-tooltip="Remove the subject mask and its adjustments" onClick={assist.onClear}>Clear</button>
         </div>
       </div>
       <SelectiveParamGroup label="Subject" values={assist.applied.subject} onParam={(patch) => assist.onAdjust('subject', patch)} testIdPrefix="selective-mask-subject" />
@@ -652,12 +652,12 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
     {working && <div className="suggestion-actions"><button className="text-button" data-testid="denoise-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
     {!working && assist.state !== 'preview-ready' && !assist.applied && <>
-      <button className="text-button full-width" data-testid="denoise-preview" disabled={slider <= 0} title={slider <= 0 ? 'Raise the strength to preview' : `Show strength ${slider} as a small before/after below, in this panel`} onClick={() => assist.onPreview(slider, auto)}><span>Preview denoise</span></button>
+      <button className="text-button full-width" data-testid="denoise-preview" disabled={slider <= 0} data-tooltip={slider <= 0 ? 'Raise the strength to preview' : `Show strength ${slider} as a small before/after below, in this panel`} onClick={() => assist.onPreview(slider, auto)}><span>Preview denoise</span></button>
       <p className="inspector-note">How it works: 1) pick a strength, 2) Preview shows a small before/after below in this panel, 3) Apply denoises the full photo. Only the strength is saved.</p>
     </>}
     {!working && assist.state === 'preview-ready' && assist.preview && <>
       <p className="denoise-preview-title" data-testid="denoise-preview-title">Preview — small downsample, shown here</p>
-      <div className="denoise-compare" data-testid="denoise-compare" title="Click to move the 16× closeup" onClick={(event) => {
+      <div className="denoise-compare" data-testid="denoise-compare" data-tooltip="Click to move the 16× closeup" onClick={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return;
         const x = Math.round(((event.clientX - rect.left) / rect.width) * 100);
@@ -671,8 +671,8 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
       {previewStale && <p className="inspector-note" data-testid="denoise-preview-stale">Strength is now {slider} — update the preview to see it.</p>}
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="text-button" data-testid="denoise-apply" title={`Denoise the full photo at strength ${slider} and edit from the clean pixels`} onClick={() => assist.onApply(slider, auto)}>Apply to photo</button>
-        <button className="text-button" data-testid="denoise-repreview" title={`Preview the current strength (${slider}) again`} onClick={() => assist.onPreview(slider, auto)}>Update preview</button>
+        <button className="text-button" data-testid="denoise-apply" data-tooltip={`Denoise the full photo at strength ${slider} and edit from the clean pixels`} onClick={() => assist.onApply(slider, auto)}>Apply to photo</button>
+        <button className="text-button" data-testid="denoise-repreview" data-tooltip={`Preview the current strength (${slider}) again`} onClick={() => assist.onPreview(slider, auto)}>Update preview</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>}
@@ -683,15 +683,15 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
       {slider !== assist.applied.strength && <p className="inspector-note" data-testid="denoise-draft-diff">Draft {slider} differs from applied {assist.applied.strength} — preview it below before applying.</p>}
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="text-button" data-testid="denoise-repreview" title="Preview a different strength below before applying" onClick={() => assist.onPreview(slider, auto)}>Preview another strength</button>
-        <button className="text-button" data-testid="denoise-clear" title="Drop the denoised photo and edit from the original" onClick={assist.onClear}>Clear</button>
+        <button className="text-button" data-testid="denoise-repreview" data-tooltip="Preview a different strength below before applying" onClick={() => assist.onPreview(slider, auto)}>Preview another strength</button>
+        <button className="text-button" data-testid="denoise-clear" data-tooltip="Drop the denoised photo and edit from the original" onClick={assist.onClear}>Clear</button>
       </div>
     </>}
     {!working && stale && assist.applied && <>
       <p className="inspector-note" role="status" data-testid="denoise-stale">Denoise {assist.applied.strength}{appliedTag} was applied — re-run to restore the clean photo.</p>
       <div className="suggestion-actions">
-        <button className="text-button" data-testid="denoise-restore" title="Denoise the full photo again at the stored strength" onClick={() => assist.onApply(assist.applied!.strength, assist.applied!.auto)}>Restore denoise</button>
-        <button className="text-button" data-testid="denoise-clear" title="Drop the stored strength and keep the original" onClick={assist.onClear}>Clear</button>
+        <button className="text-button" data-testid="denoise-restore" data-tooltip="Denoise the full photo again at the stored strength" onClick={() => assist.onApply(assist.applied!.strength, assist.applied!.auto)}>Restore denoise</button>
+        <button className="text-button" data-testid="denoise-clear" data-tooltip="Drop the stored strength and keep the original" onClick={assist.onClear}>Clear</button>
       </div>
     </>}
     {assist.state === 'error' && <>
@@ -725,7 +725,7 @@ function DenoiseSection({ assist, photo }: { assist: DenoiseAssist; photo: Photo
   }, [photo.id]);
   const suggestion = denoiseStrengthForIso(photo.iso);
   const applied = assist.applied !== null;
-  const mlTitle = suggestion <= 0
+  const mlHint = suggestion <= 0
     ? `ISO ${photo.iso} needs no denoise`
     : auto
       ? `Auto suggestion ${suggestion} — click to go manual, or drag the slider to fine-tune`
@@ -739,7 +739,7 @@ function DenoiseSection({ assist, photo }: { assist: DenoiseAssist; photo: Photo
       onToggle: () => { if (auto) setAuto(false); else { setSlider(suggestion); setAuto(true); } },
       onRevert: () => setAuto(false),
       disabled: working || suggestion <= 0,
-      title: mlTitle,
+      hint: mlHint,
     }}
     onReset={applied ? assist.onClear : undefined} dirty={applied}>
     <DenoiseControl assist={assist} photo={photo} slider={slider} auto={auto} onDraft={(strength, nextAuto) => { setSlider(strength); setAuto(nextAuto); }} />
@@ -756,7 +756,7 @@ function DenoiseSection({ assist, photo }: { assist: DenoiseAssist; photo: Photo
  */
 function RemovalSection({ assist }: { assist: ObjectRemovalAssist }) {
   const working = assist.state === 'detecting';
-  const title = working
+  const hint = working
     ? 'Detecting people…'
     : assist.state === 'idle'
       ? 'Find people with ML, then review before removing'
@@ -769,7 +769,7 @@ function RemovalSection({ assist }: { assist: ObjectRemovalAssist }) {
       onToggle: assist.onDetect,
       onRevert: assist.onDismiss,
       disabled: working,
-      title,
+      hint,
     }}>
     <ObjectRemovalControl assist={assist} />
   </AdjustmentSection>;
@@ -783,7 +783,7 @@ function RemovalSection({ assist }: { assist: ObjectRemovalAssist }) {
  */
 function DustSpotsSection({ assist }: { assist: DustSpotsAssist }) {
   const working = assist.state === 'detecting';
-  const title = working
+  const hint = working
     ? 'Detecting dust spots…'
     : assist.state === 'idle'
       ? 'Find dust spots with ML, then review before repairing'
@@ -796,7 +796,7 @@ function DustSpotsSection({ assist }: { assist: DustSpotsAssist }) {
       onToggle: assist.onDetect,
       onRevert: assist.onDismiss,
       disabled: working,
-      title,
+      hint,
     }}>
     <DustSpotsControl assist={assist} />
   </AdjustmentSection>;
@@ -934,14 +934,14 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   // pill (same toggle contract + tooltips the retired standalone section
   // got from AdjustmentSection kind 'auto'), with the shared-snapshot
   // revert icon left of it while a snapshot lives.
-  const autoTitle = classicActive
+  const autoHint = classicActive
     ? (classicRevert ? 'Auto Enhance applied — click to revert' : 'Auto Enhance applied — click to re-apply')
     : (classicRevert ? 'Re-apply auto enhance' : 'Apply auto enhance automatically');
 
   return <aside className="adjustments-sidebar" ref={ref} aria-label="Editing inspector">
     <div className="inspector-title">
       <TitleIcon size={15} strokeWidth={1.7} /><h2>{title}</h2>
-      {tool === 'adjust' && <div className="inspector-auto-wrap">{classicRevert && <IconButton className="section-reset is-dirty" label="Reset auto enhance" onClick={onRevertEnhance}><RotateCcw size={11} /></IconButton>}<button className={`auto-small inspector-auto${classicActive ? ' is-active' : ''}`} data-testid="auto-enhance-auto" aria-pressed={classicActive} title={autoTitle} onClick={onAuto}><Sparkles size={10} />Auto</button></div>}
+      {tool === 'adjust' && <div className="inspector-auto-wrap">{classicRevert && <IconButton className="section-reset is-dirty" label="Reset auto enhance" onClick={onRevertEnhance}><RotateCcw size={11} /></IconButton>}<button className={`auto-small inspector-auto${classicActive ? ' is-active' : ''}`} data-testid="auto-enhance-auto" aria-pressed={classicActive} data-tooltip={autoHint} onClick={onAuto}><Sparkles size={10} />Auto</button></div>}
       <div className="inspector-menu-anchor" ref={menuRef}>
         <IconButton label="Adjustment options" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><MoreHorizontal size={18} /></IconButton>
         {menu && <div className="dropdown-menu inspector-options" role="menu">
@@ -984,7 +984,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </AdjustmentSection>
       {extraSections.includes('Black & White') && <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} onReset={() => onChange({ blackAndWhite: false })} dirty={edit.blackAndWhite}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>}
       <div className="inspector-end-note"><Circle size={10} />Every change. Always reversible.</div>
-    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onRotate(-1)}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onRotate(1)}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onStraighten={onStraighten} onDraggingChange={onStraightenDragging} /> : <RangeControl label="Straighten" value={edit.straighten} min={-15} max={15} step={0.1} suffix="deg" signed onDraggingChange={onStraightenDragging} onChange={(next) => onStraighten(next, 'straighten')} />}<p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <><AdjustmentSection title="Brush" icon={<Brush size={14} />}><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} /></AdjustmentSection>{repairAssist && <AdjustmentSection title="Reconstruction" icon={<Layers size={14} />}><RepairMethodControl assist={repairAssist} /></AdjustmentSection>}{repairAssist?.removal && <RemovalSection assist={repairAssist.removal} />}{repairAssist?.dustSpots && <DustSpotsSection assist={repairAssist.dustSpots} />}<AdjustmentSection title="Repairs" icon={<Bandage size={14} />}><RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></AdjustmentSection></>}</div>
+    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button aria-label="Rotate left 90 degrees" data-tooltip="Rotate left 90 degrees" onClick={() => onRotate(-1)}><RotateCcw size={18} /><span>Left</span></button><button aria-label="Rotate right 90 degrees" data-tooltip="Rotate right 90 degrees" onClick={() => onRotate(1)}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} aria-label="Flip horizontally" data-tooltip="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} aria-label="Flip vertically" data-tooltip="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onStraighten={onStraighten} onDraggingChange={onStraightenDragging} /> : <RangeControl label="Straighten" value={edit.straighten} min={-15} max={15} step={0.1} suffix="deg" signed onDraggingChange={onStraightenDragging} onChange={(next) => onStraighten(next, 'straighten')} />}<p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <><AdjustmentSection title="Brush" icon={<Brush size={14} />}><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} /></AdjustmentSection>{repairAssist && <AdjustmentSection title="Reconstruction" icon={<Layers size={14} />}><RepairMethodControl assist={repairAssist} /></AdjustmentSection>}{repairAssist?.removal && <RemovalSection assist={repairAssist.removal} />}{repairAssist?.dustSpots && <DustSpotsSection assist={repairAssist.dustSpots} />}<AdjustmentSection title="Repairs" icon={<Bandage size={14} />}><RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></AdjustmentSection></>}</div>
     {tool === 'adjust' && <div className="inspector-footer" ref={addMenuRef}><button className="add-adjustment" onClick={() => setAddMenu(!addMenu)} aria-expanded={addMenu}>Add Adjustment<ChevronDown size={12} /></button>{addMenu && <div className="dropdown-menu add-adjustment-menu" role="menu">{['Black & White'].filter((name) => !extraSections.includes(name)).map((name) => <MenuItem key={name} onClick={() => addSection(name)}>{name}</MenuItem>)}{!extraSections.includes('Black & White') && <MenuSeparator />}<MenuItem onClick={() => { onSavePreset(); setAddMenu(false); }}>Save as Preset...</MenuItem></div>}</div>}
   </aside>;
 }

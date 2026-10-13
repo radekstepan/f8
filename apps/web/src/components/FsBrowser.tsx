@@ -78,7 +78,7 @@ export function FsBrowser({ title, subtitle, actionLabel, onClose, onSelect }: F
         {listing?.entries.map((entry) =>
           entry.isDir ? (
             <div className="fs-row" key={entry.path}>
-              <button className="fs-name" onClick={() => setPath(entry.path)} title={`Open ${entry.name}`}>
+              <button className="fs-name" onClick={() => setPath(entry.path)} data-tooltip={`Open ${entry.name}`}>
                 <Folder size={15} />
                 <span>{entry.name}</span>
               </button>
@@ -87,7 +87,7 @@ export function FsBrowser({ title, subtitle, actionLabel, onClose, onSelect }: F
                 role="checkbox"
                 aria-checked={selected.includes(entry.path)}
                 aria-label={`Import the ${entry.name} folder`}
-                title="Import this folder"
+                data-tooltip="Import this folder"
                 onClick={() => toggle(entry)}
               >
                 {selected.includes(entry.path) && <Check size={12} strokeWidth={3} />}
@@ -95,7 +95,7 @@ export function FsBrowser({ title, subtitle, actionLabel, onClose, onSelect }: F
             </div>
           ) : (
             <div className={`fs-row ${entry.importable ? '' : 'is-disabled'}`} key={entry.path}>
-              <span className="fs-name" title={entry.name}>
+              <span className="fs-name" data-tooltip={entry.name}>
                 <FileImage size={15} />
                 <span>{entry.name}</span>
               </span>
@@ -135,7 +135,7 @@ export function FsBrowser({ title, subtitle, actionLabel, onClose, onSelect }: F
         <button
           className="text-button"
           disabled={!listing || loading}
-          title="Import everything importable in this folder"
+          data-tooltip="Import everything importable in this folder"
           onClick={() => listing && onSelect([listing.path])}
         >
           This folder
