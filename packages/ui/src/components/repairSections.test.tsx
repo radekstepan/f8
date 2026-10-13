@@ -112,7 +112,7 @@ describe('repair sidebar sections', () => {
     for (const title of ['Brush', 'Reconstruction', 'One-Click Removal', 'Dust Spots', 'Repairs']) {
       expect(html).toContain(`<h3>${title}</h3>`);
     }
-    // Brush sliders live inside the Brush section, not under the intro.
+    // Brush sliders live inside the Brush section.
     expect(html.indexOf('<h3>Brush</h3>')).toBeLessThan(html.indexOf('data-testid="brush-size"'));
     expect(html.indexOf('data-testid="brush-strength"')).toBeLessThan(html.indexOf('<h3>Reconstruction</h3>'));
   });
@@ -154,6 +154,15 @@ describe('repair sidebar sections', () => {
     const idle = renderRepair(idleRemoval, idleDustSpots);
     expect(idle).toContain('class="slim-button full-width" data-testid="object-removal-detect"');
     expect(idle).toContain('class="slim-button full-width" data-testid="dust-spots-detect"');
+  });
+
+  it('shows no intro hint block above the repair sections', () => {
+    const html = renderRepair(idleRemoval, idleDustSpots);
+    expect(html).not.toContain('tool-intro');
+    expect(html).not.toContain('Less distraction');
+    expect(html).not.toContain('Rebuild small');
+    // The sidebar opens straight onto the Brush section.
+    expect(html.indexOf('<h3>Brush</h3>')).toBeGreaterThan(-1);
   });
 
   it('marks the hovered person and spot rows as highlighted', () => {
