@@ -401,7 +401,7 @@ img { display: block; }
 .selective-group .range-control { margin-top: 6px; }
 .selective-mask .range-control { margin-top: 8px; }
 .ml-enhance { display: flex; flex-direction: column; }
-.ml-enhance > * + * { border-top: 1px solid #343438; margin-top: 12px; padding-top: 12px; }
+.ml-enhance > * + * { margin-top: 12px; }
 .ml-enhance .face-enhance, .ml-enhance .selective-mask { padding: 0; border-bottom: 0; }
 .dust-spots .retouch-group-list { max-height: 220px; }
 .denoise-head { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: #c9c9d1; }

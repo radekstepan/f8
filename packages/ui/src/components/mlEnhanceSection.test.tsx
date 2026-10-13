@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
@@ -7,6 +10,15 @@ import type { DenoiseAssist, FaceEnhanceAssist, SelectiveMaskAssist } from './In
 
 // ML Enhance section grouping, rendered on the server (no jsdom): effects
 // never run, so this pins the markup + prop wiring, not click behavior.
+
+const here = dirname(fileURLToPath(import.meta.url));
+const cssPath = resolve(here, '../../../../apps/web/src/index.css');
+const css = () => readFileSync(cssPath, 'utf8');
+
+const cssRule = (selector: string): string => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return css().match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+};
 
 function makePhoto(): Photo {
   return {
@@ -184,5 +196,21 @@ describe('ml enhance section', () => {
     expect(html).toContain('class="slim-button full-width" data-testid="selective-mask-detect"');
     expect(html).toContain('class="slim-button full-width" data-testid="denoise-preview"');
     expect(html).not.toContain('secondary-button');
+  });
+
+  it('draws no divider line between the stacked ML actions', () => {
+    // The sibling rule spaces Scene / Faces / Subject / Denoise with a
+    // margin only — no border-top line above "Enhance Faces" or
+    // "Enhance Subject & Background".
+    const siblings = cssRule('.ml-enhance > * + *');
+    expect(siblings).not.toBe('');
+    expect(siblings).not.toContain('border');
+    expect(siblings).toContain('margin-top');
+  });
+
+  it('keeps the shared section divider for legitimate separators', () => {
+    // The fix is scoped to .ml-enhance: the shared AdjustmentSection
+    // divider between inspector panels stays intact.
+    expect(cssRule('.adjustment-section')).toContain('border-bottom');
   });
 });
