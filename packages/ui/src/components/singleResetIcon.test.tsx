@@ -288,7 +288,7 @@ describe('single reset icon', () => {
     ]);
     // Only the last-used enhance mode carries the shared icon.
     expect(headers.find((header) => header.title === 'Scene Enhance')).toMatchObject({ resets: 0, reverts: 0 });
-    // Collapsed sections keep exactly their one icon (the ML button hides, the reset stays).
+    // Collapsed sections keep exactly their one icon (the header action stays visible, like the reset).
     for (const title of ['Curves', 'Details', 'Effects']) {
       expect(headers.find((header) => header.title === title)).toMatchObject({ collapsed: true, resets: 1, reverts: 0 });
     }

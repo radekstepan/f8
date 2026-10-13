@@ -5,7 +5,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
 import type { EditState, Photo } from '@f8/core';
-import { AdjustmentSection } from './AdjustmentSection.js';
 import { Inspector } from './Inspector.js';
 
 // Details drops its header toggle (Task 11): the toggle drove the same
@@ -136,14 +135,24 @@ describe('Details without a header toggle', () => {
     expect(sectionSlice(html, 'Details', 'Effects')).toContain('aria-expanded="false"');
   });
 
-  it('keeps the shared onToggle path for semantic toggles (Black & White)', () => {
-    // Only Details' visibility-duplicate toggle went away: a section whose
-    // toggle carries real effect state still renders its switch.
-    const html = renderToStaticMarkup(
-      <AdjustmentSection title="Black & White" icon={<i />} enabled toggleLabel="Enable black & white" onToggle={noop}>
-        <span>slider-stub</span>
-      </AdjustmentSection>,
-    );
-    expect(html).toContain('role="switch" aria-checked="true" aria-label="Enable black &amp; white"');
+  it('retired the shared header toggle with Black & White: reset plus content button instead', () => {
+    // Black & White was the last header-toggle consumer: its switch
+    // duplicated the content button ("Make Black & White"/"Restore Color")
+    // while offering no reset, so a toggled section never showed whether
+    // it was on or back at defaults. The toggle is gone from the shared
+    // header; the section keeps its explicit content button and gains the
+    // standard header reset. The section renders only after "Add
+    // Adjustment" (client state), so the wiring pins at source level.
+    const inspector = source('Inspector.tsx');
+    const start = inspector.indexOf('title="Black & White"');
+    expect(start).toBeGreaterThan(-1);
+    const blackAndWhite = inspector.slice(start, inspector.indexOf('</AdjustmentSection>', start));
+    expect(blackAndWhite).not.toContain('onToggle');
+    expect(blackAndWhite).not.toContain('toggleLabel');
+    expect(blackAndWhite).not.toContain('enabled=');
+    expect(blackAndWhite).toContain('onReset={() => onChange({ blackAndWhite: false })}');
+    expect(blackAndWhite).toContain('dirty={edit.blackAndWhite}');
+    expect(blackAndWhite).toContain('Restore Color');
+    expect(blackAndWhite).toContain('Make Black & White');
   });
 });

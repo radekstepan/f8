@@ -131,6 +131,11 @@ function disclosureOf(html: string): string {
   return html.match(/<button class="section-disclosure"[\s\S]*?<\/button>/)?.[0] ?? '';
 }
 
+/** The header actions row of one section, for open/collapsed comparison. */
+function actionsOf(html: string): string {
+  return html.match(/<div class="section-actions">[\s\S]*?<\/div>/)?.[0] ?? '';
+}
+
 describe('shared collapse panels', () => {
   it('renders every Repair panel through the shared disclosure', () => {
     const html = renderInspector('repair');
@@ -178,6 +183,9 @@ describe('shared collapse panels', () => {
           title="Dust Spots"
           icon={<i />}
           badge={<span className="ml-badge">ML</span>}
+          ml={{ id: 'dust-spots', applied: false, canRevert: false, onToggle: noop, onRevert: noop }}
+          onReset={noop}
+          dirty
           open={open}
         >
           <span>content-stub</span>
@@ -199,6 +207,10 @@ describe('shared collapse panels', () => {
       expect(disclosureOf(html)).toMatch(/<svg[^>]*width="12"[^>]*height="12"/);
     }
     expect(normalize(open)).toBe(normalize(collapsed));
+    // The header controls ride along: collapsing hides the content, never
+    // the reset or the action — the actions row is byte-identical.
+    expect(actionsOf(open).length).toBeGreaterThan(0);
+    expect(actionsOf(open)).toBe(actionsOf(collapsed));
   });
 
   it('keeps the collapsed heading the same height as the open one', () => {

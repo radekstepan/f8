@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
@@ -5,11 +8,15 @@ import type { EditState, MlCategory, Photo } from '@f8/core';
 import { AdjustmentSection } from './AdjustmentSection.js';
 import { Inspector } from './Inspector.js';
 
-// Per-category ML buttons, rendered on the server (no jsdom): effects never
-// run, so this pins the markup + prop wiring — ML button per auto-capable
-// category, one reset per header (persistent iff non-default, restoring
-// the pre-ML snapshot while one lives), the chevron alone collapsing every
-// header — not click behavior.
+// Per-category Auto buttons, rendered on the server (no jsdom): effects never
+// run, so this pins the markup + prop wiring — Auto button per auto-capable
+// category (the slider autos are histogram heuristics, not models, so the ML
+// label would lie), one reset per header (persistent iff non-default,
+// restoring the pre-auto snapshot while one lives), the chevron alone
+// collapsing every header — not click behavior.
+
+const here = dirname(fileURLToPath(import.meta.url));
+const source = (file: string) => readFileSync(resolve(here, file), 'utf8');
 
 function makePhoto(): Photo {
   return {
@@ -71,76 +78,81 @@ function renderAdjust(edit: EditState, mlApplied?: Partial<Record<MlCategory, bo
   );
 }
 
-describe('adjustment ML buttons', () => {
-  it('renders an ML button on each auto-capable category instead of Auto pills', () => {
+describe('adjustment auto buttons', () => {
+  it('renders an Auto button on each auto-capable category, never an ML button', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
+    // The slider autos are histogram heuristics (no model runs), so they
+    // carry the Auto pill like classic enhance — ML buttons are reserved
+    // for sections where a model actually runs.
     for (const [id, title] of [
       ['white-balance', 'white balance'],
       ['lightness', 'lightness'],
       ['color', 'hue &amp; saturation'],
     ] as const) {
-      expect(html).toContain(`data-testid="${id}-ml"`);
-      expect(html).toContain(`title="Automatically adjust ${title} with ML"`);
+      expect(html).toContain(`data-testid="${id}-auto"`);
+      expect(html).toContain(`title="Apply ${title} automatically"`);
+      expect(html).not.toContain(`data-testid="${id}-ml"`);
     }
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('>ML</button>');
-    // The one Auto pill in the adjust tool is classic enhance (a non-ML
-    // heuristic with a header Auto button); the slider categories use ML,
-    // and straighten's pill lives in crop.
-    expect(html.match(/auto-small/g)).toHaveLength(1);
+    // Four Auto pills in the assist-free adjust tool: classic enhance plus
+    // the three slider categories. Straighten's pill lives in crop, and no
+    // ML button renders at all.
+    expect(html).not.toContain('>ML</button>');
+    expect(html).not.toContain('ml-button');
+    expect(html.match(/auto-small/g)).toHaveLength(4);
     expect(html).toContain('class="auto-small" data-testid="auto-enhance-auto"');
-    expect(html.match(/>Auto<\/button>/g)).toHaveLength(1);
+    expect(html.match(/>Auto<\/button>/g)).toHaveLength(4);
     // No snapshot and default values: no reset renders at all.
     expect(html).not.toContain('-ml-revert');
     expect(html).not.toContain('section-reset');
     expect(html).not.toContain('aria-label="Reset white balance"');
   });
 
-  it('shows a persistent reset next to the applied ML button only', () => {
+  it('shows a persistent reset next to the applied Auto button only', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true }, { whiteBalance: true });
-    expect(html).toContain('class="ml-button is-active" data-testid="white-balance-ml"');
+    expect(html).toContain('class="auto-small is-active" data-testid="white-balance-auto"');
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('title="ML white balance applied — click to revert"');
+    expect(html).toContain('title="White Balance applied — click to revert"');
     // One reset control, persistent while the snapshot lives, left of the
-    // ML button. The separate revert icon is gone: reset restores the
-    // pre-ML values while a snapshot exists.
+    // Auto button. The separate revert icon is gone: reset restores the
+    // pre-auto values while a snapshot exists.
     expect(html).toContain('section-reset is-dirty" title="Reset white balance"');
     expect(html).not.toContain('-ml-revert');
-    const ml = html.indexOf('data-testid="white-balance-ml"');
+    const auto = html.indexOf('data-testid="white-balance-auto"');
     const reset = html.indexOf('aria-label="Reset white balance"');
-    expect(ml).toBeGreaterThan(-1);
+    expect(auto).toBeGreaterThan(-1);
     expect(reset).toBeGreaterThan(-1);
-    expect(reset).toBeLessThan(ml);
+    expect(reset).toBeLessThan(auto);
     // The other categories stay idle, with no reset at all.
-    expect(html).toContain('class="ml-button" data-testid="lightness-ml"');
-    expect(html).toContain('class="ml-button" data-testid="color-ml"');
+    expect(html).toContain('class="auto-small" data-testid="lightness-auto"');
+    expect(html).toContain('class="auto-small" data-testid="color-auto"');
     expect(html).not.toContain('aria-label="Reset lightness"');
     expect(html).not.toContain('aria-label="Reset hue &amp; saturation"');
   });
 
   it('keeps the reset persistent after manual edits cleared the highlight', () => {
-    // A slider drag after the ML apply drops the pure-auto highlight but
-    // leaves the pre-ML snapshot: idle button, re-apply title, persistent
+    // A slider drag after the auto apply drops the pure-auto highlight but
+    // leaves the pre-auto snapshot: idle button, re-apply title, persistent
     // reset still beside it.
     const html = renderAdjust({ ...DEFAULT_EDIT }, {}, { whiteBalance: true });
-    expect(html).toContain('class="ml-button" data-testid="white-balance-ml"');
-    expect(html).toContain('title="Re-apply automatic white balance with ML"');
+    expect(html).toContain('class="auto-small" data-testid="white-balance-auto"');
+    expect(html).toContain('title="Re-apply white balance"');
     expect(html).toContain('section-reset is-dirty" title="Reset white balance"');
     expect(html).not.toContain('aria-label="Reset lightness"');
   });
 
   it('tracks applied state per category', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, { lightness: true, color: true }, { lightness: true, color: true });
-    expect(html).toContain('class="ml-button is-active" data-testid="lightness-ml"');
-    expect(html).toContain('class="ml-button is-active" data-testid="color-ml"');
+    expect(html).toContain('class="auto-small is-active" data-testid="lightness-auto"');
+    expect(html).toContain('class="auto-small is-active" data-testid="color-auto"');
     expect(html).toContain('section-reset is-dirty" title="Reset lightness"');
     expect(html).toContain('section-reset is-dirty" title="Reset hue &amp; saturation"');
-    expect(html).toContain('class="ml-button" data-testid="white-balance-ml"');
+    expect(html).toContain('class="auto-small" data-testid="white-balance-auto"');
     expect(html).not.toContain('aria-label="Reset white balance"');
   });
 
   it('offers one reset control per header: persistent while non-default, absent at defaults', () => {
-    // A pre-ML snapshot keeps the reset persistent even at default slider values.
+    // A pre-auto snapshot keeps the reset persistent even at default slider values.
     const applied = renderAdjust({ ...DEFAULT_EDIT }, { lightness: true }, { lightness: true });
     expect(applied).toContain('section-reset is-dirty" title="Reset lightness"');
     expect(applied).not.toContain('-ml-revert');
@@ -156,52 +168,55 @@ describe('adjustment ML buttons', () => {
     expect(dirty).not.toContain('aria-label="Reset white balance"');
   });
 
-  it('keeps the ML button rightmost with the reset control left of it', () => {
+  it('keeps the Auto button rightmost with the reset control left of it', () => {
     // Every category dirty, so every header carries its reset.
     const html = renderAdjust({ ...DEFAULT_EDIT, temperature: 5800, exposure: 0.5, saturation: 8 });
     for (const id of ['white-balance', 'lightness', 'color'] as const) {
-      const ml = html.indexOf(`data-testid="${id}-ml"`);
-      expect(ml).toBeGreaterThan(-1);
-      const section = html.slice(Math.max(0, ml - 800), ml);
-      // The single reset icon precedes the ML button in its row.
+      const auto = html.indexOf(`data-testid="${id}-auto"`);
+      expect(auto).toBeGreaterThan(-1);
+      const section = html.slice(Math.max(0, auto - 800), auto);
+      // The single reset icon precedes the Auto button in its row.
       const actions = section.slice(section.lastIndexOf('section-actions'));
       expect(actions).toContain('section-reset');
       expect(actions).not.toContain('ml-revert');
-      // The ML button closes the row: button end tag, then the row end tag.
-      const after = html.slice(ml, ml + 400);
-      expect(after).toMatch(new RegExp(`data-testid="${id}-ml"[^>]*>ML</button></div>`));
+      // The Auto button closes the row: button end tag, then the row end tag.
+      const after = html.slice(auto, auto + 400);
+      expect(after).toMatch(new RegExp(`data-testid="${id}-auto"[^>]*>Auto</button></div>`));
     }
-    // At defaults no header carries a reset, so the ML button stands alone.
+    // At defaults no header carries a reset, so the Auto button stands alone.
     const idle = renderAdjust({ ...DEFAULT_EDIT });
     expect(idle).not.toContain('section-reset');
     for (const id of ['white-balance', 'lightness', 'color'] as const) {
-      const ml = idle.indexOf(`data-testid="${id}-ml"`);
-      expect(ml).toBeGreaterThan(-1);
-      const after = idle.slice(ml, ml + 400);
-      expect(after).toMatch(new RegExp(`data-testid="${id}-ml"[^>]*>ML</button></div>`));
+      const auto = idle.indexOf(`data-testid="${id}-auto"`);
+      expect(auto).toBeGreaterThan(-1);
+      const after = idle.slice(auto, auto + 400);
+      expect(after).toMatch(new RegExp(`data-testid="${id}-auto"[^>]*>Auto</button></div>`));
     }
   });
 
-  it('distinguishes ML on from off via highlight plus pressed state', () => {
+  it('distinguishes Auto on from off via highlight plus pressed state', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true }, { whiteBalance: true });
-    expect(html).toContain('class="ml-button is-active" data-testid="white-balance-ml" aria-pressed="true"');
-    expect(html).toContain('class="ml-button" data-testid="lightness-ml" aria-pressed="false"');
-    expect(html).toContain('class="ml-button" data-testid="color-ml" aria-pressed="false"');
+    expect(html).toContain('class="auto-small is-active" data-testid="white-balance-auto" aria-pressed="true"');
+    expect(html).toContain('class="auto-small" data-testid="lightness-auto" aria-pressed="false"');
+    expect(html).toContain('class="auto-small" data-testid="color-auto" aria-pressed="false"');
   });
 
-  it('gives no ML button to sections without an automatic action', () => {
+  it('gives no header action to sections without an automatic action', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true, lightness: true, color: true }, { whiteBalance: true, lightness: true, color: true });
     expect(html).not.toContain('data-testid="curves-ml"');
     expect(html).not.toContain('data-testid="details-ml"');
     expect(html).not.toContain('data-testid="effects-ml"');
+    expect(html).not.toContain('data-testid="curves-auto"');
+    expect(html).not.toContain('data-testid="details-auto"');
+    expect(html).not.toContain('data-testid="effects-auto"');
   });
 });
 
 describe('adjustment header controls', () => {
-  it('carries no toggle beside the ML button — the ML button is the one control', () => {
+  it('carries no toggle beside the Auto button — the Auto button is the one control', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
-    // The chevron alone collapses ML sections; no toggle sits next to the
-    // ML button, neither as visibility nor as effect bypass.
+    // The chevron alone collapses auto sections; no toggle sits next to the
+    // Auto button, neither as visibility nor as effect bypass.
     expect(html).not.toContain('aria-label="Show white balance"');
     expect(html).not.toContain('aria-label="Show lightness"');
     expect(html).not.toContain('aria-label="Show hue &amp; saturation"');
@@ -238,22 +253,22 @@ describe('adjustment header controls', () => {
 describe('AdjustmentSection', () => {
   const section = (props: Partial<React.ComponentProps<typeof AdjustmentSection>>) =>
     renderToStaticMarkup(
-      <AdjustmentSection title="White Balance" icon={<i />} enabled onToggle={noop} {...props}>
+      <AdjustmentSection title="White Balance" icon={<i />} {...props}>
         <span>slider-stub</span>
       </AdjustmentSection>,
     );
 
-  it('hides content and ML behind controlled visibility', () => {
-    const html = section({ enabled: false, open: false, ml: { id: 'white-balance', applied: true, canRevert: true, onToggle: noop, onRevert: noop } });
+  it('hides content but keeps the header action behind controlled visibility', () => {
+    const html = section({ open: false, ml: { id: 'white-balance', applied: true, canRevert: true, onToggle: noop, onRevert: noop } });
     expect(html).toContain('is-collapsed');
     expect(html).not.toContain('slider-stub');
-    // The ML action follows the Auto precedent: heading-only when collapsed.
-    expect(html).not.toContain('white-balance-ml');
-    expect(html).toContain('aria-checked="false" aria-label="Show white balance"');
+    // Collapsing hides the sliders, never the header controls: the action
+    // stays rendered (and one click away), like the reset.
+    expect(html).toContain('data-testid="white-balance-ml"');
   });
 
   it('renders content and ML when controlled open', () => {
-    const html = section({ enabled: true, open: true, ml: { id: 'white-balance', applied: false, canRevert: false, onToggle: noop, onRevert: noop } });
+    const html = section({ open: true, ml: { id: 'white-balance', applied: false, canRevert: false, onToggle: noop, onRevert: noop } });
     expect(html).not.toContain('is-collapsed');
     expect(html).toContain('slider-stub');
     expect(html).toContain('data-testid="white-balance-ml"');
@@ -261,7 +276,7 @@ describe('AdjustmentSection', () => {
   });
 
   it('keeps the reset persistent while a snapshot exists, highlight or not', () => {
-    const html = section({ enabled: true, open: true, onReset: noop, ml: { id: 'white-balance', applied: false, canRevert: true, onToggle: noop, onRevert: noop } });
+    const html = section({ open: true, onReset: noop, ml: { id: 'white-balance', applied: false, canRevert: true, onToggle: noop, onRevert: noop } });
     expect(html).toContain('class="ml-button" data-testid="white-balance-ml"');
     expect(html).toContain('title="Re-apply automatic white balance with ML"');
     expect(html).toContain('section-reset is-dirty" title="Reset white balance"');
@@ -275,8 +290,9 @@ describe('AdjustmentSection', () => {
   });
 
   it('disables the header action and honors a custom tooltip when given', () => {
-    // Denoise (no ISO suggestion): the shared ML button carries the
-    // disabled state and the section-specific tooltip.
+    // The shared header action carries the disabled state and a
+    // section-specific tooltip instead of the computed one (the contract
+    // One-Click Removal and Denoise both use).
     const html = section({ ml: { id: 'denoise', applied: false, canRevert: false, onToggle: noop, onRevert: noop, disabled: true, title: 'ISO 100 needs no denoise' } });
     expect(html).toContain('data-testid="denoise-ml"');
     const tag = html.match(/<button[^>]*data-testid="denoise-ml"[^>]*>/)?.[0] ?? '';
@@ -292,8 +308,20 @@ describe('AdjustmentSection', () => {
     expect(html).toContain('title="Automatically adjust white balance with ML"');
   });
 
-  it('honors a custom toggle label for effect toggles', () => {
-    const html = section({ toggleLabel: 'Enable black & white' });
-    expect(html).toContain('aria-label="Enable black &amp; white"');
+  it('offers no header toggle — on/off lives in the content, not the header', () => {
+    // The header toggle retired with Black & White's: every section drives
+    // its effect from content controls, the header carries at most the
+    // reset + the action. Pinned at source level — the props no longer
+    // exist to render.
+    const shared = source('AdjustmentSection.tsx');
+    expect(shared).toContain("import { IconButton } from './EditorUI.js'");
+    expect(shared).not.toContain('<Toggle');
+    expect(shared).not.toContain('toggleLabel');
+    expect(shared).not.toContain('onToggle?:');
+    // ...while the header action's own toggle contract is untouched: the
+    // required onToggle still drives the ML/Auto button.
+    expect(shared).toContain('onToggle: () => void;');
+    const html = section({ open: true });
+    expect(html).not.toContain('role="switch"');
   });
 });

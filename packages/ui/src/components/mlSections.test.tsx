@@ -169,14 +169,23 @@ describe('ml enhance sections', () => {
     expect(html.indexOf('data-testid="denoise"')).toBeGreaterThan(html.indexOf('histogram-section'));
   });
 
-  it('marks every ML section header with a header ML button, never a badge', () => {
+  it('marks every model section header with a header ML button, never a badge', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
-    // Scene, faces, subject, and denoise run from their header ML button
-    // (White Balance pattern), so they carry the button instead of a badge.
-    for (const [title, button] of [['Scene Enhance', 'scene-enhance-ml'], ['Enhance Faces', 'face-enhance-ml'], ['Subject &amp; Background', 'selective-mask-ml'], ['Denoise', 'denoise-ml']] as const) {
+    // Scene, faces, and subject run a model from their header ML button,
+    // so they carry the button instead of a badge.
+    for (const [title, button] of [['Scene Enhance', 'scene-enhance-ml'], ['Enhance Faces', 'face-enhance-ml'], ['Subject &amp; Background', 'selective-mask-ml']] as const) {
       expect(html).toContain(`data-testid="${button}"`);
       expect(html.match(new RegExp(`<h3>${title}</h3><span class="ml-badge"`)), `${title} header carries no badge`).toBeNull();
     }
+  });
+
+  it('runs the denoise suggestion from a header Auto button, never an ML button', () => {
+    // Denoise drafts an ISO-ladder suggestion (a heuristic, not a model
+    // run), so its header carries the Auto pill like the slider autos.
+    const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
+    expect(html).toContain('data-testid="denoise-auto"');
+    expect(html).not.toContain('data-testid="denoise-ml"');
+    expect(html.match(/<h3>Denoise<\/h3><span class="ml-badge"/), 'Denoise header carries no badge').toBeNull();
   });
 
   it('omits every ML section without any assist but keeps classic Auto Enhance', () => {

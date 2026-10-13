@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
-import { IconButton, Toggle } from './EditorUI.js';
+import { IconButton } from './EditorUI.js';
 
 export interface AdjustmentMl {
   /** Testid prefix: `${id}-ml` for the button (`-auto` for kind 'auto'). */
@@ -13,7 +13,7 @@ export interface AdjustmentMl {
   onToggle: () => void;
   /** Always restore the pre-apply snapshot. */
   onRevert: () => void;
-  /** Header action kind: 'ml' for model actions, 'auto' for heuristics (classic enhance). Defaults to 'ml'. */
+  /** Header action kind: 'ml' when a model runs, 'auto' for heuristics (histogram autos, denoise suggestion). Defaults to 'ml'. */
   kind?: 'ml' | 'auto';
   /** Disable the header action (e.g. Denoise while working or with no ISO suggestion). */
   disabled?: boolean;
@@ -26,12 +26,8 @@ export interface AdjustmentSectionProps {
   icon: ReactNode;
   children: ReactNode;
   initiallyOpen?: boolean;
-  enabled?: boolean;
   /** Small heading adornment after the title, e.g. an ML badge. */
   badge?: ReactNode;
-  onToggle?: () => void;
-  /** Accessibility label for the header toggle; defaults to "Show {title}". */
-  toggleLabel?: string;
   /** Per-section automatic action (ML or Auto heuristic); omit for sections with no automatic action. */
   ml?: AdjustmentMl;
   /** Controlled visibility; omit for the self-managed disclosure default. */
@@ -47,9 +43,11 @@ export interface AdjustmentSectionProps {
  * categories, ML Enhance, and every Repair section). Keep collapse-only
  * markup differences to `is-collapsed` / `aria-expanded` / the chevron —
  * the heading must measure identically open and collapsed, or toggling
- * shifts the surrounding text (see collapsePanels.test.tsx).
+ * shifts the surrounding text (see collapsePanels.test.tsx). The header
+ * carries no toggle: on/off lives in the content (bypass switches,
+ * effect buttons), the header carries at most the reset + the action.
  */
-export function AdjustmentSection({ title, icon, children, initiallyOpen = true, enabled, badge, onToggle, toggleLabel, ml, open: controlledOpen, onOpenChange, onReset, dirty = false }: AdjustmentSectionProps) {
+export function AdjustmentSection({ title, icon, children, initiallyOpen = true, badge, ml, open: controlledOpen, onOpenChange, onReset, dirty = false }: AdjustmentSectionProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(initiallyOpen);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = (next: boolean) => {
@@ -75,8 +73,9 @@ export function AdjustmentSection({ title, icon, children, initiallyOpen = true,
   // section is non-default (dirty values or a live snapshot) — a clean
   // section renders no reset at all, not even hover-only. The action
   // button stays rightmost (on/off via .is-active + aria-pressed, styled
-  // in apps/web/src/index.css).
+  // in apps/web/src/index.css) and stays rendered while collapsed, like
+  // the reset — collapsing hides the sliders, never the header controls.
   const resetActive = dirty || Boolean(ml?.canRevert);
   const onResetClick = ml && ml.canRevert ? ml.onRevert : onReset;
-  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onReset && resetActive && <IconButton className="section-reset is-dirty" label={`Reset ${lower}`} onClick={onResetClick}><RotateCcw size={11} /></IconButton>}{ml && open && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} title={actionTitle} disabled={ml.disabled} onClick={ml.onToggle}>{actionLabel}</button>}{onToggle && <Toggle checked={Boolean(enabled)} onChange={onToggle} label={toggleLabel ?? `Show ${lower}`} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
+  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onReset && resetActive && <IconButton className="section-reset is-dirty" label={`Reset ${lower}`} onClick={onResetClick}><RotateCcw size={11} /></IconButton>}{ml && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} title={actionTitle} disabled={ml.disabled} onClick={ml.onToggle}>{actionLabel}</button>}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
 }

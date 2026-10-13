@@ -282,10 +282,10 @@ img { display: block; }
 .ml-revert { width: 14px; height: 19px; color: #f0d397; }
 .section-reset { width: 14px; height: 19px; color: #90909c; opacity: 1; }
 .section-reset.is-dirty { opacity: 1; }
-.section-actions .toggle { width: 23px; height: 13px; }
-.section-actions .toggle > span { width: 9px; height: 9px; }
-.section-actions .toggle.is-on > span { transform: translateX(10px); }
 .adjustment-content { padding: 0 20px 9px; animation: section-in 180ms ease-out; }
+/* The Black & White apply button follows its description note; the note
+   carries no bottom margin, so the button brings its own gap. */
+.adjustment-content > .secondary-button { margin-top: 10px; }
 .adjustment-section.is-collapsed .adjustment-heading:hover { background: #ffffff03; }
 .range-control { height: 39px; min-width: 0; }
 .range-label { height: 19px; display: flex; align-items: center; justify-content: space-between; gap: 9px; color: #bdbdc7; font-size: 10px; }
@@ -336,7 +336,6 @@ img { display: block; }
 .tool-divider { height: 1px; background: #414147; margin: 26px 0 23px; }
 .tool-inspector h4, .adjustment-content h4 { font-size: 10px; color: #bdbdc7; font-weight: 500; margin-bottom: 12px; }
 .adjustment-content .retouch-status { margin-top: 2px; border-top: 0; padding-top: 0; }
-.object-removal .inspector-note { margin: 8px 0 0; }
 .transform-buttons { display: flex; justify-content: space-between; margin-bottom: 26px; gap: 5px; }
 .transform-buttons > button { display: flex; flex: 1; align-items: center; flex-direction: column; gap: 7px; font-size: 8px; color: #ababba; padding: 9px 2px; border: 1px solid #46464e; border-radius: 4px; }
 .transform-buttons > button:hover, .transform-buttons > button.is-active { color: var(--accent); background: #453c2b; border-color: #82704c; }
@@ -349,7 +348,7 @@ img { display: block; }
 .straighten-status.is-error { color: #df9a94; line-height: 1.5; }
 .suggestion-actions { display: flex; gap: 8px; margin-top: 10px; }
 .suggestion-actions > button { flex: 1; height: 27px; font-size: 9.5px; }
-.inspector-note { font-size: 9px; color: #8e8e9b; line-height: 1.8; margin: 18px 0 9px; }
+.inspector-note { font-size: 9px; color: #8e8e9b; line-height: 1.8; margin: 8px 0 0; }
 .segmented-control { display: flex; padding: 3px; background: #1b1b1f; border-radius: 5px; border: 1px solid #38383e; margin-bottom: 26px; }
 .segmented-control > button { flex: 1; border-radius: 3px; height: 25px; font-size: 10px; color: #93939f; }
 .segmented-control > button.is-active { background: #444146; color: #e4d1ad; box-shadow: 0 1px 3px #0003; }
@@ -388,13 +387,11 @@ img { display: block; }
 .assist-message.is-error > p { color: #df9a94; }
 .ml-badge { display: inline-block; font-size: 8px; font-weight: 700; letter-spacing: .04em; color: #f0d397; border: 1px solid #8b7650; border-radius: 3px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
 .object-removal { margin-top: 4px; }
-.face-enhance .inspector-note { margin: 8px 0 0; }
 .face-enhance-row { padding: 0; height: auto; border-bottom: 0; }
 .face-enhance-row .scene-enhance-scene.is-off { opacity: .45; }
 .face-enhance-row > .toggle { flex: none; }
 .face-enhance-row .suggestion-actions { margin: 0 0 0 auto; }
 .face-enhance-row .suggestion-actions > button { flex: none; height: auto; }
-.selective-mask .inspector-note { margin: 8px 0 0; }
 .selective-mask-row { padding: 0; height: auto; border-bottom: 0; }
 .selective-mask-row > .toggle { flex: none; }
 .selective-mask-row .suggestion-actions { margin: 0 0 0 auto; }
@@ -406,7 +403,6 @@ img { display: block; }
 .dust-spots .retouch-group-list { max-height: 220px; }
 .denoise-suggest-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; font-size: 9.5px; color: #a9a9b3; }
 .denoise .range-control { margin-top: 8px; }
-.denoise .inspector-note { margin: 8px 0 0; }
 .denoise > .text-button.full-width { margin-top: 10px; }
 .denoise-preview-title { margin: 12px 0 6px; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #a2a2ac; }
 .denoise-compare { display: flex; gap: 8px; margin-top: 0; }
@@ -520,7 +516,6 @@ img { display: block; }
 .checkbox-field { display: flex; align-items: center; gap: 9px; font-size: 10px; line-height: 1.6; color: #9f9fab; cursor: pointer; }
 .checkbox-field > input { accent-color: var(--accent); }
 .superres-field { margin-top: 16px; }
-.superres-field .inspector-note { margin: 8px 0 0; }
 .superres-field .ml-progress { margin-top: 10px; }
 .info-photo { width: 100%; height: 166px; object-fit: cover; border-radius: 5px; margin-bottom: 18px; }
 .info-filename { display: flex; align-items: center; gap: 8px; margin-bottom: 23px; }
@@ -646,7 +641,6 @@ img { display: block; }
   .tool-button { width: 37px; }
   .tool-button span { font-size: 8px; }
   .editing-tools { gap: 2px; }
-  .section-reset { display: none; }
   .section-actions { gap: 8px; }
   .presets-heading { gap: 9px; }
   .presets-title { padding-right: 9px; }
@@ -686,7 +680,6 @@ img { display: block; }
   .inspector-title { height: 41px; }
   .inspector-close { display: flex; width: 24px; height: 24px; margin-right: -3px; }
   .section-disclosure h3 { font-size: 10.5px; }
-  .section-reset { display: flex; }
   .photo-heading { height: 39px; padding-inline: 16px; }
   .photo-filename { font-size: 10px; }
   .photo-rating { gap: 4px; }
