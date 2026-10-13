@@ -96,15 +96,16 @@ export type DenoiseSource = 'onnx' | 'classic';
 export type SuperresSource = 'onnx';
 
 /**
- * Lightweight denoise state: strength 0..100 plus whether the Auto toggle
- * (keyed on EXIF ISO) picked it. The denoised pixels are a session
+ * Lightweight denoise state: strength 0..100 plus whether the strength is
+ * still the untouched Auto suggestion (keyed on EXIF ISO). The denoised
+ * pixels are a session
  * artifact — the recipe stores only the strength, so reopening a photo
  * re-runs the server pass to restore them. Null/absent when off.
  */
 export interface DenoiseState {
   /** Denoise strength 0..100 (0 = off). */
   strength: number;
-  /** True when the Auto toggle (not the slider) picked the strength. */
+  /** True when the strength is the untouched Auto suggestion (any manual slider move clears it). */
   auto: boolean;
   /** Which denoiser produced the pixels (drives the UI's ML badge). */
   source: DenoiseSource;

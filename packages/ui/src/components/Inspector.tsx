@@ -600,47 +600,58 @@ function DenoiseCloseup({ preview, loupe }: { preview: NonNullable<DenoiseAssist
 
 function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo }) {
   const working = assist.state === 'previewing' || assist.state === 'applying';
-  // Draft strength + auto toggle, reset per photo: high-ISO captures start
-  // on Auto at the ISO suggestion, clean captures on manual 45.
-  const [auto, setAuto] = useState(() => shouldAutoDenoise(photo.iso));
+  // Draft strength, reset per photo: high-ISO captures start at the ISO
+  // suggestion (marked auto), clean captures at manual 45. The slider is
+  // always editable — Auto only sets the suggestion, then the user
+  // fine-tunes; any manual move clears the auto mark (White Balance
+  // pattern: manual edits clear the highlight, the value stays). Nothing
+  // on the photo changes until Preview, then Apply.
   const [slider, setSlider] = useState(() => denoiseStrengthForIso(photo.iso) || DENOISE_MANUAL_DEFAULT);
+  const [auto, setAuto] = useState(() => shouldAutoDenoise(photo.iso));
   // Closeup center in % of the small preview; clicking the preview moves it.
   const [loupe, setLoupe] = useState({ x: 50, y: 50 });
   const previewUrl = assist.preview?.beforeUrl;
   useEffect(() => {
-    setAuto(shouldAutoDenoise(photo.iso));
     setSlider(denoiseStrengthForIso(photo.iso) || DENOISE_MANUAL_DEFAULT);
+    setAuto(shouldAutoDenoise(photo.iso));
   }, [photo.id]);
   useEffect(() => {
     setLoupe({ x: 50, y: 50 });
   }, [previewUrl]);
   const suggestion = denoiseStrengthForIso(photo.iso);
-  const effective = auto ? suggestion : slider;
   // Stale after reload (recipe strength, no session pixels) — except while
   // a fresh preview is on screen, where Apply already covers the re-run.
   const stale = assist.applied !== null && !assist.hasBase && assist.state !== 'preview-ready';
   const appliedTag = assist.applied?.source === 'onnx' ? ' · ML' : '';
   const previewTag = assist.preview?.source === 'onnx' ? ' · ML' : '';
+  // The draft moved past what the on-screen preview shows.
+  const previewStale = assist.preview !== null && slider !== assist.preview.strength;
+  const autoTitle = suggestion <= 0
+    ? `ISO ${photo.iso} needs no denoise`
+    : auto
+      ? `Auto suggestion ${suggestion} — drag the slider to fine-tune`
+      : `Set strength to the ISO ${photo.iso} suggestion (${suggestion})`;
   // No inner heading: the control lives in its own "Denoise" section whose
   // header already carries the title and the ML badge.
   return <div className="denoise" data-testid="denoise">
-    <div className="denoise-auto-row" data-testid="denoise-auto-row">
-      <span>Auto</span>
-      <Toggle checked={auto} onChange={() => setAuto(!auto)} label="Auto denoise strength from ISO" />
+    <div className="denoise-suggest-row" data-testid="denoise-auto-row">
+      <span>{suggestion > 0 ? `Suggested for ISO ${photo.iso}: ${suggestion}` : `ISO ${photo.iso} looks clean — no suggestion`}</span>
+      <button className={`auto-small${auto ? ' is-active' : ''}`} data-testid="denoise-auto" aria-pressed={auto} disabled={working || suggestion <= 0} title={autoTitle} onClick={() => { setSlider(suggestion); setAuto(true); }}>Auto</button>
     </div>
-    <RangeControl label="Strength" value={auto ? suggestion : slider} min={0} max={100} step={1} defaultValue={DENOISE_MANUAL_DEFAULT} disabled={auto || working} testId="denoise-strength" onChange={setSlider} />
+    <RangeControl label="Strength" value={slider} min={0} max={100} step={1} defaultValue={DENOISE_MANUAL_DEFAULT} disabled={working} testId="denoise-strength" onChange={(next) => { setSlider(next); setAuto(false); }} />
     <p className="inspector-note" data-testid="denoise-hint">
       {auto
-        ? (suggestion > 0 ? `Auto · ISO ${photo.iso} → ${suggestion}` : `Auto · ISO ${photo.iso} needs no denoise`)
-        : 'Manual strength — previews on a small downsample first'}
+        ? `Auto ${suggestion} — drag the slider to fine-tune`
+        : 'Draft strength — Preview, then Apply, to change the photo'}
     </p>
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
     {working && <div className="suggestion-actions"><button className="text-button" data-testid="denoise-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
     {!working && assist.state !== 'preview-ready' && !assist.applied && <>
-      <button className="slim-button full-width" data-testid="denoise-preview" disabled={effective <= 0} title={effective <= 0 ? 'Raise the strength to preview' : 'Preview this strength on a small downsample'} onClick={() => assist.onPreview(effective, auto)}><span>Preview denoise</span></button>
-      <p className="inspector-note">Denoises on the photo server — a small preview first, then the full photo on apply. The recipe keeps only the strength.</p>
+      <button className="slim-button full-width" data-testid="denoise-preview" disabled={slider <= 0} title={slider <= 0 ? 'Raise the strength to preview' : `Show strength ${slider} as a small before/after below, in this panel`} onClick={() => assist.onPreview(slider, auto)}><span>Preview denoise</span></button>
+      <p className="inspector-note">How it works: 1) pick a strength, 2) Preview shows a small before/after below in this panel, 3) Apply denoises the full photo. Only the strength is saved.</p>
     </>}
     {!working && assist.state === 'preview-ready' && assist.preview && <>
+      <p className="denoise-preview-title" data-testid="denoise-preview-title">Preview — small downsample, shown here</p>
       <div className="denoise-compare" data-testid="denoise-compare" title="Click to move the 4× closeup" onClick={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return;
@@ -652,21 +663,23 @@ function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo
         <figure><img src={assist.preview.afterUrl} alt="Denoised preview" data-testid="denoise-after" /><figcaption>After</figcaption></figure>
       </div>
       <DenoiseCloseup preview={assist.preview} loupe={loupe} />
-      <p className="inspector-note" role="status" data-testid="denoise-summary">Preview {assist.preview.strength}{previewTag}</p>
+      <p className="inspector-note" role="status" data-testid="denoise-summary">Preview {assist.preview.strength}{previewTag} · small downsample</p>
+      {previewStale && <p className="inspector-note" data-testid="denoise-preview-stale">Strength is now {slider} — update the preview to see it.</p>}
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="slim-button" data-testid="denoise-apply" title="Denoise the full photo and edit from the clean pixels" onClick={() => assist.onApply(effective, auto)}>Apply to photo</button>
-        <button className="text-button" data-testid="denoise-repreview" title="Preview the current strength again" onClick={() => assist.onPreview(effective, auto)}>Update preview</button>
+        <button className="slim-button" data-testid="denoise-apply" title={`Denoise the full photo at strength ${slider} and edit from the clean pixels`} onClick={() => assist.onApply(slider, auto)}>Apply to photo</button>
+        <button className="text-button" data-testid="denoise-repreview" title={`Preview the current strength (${slider}) again`} onClick={() => assist.onPreview(slider, auto)}>Update preview</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>}
     {!working && assist.state === 'applied' && assist.hasBase && assist.applied && <>
       <p className="inspector-note" role="status" data-testid="denoise-applied">Denoised {assist.applied.strength}{appliedTag} — the canvas and export use the clean photo.</p>
       {assist.preview && <DenoiseCloseup preview={assist.preview} loupe={loupe} />}
-      <p className="inspector-note">Compare (B) shows the noisy original against the clean photo.</p>
+      <p className="inspector-note" data-testid="denoise-compare-hint">On the photo, Compare (B in the toolbar) toggles the noisy original against this clean photo.</p>
+      {slider !== assist.applied.strength && <p className="inspector-note" data-testid="denoise-draft-diff">Draft {slider} differs from applied {assist.applied.strength} — preview it below before applying.</p>}
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="text-button" data-testid="denoise-repreview" title="Try another strength on a small preview first" onClick={() => assist.onPreview(effective, auto)}>Try another strength</button>
+        <button className="text-button" data-testid="denoise-repreview" title="Preview a different strength below before applying" onClick={() => assist.onPreview(slider, auto)}>Preview another strength</button>
         <button className="text-button" data-testid="denoise-clear" title="Drop the denoised photo and edit from the original" onClick={assist.onClear}>Clear</button>
       </div>
     </>}
@@ -680,7 +693,7 @@ function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo
     {assist.state === 'error' && <>
       <p className="inspector-note" role="alert">{assist.message ?? 'Denoise failed.'}</p>
       <div className="suggestion-actions">
-        <button className="text-button" data-testid="denoise-retry" onClick={() => assist.onPreview(effective, auto)}>Retry</button>
+        <button className="text-button" data-testid="denoise-retry" onClick={() => assist.onPreview(slider, auto)}>Retry</button>
         <button className="text-button" onClick={assist.onDismiss}>Dismiss</button>
       </div>
     </>}

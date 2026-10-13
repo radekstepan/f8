@@ -36,7 +36,7 @@ export interface DenoiseAppliedBase {
   width: number;
   height: number;
   strength: number;
-  /** True when the Auto toggle (not the slider) picked the strength. */
+  /** True when the strength is the untouched Auto suggestion (any manual slider move clears it). */
   auto: boolean;
   source: DenoiseSource;
 }

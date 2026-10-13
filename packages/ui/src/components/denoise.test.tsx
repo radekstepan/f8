@@ -94,20 +94,39 @@ describe('denoise control', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT }, makePhoto())).not.toContain('data-testid="denoise"');
   });
 
-  it('starts high-ISO captures on auto with the ISO suggestion and an ML badge', () => {
+  it('starts high-ISO captures on the auto suggestion with the slider still editable', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
     expect(html).toContain('data-testid="denoise"');
     expect(html).toContain('data-testid="denoise-strength"');
     expect(html).toContain('data-testid="denoise-preview"');
-    expect(html).toContain('Auto · ISO 3200 → 50');
+    expect(html).toContain('Suggested for ISO 3200: 50');
+    expect(html).toContain('Auto 50 — drag the slider to fine-tune');
+    // Auto is a pressed momentary button (straighten pattern), not a locking
+    // toggle: the slider stays enabled so Auto flows into fine-tuning.
+    expect(html).toContain('class="auto-small is-active" data-testid="denoise-auto"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).not.toContain('disabled');
     expect(html).toContain('ml-badge');
     expect(html).toContain('>ML<');
   });
 
-  it('starts clean captures on a manual strength', () => {
+  it('starts clean captures on a manual strength with auto disabled', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(100), assist());
-    expect(html).toContain('Manual strength — previews on a small downsample first');
+    expect(html).toContain('Draft strength — Preview, then Apply, to change the photo');
     expect(html).toContain('data-testid="denoise-preview"');
+    expect(html).toContain('ISO 100 looks clean — no suggestion');
+    expect(html).toContain('class="auto-small" data-testid="denoise-auto"');
+    expect(html).toContain('title="ISO 100 needs no denoise"');
+    const autoTag = html.match(/<button[^>]*data-testid="denoise-auto"[^>]*>/)?.[0] ?? '';
+    expect(autoTag).toContain('disabled');
+    // The slider itself is never locked: only the meaningless Auto is off.
+    expect(html).not.toContain('range-control is-disabled');
+  });
+
+  it('explains the draft → preview → apply flow where the idle button lives', () => {
+    const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
+    expect(html).toContain('How it works: 1) pick a strength, 2) Preview shows a small before/after below in this panel, 3) Apply denoises the full photo. Only the strength is saved.');
+    expect(html).toContain('title="Show strength 50 as a small before/after below, in this panel"');
   });
 
   it('shows the preview before/after with apply and the ML tag', () => {
@@ -119,12 +138,41 @@ describe('denoise control', () => {
         preview: { beforeUrl: 'data:before', afterUrl: 'data:after', strength: 65, source: 'onnx' },
       }),
     );
+    expect(html).toContain('data-testid="denoise-preview-title"');
+    expect(html).toContain('Preview — small downsample, shown here');
     expect(html).toContain('data-testid="denoise-compare"');
     expect(html).toContain('data-testid="denoise-before"');
     expect(html).toContain('data-testid="denoise-after"');
     expect(html).toContain('Preview 65 · ML');
     expect(html).toContain('data-testid="denoise-apply"');
     expect(html).toContain('Apply to photo');
+    // Apply follows the draft slider (50 here), so its title names it.
+    expect(html).toContain('title="Denoise the full photo at strength 50 and edit from the clean pixels"');
+  });
+
+  it('flags the preview as stale when the draft moved past it', () => {
+    // Draft starts at the ISO 3200 suggestion (50); the on-screen preview
+    // shows 65, so the control must say the slider moved on.
+    const stale = renderAdjust(
+      { ...DEFAULT_EDIT },
+      makePhoto(3200),
+      assist({
+        state: 'preview-ready',
+        preview: { beforeUrl: 'data:before', afterUrl: 'data:after', strength: 65, source: 'onnx' },
+      }),
+    );
+    expect(stale).toContain('data-testid="denoise-preview-stale"');
+    expect(stale).toContain('Strength is now 50 — update the preview to see it.');
+    // A preview at the current draft shows no such note.
+    const fresh = renderAdjust(
+      { ...DEFAULT_EDIT },
+      makePhoto(3200),
+      assist({
+        state: 'preview-ready',
+        preview: { beforeUrl: 'data:before', afterUrl: 'data:after', strength: 50, source: 'onnx' },
+      }),
+    );
+    expect(fresh).not.toContain('data-testid="denoise-preview-stale"');
   });
 
   it('labels classical previews as approximate and omits the ML tag', () => {
@@ -151,7 +199,27 @@ describe('denoise control', () => {
     expect(html).toContain('data-testid="denoise-applied"');
     expect(html).toContain('Denoised 65 · ML');
     expect(html).toContain('data-testid="denoise-repreview"');
+    expect(html).toContain('Preview another strength');
+    expect(html).not.toContain('Try another strength');
     expect(html).toContain('data-testid="denoise-clear"');
+  });
+
+  it('flags the applied draft when it differs from the applied strength', () => {
+    // Draft starts at the ISO 3200 suggestion (50); applied holds 65.
+    const drifted = renderAdjust(
+      { ...DEFAULT_EDIT, denoise: APPLIED },
+      makePhoto(3200),
+      assist({ state: 'applied', applied: APPLIED, hasBase: true }),
+    );
+    expect(drifted).toContain('data-testid="denoise-draft-diff"');
+    expect(drifted).toContain('Draft 50 differs from applied 65 — preview it below before applying.');
+    // A draft matching the applied strength shows no such note.
+    const matching = renderAdjust(
+      { ...DEFAULT_EDIT, denoise: { strength: 50, auto: true, source: 'onnx' } },
+      makePhoto(3200),
+      assist({ state: 'applied', applied: { strength: 50, auto: true, source: 'onnx' }, hasBase: true }),
+    );
+    expect(matching).not.toContain('data-testid="denoise-draft-diff"');
   });
 
   it('offers a one-click restore when the recipe outlives the session pixels', () => {
@@ -227,7 +295,8 @@ describe('denoise control', () => {
       }),
     );
     expect(html).toContain('data-testid="denoise-closeup"');
-    expect(html).toContain('Compare (B) shows the noisy original against the clean photo.');
+    expect(html).toContain('data-testid="denoise-compare-hint"');
+    expect(html).toContain('On the photo, Compare (B in the toolbar) toggles the noisy original against this clean photo.');
   });
 
   it('magnifies the closeup boxes 4x without tiling', () => {
@@ -235,5 +304,18 @@ describe('denoise control', () => {
     const rule = readFileSync(cssPath, 'utf8').match(/\.denoise-zoom\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(rule).toMatch(/background-size\s*:\s*400%/);
     expect(rule).toMatch(/background-repeat\s*:\s*no-repeat/);
+  });
+
+  it('lays the suggestion row out in flex and titles the preview like its siblings', () => {
+    const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
+    const css = readFileSync(cssPath, 'utf8');
+    const suggest = css.match(/\.denoise-suggest-row\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(suggest).toMatch(/display\s*:\s*flex/);
+    expect(suggest).toMatch(/justify-content\s*:\s*space-between/);
+    const title = css.match(/\.denoise-preview-title\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(title).toMatch(/text-transform\s*:\s*uppercase/);
+    // The locking-toggle row is gone; notes use the sibling 8px rhythm.
+    expect(css).not.toMatch(/\.denoise-auto-row\s*\{/);
+    expect(css).toMatch(/\.denoise \.inspector-note\s*\{[^}]*margin:\s*8px 0 0/);
   });
 });

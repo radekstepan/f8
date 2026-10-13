@@ -7,8 +7,8 @@
 // holds the deterministic pieces:
 //
 // - denoiseStrengthForIso / shouldAutoDenoise: the EXIF-ISO-keyed auto
-//   suggestion (the Auto toggle follows the capture ISO, the slider is the
-//   manual override).
+//   suggestion (the Auto button sets it, the slider then fine-tunes — any
+//   manual move clears the auto mark).
 // - packDenoiseInput / parseDenoiseOutput: the ONNX wire contract (RGB
 //   float32 NCHW 0..1 in, denoised image same shape out — verified against
 //   the npuscale DnCNN export, whose output is the clean image directly,
