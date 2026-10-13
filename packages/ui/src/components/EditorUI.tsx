@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode, type Ref } from 'react';
-import { Check, ChevronDown, X } from 'lucide-react';
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ChangeEvent, type CSSProperties, type ReactNode, type Ref } from 'react';
+import { Check, ChevronDown, Undo2, X } from 'lucide-react';
 
 export function BrandMark({ size = 24 }: { size?: number }) {
   return (
@@ -125,6 +125,38 @@ export function RangeControl({ label, value, min = -100, max = 100, step = 1, de
 
 export function MenuItem({ children, shortcut, onClick, disabled, checked, danger }: { children: ReactNode; shortcut?: string; onClick: () => void; disabled?: boolean; checked?: boolean; danger?: boolean }) {
   return <button type="button" role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'} aria-checked={checked} className={`menu-item ${danger ? 'is-danger' : ''}`} disabled={disabled} onClick={onClick}>{checked !== undefined && <span className="menu-check">{checked && <Check size={13} />}</span>}<span>{children}</span>{shortcut && <kbd>{shortcut}</kbd>}</button>;
+}
+
+/** The shared divider between menu items; always exposes the separator role. */
+export function MenuSeparator() {
+  return <div className="menu-separator" role="separator" />;
+}
+
+/** The shared "ML" badge marking machine-learning features. The hint names the model in a tooltip. */
+export function MlBadge({ hint }: { hint?: string }) {
+  return <span className="ml-badge" {...(hint ? { title: hint } : {})}>ML</span>;
+}
+
+/** The shared small undo icon beside ML/auto actions (the revert affordance next to an applied state). */
+export function RevertButton({ testId, label, onClick }: { testId: string; label: string; onClick: () => void }) {
+  return <IconButton className="ml-revert" data-testid={testId} label={label} onClick={onClick}><Undo2 size={11} /></IconButton>;
+}
+
+export interface SegmentedOption<T extends string> {
+  value: T;
+  label: string;
+  title: string;
+  testId: string;
+}
+
+/** The shared pill-style option group (repair method, search effort). One option is always active. */
+export function SegmentedControl<T extends string>({ label, testId, value, options, onChange }: { label: string; testId: string; value: T; options: SegmentedOption<T>[]; onChange: (value: T) => void }) {
+  return <div className="segmented-control" role="group" aria-label={label} data-testid={testId}>{options.map((option) => <button key={option.value} data-testid={option.testId} className={value === option.value ? 'is-active' : ''} title={option.title} onClick={() => onChange(option.value)}>{option.label}</button>)}</div>;
+}
+
+/** The shared labeled checkbox row (detection confirm lists, export toggles). */
+export function CheckField({ checked, disabled, testId, label, onChange, children }: { checked: boolean; disabled?: boolean; testId?: string; label?: string; onChange: (event: ChangeEvent<HTMLInputElement>) => void; children: ReactNode }) {
+  return <label className="checkbox-field"><input type="checkbox" {...(testId ? { 'data-testid': testId } : {})} checked={checked} disabled={disabled} onChange={onChange} {...(label ? { 'aria-label': label } : {})} /><span>{children}</span></label>;
 }
 
 export function SelectField({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {

@@ -1,13 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Clock3, MoreHorizontal, Folder, Heart, Images, Import, Plus, Search } from 'lucide-react';
 import type { Album, Photo } from '@f8/core';
 import { MOVE_PHOTOS_MIME, anchorMenuBelowTrigger, decodeMovePayload, isRecentlyEdited } from '@f8/core';
 import { IconButton, MenuItem } from './EditorUI.js';
-
-// The open menu is measured before paint so its first frame already sits at
-// the anchored position; on the server (test renders) this degrades to a
-// plain effect.
-const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+import { useIsomorphicLayoutEffect } from '../hooks/useIsomorphicLayoutEffect.js';
+import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
 
 interface SidebarProps {
   photos: Photo[];
@@ -44,19 +41,9 @@ function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, isDropTarge
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (event: PointerEvent) => { if (!ref.current?.contains(event.target as Node)) setOpen(false); };
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
-    // The menu floats at measured coordinates, so a scroll or resize would
-    // strand it away from its row: dismiss instead of letting it drift.
-    const onViewport = () => setOpen(false);
-    document.addEventListener('pointerdown', onPointer);
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('scroll', onViewport, true);
-    window.addEventListener('resize', onViewport);
-    return () => { document.removeEventListener('pointerdown', onPointer); document.removeEventListener('keydown', onKey); document.removeEventListener('scroll', onViewport, true); window.removeEventListener('resize', onViewport); };
-  }, [open ]);
+  // The menu floats at measured coordinates, so a scroll or resize would
+  // strand it away from its row: dismiss instead of letting it drift.
+  useMenuDismiss(ref, () => setOpen(false), { enabled: open, dismissOnViewportChange: true });
   // Measure the open menu and pin it into the viewport: below the trigger
   // and right-aligned, flipping above near the bottom edge. The menu stays
   // in the row's React subtree, so outside-click dismissal is unchanged.

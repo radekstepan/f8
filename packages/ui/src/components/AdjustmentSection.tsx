@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronRight, RotateCcw, Undo2 } from 'lucide-react';
-import { IconButton, Toggle } from './EditorUI.js';
+import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
+import { IconButton, RevertButton, Toggle } from './EditorUI.js';
 
 export interface AdjustmentMl {
   /** Testid prefix: `${id}-ml` for the button, `${id}-ml-revert` for the revert icon. */
@@ -50,5 +50,5 @@ export function AdjustmentSection({ title, icon, children, initiallyOpen = true,
   };
   const lower = title.toLowerCase();
   const mlTitle = !ml ? '' : ml.applied ? `ML ${lower} applied — click to revert` : ml.canRevert ? `Re-apply automatic ${lower} with ML` : `Automatically adjust ${lower} with ML`;
-  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{ml && open && <button className={`ml-button${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-ml`} aria-pressed={ml.applied} title={mlTitle} onClick={ml.onToggle}>ML</button>}{ml && ml.canRevert && open && <IconButton className="ml-revert" data-testid={`${ml.id}-ml-revert`} label={`Revert ML ${lower}`} onClick={ml.onRevert}><Undo2 size={11} /></IconButton>}{onReset && <IconButton className="section-reset" label={`Reset ${lower}`} onClick={onReset}><RotateCcw size={11} /></IconButton>}{onToggle && <Toggle checked={Boolean(enabled)} onChange={onToggle} label={toggleLabel ?? `Show ${lower}`} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
+  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{ml && open && <button className={`ml-button${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-ml`} aria-pressed={ml.applied} title={mlTitle} onClick={ml.onToggle}>ML</button>}{ml && ml.canRevert && open && <RevertButton testId={`${ml.id}-ml-revert`} label={`Revert ML ${lower}`} onClick={ml.onRevert} />}{onReset && <IconButton className="section-reset" label={`Reset ${lower}`} onClick={onReset}><RotateCcw size={11} /></IconButton>}{onToggle && <Toggle checked={Boolean(enabled)} onChange={onToggle} label={toggleLabel ?? `Show ${lower}`} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
 }
