@@ -386,7 +386,6 @@ img { display: block; }
 .assist-message > p { font-size: 9px; line-height: 1.8; color: #c2c2cb; margin: 0; }
 .assist-message.is-error { border-color: #6e3f3a; background: #262023; }
 .assist-message.is-error > p { color: #df9a94; }
-.assist-message .suggestion-actions { margin-top: 8px; }
 .ml-badge { display: inline-block; font-size: 8px; font-weight: 700; letter-spacing: .04em; color: #f0d397; border: 1px solid #8b7650; border-radius: 3px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
 .object-removal { margin-top: 4px; }
 .face-enhance .inspector-note { margin: 8px 0 0; }

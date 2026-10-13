@@ -260,7 +260,7 @@ function MlProgressView({ progress, onCancel }: { progress: { fraction: number; 
     {!isDone && <div className={`ml-progress-bar${!showPercent && !isError ? ' is-indeterminate' : ''}`}>{showPercent || isError ? <span style={{ width: `${pct}%` }} /> : <span className="ml-progress-pulse" />}</div>}
     <p className="inspector-note" data-testid="ml-progress-stage">{headline}</p>
     {areaNote && <p className="inspector-note ml-area-note" data-testid="ml-area-note">{areaNote}</p>}
-    {!isError && !isDone && onCancel && <button className="text-button" data-testid="ml-cancel" title="Stop this repair and restart the worker" onClick={onCancel}>Cancel repair</button>}
+    {!isError && !isDone && onCancel && <div className="suggestion-actions"><button className="text-button" data-testid="ml-cancel" title="Stop this repair and restart the worker" onClick={onCancel}>Cancel repair</button></div>}
   </div>;
 }
 
