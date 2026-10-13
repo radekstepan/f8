@@ -76,6 +76,16 @@ describe('scene enhance row', () => {
     expect(html).toContain('>ML<');
   });
 
+  it('keeps the section title visible before and after applying', () => {
+    const idle = renderAdjust({ ...DEFAULT_EDIT }, noop);
+    expect(idle).toContain('<h3>Scene Enhance</h3>');
+    const applied = renderAdjust(
+      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
+      noop,
+    );
+    expect(applied).toContain('<h3>Scene Enhance</h3>');
+  });
+
   it('labels the detected scene with confidence once ML enhance is applied', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'portrait', confidence: 0.86 } },

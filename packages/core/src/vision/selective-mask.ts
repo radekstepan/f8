@@ -460,6 +460,10 @@ export function normalizeSelectiveAdjust(
       subject: candidate.subject === undefined ? { ...neutral } : clean(candidate.subject),
       background: candidate.background === undefined ? { ...neutral } : clean(candidate.background),
       source: candidate.source === "classic" ? "classic" : "onnx",
+      // The bypass toggle survives normalization so the render path and the
+      // UI agree on it; anything but an explicit false means enabled, and
+      // legacy recipes (no key) stay active.
+      ...(candidate.enabled === false ? { enabled: false as const } : {}),
     };
   }
   if (candidate.target !== "subject" && candidate.target !== "background") return null;
@@ -474,12 +478,12 @@ export function normalizeSelectiveAdjust(
   };
 }
 
-/** True when a stored selective adjust changes at least one pixel (either side). */
+/** True when a stored selective adjust changes at least one pixel (either side, and enabled). */
 export function isSelectiveAdjustActive(
   state: SelectiveAdjustState | LegacySelectiveAdjustState | null | undefined,
 ): state is SelectiveAdjustState {
   const normalized = normalizeSelectiveAdjust(state);
-  if (!normalized) return false;
+  if (!normalized || normalized.enabled === false) return false;
   return !isSelectiveAdjustParamsNeutral(normalized.subject) || !isSelectiveAdjustParamsNeutral(normalized.background);
 }
 

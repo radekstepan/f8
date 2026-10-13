@@ -171,13 +171,15 @@ describe('denoise control', () => {
     expect(html).toContain('data-testid="denoise-retry"');
   });
 
-  it('lives inside the ML Enhance section, with no standalone Denoise section', () => {
+  it('lives in its own Denoise section, with no inner heading of its own', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
-    expect(html).not.toContain('<h3>Denoise</h3>');
-    const heading = html.indexOf('<h3>ML Enhance</h3>');
+    expect(html).toContain('<h3>Denoise</h3><span class="ml-badge"');
+    const heading = html.indexOf('<h3>Denoise</h3>');
     const control = html.indexOf('data-testid="denoise"');
-    expect(heading).toBeGreaterThan(-1);
     expect(control).toBeGreaterThan(heading);
+    // The section header carries the title + ML badge, so the control
+    // renders no duplicate inner heading.
+    expect(html).not.toContain('denoise-head');
     // Still above the histogram, with the other ML actions.
     expect(control).toBeLessThan(html.indexOf('histogram-section'));
   });

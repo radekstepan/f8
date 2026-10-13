@@ -46,6 +46,7 @@ function assist(overrides: Partial<SelectiveMaskAssist> = {}): SelectiveMaskAssi
     applied: null,
     onDetect: noop,
     onAdjust: noop,
+    onToggle: noop,
     onClear: noop,
     onDismiss: noop,
     ...overrides,
@@ -105,6 +106,19 @@ describe('selective mask control', () => {
     expect(html).toContain('Changes save automatically');
   });
 
+  it('keeps the section title visible before and after detection', () => {
+    // The title names the action in every state, so the sliders always
+    // have a visible group — the detect button may come and go.
+    const idle = renderAdjust({ ...DEFAULT_EDIT }, assist());
+    expect(idle).toContain('<h3>Subject &amp; Background</h3>');
+    const applied = renderAdjust(
+      { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
+      assist({ applied: APPLIED }),
+    );
+    expect(applied).toContain('<h3>Subject &amp; Background</h3>');
+    expect(applied).not.toContain('data-testid="selective-mask-detect"');
+  });
+
   it('auto-applies an ML result with no apply step or target toggle', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT },
@@ -145,13 +159,13 @@ describe('selective mask control', () => {
     expect(failed).toContain('data-testid="selective-mask-retry"');
   });
 
-  it('shows the applied badge with both live slider groups, rescan, and clear', () => {
+  it('shows an on-toggle with both live slider groups, rescan, and clear', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
       assist({ applied: APPLIED }),
     );
-    expect(html).toContain('data-testid="selective-mask-applied"');
-    expect(html).toContain('Subject (+0.5 EV · C +10) · ML');
+    expect(html).toContain('aria-label="Enable subject and background enhance"');
+    expect(html).toContain('aria-checked="true"');
     expect(html).toContain('data-testid="selective-mask-subject-group"');
     expect(html).toContain('data-testid="selective-mask-subject-exposure"');
     expect(html).toContain('data-testid="selective-mask-subject-contrast"');
@@ -164,7 +178,7 @@ describe('selective mask control', () => {
     expect(html).not.toContain('data-testid="selective-mask-detect"');
   });
 
-  it('summarizes both sides at once without an ML tag for classical masks', () => {
+  it('drops the golden settings summary — the sliders show the values', () => {
     const both: SelectiveAdjustState = {
       ...APPLIED,
       subject: { exposure: 0.5, contrast: 0, saturation: 0 },
@@ -175,8 +189,13 @@ describe('selective mask control', () => {
       { ...DEFAULT_EDIT, selectiveAdjust: both },
       assist({ applied: both }),
     );
-    expect(html).toContain('Subject (+0.5 EV) · Background (S -20)');
-    expect(html).not.toContain('· ML');
+    expect(html).not.toContain('data-testid="selective-mask-applied"');
+    expect(html).not.toContain('Subject (+0.5 EV)');
+    expect(html).not.toContain('Background (S -20)');
+    expect(html).not.toContain('No changes yet');
+    // The sliders themselves still carry both sides' values.
+    expect(html).toContain('data-testid="selective-mask-subject-exposure"');
+    expect(html).toContain('data-testid="selective-mask-background-saturation"');
   });
 
   it('keeps the sliders on a stored-but-neutral mask instead of dropping to the detect button', () => {
@@ -189,9 +208,28 @@ describe('selective mask control', () => {
       { ...DEFAULT_EDIT, selectiveAdjust: neutral },
       assist({ applied: neutral }),
     );
-    expect(html).toContain('No changes yet · ML');
+    expect(html).toContain('aria-label="Enable subject and background enhance"');
     expect(html).toContain('data-testid="selective-mask-subject-exposure"');
     expect(html).toContain('data-testid="selective-mask-background-exposure"');
     expect(html).not.toContain('data-testid="selective-mask-detect"');
+  });
+
+  it('toggles the stored adjust off and on without deleting the mask', () => {
+    const on = renderAdjust(
+      { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
+      assist({ applied: APPLIED }),
+    );
+    expect(on).toContain('aria-checked="true"');
+    const off = renderAdjust(
+      { ...DEFAULT_EDIT, selectiveAdjust: { ...APPLIED, enabled: false } },
+      assist({ applied: { ...APPLIED, enabled: false } }),
+    );
+    expect(off).toContain('aria-label="Enable subject and background enhance"');
+    expect(off).toContain('aria-checked="false"');
+    // The sliders and rescan/clear stay, so values survive the toggle.
+    expect(off).toContain('data-testid="selective-mask-subject-exposure"');
+    expect(off).toContain('data-testid="selective-mask-background-exposure"');
+    expect(off).toContain('data-testid="selective-mask-redetect"');
+    expect(off).toContain('data-testid="selective-mask-clear"');
   });
 });

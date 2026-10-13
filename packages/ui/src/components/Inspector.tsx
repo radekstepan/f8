@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bandage, Brush, ChevronDown, Circle, CircleDashed, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Layers, MoreHorizontal, Palette, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, X } from 'lucide-react';
+import { Bandage, Brush, ChevronDown, Circle, CircleDashed, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Layers, MoreHorizontal, Palette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Waves, X } from 'lucide-react';
 import { CROP_RATIOS, SCENE_DISPLAY_NAMES, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, shouldAutoDenoise, strokeIdForPoint } from '@f8/core';
 import type { ChangeEdit, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, MlCategory, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
@@ -172,6 +172,8 @@ export interface SelectiveMaskAssist {
   onDetect: () => void;
   /** Live-tweak one side's stored params (each drag coalesces to one undo step). */
   onAdjust: (target: SelectiveTarget, patch: Partial<SelectiveAdjustParams>) => void;
+  /** Bypass/restore both sides' stored params without deleting the mask. */
+  onToggle: () => void;
   /** Remove the stored mask + params. */
   onClear: () => void;
   onDismiss: () => void;
@@ -534,25 +536,13 @@ function SelectiveParamGroup({ label, values, onParam, testIdPrefix }: { label: 
   </div>;
 }
 
-function selectiveSummary(values: SelectiveAdjustState, source: SelectiveMaskSource | null): string {
-  const signed = (value: number): string => `${value >= 0 ? '+' : ''}${Math.round(value * 100) / 100}`;
-  const side = (label: string, params: SelectiveAdjustParams): string | null => {
-    const parts = [
-      ...(params.exposure !== 0 ? [`${signed(params.exposure)} EV`] : []),
-      ...(params.contrast !== 0 ? [`C ${signed(params.contrast)}`] : []),
-      ...(params.saturation !== 0 ? [`S ${signed(params.saturation)}`] : []),
-    ];
-    return parts.length > 0 ? `${label} (${parts.join(' · ')})` : null;
-  };
-  const sides = [side('Subject', values.subject), side('Background', values.background)].filter((entry): entry is string => entry !== null);
-  return (sides.length > 0 ? sides.join(' · ') : 'No changes yet') + (source === 'onnx' ? ' · ML' : '');
-}
-
 function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
   const working = assist.state === 'detecting';
   const mlTag = assist.source === 'onnx' ? ' · ML' : '';
   // No draft state: the app stores the mask the moment segmentation lands,
-  // so every slider below patches the recipe and previews live.
+  // so every slider below patches the recipe and previews live. No applied
+  // summary line either — the sliders themselves show the values, and the
+  // section title above names the action in every state.
   return <div className="selective-mask" data-testid="selective-mask">
     {assist.state === 'idle' && !assist.applied && <>
       <button className="slim-button full-width" data-testid="selective-mask-detect" title="Segment the subject with ML, then adjust the subject and background live" onClick={assist.onDetect}><span>Enhance Subject &amp; Background <span className="ml-badge" title="The subject is segmented by a machine-learning model on the photo server">ML</span></span></button>
@@ -560,7 +550,7 @@ function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
     </>}
     {assist.applied && <>
       <div className="auto-enhance-row selective-mask-row">
-        <span className="scene-enhance-scene" data-testid="selective-mask-applied" title="Selective adjustments applied through the subject mask">{selectiveSummary(assist.applied, assist.applied.source)}</span>
+        <Toggle checked={assist.applied.enabled !== false} onChange={assist.onToggle} label="Enable subject and background enhance" />
         <div className="suggestion-actions">
           <button className="text-button" data-testid="selective-mask-redetect" title="Segment the subject again (keeps your slider values)" onClick={assist.onDetect}>Rescan</button>
           <button className="text-button" data-testid="selective-mask-clear" title="Remove the subject mask and its adjustments" onClick={assist.onClear}>Clear</button>
@@ -624,8 +614,9 @@ function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo
   const stale = assist.applied !== null && !assist.hasBase && assist.state !== 'preview-ready';
   const appliedTag = assist.applied?.source === 'onnx' ? ' · ML' : '';
   const previewTag = assist.preview?.source === 'onnx' ? ' · ML' : '';
+  // No inner heading: the control lives in its own "Denoise" section whose
+  // header already carries the title and the ML badge.
   return <div className="denoise" data-testid="denoise">
-    <div className="denoise-head"><span>Denoise</span><span className="ml-badge" title="Denoised by a machine-learning model on the photo server">ML</span></div>
     <div className="denoise-auto-row" data-testid="denoise-auto-row">
       <span>Auto</span>
       <Toggle checked={auto} onChange={() => setAuto(!auto)} label="Auto denoise strength from ISO" />
@@ -821,7 +812,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="classic-enhance" data-testid="auto-enhance"><button className={`slim-button full-width${edit.autoEnhanced && !edit.sceneEnhance ? ' is-active' : ''}`} data-testid="auto-enhance-apply" aria-pressed={edit.autoEnhanced && !edit.sceneEnhance} title="Automatically enhance exposure, contrast, and color; click again to revert" onClick={onAuto}><Sparkles size={13} /><span>Auto Enhance</span></button></div>{(onAutoScene || faceAssist || selectiveAssist || denoiseAssist) && <AdjustmentSection title="ML Enhance" icon={<Sparkles size={14} />} badge={<span className="ml-badge" title="Each action below is powered by a machine-learning model">ML</span>}><div className="ml-enhance" data-testid="ml-enhance">{onAutoScene && <SceneEnhanceControl edit={edit} onAutoScene={onAutoScene} />}{faceAssist && <FaceEnhanceControl assist={faceAssist} />}{selectiveAssist && <SelectiveMaskControl assist={selectiveAssist} />}{denoiseAssist && <DenoiseControl assist={denoiseAssist} photo={photo} />}</div></AdjustmentSection>}<Histogram data={histogram} photo={photo} />
+    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="classic-enhance" data-testid="auto-enhance"><button className={`slim-button full-width${edit.autoEnhanced && !edit.sceneEnhance ? ' is-active' : ''}`} data-testid="auto-enhance-apply" aria-pressed={edit.autoEnhanced && !edit.sceneEnhance} title="Automatically enhance exposure, contrast, and color; click again to revert" onClick={onAuto}><Sparkles size={13} /><span>Auto Enhance</span></button></div>{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} badge={<span className="ml-badge" title="The scene is classified by a machine-learning model on your device">ML</span>}><SceneEnhanceControl edit={edit} onAutoScene={onAutoScene} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} badge={<span className="ml-badge" title="Faces are detected by a machine-learning model on the photo server">ML</span>}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} badge={<span className="ml-badge" title="The subject is segmented by a machine-learning model on the photo server">ML</span>}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <AdjustmentSection title="Denoise" icon={<Waves size={14} />} badge={<span className="ml-badge" title="Denoised by a machine-learning model on the photo server">ML</span>}><DenoiseControl assist={denoiseAssist} photo={photo} /></AdjustmentSection>}<Histogram data={histogram} photo={photo} />
       <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} enabled={visibleSections.whiteBalance} onToggle={() => setSectionVisible('whiteBalance', !visibleSections.whiteBalance)} open={visibleSections.whiteBalance} onOpenChange={(open) => setSectionVisible('whiteBalance', open)} ml={{ id: 'white-balance', applied: Boolean(mlApplied?.whiteBalance), onToggle: onAutoWhiteBalance }} onReset={() => onChange({ temperature: 5500, tint: 0 })}>
         {rangeEnabled('whiteBalanceEnabled', 'temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false })}
         {rangeEnabled('whiteBalanceEnabled', 'tint', 'Tint', { color: 'tint' })}

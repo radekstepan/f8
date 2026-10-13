@@ -614,6 +614,18 @@ export default function App() {
     handleEditChange({ selectiveAdjust: { ...stored, [target]: { ...stored[target], ...patch } } }, 'selective-mask');
   }, [photo, editor, handleEditChange]);
 
+  // Toggle bypasses/restores both sides' stored params without deleting the
+  // mask (one undo step either way); the sliders stay so values survive the
+  // toggle. Available on any stored mask, even a fully neutral one.
+  const toggleSelectiveMask = useCallback(() => {
+    if (!photo) return;
+    const stored = normalizeSelectiveAdjust(editor.edit.selectiveAdjust);
+    if (!stored) return;
+    const enabled = stored.enabled === false;
+    handleEditChange({ selectiveAdjust: { ...stored, enabled } });
+    notify(enabled ? 'Subject & background enhance on.' : 'Subject & background enhance off — adjustments bypassed.');
+  }, [photo, editor.edit.selectiveAdjust, handleEditChange]);
+
   const clearSelectiveMask = useCallback(() => {
     if (!photo) return;
     handleEditChange({ selectiveAdjust: null });
@@ -1172,7 +1184,7 @@ export default function App() {
         onStraightenDragging={setStraightenDragging}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={handleEditChange} onRotate={rotateImage} onStraighten={changeStraighten} onReset={() => handleAction('reset')}
-        onAuto={() => editor.autoEnhance(photo.src)} onAutoScene={() => editor.autoEnhanceScene(photo.src)} faceAssist={{ state: faceEnhance.state, faces: faceEnhance.result?.faces.length ?? 0, source: faceEnhance.result?.source ?? null, whiteBalance: faceEnhance.result ? (faceEnhance.result.skinWhiteBalance ?? faceEnhance.result.classicWhiteBalance) : null, skinAnchored: Boolean(faceEnhance.result?.skinWhiteBalance), liftAmount: faceEnhance.result?.faceAdjust?.amount ?? 0, redEyeCount: faceEnhance.result?.faceAdjust?.redEye.length ?? 0, progress: faceEnhance.progress, note: faceEnhance.note, message: faceEnhance.message, applied: isFaceAdjustStored(editor.edit.faceAdjust) ? { faces: editor.edit.faceAdjust.boxes.length, source: editor.edit.faceAdjust.source, enabled: editor.edit.faceAdjust.enabled !== false, liftAmount: editor.edit.faceAdjust.amount, redEyeCount: editor.edit.faceAdjust.redEye.length } : null, onDetect: () => faceEnhance.detect(photo.src), onApply: applyFaceEnhance, onToggle: toggleFaceEnhance, onClear: clearFaceEnhance, onDismiss: faceEnhance.dismiss }} selectiveAssist={{ state: selectiveMask.state, found: Boolean(selectiveMask.result?.mask), coverage: selectiveMask.result?.coverage ?? 0, source: selectiveMask.result?.source ?? null, progress: selectiveMask.progress, note: selectiveMask.note, message: selectiveMask.message, applied: normalizeSelectiveAdjust(editor.edit.selectiveAdjust), onDetect: () => selectiveMask.detect(photo.src), onAdjust: adjustSelectiveMask, onClear: clearSelectiveMask, onDismiss: selectiveMask.dismiss }} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onAutoColor={() => editor.autoColor(photo.src)} mlApplied={editor.mlApplied} onCopy={copyAdjustments} onPaste={pasteAdjustments}
+        onAuto={() => editor.autoEnhance(photo.src)} onAutoScene={() => editor.autoEnhanceScene(photo.src)} faceAssist={{ state: faceEnhance.state, faces: faceEnhance.result?.faces.length ?? 0, source: faceEnhance.result?.source ?? null, whiteBalance: faceEnhance.result ? (faceEnhance.result.skinWhiteBalance ?? faceEnhance.result.classicWhiteBalance) : null, skinAnchored: Boolean(faceEnhance.result?.skinWhiteBalance), liftAmount: faceEnhance.result?.faceAdjust?.amount ?? 0, redEyeCount: faceEnhance.result?.faceAdjust?.redEye.length ?? 0, progress: faceEnhance.progress, note: faceEnhance.note, message: faceEnhance.message, applied: isFaceAdjustStored(editor.edit.faceAdjust) ? { faces: editor.edit.faceAdjust.boxes.length, source: editor.edit.faceAdjust.source, enabled: editor.edit.faceAdjust.enabled !== false, liftAmount: editor.edit.faceAdjust.amount, redEyeCount: editor.edit.faceAdjust.redEye.length } : null, onDetect: () => faceEnhance.detect(photo.src), onApply: applyFaceEnhance, onToggle: toggleFaceEnhance, onClear: clearFaceEnhance, onDismiss: faceEnhance.dismiss }} selectiveAssist={{ state: selectiveMask.state, found: Boolean(selectiveMask.result?.mask), coverage: selectiveMask.result?.coverage ?? 0, source: selectiveMask.result?.source ?? null, progress: selectiveMask.progress, note: selectiveMask.note, message: selectiveMask.message, applied: normalizeSelectiveAdjust(editor.edit.selectiveAdjust), onDetect: () => selectiveMask.detect(photo.src), onAdjust: adjustSelectiveMask, onToggle: toggleSelectiveMask, onClear: clearSelectiveMask, onDismiss: selectiveMask.dismiss }} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onAutoColor={() => editor.autoColor(photo.src)} mlApplied={editor.mlApplied} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
         onClose={() => setInspectorOpen(false)}
       />}

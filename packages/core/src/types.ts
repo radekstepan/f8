@@ -140,6 +140,13 @@ export interface SelectiveAdjustState {
   background: SelectiveAdjustParams;
   /** Which segmenter found the subject (drives the UI's ML badge). */
   source: SelectiveMaskSource;
+  /**
+   * False when the user toggled the stored adjust off (both sides are
+   * bypassed but the mask and slider values are kept, so toggling back on
+   * restores them). Absent/true means enabled; legacy recipes without the
+   * key stay active.
+   */
+  enabled?: boolean;
 }
 
 /**

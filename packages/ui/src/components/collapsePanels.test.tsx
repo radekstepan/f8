@@ -143,7 +143,7 @@ describe('shared collapse panels', () => {
 
   it('renders every adjust panel through the same shared disclosure', () => {
     const html = renderInspector('adjust');
-    // No assists passed, so no ML Enhance section; Curves/Effects/Details
+    // No assists passed, so no ML sections; Curves/Effects/Details
     // start collapsed but their headings still render.
     const titles = ['White Balance', 'Lightness', 'Hue &amp; Saturation', 'Curves', 'Details', 'Effects'];
     expect(html.match(/class="adjustment-section[ "]/g)?.length).toBe(titles.length);

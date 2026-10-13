@@ -99,6 +99,17 @@ describe('face enhance control', () => {
     expect(html).toContain('>ML<');
   });
 
+  it('keeps the section title visible before and after applying', () => {
+    const idle = renderAdjust({ ...DEFAULT_EDIT }, assist());
+    expect(idle).toContain('<h3>Enhance Faces</h3>');
+    const applied = renderAdjust(
+      { ...DEFAULT_EDIT },
+      assist({ applied: { faces: 1, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 0 } }),
+    );
+    expect(applied).toContain('<h3>Enhance Faces</h3>');
+    expect(applied).not.toContain('data-testid="face-enhance-detect"');
+  });
+
   it('summarizes an ML result with skin WB, lift, and red-eye', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT },

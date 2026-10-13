@@ -8,8 +8,8 @@ import type { EditState, Photo } from '@f8/core';
 import { Inspector } from './Inspector.js';
 import type { DenoiseAssist, FaceEnhanceAssist, SelectiveMaskAssist } from './Inspector.js';
 
-// ML Enhance section grouping, rendered on the server (no jsdom): effects
-// never run, so this pins the markup + prop wiring, not click behavior.
+// Exploded ML sections, rendered on the server (no jsdom): effects never
+// run, so this pins the markup + prop wiring, not click behavior.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cssPath = resolve(here, '../../../../apps/web/src/index.css');
@@ -79,6 +79,7 @@ function selectiveAssist(): SelectiveMaskAssist {
     applied: null,
     onDetect: noop,
     onAdjust: noop,
+    onToggle: noop,
     onClear: noop,
     onDismiss: noop,
   };
@@ -134,36 +135,60 @@ function renderAdjust(edit: EditState, ml?: { scene?: boolean; face?: boolean; s
 
 const ALL_ML = { scene: true, face: true, selective: true, denoise: true };
 
-describe('ml enhance section', () => {
-  it('groups scene, faces, subject, and denoise actions into one collapsible ML section', () => {
+/** Each ML action's section title and the control testid living inside it. */
+const SECTIONS: Array<[string, string]> = [
+  ['Scene Enhance', 'data-testid="scene-enhance"'],
+  ['Enhance Faces', 'data-testid="face-enhance"'],
+  ['Subject &amp; Background', 'data-testid="selective-mask"'],
+  ['Denoise', 'data-testid="denoise"'],
+];
+
+describe('ml enhance sections', () => {
+  it('explodes scene, faces, subject, and denoise into their own titled sections', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
-    expect(html).toContain('<h3>ML Enhance</h3><span class="ml-badge"');
-    expect(html).toContain('data-testid="ml-enhance"');
-    const heading = html.indexOf('<h3>ML Enhance</h3>');
-    for (const testId of ['data-testid="scene-enhance"', 'data-testid="face-enhance"', 'data-testid="selective-mask"', 'data-testid="denoise"']) {
+    expect(html).not.toContain('<h3>ML Enhance</h3>');
+    expect(html).not.toContain('data-testid="ml-enhance"');
+    let previous = -1;
+    for (const [title, testId] of SECTIONS) {
+      const heading = `<h3>${title}</h3>`;
+      expect(html).toContain(heading);
       expect(html).toContain(testId);
-      expect(html.indexOf(testId)).toBeGreaterThan(heading);
+      const headingAt = html.indexOf(heading);
+      const controlAt = html.indexOf(testId);
+      // Each control sits inside its own section, in scene/faces/subject/denoise order.
+      expect(controlAt).toBeGreaterThan(headingAt);
+      expect(headingAt).toBeGreaterThan(previous);
+      previous = controlAt;
     }
-    // The whole group sits above the histogram, like the old loose rows did.
+    // The whole group sits above the histogram, like the old section did.
     expect(html.indexOf('data-testid="denoise"')).toBeLessThan(html.indexOf('histogram-section'));
-    // Denoise no longer gets its own section below Details.
-    expect(html).not.toContain('<h3>Denoise</h3>');
   });
 
-  it('omits the section without any ML assist but keeps classic Auto Enhance', () => {
+  it('marks every ML section header with an ML badge', () => {
+    const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
+    for (const [title] of SECTIONS) {
+      const heading = html.match(new RegExp(`<h3>${title}</h3><span class="ml-badge"`));
+      expect(heading, `${title} header carries an ML badge`).not.toBeNull();
+    }
+  });
+
+  it('omits every ML section without any assist but keeps classic Auto Enhance', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
-    expect(html).not.toContain('data-testid="ml-enhance"');
+    for (const [, testId] of SECTIONS) {
+      expect(html).not.toContain(testId);
+    }
     expect(html).not.toContain('<h3>ML Enhance</h3>');
     expect(html).toContain('data-testid="auto-enhance-apply"');
     expect(html).toContain('Auto Enhance');
   });
 
-  it('renders a lone ML assist inside the section', () => {
+  it('renders a lone ML assist in its own section only', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, { face: true });
-    expect(html).toContain('<h3>ML Enhance</h3>');
+    expect(html).toContain('<h3>Enhance Faces</h3>');
     expect(html).toContain('data-testid="face-enhance"');
     expect(html).not.toContain('data-testid="scene-enhance"');
     expect(html).not.toContain('data-testid="selective-mask"');
+    expect(html).not.toContain('data-testid="denoise"');
   });
 
   it('uses one slim toggle button for classic Auto Enhance, no switch', () => {
@@ -198,19 +223,21 @@ describe('ml enhance section', () => {
     expect(html).not.toContain('secondary-button');
   });
 
-  it('draws no divider line between the stacked ML actions', () => {
-    // The sibling rule spaces Scene / Faces / Subject / Denoise with a
-    // margin only — no border-top line above "Enhance Faces" or
-    // "Enhance Subject & Background".
-    const siblings = cssRule('.ml-enhance > * + *');
-    expect(siblings).not.toBe('');
-    expect(siblings).not.toContain('border');
-    expect(siblings).toContain('margin-top');
+  it('leaves no grouping wrapper behind: sections divide themselves', () => {
+    // The old .ml-enhance wrapper (and its sibling-spacing rule from the
+    // task-10 divider fix) is gone: each action is a top-level section
+    // now, divided by the shared AdjustmentSection divider.
+    expect(css()).not.toMatch(/\.ml-enhance/);
+    // The face/subject controls lost their standalone padding + bottom
+    // border with the wrapper — the section content provides the padding.
+    expect(cssRule('.face-enhance')).toBe('');
+    expect(cssRule('.selective-mask')).toBe('');
+    expect(cssRule('.denoise-head')).toBe('');
   });
 
   it('keeps the shared section divider for legitimate separators', () => {
-    // The fix is scoped to .ml-enhance: the shared AdjustmentSection
-    // divider between inspector panels stays intact.
+    // Each exploded section is still divided by the shared
+    // AdjustmentSection divider between inspector panels.
     expect(cssRule('.adjustment-section')).toContain('border-bottom');
   });
 });

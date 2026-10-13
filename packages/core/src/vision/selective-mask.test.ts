@@ -399,6 +399,23 @@ describe("normalizeSelectiveAdjust", () => {
     expect(normalizeSelectiveAdjust({} as never)).toBeNull();
     expect(normalizeSelectiveAdjust({ target: "nobody", maskB64: "eA==", maskWidth: 2, maskHeight: 2 } as never)).toBeNull();
   });
+
+  it("preserves the bypass toggle and defaults legacy recipes to enabled", () => {
+    const base = selectiveAdjustForMask(halfMask(16, 16, true), "onnx")!;
+    expect(normalizeSelectiveAdjust({ ...base, enabled: false })?.enabled).toBe(false);
+    expect(normalizeSelectiveAdjust(base)?.enabled).toBeUndefined();
+    const legacy = {
+      maskB64: base.maskB64,
+      maskWidth: base.maskWidth,
+      maskHeight: base.maskHeight,
+      target: "subject" as const,
+      exposure: 0.5,
+      contrast: 0,
+      saturation: 0,
+      source: "onnx" as const,
+    };
+    expect(normalizeSelectiveAdjust(legacy)?.enabled).toBeUndefined();
+  });
 });
 
 describe("active-state contract", () => {
@@ -424,6 +441,14 @@ describe("active-state contract", () => {
     expect(isSelectiveAdjustActive(undefined)).toBe(false);
     expect(editHasSelectiveAdjust({ ...DEFAULT_EDIT, selectiveAdjust: base })).toBe(true);
     expect(editHasSelectiveAdjust({ ...DEFAULT_EDIT })).toBe(false);
+  });
+
+  it("stays inactive while toggled off, even when non-neutral", () => {
+    const base = selectiveAdjustForMask(halfMask(16, 16, true), "onnx")!;
+    expect(isSelectiveAdjustActive(base)).toBe(true);
+    expect(isSelectiveAdjustActive({ ...base, enabled: false })).toBe(false);
+    expect(isSelectiveAdjustActive({ ...base, enabled: true })).toBe(true);
+    expect(editHasSelectiveAdjust({ ...DEFAULT_EDIT, selectiveAdjust: { ...base, enabled: false } })).toBe(false);
   });
 
   it("activates on legacy single-target recipes", () => {
@@ -458,6 +483,14 @@ describe("pipeline integration", () => {
     expect(rendered.data[0] ?? 0).toBe(Math.min(255, Math.round(100 * gain)));
     const right = (8 * 4);
     expect(rendered.data[right] ?? 0).toBe(100);
+  });
+
+  it("bypasses the selective pass while toggled off", () => {
+    const base = selectiveAdjustForMask(halfMask(16, 16, true), "onnx")!;
+    const edit = { ...DEFAULT_EDIT, selectiveAdjust: { ...base, enabled: false } };
+    expect(isNeutralEdit(edit)).toBe(true);
+    const rendered = renderAdjustedPixels(solid(16, 16, 100, 100, 100), edit);
+    expect([...rendered.data].every((v, i) => (i % 4 === 3 ? v === 255 : v === 100))).toBe(true);
   });
 
   it("skips corrupt masks instead of breaking the render", () => {
