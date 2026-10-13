@@ -43,6 +43,9 @@ img { display: block; }
 .menu-anchor { position: relative; display: flex; }
 .menu-trigger { margin: 3px 0; padding: 0 11px; font-size: 11.5px; color: #c2c2c8; border-radius: 3px; }
 .menu-trigger:hover, .menu-trigger.is-open { background: #3b3b3f; }
+/* Open trigger meets its dropdown flush: square the bottom corners so
+the pill flows into the panel. Hover alone keeps the full rounding. */
+.menu-trigger.is-open { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .demo-indicator { margin-left: auto; display: flex; align-items: center; gap: 8px; color: #929096; font-size: 8px; letter-spacing: 1.3px; }
 .demo-indicator > span:first-child { width: 4px; height: 4px; border-radius: 50%; background: var(--accent-muted); }
 .demo-version { color: #74747b; font-size: 9px; letter-spacing: 0; margin-left: 4px; }
@@ -51,7 +54,7 @@ img { display: block; }
 margin: 3px 0 inside the full-height anchor (top: 100% alone would
 leave a 3px gap). Scoped so inspector/sidebar/browser dropdowns,
 which share .dropdown-menu, keep their own anchoring. */
-.menu-bar .dropdown-menu { top: calc(100% - 3px); }
+.menu-bar .dropdown-menu { top: calc(100% - 3px); border-top-left-radius: 0; border-top-right-radius: 0; }
 .menu-item { display: flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; padding: 8px 9px; border-radius: 4px; text-align: left; font-size: 11px; white-space: nowrap; color: #dddde2; }
 .menu-item:hover:not(:disabled) { background: #78663f; color: #fff7e7; }
 .menu-item.is-danger { color: #f29c97; }
