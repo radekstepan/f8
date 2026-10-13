@@ -458,10 +458,16 @@ export function faceLiftAmount(meanLuminance: number): number {
   return Math.round(Math.min(FACE_LIFT_MAX_AMOUNT, Math.max(0, amount)) * 100) / 100;
 }
 
-/** True when a stored face adjust changes at least one pixel. */
-export function isFaceAdjustActive(state: FaceAdjustState | null | undefined): state is FaceAdjustState {
+/** True when a stored face adjust would change pixels if enabled (ignores the toggle). */
+export function isFaceAdjustStored(state: FaceAdjustState | null | undefined): state is FaceAdjustState {
   if (!state) return false;
   return (state.amount > 0 && state.boxes.length > 0) || state.redEye.length > 0;
+}
+
+/** True when a stored face adjust changes at least one pixel (enabled and effective). */
+export function isFaceAdjustActive(state: FaceAdjustState | null | undefined): state is FaceAdjustState {
+  if (!state || state.enabled === false) return false;
+  return isFaceAdjustStored(state);
 }
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -651,7 +657,7 @@ export function faceAdjustForFaces(
   }
   const redEye = findRedEyeSpots(image, faces);
   if (!(amount > 0) && redEye.length === 0) return null;
-  return { boxes: faces.map((face) => ({ ...face.box })), amount, redEye, source };
+  return { boxes: faces.map((face) => ({ ...face.box })), amount, redEye, source, enabled: true };
 }
 
 /** True when a full edit recipe carries an active face adjust. */

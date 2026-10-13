@@ -103,7 +103,11 @@ export function useFaceEnhance(photoId: string): FaceEnhance {
       const aborter = new AbortController();
       abortRef.current = aborter;
       setResult(null);
-      setProgress(null);
+      // Seed a progress stage synchronously so the bar appears the instant
+      // the button is clicked — the local decode below reports nothing, and
+      // without this the control shows only a Cancel button until the first
+      // server report lands.
+      setProgress({ fraction: 0, stage: "Preparing photo…", updatedAt: Date.now() });
       setNote(null);
       setMessage(null);
       setState("detecting");

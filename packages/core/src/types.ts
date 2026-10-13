@@ -147,6 +147,12 @@ export interface FaceAdjustState {
   redEye: RedEyeSpot[];
   /** Which detector found the faces (drives the UI's ML badge). */
   source: FaceDetectSource;
+  /**
+   * False when the user toggled the stored adjust off (the lift and red-eye
+   * fixes are bypassed but kept, so toggling back on restores them).
+   * Absent/true means enabled; legacy recipes without the key stay active.
+   */
+  enabled?: boolean;
 }
 
 export interface RetouchPoint {

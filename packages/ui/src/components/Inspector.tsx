@@ -156,11 +156,13 @@ export interface FaceEnhanceAssist {
   note: string | null;
   /** Human-readable error; set only when state is error. */
   message: string | null;
-  /** Stored face adjust from the recipe; shown with Clear while idle. */
-  applied: { faces: number; source: FaceDetectSource } | null;
+  /** Stored face adjust from the recipe; shown with a toggle + Clear while idle. */
+  applied: { faces: number; source: FaceDetectSource; enabled: boolean; liftAmount: number; redEyeCount: number } | null;
   onDetect: () => void;
   /** Apply WB + masked lift + red-eye fixes as one undo step. */
   onApply: () => void;
+  /** Bypass/restore the stored masked lift + red-eye discs without deleting them. */
+  onToggle: () => void;
   /** Remove the stored masked lift + red-eye discs (WB sliders stay). */
   onClear: () => void;
   onDismiss: () => void;
@@ -487,6 +489,16 @@ function SceneEnhanceControl({ edit, onAutoScene }: { edit: EditState; onAutoSce
   </div>;
 }
 
+/** What the stored face adjust does, so the applied badge answers "did it work?". */
+function appliedSummary(applied: NonNullable<FaceEnhanceAssist['applied']>): string {
+  const parts = [
+    `${applied.faces} ${applied.faces === 1 ? 'face' : 'faces'}`,
+    ...(applied.liftAmount > 0 ? [`lift +${applied.liftAmount} EV`] : []),
+    ...(applied.redEyeCount > 0 ? [`${applied.redEyeCount} red-eye`] : []),
+  ];
+  return parts.join(' · ') + (applied.source === 'onnx' ? ' · ML' : '');
+}
+
 function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
   const working = assist.state === 'detecting';
   const mlTag = assist.source === 'onnx' ? ' · ML' : '';
@@ -504,13 +516,14 @@ function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
       <p className="inspector-note">Finds faces with ML, then anchors white balance on skin, lifts dark faces, and fixes red-eye. Nothing changes until you apply.</p>
     </>}
     {assist.state === 'idle' && assist.applied && <div className="auto-enhance-row face-enhance-row">
-      <span className="scene-enhance-scene" data-testid="face-enhance-applied" title={`Face enhance applied to ${assist.applied.faces} ${assist.applied.faces === 1 ? 'face' : 'faces'}`}>{assist.applied.faces} {assist.applied.faces === 1 ? 'face' : 'faces'}{assist.applied.source === 'onnx' ? ' · ML' : ''}</span>
+      <span className={`scene-enhance-scene${assist.applied.enabled ? '' : ' is-off'}`} data-testid="face-enhance-applied" title={assist.applied.enabled ? `Face enhance on: ${appliedSummary(assist.applied)}` : 'Face enhance off — the lift and red-eye fixes are bypassed'}>{appliedSummary(assist.applied)}</span>
+      <Toggle checked={assist.applied.enabled} onChange={assist.onToggle} label="Enable face enhance" />
       <div className="suggestion-actions">
         <button className="text-button" data-testid="face-enhance-redetect" title="Detect faces again" onClick={assist.onDetect}>Rescan</button>
         <button className="text-button" data-testid="face-enhance-clear" title="Remove the masked face lift and red-eye fixes (white balance stays)" onClick={assist.onClear}>Clear</button>
       </div>
     </div>}
-    {working && assist.progress && <MlProgressView progress={assist.progress} />}
+    {working && <MlProgressView progress={assist.progress ?? { fraction: 0, stage: 'Preparing photo…' }} />}
     {working && <div className="suggestion-actions"><button className="text-button" data-testid="face-enhance-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
     {assist.state === 'ready' && (assist.faces === 0 ? <>
       <p className="inspector-note" role="status">No faces found{assist.source === 'classic' ? ' by the classical scan' : ''}.</p>

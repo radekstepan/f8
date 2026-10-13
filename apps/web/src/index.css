@@ -389,6 +389,8 @@ img { display: block; }
 .face-enhance { padding: 10px 18px; border-bottom: 1px solid #3a3a3e; }
 .face-enhance .inspector-note { margin: 8px 0 0; }
 .face-enhance-row { padding: 0; height: auto; border-bottom: 0; }
+.face-enhance-row .scene-enhance-scene.is-off { opacity: .45; }
+.face-enhance-row > .toggle { flex: none; }
 .face-enhance-row .suggestion-actions { margin: 0 0 0 auto; }
 .face-enhance-row .suggestion-actions > button { flex: none; height: auto; }
 .selective-mask { padding: 10px 18px; border-bottom: 1px solid #3a3a3e; }

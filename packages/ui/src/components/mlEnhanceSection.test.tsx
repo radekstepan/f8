@@ -49,6 +49,7 @@ function faceAssist(): FaceEnhanceAssist {
     applied: null,
     onDetect: noop,
     onApply: noop,
+    onToggle: noop,
     onClear: noop,
     onDismiss: noop,
   };

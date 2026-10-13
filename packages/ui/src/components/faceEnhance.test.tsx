@@ -49,6 +49,7 @@ function assist(overrides: Partial<FaceEnhanceAssist> = {}): FaceEnhanceAssist {
     applied: null,
     onDetect: noop,
     onApply: noop,
+    onToggle: noop,
     onClear: noop,
     onDismiss: noop,
     ...overrides,
@@ -150,11 +151,38 @@ describe('face enhance control', () => {
         ...DEFAULT_EDIT,
         faceAdjust: { boxes: [{ x0: 0, y0: 0, x1: 0.5, y1: 0.5 }], amount: 0.4, redEye: [], source: 'onnx' },
       },
-      assist({ applied: { faces: 1, source: 'onnx' } }),
+      assist({ applied: { faces: 1, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 0 } }),
     );
     expect(html).toContain('data-testid="face-enhance-applied"');
-    expect(html).toContain('1 face · ML');
+    expect(html).toContain('1 face · lift +0.4 EV · ML');
     expect(html).toContain('data-testid="face-enhance-redetect"');
     expect(html).toContain('data-testid="face-enhance-clear"');
+  });
+
+  it('shows a progress bar the whole time detection runs, even before the first report', () => {
+    const html = renderAdjust({ ...DEFAULT_EDIT }, assist({ state: 'detecting', progress: null }));
+    expect(html).toContain('data-testid="ml-progress"');
+    expect(html).toContain('Preparing photo…');
+    expect(html).toContain('data-testid="face-enhance-cancel"');
+  });
+
+  it('toggles the stored adjust off and on without deleting it', () => {
+    const on = renderAdjust(
+      { ...DEFAULT_EDIT },
+      assist({ applied: { faces: 2, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 1 } }),
+    );
+    expect(on).toContain('aria-label="Enable face enhance"');
+    expect(on).toContain('aria-checked="true"');
+    expect(on).toContain('2 faces · lift +0.4 EV · 1 red-eye · ML');
+    expect(on).not.toContain('scene-enhance-scene is-off');
+    const off = renderAdjust(
+      { ...DEFAULT_EDIT },
+      assist({ applied: { faces: 2, source: 'onnx', enabled: false, liftAmount: 0.4, redEyeCount: 1 } }),
+    );
+    expect(off).toContain('aria-checked="false"');
+    expect(off).toContain('is-off');
+    // The badge stays with rescan/clear so the stored adjust survives the toggle.
+    expect(off).toContain('data-testid="face-enhance-redetect"');
+    expect(off).toContain('data-testid="face-enhance-clear"');
   });
 });

@@ -12,6 +12,7 @@ import {
   faceSkinMeans,
   findRedEyeSpots,
   isFaceAdjustActive,
+  isFaceAdjustStored,
   packFaceDetectInput,
   parseYuNetFaces,
   proposeFaceCandidates,
@@ -335,6 +336,7 @@ describe("faceAdjustForFaces", () => {
     expect(state!.amount).toBeGreaterThan(0);
     expect(state!.redEye).toHaveLength(0);
     expect(state!.source).toBe("onnx");
+    expect(state!.enabled).toBe(true);
   });
 
   it("keeps red-eye-only and drops no-op applies", () => {
@@ -361,6 +363,16 @@ describe("isFaceAdjustActive and editHasFaceAdjust", () => {
       isFaceAdjustActive({ boxes: [{ x0: 0, y0: 0, x1: 1, y1: 1 }], amount: 0.5, redEye: [], source: "onnx" }),
     ).toBe(true);
     expect(isFaceAdjustActive({ boxes: [], amount: 0, redEye: [{ x: 0.5, y: 0.5, radius: 0.01 }], source: "classic" })).toBe(true);
+    // A toggled-off adjust changes nothing but stays stored (toggle back on
+    // restores it); legacy recipes without the key stay active.
+    expect(
+      isFaceAdjustActive({ boxes: [{ x0: 0, y0: 0, x1: 1, y1: 1 }], amount: 0.5, redEye: [], source: "onnx", enabled: false }),
+    ).toBe(false);
+    expect(
+      isFaceAdjustStored({ boxes: [{ x0: 0, y0: 0, x1: 1, y1: 1 }], amount: 0.5, redEye: [], source: "onnx", enabled: false }),
+    ).toBe(true);
+    expect(isFaceAdjustStored(null)).toBe(false);
+    expect(isFaceAdjustStored({ boxes: [], amount: 0, redEye: [], source: "onnx" })).toBe(false);
     expect(editHasFaceAdjust({ ...DEFAULT_EDIT })).toBe(false);
     expect(
       editHasFaceAdjust({ ...DEFAULT_EDIT, faceAdjust: { boxes: [], amount: 0, redEye: [], source: "onnx" } }),
@@ -388,5 +400,17 @@ describe("face adjust in the adjustment pipeline", () => {
     expect(isNeutralEdit({ ...DEFAULT_EDIT })).toBe(true);
     expect(isNeutralEdit({ ...DEFAULT_EDIT, faceAdjust: null })).toBe(true);
     expect(isNeutralEdit({ ...DEFAULT_EDIT, faceAdjust: { boxes: [], amount: 0, redEye: [], source: "onnx" } })).toBe(true);
+  });
+
+  it("bypasses a toggled-off face adjust in the render", () => {
+    const source = solid(20, 20, 50, 60, 70);
+    const rendered = renderAdjustedPixels(source, {
+      ...DEFAULT_EDIT,
+      faceAdjust: { boxes: [box], amount: 1, redEye: [], source: "onnx", enabled: false },
+    });
+    expect(Array.from(rendered.data)).toEqual(Array.from(source.data));
+    expect(
+      isNeutralEdit({ ...DEFAULT_EDIT, faceAdjust: { boxes: [box], amount: 1, redEye: [], source: "onnx", enabled: false } }),
+    ).toBe(true);
   });
 });
