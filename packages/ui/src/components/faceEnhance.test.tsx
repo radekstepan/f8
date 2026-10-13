@@ -154,7 +154,8 @@ describe('face enhance control', () => {
     expect(html).toContain('lift +0.4 EV');
     expect(html).toContain('1 red-eye');
     expect(html).toContain('· ML');
-    expect(html).toContain('data-testid="face-enhance-apply"');
+    expect(html).toContain('class="text-button" data-testid="face-enhance-apply"');
+    expect(html).not.toContain('slim-button');
   });
 
   it('labels classical results as a scan and omits the ML tag', () => {

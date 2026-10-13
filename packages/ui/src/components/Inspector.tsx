@@ -368,7 +368,7 @@ function ObjectRemovalControl({ assist }: { assist: ObjectRemovalAssist }) {
   const checked = assist.detections.filter((detection) => detection.checked).length;
   return <div className="object-removal" data-testid="object-removal">
     {assist.state === 'idle' && <>
-      <button className="slim-button full-width" data-testid="object-removal-detect" title="Find people with ML, then review before removing" onClick={assist.onDetect}>Remove people</button>
+      <button className="text-button full-width" data-testid="object-removal-detect" title="Find people with ML, then review before removing" onClick={assist.onDetect}>Remove people</button>
       <p className="inspector-note">Finds people with ML, then heals each one like a brush stroke. Nothing is removed until you apply.</p>
     </>}
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
@@ -394,7 +394,7 @@ function ObjectRemovalControl({ assist }: { assist: ObjectRemovalAssist }) {
       </ul>
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="slim-button" data-testid="object-removal-apply" disabled={checked === 0} title="Heal the checked people with the current repair method" onClick={assist.onApply}>Remove {checked} selected</button>
+        <button className="text-button" data-testid="object-removal-apply" disabled={checked === 0} title="Heal the checked people with the current repair method" onClick={assist.onApply}>Remove {checked} selected</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>)}
@@ -402,7 +402,7 @@ function ObjectRemovalControl({ assist }: { assist: ObjectRemovalAssist }) {
       <div className="assist-message is-error" data-testid="object-removal-error" role="alert">
         <p>{assist.message ?? 'Detection failed.'}</p>
         <div className="suggestion-actions">
-          <button className="slim-button" data-testid="object-removal-retry" title="Detect people again" onClick={assist.onDetect}>Retry</button>
+          <button className="text-button" data-testid="object-removal-retry" title="Detect people again" onClick={assist.onDetect}>Retry</button>
           <button className="text-button" data-testid="object-removal-dismiss" onClick={assist.onDismiss}>Dismiss</button>
         </div>
       </div>
@@ -421,7 +421,7 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
     .sort((a, b) => b.spot.score - a.spot.score);
   return <div className="object-removal dust-spots" data-testid="dust-spots">
     {assist.state === 'idle' && <>
-      <button className="slim-button full-width" data-testid="dust-spots-detect" title="Find dust spots with ML, then review before repairing" onClick={assist.onDetect}>Find dust spots</button>
+      <button className="text-button full-width" data-testid="dust-spots-detect" title="Find dust spots with ML, then review before repairing" onClick={assist.onDetect}>Find dust spots</button>
       <p className="inspector-note">Scans for dust and spots with ML, then repairs each accepted one like a brush stroke. Nothing is repaired until you apply.</p>
     </>}
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
@@ -447,7 +447,7 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
       </ul>
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="slim-button" data-testid="dust-spots-apply" disabled={checked === 0} title="Repair the checked spots with the current repair method" onClick={assist.onApply}>Repair {checked} selected</button>
+        <button className="text-button" data-testid="dust-spots-apply" disabled={checked === 0} title="Repair the checked spots with the current repair method" onClick={assist.onApply}>Repair {checked} selected</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>)}
@@ -521,7 +521,7 @@ function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
       <p className="inspector-note" role="status" data-testid="face-enhance-summary">{summary}</p>
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="slim-button" data-testid="face-enhance-apply" title="Set white balance from faces and store the masked lift plus red-eye fixes" onClick={assist.onApply}>Apply face enhance</button>
+        <button className="text-button" data-testid="face-enhance-apply" title="Set white balance from faces and store the masked lift plus red-eye fixes" onClick={assist.onApply}>Apply face enhance</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>)}

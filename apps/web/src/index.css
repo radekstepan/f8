@@ -490,10 +490,6 @@ img { display: block; }
 .text-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 10px; color: #b8a279; }
 .text-button:hover:not(:disabled) { color: #f0d496; }
 .text-button:disabled { opacity: .45; cursor: default; }
-.slim-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 27px; padding: 0 10px; border-radius: 5px; font-size: 9.5px; font-weight: 500; white-space: nowrap; background: #303034; border: 1px solid #4a4a50; color: #c5c5cf; box-shadow: 0 1px 2px #0002; }
-.slim-button:hover:not(:disabled) { background: #3c3a32; border-color: #71654d; color: #e4d1ad; }
-.slim-button.is-active { color: #f0d397; border-color: #8b7650; background: #33302a; }
-.slim-button:disabled { opacity: .45; cursor: default; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; background: #09090b94; backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; padding: 24px; animation: backdrop-in 160ms ease-out; }
 .modal { width: 430px; max-width: 100%; max-height: calc(100dvh - 48px); overflow-y: auto; color: #c8c8d2; background: #2a2a2e; border: 1px solid #55555d; border-radius: 12px; box-shadow: 0 24px 90px #0008, inset 0 1px 0 #ffffff04; padding: 24px; animation: modal-in 220ms cubic-bezier(.18,.65,.3,1); user-select: text; }
 .modal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 23px; }

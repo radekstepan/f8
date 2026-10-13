@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
@@ -5,9 +8,19 @@ import type { Photo } from '@f8/core';
 import { Inspector } from './Inspector.js';
 import type { DustSpotsAssist, ObjectRemovalAssist, RepairAssist } from './Inspector.js';
 
-// Repair sidebar grouping + slim actions + hover-preview wiring, rendered on
-// the server (no jsdom): pins the markup + prop wiring, not pointer behavior.
-// Preview geometry itself is unit-tested in @f8/core detectionPreview.
+// Repair sidebar grouping + golden-link actions + hover-preview wiring,
+// rendered on the server (no jsdom): pins the markup + prop wiring, not
+// pointer behavior. Preview geometry itself is unit-tested in
+// @f8/core detectionPreview.
+
+const here = dirname(fileURLToPath(import.meta.url));
+const cssPath = resolve(here, '../../../../apps/web/src/index.css');
+const css = () => readFileSync(cssPath, 'utf8');
+
+const cssRule = (selector: string): string => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return css().match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+};
 
 function makePhoto(): Photo {
   return {
@@ -136,7 +149,7 @@ describe('repair sidebar sections', () => {
     expect(html).toContain('<h3>Dust Spots</h3><span class="ml-badge"');
   });
 
-  it('uses slim buttons for detect and apply, never chunky secondary ones', () => {
+  it('renders every repair action as a golden link, never a grey button', () => {
     const html = renderRepair(
       {
         ...idleRemoval,
@@ -151,13 +164,51 @@ describe('repair sidebar sections', () => {
         spots: [{ x: 0.2, y: 0.2, radius: 0.01, score: 0.92, polarity: 'dark', checked: true }],
       },
     );
-    expect(html).toContain('data-testid="object-removal-apply"');
-    expect(html).toContain('data-testid="dust-spots-apply"');
-    expect(html).toContain('slim-button');
-    expect(html).not.toContain('secondary-button');
+    expect(html).toContain('class="text-button" data-testid="object-removal-apply"');
+    expect(html).toContain('class="text-button" data-testid="dust-spots-apply"');
     const idle = renderRepair(idleRemoval, idleDustSpots);
-    expect(idle).toContain('class="slim-button full-width" data-testid="object-removal-detect"');
-    expect(idle).toContain('class="slim-button full-width" data-testid="dust-spots-detect"');
+    expect(idle).toContain('class="text-button full-width" data-testid="object-removal-detect"');
+    expect(idle).toContain('class="text-button full-width" data-testid="dust-spots-detect"');
+    // The people retry matches the dust retry: both golden links now.
+    const failed = renderRepair(
+      { ...idleRemoval, state: 'error', message: 'Photo server unreachable.' },
+      { ...idleDustSpots, state: 'error', message: 'Photo server unreachable.' },
+    );
+    expect(failed).toContain('class="text-button" data-testid="object-removal-retry"');
+    expect(failed).toContain('class="text-button" data-testid="dust-spots-retry"');
+    // No grey action button survives anywhere in the repair tool.
+    for (const render of [html, idle, failed]) {
+      expect(render).not.toContain('slim-button');
+      expect(render).not.toContain('secondary-button');
+    }
+  });
+
+  it('dims the apply links through the shared disabled rule when nothing is checked', () => {
+    const html = renderRepair(
+      {
+        ...idleRemoval,
+        state: 'ready',
+        source: 'onnx',
+        detections: [{ label: 'person', score: 0.9, box: { x0: 0, y0: 0, x1: 0.5, y1: 0.5 }, checked: false }],
+      },
+      {
+        ...idleDustSpots,
+        state: 'ready',
+        source: 'ml',
+        spots: [{ x: 0.2, y: 0.2, radius: 0.01, score: 0.92, polarity: 'dark', checked: false }],
+      },
+    );
+    expect(html).toContain('data-testid="object-removal-apply" disabled=""');
+    expect(html).toContain('data-testid="dust-spots-apply" disabled=""');
+    expect(html).toContain('Remove 0 selected');
+    expect(html).toContain('Repair 0 selected');
+    // The dim comes from the Task 9 shared rule, reused, not duplicated.
+    expect(cssRule('.text-button:disabled')).toContain('opacity: .45');
+    expect(cssRule('.text-button:disabled')).toContain('cursor: default');
+  });
+
+  it('drops the dead slim-button rules from the sheet', () => {
+    expect(css()).not.toMatch(/\.slim-button/);
   });
 
   it('shows no intro hint block above the repair sections', () => {

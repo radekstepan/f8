@@ -157,6 +157,6 @@ describe('object removal control', () => {
     expect(box).toBeGreaterThan(-1);
     expect(retry).toBeGreaterThan(box);
     expect(dismiss).toBeGreaterThan(retry);
-    expect(html).toContain('class="slim-button" data-testid="object-removal-retry"');
+    expect(html).toContain('class="text-button" data-testid="object-removal-retry"');
   });
 });
