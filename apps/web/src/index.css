@@ -309,8 +309,7 @@ img { display: block; }
 .add-adjustment { display: flex; align-items: center; justify-content: center; gap: 7px; height: 27px; width: 100%; border: 1px solid #4a4a50; border-radius: 5px; font-size: 9.5px; background: #303034; color: #c5c5cf; box-shadow: 0 1px 2px #0002; }
 .add-adjustment:hover { background: #3c3a32; border-color: #71654d; }
 .add-adjustment > svg:first-child { color: #b1b1bd; }
-.add-adjustment > svg:last-child { margin-left: auto; width: 12px; }
-.add-adjustment > svg:first-child { margin-right: auto; }
+.add-adjustment > svg:last-child { width: 12px; }
 .add-adjustment-menu { top: auto; bottom: calc(100% + 3px); right: 15px; left: 15px; }
 
 .tool-inspector { padding: 0 20px 20px; }
