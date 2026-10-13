@@ -47,6 +47,11 @@ img { display: block; }
 .demo-indicator > span:first-child { width: 4px; height: 4px; border-radius: 50%; background: var(--accent-muted); }
 .demo-version { color: #74747b; font-size: 9px; letter-spacing: 0; margin-left: 4px; }
 .dropdown-menu { position: absolute; top: 100%; left: 0; z-index: 80; min-width: 218px; padding: 5px; border: 1px solid #515157; border-radius: 7px; background: #303033f5; backdrop-filter: blur(24px); box-shadow: 0 10px 35px #0007, 0 1px 3px #0005; animation: menu-in 130ms ease-out; }
+/* Top menu bar: open flush with the trigger pill, which carries
+margin: 3px 0 inside the full-height anchor (top: 100% alone would
+leave a 3px gap). Scoped so inspector/sidebar/browser dropdowns,
+which share .dropdown-menu, keep their own anchoring. */
+.menu-bar .dropdown-menu { top: calc(100% - 3px); }
 .menu-item { display: flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; padding: 8px 9px; border-radius: 4px; text-align: left; font-size: 11px; white-space: nowrap; color: #dddde2; }
 .menu-item:hover:not(:disabled) { background: #78663f; color: #fff7e7; }
 .menu-item.is-danger { color: #f29c97; }
