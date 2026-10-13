@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
-import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
-import type { CachedHealPatch, ChangeEdit, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@f8/core';
+import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
+import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 import { ToolHint } from './ToolHint.js';
 
@@ -39,6 +39,8 @@ interface PhotoCanvasProps {
   inpaintRepair?: RepairInpaintBinding | null;
   /** Stroke group highlighted from the inspector list (red overlay). */
   highlightStroke?: number | null;
+  /** ML removal candidate hovered in the inspector list (red preview). */
+  highlightRegion?: DetectionPreview | null;
   /** True while the straighten slider is dragged: the crop grid turns into a fine mesh. */
   fineGrid?: boolean;
   onHighlightStroke?: (stroke: number | null) => void;
@@ -54,7 +56,7 @@ interface PhotoCanvasProps {
   onHistogram: (data: HistogramData) => void;
 }
 
-export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, brushSize, brushStrength, inpaintRepair, highlightStroke = null, fineGrid = false, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onRemove, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
+export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onRemove, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1206,6 +1208,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
   const hoverPoints = showOverlay && activeStroke === null && highlightStroke !== null
     ? edit.retouches.filter((point) => strokeIdForPoint(point) === highlightStroke)
     : [];
+  // Hovered removal candidate (person box or dust disc) from the inspector
+  // list, previewed in red like a healed area so rows map to photo regions.
+  const previewGeometry = showOverlay && activeStroke === null && highlightRegion
+    ? previewFrameGeometry(highlightRegion, frameWidth, frameHeight)
+    : null;
   const maskCircle = (point: RetouchPoint, key: string) => (
     <circle key={key} cx={point.x * frameWidth} cy={point.y * frameHeight} r={Math.max(1, (point.size * frameWidth) / 2)} />
   );
@@ -1230,7 +1237,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
         ? <div className="crop-grid is-fine" aria-hidden="true" data-testid="crop-grid-fine">{Array.from({ length: 8 }, (_, index) => <i key={`v${index}`} className={(index + 1) % 3 === 0 ? 'is-major' : ''} style={{ left: `${((index + 1) * 100) / 9}%`, top: 0, height: '100%', width: '1px' }} />)}{Array.from({ length: 8 }, (_, index) => <i key={`h${index}`} className={(index + 1) % 3 === 0 ? 'is-major' : ''} style={{ top: `${((index + 1) * 100) / 9}%`, left: 0, width: '100%', height: '1px' }} />)}</div>
         : <div className="crop-grid" aria-hidden="true"><i /><i /><i /><i /></div>)}
       {showBrushCursor && <div className="brush-cursor" style={{ left: cursor!.x, top: cursor!.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
-      {(activePoints.length > 0 || hoverPoints.length > 0) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}</svg>}
+      {(activePoints.length > 0 || hoverPoints.length > 0 || previewGeometry !== null) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}{previewGeometry && <g className="retouch-preview-group" data-testid="removal-preview">{previewGeometry.kind === 'rect' ? <rect x={previewGeometry.x} y={previewGeometry.y} width={previewGeometry.width} height={previewGeometry.height} rx={3} /> : <circle cx={previewGeometry.cx} cy={previewGeometry.cy} r={previewGeometry.r} />}</g>}</svg>}
     </div></div>
     </div>
       {/* Overlay on the wrap, outside the scroll stage: showing/hiding it must not shift the photo. */}

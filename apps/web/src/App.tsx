@@ -3,7 +3,7 @@ import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-r
 import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDeletableCollection, isDenoiseActive, isFaceAdjustActive, isInspectorVisible, isRecentlyEdited, isSelectiveAdjustActive, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@f8/core';
 import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
-import type { AlbumSortDir, AlbumSortKey, DialogType, EditState, Tool, ViewMode } from '@f8/core';
+import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, Tool, ViewMode } from '@f8/core';
 import { Sidebar } from '@f8/ui';
 import { AppStatus, MenuBar, Toolbar, type MenuAction } from '@f8/ui';
 import { PhotoCanvas, type HistogramData } from '@f8/ui';
@@ -120,6 +120,9 @@ export default function App() {
   const [brushStrength, setBrushStrength] = useState(() => readToolPrefs().brushStrength);
   const [straightenDragging, setStraightenDragging] = useState(false);
   const [highlightStroke, setHighlightStroke] = useState<number | null>(null);
+  // Removal candidate hovered in the repair sidebar (person or dust-spot
+  // list row); the canvas previews its region in red like a healed area.
+  const [highlightRemoval, setHighlightRemoval] = useState<{ source: 'removal' | 'dust'; index: number } | null>(null);
   const [clipboard, setClipboard] = useState<EditState | null>(null);
   const [dialog, setDialog] = useState<DialogType>(null);
   const [removeTargetId, setRemoveTargetId] = useState<string | null>(null);
@@ -535,6 +538,19 @@ export default function App() {
     editor.change(patch, mergeKey);
   }, [editor]);
 
+  // Canvas preview for the hovered removal row: the detection's normalized
+  // region, or null when the hover is stale (rescan, photo switch, dismiss).
+  const removalPreview = useMemo((): DetectionPreview | null => {
+    if (!highlightRemoval) return null;
+    if (highlightRemoval.source === 'removal') {
+      const detection = objectRemoval.detections[highlightRemoval.index];
+      return detection ? { kind: 'box', box: detection.box } : null;
+    }
+    const spot = dustSpots.spots[highlightRemoval.index];
+    return spot ? { kind: 'disc', x: spot.x, y: spot.y, radius: spot.radius } : null;
+  }, [highlightRemoval, objectRemoval.detections, dustSpots.spots]);
+  useEffect(() => { setHighlightRemoval(null); }, [photo?.id, tool]);
+
   // One-click removal: checked detections become repair strokes in one atomic
   // history entry (one stroke id per person, so each removal stays
   // individually deletable); the existing pipeline heals them from there.
@@ -545,6 +561,7 @@ export default function App() {
     if (points.length === 0) return;
     const people = objectRemoval.detections.filter((detection) => detection.checked).length;
     handleEditChange({ retouches: [...editor.edit.retouches, ...points] });
+    setHighlightRemoval(null);
     objectRemoval.dismiss();
     notify(`Removing ${people} ${people === 1 ? 'person' : 'people'} — healing with ${inpaintRepair.method === 'ml-heal' ? 'ML Repair' : 'the current repair method'}.`);
   }, [photo, editor, handleEditChange, objectRemoval, inpaintRepair.method]);
@@ -558,6 +575,7 @@ export default function App() {
     if (points.length === 0) return;
     const count = dustSpots.spots.filter((spot) => spot.checked).length;
     handleEditChange({ retouches: [...editor.edit.retouches, ...points] });
+    setHighlightRemoval(null);
     dustSpots.dismiss();
     notify(`Repairing ${count} ${count === 1 ? 'spot' : 'spots'} — healing with ${inpaintRepair.method === 'ml-heal' ? 'ML Repair' : 'the current repair method'}.`);
   }, [photo, editor, handleEditChange, dustSpots, inpaintRepair.method]);
@@ -1062,7 +1080,7 @@ export default function App() {
                 compare={compare} showOriginal={showOriginal}
                 brushSize={brushSize} brushStrength={brushStrength} fineGrid={straightenDragging}
                 inpaintRepair={canvasRepairBinding}
-                highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
+                highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke} highlightRegion={removalPreview}
                 onZoom={setZoom} onCompare={() => setCompare(!compare)}
                 onFavorite={() => toggleFavorite()} onRating={setRating} onRemove={() => requestRemove(photo.id)}
                 onInfo={() => setDialog('info')} onChange={editor.change} onEndMerge={editor.endMerge} onHistogram={setHistogram}
@@ -1086,7 +1104,7 @@ export default function App() {
         photo={photo} edit={editor.edit} tool={tool} histogram={histogram} denoiseAssist={{ state: denoise.status, preview: denoise.preview, applied: isDenoiseActive(editor.edit.denoise) ? editor.edit.denoise : null, hasBase: Boolean(denoise.appliedBase), progress: denoise.progress, note: denoise.note, message: denoise.message, onPreview: previewDenoise, onApply: applyDenoise, onClear: clearDenoise, onDismiss: denoise.dismiss }}
         brushSize={brushSize} brushStrength={brushStrength} canPaste={Boolean(clipboard)}
         straightenAssist={{ state: straighten.state, angle: straighten.angle, confidence: straighten.confidence, source: straighten.source, runId: straighten.runId, mlProgress: straighten.mlProgress, mlWarming: straighten.mlWarming, mlNote: straighten.mlNote, message: straighten.message, onDetect: () => straighten.detect(photo.src), onDismiss: straighten.dismiss, onCancelMl: straighten.cancelMl }}
-        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, serverDown: inpaintRepair.serverDown, onCancelHeal: inpaintRepair.cancelHeal, onRetry: () => { void inpaintRepair.warmup().catch(() => { /* Failure is recorded in mlProgress/serverDown. */ }); }, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx, removal: { state: objectRemoval.state, detections: objectRemoval.detections, source: objectRemoval.source, progress: objectRemoval.progress, note: objectRemoval.note, message: objectRemoval.message, onDetect: () => objectRemoval.detect(photo.src), onToggle: objectRemoval.toggle, onApply: applyObjectRemoval, onDismiss: objectRemoval.dismiss }, dustSpots: { state: dustSpots.state, spots: dustSpots.spots, source: dustSpots.source, progress: dustSpots.progress, note: dustSpots.note, message: dustSpots.message, onDetect: () => dustSpots.detect(photo.src), onToggle: dustSpots.toggle, onApply: applyDustSpots, onDismiss: dustSpots.dismiss } }}
+        repairAssist={{ method: inpaintRepair.method, quality: inpaintRepair.quality, seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx, status: inpaintRepair.status, mlProgress: inpaintRepair.mlProgress, serverDown: inpaintRepair.serverDown, onCancelHeal: inpaintRepair.cancelHeal, onRetry: () => { void inpaintRepair.warmup().catch(() => { /* Failure is recorded in mlProgress/serverDown. */ }); }, onMethodChange: inpaintRepair.setMethod, onQualityChange: inpaintRepair.setQuality, onSeamlessLightChange: inpaintRepair.setSeamlessLight, onFeatherChange: inpaintRepair.setFeatherPx, removal: { state: objectRemoval.state, detections: objectRemoval.detections, source: objectRemoval.source, progress: objectRemoval.progress, note: objectRemoval.note, message: objectRemoval.message, highlighted: highlightRemoval?.source === 'removal' ? highlightRemoval.index : null, onDetect: () => objectRemoval.detect(photo.src), onToggle: objectRemoval.toggle, onHighlight: (index) => setHighlightRemoval(index === null ? null : { source: 'removal', index }), onApply: applyObjectRemoval, onDismiss: () => { setHighlightRemoval(null); objectRemoval.dismiss(); } }, dustSpots: { state: dustSpots.state, spots: dustSpots.spots, source: dustSpots.source, progress: dustSpots.progress, note: dustSpots.note, message: dustSpots.message, highlighted: highlightRemoval?.source === 'dust' ? highlightRemoval.index : null, onDetect: () => dustSpots.detect(photo.src), onToggle: dustSpots.toggle, onHighlight: (index) => setHighlightRemoval(index === null ? null : { source: 'dust', index }), onApply: applyDustSpots, onDismiss: () => { setHighlightRemoval(null); dustSpots.dismiss(); } }}}
         onStraightenDragging={setStraightenDragging}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={handleEditChange} onRotate={rotateImage} onStraighten={changeStraighten} onReset={() => handleAction('reset')}
