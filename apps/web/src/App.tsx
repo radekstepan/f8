@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches, shouldEscapeToLibrary } from '@f8/core';
+import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode } from '@f8/core';
@@ -339,11 +339,15 @@ export default function App() {
   // album, so the grid always shows why it is narrowed. Recently Edited
   // additionally implies recency (last week) via the collection predicate.
   const selectCollection = (id: string) => {
-    setCollection(id);
+    // Clicking the already-selected collection (grid view) deselects back
+    // to All Photos; the entry-preset filters below key off the resolved
+    // collection so a toggle clears them like any other move to All.
+    const next = resolveCollectionClick(collection, id, view);
+    setCollection(next);
     setSearch('');
     semantic.search('');
-    setEditedFilter(id === 'edited' ? 'edited' : 'all');
-    setFavoriteFilter(id === 'favorites' ? 'favorited' : 'all');
+    setEditedFilter(next === 'edited' ? 'edited' : 'all');
+    setFavoriteFilter(next === 'favorites' ? 'favorited' : 'all');
     setCullFilter('all');
     setView('library');
     if (window.innerWidth < 760) setSidebarOpen(false);

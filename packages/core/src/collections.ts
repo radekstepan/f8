@@ -7,7 +7,7 @@
 // truth for both listing and inference; the album grid itself deep-links
 // via ?album=.
 
-import type { Photo } from "./types.js";
+import type { Photo, ViewMode } from "./types.js";
 
 /** "Recently" for the Recently Edited view: edits from the last 7 days. */
 export const RECENTLY_EDITED_DAYS = 7;
@@ -54,4 +54,19 @@ export function isBuiltInCollection(collection: string): boolean {
 /** True when the collection is a user album that may be deleted. */
 export function isDeletableCollection(collection: string): boolean {
   return !isBuiltInCollection(collection);
+}
+
+/**
+ * Resolve a sidebar collection click into the collection to show.
+ *
+ * Clicking the already-selected collection deselects it back to All
+ * Photos — but only from the grid (library view), where the selection is
+ * the user's. Inside a photo (editor view) the open photo infers the
+ * highlighted collection, so clicking it navigates to that collection's
+ * grid instead of toggling away. Clicking All Photos while selected is a
+ * no-op: it already is the deselected state.
+ */
+export function resolveCollectionClick(current: string, clicked: string, view: ViewMode): string {
+  if (view === "library" && clicked === current && current !== "all") return "all";
+  return clicked;
 }

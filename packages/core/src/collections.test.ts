@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { collectionForPhoto, isBuiltInCollection, isDeletableCollection, isRecentlyEdited, photoInCollection } from "./collections.js";
+import { collectionForPhoto, isBuiltInCollection, isDeletableCollection, isRecentlyEdited, photoInCollection, resolveCollectionClick } from "./collections.js";
+import { buildLibraryUrl, parseLibraryUrl } from "./libraryUrl.js";
 import type { Photo } from "./types.js";
 
 function photo(overrides: Partial<Photo> = {}): Photo {
@@ -80,6 +81,43 @@ describe("collectionForPhoto", () => {
   it("infers the photo's album", () => {
     expect(collectionForPhoto(photo())).toBe("coast");
     expect(collectionForPhoto(photo({ albumId: "dolomites" }))).toBe("dolomites");
+  });
+});
+
+describe("resolveCollectionClick", () => {
+  it("deselects a re-clicked user album back to All Photos in the grid", () => {
+    expect(resolveCollectionClick("coast", "coast", "library")).toBe("all");
+  });
+
+  it("deselects the re-clicked built-ins too — All is the deselected state", () => {
+    expect(resolveCollectionClick("favorites", "favorites", "library")).toBe("all");
+    expect(resolveCollectionClick("edited", "edited", "library")).toBe("all");
+  });
+
+  it("treats re-clicking All Photos as a no-op", () => {
+    expect(resolveCollectionClick("all", "all", "library")).toBe("all");
+    expect(resolveCollectionClick("all", "all", "editor")).toBe("all");
+  });
+
+  it("selects a different collection as clicked", () => {
+    expect(resolveCollectionClick("coast", "dolomites", "library")).toBe("dolomites");
+    expect(resolveCollectionClick("all", "favorites", "library")).toBe("favorites");
+    expect(resolveCollectionClick("coast", "all", "library")).toBe("all");
+  });
+
+  it("does not toggle inside a photo: the click navigates to that grid", () => {
+    // Editor view highlights the open photo's inferred collection, which
+    // the user never picked — clicking it opens its grid, not All Photos.
+    expect(resolveCollectionClick("coast", "coast", "editor")).toBe("coast");
+    expect(resolveCollectionClick("coast", "dolomites", "editor")).toBe("dolomites");
+  });
+
+  it("keeps the toggled state, URL, and grid listing consistent", () => {
+    const next = resolveCollectionClick("coast", "coast", "library");
+    // The grid URL for the resolved state round-trips to the same
+    // collection, and that collection lists every photo.
+    expect(parseLibraryUrl(buildLibraryUrl({ view: "library", collectionId: next })).collectionId).toBe("all");
+    expect(photoInCollection(photo(), next)).toBe(true);
   });
 });
 
