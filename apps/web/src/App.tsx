@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDenoiseActive, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches, shouldEscapeToLibrary } from '@f8/core';
+import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches, shouldEscapeToLibrary } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
-import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, Tool, ViewMode } from '@f8/core';
+import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode } from '@f8/core';
 import { Sidebar } from '@f8/ui';
 import { AppStatus, MenuBar, Toolbar, type MenuAction } from '@f8/ui';
 import { PhotoCanvas, type HistogramData } from '@f8/ui';
@@ -528,6 +528,15 @@ export default function App() {
     notify(`Repairing ${count} ${count === 1 ? 'spot' : 'spots'} — healing with ${inpaintRepair.method === 'ml-heal' ? 'ML Repair' : 'the current repair method'}.`);
   }, [photo, editor, handleEditChange, dustSpots, inpaintRepair.method]);
 
+  // Record a scan that found no faces in the recipe (one undo step), so
+  // the section shows the checked outcome instead of forgetting it. Returns
+  // whether it stored — a repeat of the same source's empty scan is a no-op.
+  const storeEmptyFaceScan = useCallback((source: FaceDetectSource): boolean => {
+    if (!photo || isEmptyFaceScanStored(editor.edit.faceAdjust, source)) return false;
+    handleEditChange({ faceAdjust: emptyFaceScan(source) });
+    return true;
+  }, [photo, editor.edit.faceAdjust, handleEditChange]);
+
   // Face enhance: skin-anchored (or classic-fallback) white balance plus the
   // masked face lift and red-eye discs in one atomic history entry. A fresh
   // scan replaces the stored adjust, so Rescan never stacks lifts.
@@ -535,8 +544,11 @@ export default function App() {
     if (!photo || faceEnhance.state !== 'ready' || !faceEnhance.result) return;
     const { faces, source, skinWhiteBalance, classicWhiteBalance, faceAdjust } = faceEnhance.result;
     if (faces.length === 0) {
+      // Nothing to apply — and nothing to store here either. The auto-save
+      // effect below is the single storer: this branch (reached only by the
+      // context-menu auto-apply) runs in the same commit with a stale edit,
+      // so storing here would stack a duplicate undo entry.
       faceEnhance.dismiss();
-      notify('No faces found — nothing to enhance.');
       return;
     }
     const wb = skinWhiteBalance ?? classicWhiteBalance;
@@ -552,6 +564,21 @@ export default function App() {
     notify(`Face enhance${ml}: ${parts.join(', ')}.`);
   }, [photo, faceEnhance, handleEditChange]);
 
+  // A scan that found no faces saves itself the moment detection resolves —
+  // like the selective mask below, there is no Apply step for an empty
+  // outcome, so the section shows the checked result (with Rescan) instead
+  // of forgetting it. The store is idempotent and dismiss() flips state
+  // back to idle, so this runs once per ready transition.
+  const faceEnhanceResult = faceEnhance.state === 'ready' ? faceEnhance.result : null;
+  useEffect(() => {
+    if (!photo || !faceEnhanceResult || faceEnhanceResult.faces.length > 0) return;
+    const ml = faceEnhanceResult.source === 'onnx' ? ' (ML)' : '';
+    if (storeEmptyFaceScan(faceEnhanceResult.source)) notify(`No faces found${ml} — saved.`);
+    faceEnhance.dismiss();
+    // Runs once per ready transition; dismiss() flips state back to idle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photo?.id, faceEnhanceResult]);
+
   // Toggle bypasses/restores the stored masked lift + red-eye discs without
   // deleting them (one undo step either way); the applied white balance
   // stays as plain slider values in both cases.
@@ -563,13 +590,16 @@ export default function App() {
     notify(enabled ? 'Face enhance on.' : 'Face enhance off — lift and red-eye fixes bypassed.');
   }, [photo, editor.edit.faceAdjust, handleEditChange]);
 
-  // Clear removes the stored masked lift + red-eye discs; the applied white
-  // balance stays as plain slider values (undo restores everything at once).
+  // Clear removes the stored masked lift + red-eye discs (or the recorded
+  // no-face scan); the applied white balance stays as plain slider values
+  // (undo restores everything at once).
   const clearFaceEnhance = useCallback(() => {
     if (!photo) return;
+    const stored = editor.edit.faceAdjust;
+    const emptyScan = !!stored && stored.checked === true && stored.boxes.length === 0 && stored.redEye.length === 0;
     handleEditChange({ faceAdjust: null });
-    notify('Face lift and red-eye fixes cleared.');
-  }, [photo, handleEditChange]);
+    notify(emptyScan ? 'Recorded face scan cleared.' : 'Face lift and red-eye fixes cleared.');
+  }, [photo, editor.edit.faceAdjust, handleEditChange]);
 
   // Selective mask: the segmented subject mask lands in the recipe the
   // moment segmentation finishes — no Apply step, so the subject and

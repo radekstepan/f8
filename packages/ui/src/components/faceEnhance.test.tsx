@@ -183,6 +183,35 @@ describe('face enhance control', () => {
     expect(failed).toContain('data-testid="face-enhance-retry"');
   });
 
+  it('shows a recorded no-face scan without the toggle, with rescan and clear', () => {
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT },
+      assist({ applied: { faces: 0, source: 'onnx', enabled: true, liftAmount: 0, redEyeCount: 0 } }),
+    );
+    expect(html).toContain('data-testid="face-enhance-applied"');
+    expect(html).toContain('No faces found · ML');
+    expect(html).not.toContain('0 faces');
+    expect(html).toContain('Checked — no faces found. Rescan to run detection again.');
+    // Nothing to bypass, so no toggle — but the scan clears like a hit.
+    expect(html).not.toContain('aria-label="Enable face enhance"');
+    expect(html).toContain('data-testid="face-enhance-redetect"');
+    expect(html).toContain('data-testid="face-enhance-clear"');
+    expect(html).toContain('Remove the recorded no-face scan');
+    // Stored info highlights the header ML button, like a stored adjust.
+    expect(html).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
+    expect(html).toContain('data-testid="face-enhance-ml-revert"');
+  });
+
+  it('labels a recorded classical no-face scan without the ML tag', () => {
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT },
+      assist({ applied: { faces: 0, source: 'classic', enabled: true, liftAmount: 0, redEyeCount: 0 } }),
+    );
+    expect(html).toContain('>No faces found<');
+    expect(html).not.toContain('· ML');
+    expect(html).not.toContain('aria-label="Enable face enhance"');
+  });
+
   it('shows the applied badge with rescan and clear', () => {
     const html = renderAdjust(
       {

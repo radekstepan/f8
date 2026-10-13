@@ -458,16 +458,48 @@ export function faceLiftAmount(meanLuminance: number): number {
   return Math.round(Math.min(FACE_LIFT_MAX_AMOUNT, Math.max(0, amount)) * 100) / 100;
 }
 
-/** True when a stored face adjust would change pixels if enabled (ignores the toggle). */
+/**
+ * True when a stored face adjust carries information worth showing: a
+ * pixel-changing lift/red-eye fix, or a recorded scan (checked) even when
+ * it found no faces. Ignores the toggle. Legacy empty records without the
+ * flag still count as unstored.
+ */
 export function isFaceAdjustStored(state: FaceAdjustState | null | undefined): state is FaceAdjustState {
   if (!state) return false;
+  return (state.amount > 0 && state.boxes.length > 0) || state.redEye.length > 0 || state.checked === true;
+}
+
+/** True when a stored face adjust changes at least one pixel (enabled and effective). A recorded empty scan is stored but never active. */
+export function isFaceAdjustActive(state: FaceAdjustState | null | undefined): state is FaceAdjustState {
+  if (!state || state.enabled === false) return false;
   return (state.amount > 0 && state.boxes.length > 0) || state.redEye.length > 0;
 }
 
-/** True when a stored face adjust changes at least one pixel (enabled and effective). */
-export function isFaceAdjustActive(state: FaceAdjustState | null | undefined): state is FaceAdjustState {
-  if (!state || state.enabled === false) return false;
-  return isFaceAdjustStored(state);
+/**
+ * Recipe record for a scan that found no faces: empty boxes, no lift, no
+ * red-eye, flagged as checked so the UI shows the outcome (with Rescan)
+ * instead of forgetting it. Renders as a no-op.
+ */
+export function emptyFaceScan(source: FaceAdjustState["source"]): FaceAdjustState {
+  return { boxes: [], amount: 0, redEye: [], source, enabled: true, checked: true };
+}
+
+/**
+ * True when the stored adjust already records an empty scan from this
+ * source — re-storing would stack a duplicate undo entry. A stored hit
+ * (boxes/red-eye) or a scan from the other source is not the same record.
+ */
+export function isEmptyFaceScanStored(
+  state: FaceAdjustState | null | undefined,
+  source: FaceAdjustState["source"],
+): boolean {
+  return (
+    !!state &&
+    state.checked === true &&
+    state.boxes.length === 0 &&
+    state.redEye.length === 0 &&
+    state.source === source
+  );
 }
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -643,7 +675,8 @@ export function findRedEyeSpots(image: PixelImage, faces: readonly DetectedFace[
  * Build the recipe state for an enhance application: the lift boxes plus
  * the shared lift amount (the darkest face's need) and any red-eye discs.
  * Returns null when neither correction changes a pixel, so a no-op apply
- * stores no badge.
+ * stores no badge. Callers record a scan that found no faces with
+ * emptyFaceScan instead.
  */
 export function faceAdjustForFaces(
   image: PixelImage,

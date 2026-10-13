@@ -4,6 +4,7 @@ import {
   applyRedEyeFix,
   computeFaceWhiteBalance,
   editHasFaceAdjust,
+  emptyFaceScan,
   estimateEyesForBox,
   faceAdjustForFaces,
   faceLiftAmount,
@@ -11,6 +12,7 @@ import {
   faceMeanLuminance,
   faceSkinMeans,
   findRedEyeSpots,
+  isEmptyFaceScanStored,
   isFaceAdjustActive,
   isFaceAdjustStored,
   packFaceDetectInput,
@@ -412,5 +414,43 @@ describe("face adjust in the adjustment pipeline", () => {
     expect(
       isNeutralEdit({ ...DEFAULT_EDIT, faceAdjust: { boxes: [box], amount: 1, redEye: [], source: "onnx", enabled: false } }),
     ).toBe(true);
+  });
+});
+
+describe("recorded empty face scans", () => {
+  it("builds a checked, pixel-empty record for its source", () => {
+    expect(emptyFaceScan("onnx")).toEqual({ boxes: [], amount: 0, redEye: [], source: "onnx", enabled: true, checked: true });
+    expect(emptyFaceScan("classic").source).toBe("classic");
+  });
+
+  it("counts a checked empty scan as stored but never active", () => {
+    for (const source of ["onnx", "classic"] as const) {
+      const scan = emptyFaceScan(source);
+      expect(isFaceAdjustStored(scan)).toBe(true);
+      expect(isFaceAdjustActive(scan)).toBe(false);
+      expect(editHasFaceAdjust({ ...DEFAULT_EDIT, faceAdjust: scan })).toBe(false);
+    }
+    // Legacy empty records without the flag still count as unstored.
+    expect(isFaceAdjustStored({ boxes: [], amount: 0, redEye: [], source: "onnx" })).toBe(false);
+    expect(isFaceAdjustStored(null)).toBe(false);
+  });
+
+  it("renders a recorded empty scan as a no-op", () => {
+    const source = solid(20, 20, 50, 60, 70);
+    const rendered = renderAdjustedPixels(source, { ...DEFAULT_EDIT, faceAdjust: emptyFaceScan("onnx") });
+    expect(Array.from(rendered.data)).toEqual(Array.from(source.data));
+    expect(isNeutralEdit({ ...DEFAULT_EDIT, faceAdjust: emptyFaceScan("classic") })).toBe(true);
+  });
+
+  it("detects the same empty scan so re-storing never stacks undo entries", () => {
+    expect(isEmptyFaceScanStored(emptyFaceScan("onnx"), "onnx")).toBe(true);
+    // Other source: a rescan after the weights land records the new source.
+    expect(isEmptyFaceScanStored(emptyFaceScan("classic"), "onnx")).toBe(false);
+    // A stored hit is not an empty scan, even when flagged checked.
+    expect(
+      isEmptyFaceScanStored({ boxes: [{ x0: 0, y0: 0, x1: 1, y1: 1 }], amount: 0.5, redEye: [], source: "onnx", checked: true }, "onnx"),
+    ).toBe(false);
+    expect(isEmptyFaceScanStored(null, "onnx")).toBe(false);
+    expect(isEmptyFaceScanStored(undefined, "onnx")).toBe(false);
   });
 });

@@ -169,6 +169,14 @@ export interface FaceAdjustState {
    * Absent/true means enabled; legacy recipes without the key stay active.
    */
   enabled?: boolean;
+  /**
+   * True when face detection ran and this record is its outcome — including
+   * an empty outcome (no boxes, no lift, no red-eye) when no faces were
+   * found. The UI shows the recorded scan instead of re-running detection;
+   * the render pipeline still treats an empty record as a no-op. Absent on
+   * legacy recipes.
+   */
+  checked?: boolean;
 }
 
 export interface RetouchPoint {
