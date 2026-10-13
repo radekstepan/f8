@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDownWideNarrow, Check, ChevronDown, ChevronUp, Grid2X2, Heart, MoreHorizontal, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { ArrowDownWideNarrow, Check, ChevronDown, ChevronUp, Grid2X2, Heart, MoreHorizontal, Plus, SwatchBook, Trash2 } from 'lucide-react';
 import { ALBUM_SORT_KEYS, ALBUM_SORT_LABELS, DEFAULT_ALBUM_SORT_DIR, DEFAULT_ALBUM_SORT_KEY, DEFAULT_EDIT } from '@f8/core';
 import { MOVE_PHOTOS_MIME, SEMANTIC_SEARCH_NOTE_HINT, anchorMenuAtCursor, computeGridWindow, encodeMovePayload, extendPhotoRange, filmstripArrowIndex, filmstripCenteredScrollOffset, filmstripOverflows, filmstripWheelShift, getPhotoFilter, isBuiltInCollection, isPortraitPhoto, marqueeSelectedIds, resolveMoveTargets, thumbnailFilterForPhoto, togglePhotoSelection } from '@f8/core';
 import type { Rect } from '@f8/core';
@@ -91,7 +91,7 @@ export function PresetStrip({ photo, presets, selected, onSelect, onAdd, onToggl
   // Every preset thumb shows the same photo, so one strip-level class flips
   // them all between landscape crop and portrait letterbox.
   const portrait = isPortraitPhoto(photo);
-  return <section className="presets-panel" aria-label="Photo presets"><div className="presets-heading"><div className="presets-title"><SlidersHorizontal size={13} /><h2>Presets</h2></div><nav className="preset-tabs" aria-label="Preset categories">{categories.map((name) => <button key={name} className={category === name ? 'is-active' : ''} onClick={() => setCategory(name)}>{name}</button>)}</nav><div className="presets-actions"><IconButton label="Save current adjustments as a preset" onClick={onAdd}><Plus size={15} /></IconButton><IconButton label="Hide presets" onClick={onToggle}><ChevronDown size={14} /></IconButton></div></div><div className={`presets-list${portrait ? ' is-portrait' : ''}`}>{presets.filter((preset) => preset.category === category).map((preset) => {
+  return <section className="presets-panel" aria-label="Photo presets"><div className="presets-heading"><div className="presets-title"><SwatchBook size={13} /><h2>Presets</h2></div><nav className="preset-tabs" aria-label="Preset categories">{categories.map((name) => <button key={name} className={category === name ? 'is-active' : ''} onClick={() => setCategory(name)}>{name}</button>)}</nav><div className="presets-actions"><IconButton label="Save current adjustments as a preset" onClick={onAdd}><Plus size={15} /></IconButton><IconButton label="Hide presets" onClick={onToggle}><ChevronDown size={14} /></IconButton></div></div><div className={`presets-list${portrait ? ' is-portrait' : ''}`}>{presets.filter((preset) => preset.category === category).map((preset) => {
     const isSelected = selected === preset.name;
     const isOriginal = preset.id === 'original';
     return <button className={`preset-item ${isSelected ? 'is-selected' : ''}`} key={preset.id} onClick={() => {
