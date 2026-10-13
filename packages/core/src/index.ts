@@ -6,6 +6,7 @@ export * from "./canvasPan.js";
 export * from "./collections.js";
 export * from "./data.js";
 export * from "./detectionPreview.js";
+export * from "./escapeNavigation.js";
 export * from "./filmstripScroll.js";
 export * from "./image.js";
 export * from "./inspectorVisibility.js";
