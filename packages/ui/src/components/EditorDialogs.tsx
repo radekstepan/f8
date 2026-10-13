@@ -23,7 +23,7 @@ interface EditorDialogsProps {
   initialSuperres?: boolean;
   onClose: () => void;
   onToast: (message: string) => void;
-  onCreateAlbum: (name: string, includePhoto: boolean) => void;
+  onCreateAlbum: (name: string) => void;
   onSavePreset: (name: string) => void;
   onRemovePhoto: (id: string) => void;
   /** Album awaiting delete confirmation; the dialog only renders when set. */
@@ -144,8 +144,7 @@ function ExportDialog({ photo, edit, inpaintRepair, superres, initialSuperres, o
 
 function AlbumDialog({ onClose, onCreateAlbum }: Pick<EditorDialogsProps, 'onClose' | 'onCreateAlbum'>) {
   const [name, setName] = useState('');
-  const [includePhoto, setIncludePhoto] = useState(false);
-  return <Modal title="New Album" subtitle="A home for the moments that belong together." onClose={onClose} className="small-modal"><div className="dialog-feature-icon"><FolderPlus size={30} strokeWidth={1.3} /></div><form onSubmit={(event) => { event.preventDefault(); if (name.trim()) onCreateAlbum(name.trim(), includePhoto); }}><label className="text-field"><span>Album Name</span><input autoFocus placeholder="e.g. A summer in Italy" value={name} maxLength={60} onChange={(event) => setName(event.target.value)} required /></label><label className="checkbox-field"><input type="checkbox" checked={includePhoto} onChange={(event) => setIncludePhoto(event.target.checked)} /><span>Move the current photo into this album</span></label><div className="modal-footer"><button className="secondary-button" type="button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={!name.trim()} type="submit">Create Album</button></div></form></Modal>;
+  return <Modal title="New Album" subtitle="A home for the moments that belong together." onClose={onClose} className="small-modal"><div className="dialog-feature-icon"><FolderPlus size={30} strokeWidth={1.3} /></div><form onSubmit={(event) => { event.preventDefault(); if (name.trim()) onCreateAlbum(name.trim()); }}><label className="text-field"><span>Album Name</span><input autoFocus placeholder="e.g. A summer in Italy" value={name} maxLength={60} onChange={(event) => setName(event.target.value)} required /></label><div className="modal-footer"><button className="secondary-button" type="button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={!name.trim()} type="submit">Create Album</button></div></form></Modal>;
 }
 
 function PresetDialog({ onClose, onSavePreset }: Pick<EditorDialogsProps, 'onClose' | 'onSavePreset'>) {

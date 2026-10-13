@@ -1096,11 +1096,10 @@ export default function App() {
     }
   });
 
-  const createAlbum = (name: string, includePhoto: boolean) => {
+  const createAlbum = (name: string) => {
     void (async () => {
       try {
-        const album = await library.createAlbum(name, includePhoto && photo ? photo.thumbnail : '');
-        if (includePhoto && photo) await library.updatePhoto(photo.id, { albumId: album.id });
+        const album = await library.createAlbum(name);
         setCollection(album.id);
         setView('library');
         setDialog(null);
