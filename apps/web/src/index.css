@@ -249,7 +249,10 @@ img { display: block; }
    with its enable toggle, and any flex:1 label-button styling would
    stretch the 25px switch into a wide gold bar (Enhance Faces is immune
    only because its summary span comes first). */
-.scene-enhance-scene { font-size: 10px; color: #f0d397; white-space: nowrap; }
+/* Status text, not an action: plain label grey (#bdbdc7, like
+   .range-label), never the gold reserved for links/actions. Shared by the
+   scene-enhance label and the enhance-faces applied summary. */
+.scene-enhance-scene { font-size: 10px; color: #bdbdc7; white-space: nowrap; }
 .scene-enhance .scene-enhance-scene { display: block; margin-top: 8px; }
 .toggle { width: 25px; height: 14px; border-radius: 8px; padding: 2px; background: #515155; display: flex; align-items: center; flex-shrink: 0; transition: background-color 180ms ease; }
 .toggle > span { display: block; border-radius: 50%; height: 10px; width: 10px; background: #c2c2c7; box-shadow: 0 1px 2px #0003; transition: transform 180ms cubic-bezier(.2,.7,.3,1), background-color 180ms; }

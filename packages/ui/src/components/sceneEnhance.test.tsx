@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
@@ -6,6 +9,15 @@ import { Inspector } from './Inspector.js';
 
 // ML scene-enhance row, rendered on the server (no jsdom): effects never
 // run, so this pins the markup + prop wiring, not click behavior.
+
+const here = dirname(fileURLToPath(import.meta.url));
+const cssPath = resolve(here, '../../../../apps/web/src/index.css');
+const css = () => readFileSync(cssPath, 'utf8');
+
+const cssRule = (selector: string): string => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return css().match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+};
 
 function makePhoto(): Photo {
   return {
@@ -120,7 +132,18 @@ describe('scene enhance row', () => {
       noop,
     );
     expect(html).toContain('data-testid="scene-enhance-scene"');
-    expect(html).toContain('Portrait · 86% · ML');
+    expect(html).toContain('>Portrait · 86%<');
+    expect(html).not.toContain('· ML');
+  });
+
+  it('renders the scene status in plain text, never action gold', () => {
+    // Gold (#f0d397) is reserved for links/actions; the persisted scene
+    // label is status text, so it uses the plain 10px label grey. This
+    // rule is shared with the enhance-faces applied summary, which gets
+    // the same treatment (see faceEnhance.test.tsx).
+    const rule = cssRule('.scene-enhance-scene');
+    expect(rule).toMatch(/color\s*:\s*#bdbdc7/);
+    expect(rule).not.toContain('#f0d397');
   });
 
   it('shows no scene label for classic enhance, which stores no scene', () => {
@@ -139,7 +162,7 @@ describe('scene enhance row', () => {
       noop,
     );
     expect(html).toContain('data-testid="scene-enhance-scene"');
-    expect(html).toContain('Night · 90% · ML');
+    expect(html).toContain('>Night · 90%<');
   });
 
   it('keeps the classic Auto Enhance section alongside the ML section', () => {

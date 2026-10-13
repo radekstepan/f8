@@ -188,7 +188,8 @@ describe('face enhance control', () => {
       assist({ applied: { faces: 0, source: 'onnx', enabled: true, liftAmount: 0, redEyeCount: 0 } }),
     );
     expect(html).toContain('data-testid="face-enhance-applied"');
-    expect(html).toContain('No faces found · ML');
+    expect(html).toContain('>No faces found<');
+    expect(html).not.toContain('· ML');
     expect(html).not.toContain('0 faces');
     expect(html).toContain('Checked — no faces found. Rescan to run detection again.');
     // Nothing to bypass, so no toggle — but the scan clears like a hit.

@@ -467,16 +467,17 @@ function SceneEnhanceControl({ edit }: { edit: EditState }) {
   // the persisted scene label, or the explanatory note before the first run.
   return <div className="scene-enhance" data-testid="scene-enhance">
     {edit.sceneEnhance
-      ? <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}% · ML</span>
+      ? <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}%</span>
       : <p className="inspector-note">Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings.</p>}
   </div>;
 }
 
 /** What the stored face adjust does, so the applied badge answers "did it work?". */
 function appliedSummary(applied: NonNullable<FaceEnhanceAssist['applied']>): string {
+  // A recorded scan that found nothing shows the plain outcome, not "0
+  // faces" and with no ML tag — a hit keeps its tag as the engine credit.
+  if (applied.faces === 0) return 'No faces found';
   const mlTag = applied.source === 'onnx' ? ' · ML' : '';
-  // A recorded scan that found nothing shows the outcome, not "0 faces".
-  if (applied.faces === 0) return `No faces found${mlTag}`;
   const parts = [
     `${applied.faces} ${applied.faces === 1 ? 'face' : 'faces'}`,
     ...(applied.liftAmount > 0 ? [`lift +${applied.liftAmount} EV`] : []),

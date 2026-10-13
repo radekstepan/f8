@@ -225,7 +225,8 @@ describe('ml enhance sections', () => {
     expect(scene).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
     expect(scene).toContain('title="ML scene enhance applied — click to revert"');
     expect(scene).toContain('data-testid="scene-enhance-scene"');
-    expect(scene).toContain('Night · 90% · ML');
+    expect(scene).toContain('Night · 90%');
+    expect(scene).not.toContain('· ML');
   });
 
   it('shows a header reset beside the last-used mode only', () => {
@@ -262,7 +263,7 @@ describe('ml enhance sections', () => {
     expect(scene).toContain('title="Re-apply automatic scene enhance with ML"');
     expect(scene).toContain('section-reset is-dirty" title="Reset scene enhance"');
     // The persisted scene badge survives the highlight loss.
-    expect(scene).toContain('Night · 90% · ML');
+    expect(scene).toContain('Night · 90%');
   });
 
   it('runs classic enhance from the shared header row, with no content bar', () => {
