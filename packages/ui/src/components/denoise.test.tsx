@@ -252,8 +252,8 @@ describe('denoise control', () => {
     // The section header carries the title + ML badge, so the control
     // renders no duplicate inner heading.
     expect(html).not.toContain('denoise-head');
-    // Still above the histogram, with the other ML actions.
-    expect(control).toBeLessThan(html.indexOf('histogram-section'));
+    // Below the histogram, with the other ML actions — the histogram leads the panel.
+    expect(control).toBeGreaterThan(html.indexOf('histogram-section'));
   });
 
   it('uses a slim preview button like the other ML actions', () => {

@@ -165,8 +165,8 @@ describe('ml enhance sections', () => {
       expect(headingAt).toBeGreaterThan(previous);
       previous = controlAt;
     }
-    // The whole group sits above the histogram, like the old section did.
-    expect(html.indexOf('data-testid="denoise"')).toBeLessThan(html.indexOf('histogram-section'));
+    // The whole group sits below the histogram, which leads the panel.
+    expect(html.indexOf('data-testid="denoise"')).toBeGreaterThan(html.indexOf('histogram-section'));
   });
 
   it('marks every ML section header with an ML badge or button', () => {
