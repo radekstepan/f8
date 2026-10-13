@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Clock3, MoreHorizontal, Folder, Heart, Images, Import, Plus, Search } from 'lucide-react';
 import type { Album, Photo } from '@f8/core';
-import { MOVE_PHOTOS_MIME, anchorMenuBelowTrigger, decodeMovePayload, isRecentlyEdited } from '@f8/core';
+import { MOVE_PHOTOS_MIME, SEMANTIC_SEARCH_LABEL_ACTION_HINT, SEMANTIC_SEARCH_ML_BADGE_HINT, anchorMenuBelowTrigger, decodeMovePayload, isRecentlyEdited } from '@f8/core';
 import { IconButton, MenuItem } from './EditorUI.js';
 
 // The open menu is measured before paint so its first frame already sits at
@@ -116,7 +116,7 @@ function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, onLabelAlbu
       )}
       {showMenu && open && (
         <div className="dropdown-menu album-menu sidebar-album-menu" role="menu" aria-label={`Album actions for ${album.name}`} ref={menuRef} style={menuPos ? { left: menuPos.x, top: menuPos.y } : undefined}>
-          {onLabelAlbum && <MenuItem onClick={() => { setOpen(false); onLabelAlbum(album.id); }}><span>Label unlabeled photos <span className="ml-badge" title="Photos are labeled by a machine-learning model on the photo server">ML</span></span></MenuItem>}
+          {onLabelAlbum && <MenuItem onClick={() => { setOpen(false); onLabelAlbum(album.id); }}><span title={SEMANTIC_SEARCH_LABEL_ACTION_HINT}>Label unlabeled photos <span className="ml-badge" title={SEMANTIC_SEARCH_ML_BADGE_HINT}>ML</span></span></MenuItem>}
           {onCullAlbum && <MenuItem onClick={() => { setOpen(false); onCullAlbum(album.id); }}><span>Find blurry photos <span className="ml-badge" title="Blurry photos and near-duplicates are flagged by ML cull assist on the photo server">ML</span></span></MenuItem>}
           {(onLabelAlbum || onCullAlbum) && onRemoveAlbum && <div className="menu-separator" role="separator" />}
           {onRemoveAlbum && <MenuItem danger onClick={() => { setOpen(false); onRemoveAlbum(album.id); }}>Delete album…</MenuItem>}

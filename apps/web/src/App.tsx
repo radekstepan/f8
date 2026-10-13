@@ -465,7 +465,7 @@ export default function App() {
         await library.retry();
         const name = album ? `"${album.name}"` : 'Album';
         const notes = [
-          report.labeled.length ? `${name}: labeled ${report.labeled.length} ${report.labeled.length === 1 ? 'photo' : 'photos'} with ML.` : `${name}: everything already labeled.`,
+          report.labeled.length ? `${name}: labeled ${report.labeled.length} ${report.labeled.length === 1 ? 'photo' : 'photos'} with ML.` : `${name}: everything already labeled — new imports label automatically.`,
           report.alreadyLabeled.length > 0 && report.labeled.length > 0 ? `${report.alreadyLabeled.length} already labeled.` : '',
           report.skipped.length ? `${report.skipped.length} skipped.` : '',
           report.failed.length ? `${report.failed.length} failed.` : '',

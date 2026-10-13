@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_EDIT } from '@f8/core';
+import { DEFAULT_EDIT, SEMANTIC_SEARCH_EMPTY_LABELS_NOTE, SEMANTIC_SEARCH_ML_BADGE_HINT, SEMANTIC_SEARCH_NOTE_HINT } from '@f8/core';
 import type { Album, Photo } from '@f8/core';
 import { EditorDialogs } from './EditorDialogs.js';
 import { PhotoBrowser } from './PhotoStrips.js';
@@ -117,6 +117,24 @@ describe('semantic search', () => {
     expect(bare).toContain('>beach</button>');
     expect(bare).not.toContain('photo-label-remove');
     expect(bare).not.toContain('photo-label-add');
+  });
+
+  it('tooltips the search note with the no-training answer', () => {
+    const html = renderToStaticMarkup(
+      <PhotoBrowser photos={[makePhoto()]} title="Road Trip" search="beach" searchNote="Semantic matches for “beach” · ML" album={makeAlbum()} onSelect={noop} onFavorite={noop} onImport={noop} />,
+    );
+    expect(html).toContain(`title="${SEMANTIC_SEARCH_NOTE_HINT}"`);
+  });
+
+  it('states no-training in the empty-labels note and ML badge tooltips', () => {
+    const empty = renderToStaticMarkup(
+      <EditorDialogs dialog="info" photo={makePhoto()} edit={{ ...DEFAULT_EDIT }} onClose={noop} onToast={noop} onCreateAlbum={noop} onSavePreset={noop} onRemovePhoto={noop} onAddLabel={noop} onRemoveLabel={noop} onSearchLabel={noop} />,
+    );
+    expect(empty).toContain(SEMANTIC_SEARCH_EMPTY_LABELS_NOTE);
+    const labeled = renderToStaticMarkup(
+      <EditorDialogs dialog="info" photo={makePhoto({ labels: [{ label: 'beach', score: 0.9, source: 'ml' }] })} edit={{ ...DEFAULT_EDIT }} onClose={noop} onToast={noop} onCreateAlbum={noop} onSavePreset={noop} onRemovePhoto={noop} />,
+    );
+    expect(labeled).toContain(`title="${SEMANTIC_SEARCH_ML_BADGE_HINT}"`);
   });
 
   it('styles the label chips, add field, and search note', () => {
