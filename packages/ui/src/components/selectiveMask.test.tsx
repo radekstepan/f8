@@ -113,7 +113,7 @@ describe('selective mask control', () => {
     expect(html).not.toContain('data-testid="selective-mask-detect"');
     expect(html).not.toContain('Enhance Subject &amp; Background');
     expect(html).not.toContain('ml-badge');
-    expect(html).not.toContain('data-testid="selective-mask-ml-revert"');
+    expect(html).not.toContain('aria-label="Reset subject &amp; background"');
   });
 
   it('keeps the section title visible before and after detection', () => {
@@ -128,11 +128,11 @@ describe('selective mask control', () => {
     );
     expect(applied).toContain('<h3>Subject &amp; Background</h3>');
     expect(applied).toContain('data-testid="selective-mask-ml"');
-    expect(applied).toContain('data-testid="selective-mask-ml-revert"');
+    expect(applied).toContain('aria-label="Reset subject &amp; background"');
     expect(applied).not.toContain('data-testid="selective-mask-detect"');
   });
 
-  it('highlights the header ML button and offers revert while a mask is stored', () => {
+  it('highlights the header ML button and offers reset while a mask is stored', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
       assist({ applied: APPLIED }),
@@ -140,8 +140,7 @@ describe('selective mask control', () => {
     expect(html).toContain('class="ml-button is-active" data-testid="selective-mask-ml"');
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('title="ML subject &amp; background applied — click to revert"');
-    expect(html).toContain('data-testid="selective-mask-ml-revert"');
-    expect(html).toContain('aria-label="Revert ML subject &amp; background"');
+    expect(html).toContain('section-reset is-dirty" title="Reset subject &amp; background"');
   });
 
   it('auto-applies an ML result with no apply step or target toggle', () => {
@@ -259,6 +258,6 @@ describe('selective mask control', () => {
     // The header ML highlight means "mask stored", not "enabled" — the
     // content toggle owns on/off, so bypassing keeps the highlight.
     expect(off).toContain('class="ml-button is-active" data-testid="selective-mask-ml"');
-    expect(off).toContain('data-testid="selective-mask-ml-revert"');
+    expect(off).toContain('section-reset is-dirty" title="Reset subject &amp; background"');
   });
 });

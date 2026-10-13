@@ -85,10 +85,10 @@ describe('scene enhance row', () => {
     // header button.
     expect(html).not.toContain('data-testid="scene-enhance-apply"');
     expect(html).not.toContain('ml-badge');
-    expect(html).not.toContain('data-testid="scene-enhance-ml-revert"');
+    expect(html).not.toContain('aria-label="Reset scene enhance"');
   });
 
-  it('highlights the header ML button and offers revert while applied', () => {
+  it('highlights the header ML button and offers reset while applied', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       noop,
@@ -97,8 +97,7 @@ describe('scene enhance row', () => {
     expect(html).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('title="ML scene enhance applied — click to revert"');
-    expect(html).toContain('data-testid="scene-enhance-ml-revert"');
-    expect(html).toContain('aria-label="Revert ML scene enhance"');
+    expect(html).toContain('section-reset is-dirty" title="Reset scene enhance"');
   });
 
   it('keeps the section title visible before and after applying', () => {

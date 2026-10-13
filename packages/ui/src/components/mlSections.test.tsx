@@ -230,33 +230,31 @@ describe('ml enhance sections', () => {
     expect(scene).toContain('Night · 90% · ML');
   });
 
-  it('shows the enhance revert icon beside the last-used mode only', () => {
+  it('shows a header reset beside the last-used mode only', () => {
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: true });
-    expect(classic).toContain('data-testid="auto-enhance-auto-revert"');
-    expect(classic).toContain('aria-label="Revert auto enhance"');
-    expect(classic).not.toContain('data-testid="scene-enhance-ml-revert"');
+    expect(classic).toContain('section-reset is-dirty" title="Reset auto enhance"');
+    expect(classic).not.toContain('aria-label="Reset scene enhance"');
     const scene = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       ALL_ML,
       { mode: 'scene', pure: true },
     );
-    expect(scene).toContain('data-testid="scene-enhance-ml-revert"');
-    expect(scene).toContain('aria-label="Revert ML scene enhance"');
-    expect(scene).not.toContain('data-testid="auto-enhance-auto-revert"');
-    // No snapshot, no revert icon anywhere.
+    expect(scene).toContain('section-reset is-dirty" title="Reset scene enhance"');
+    expect(scene).not.toContain('aria-label="Reset auto enhance"');
+    // No snapshot, no reset on either enhance section.
     const idle = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
-    expect(idle).not.toContain('data-testid="auto-enhance-auto-revert"');
-    expect(idle).not.toContain('data-testid="scene-enhance-ml-revert"');
+    expect(idle).not.toContain('aria-label="Reset auto enhance"');
+    expect(idle).not.toContain('aria-label="Reset scene enhance"');
   });
 
-  it('keeps the revert icon after manual edits cleared the enhance highlight', () => {
+  it('keeps the reset after manual edits cleared the enhance highlight', () => {
     // A slider drag after the enhance drops pure (both buttons idle) while
-    // the last-used mode keeps its revert icon with a re-apply title.
+    // the last-used mode keeps its persistent reset with a re-apply title.
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: false });
     expect(classic).toContain('class="auto-small" data-testid="auto-enhance-auto"');
     expect(classic).toContain('class="ml-button" data-testid="scene-enhance-ml"');
     expect(classic).toContain('title="Re-apply auto enhance"');
-    expect(classic).toContain('data-testid="auto-enhance-auto-revert"');
+    expect(classic).toContain('section-reset is-dirty" title="Reset auto enhance"');
     const scene = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       ALL_ML,
@@ -264,14 +262,14 @@ describe('ml enhance sections', () => {
     );
     expect(scene).toContain('class="ml-button" data-testid="scene-enhance-ml"');
     expect(scene).toContain('title="Re-apply automatic scene enhance with ML"');
-    expect(scene).toContain('data-testid="scene-enhance-ml-revert"');
+    expect(scene).toContain('section-reset is-dirty" title="Reset scene enhance"');
     // The persisted scene badge survives the highlight loss.
     expect(scene).toContain('Night · 90% · ML');
   });
 
   it('runs classic enhance from the shared header row, with no content bar', () => {
     // The old full-width content bar and its CSS are gone: the Auto button
-    // and revert icon live in the shared section-actions header row, like
+    // and header reset live in the shared section-actions header row, like
     // every ML section. Scene enhance's old content row is gone too.
     expect(css()).not.toMatch(/\.classic-enhance/);
     expect(cssRule('.section-actions')).toMatch(/display\s*:\s*flex/);

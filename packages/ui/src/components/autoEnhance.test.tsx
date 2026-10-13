@@ -113,16 +113,15 @@ describe('auto enhance single entry point', () => {
     expect(html).not.toContain('classic-enhance');
   });
 
-  it('highlights the Auto button when applied, with the revert left of it', () => {
+  it('highlights the Auto button when applied, with the reset left of it', () => {
     const html = renderAdjust({ mode: 'classic', pure: true });
     expect(html).toContain('class="auto-small is-active" data-testid="auto-enhance-auto" aria-pressed="true"');
-    expect(html).toContain('data-testid="auto-enhance-auto-revert"');
-    // Closing quotes: the revert testid shares the Auto testid prefix.
-    const revert = html.indexOf('data-testid="auto-enhance-auto-revert"');
+    expect(html).toContain('section-reset is-dirty" title="Reset auto enhance"');
+    const reset = html.indexOf('aria-label="Reset auto enhance"');
     const auto = html.indexOf('data-testid="auto-enhance-auto"');
-    expect(revert).toBeGreaterThan(-1);
+    expect(reset).toBeGreaterThan(-1);
     expect(auto).toBeGreaterThan(-1);
-    expect(revert).toBeLessThan(auto);
+    expect(reset).toBeLessThan(auto);
   });
 
   it('leaves no dead enhance-bar CSS behind', () => {

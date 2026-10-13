@@ -111,10 +111,12 @@ describe('shared primitives', () => {
   });
 
   it('renders the revert button as the small undo icon with its testid', () => {
-    const html = renderToStaticMarkup(<RevertButton testId="white-balance-ml-revert" label="Revert ML white balance" onClick={noop} />);
+    // Adjustment headers use the section reset now; the crop-tool
+    // auto-straighten row is the remaining RevertButton consumer.
+    const html = renderToStaticMarkup(<RevertButton testId="straighten-auto-revert" label="Revert auto-straighten" onClick={noop} />);
     expect(html).toContain('ml-revert');
-    expect(html).toContain('data-testid="white-balance-ml-revert"');
-    expect(html).toContain('aria-label="Revert ML white balance"');
+    expect(html).toContain('data-testid="straighten-auto-revert"');
+    expect(html).toContain('aria-label="Revert auto-straighten"');
     expect(html).toContain('lucide-undo-2');
   });
 

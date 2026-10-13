@@ -107,7 +107,7 @@ describe('face enhance control', () => {
     // header button.
     expect(html).not.toContain('data-testid="face-enhance-detect"');
     expect(html).not.toContain('ml-badge');
-    expect(html).not.toContain('data-testid="face-enhance-ml-revert"');
+    expect(html).not.toContain('aria-label="Reset enhance faces"');
   });
 
   it('keeps the section title visible before and after applying', () => {
@@ -120,11 +120,11 @@ describe('face enhance control', () => {
     );
     expect(applied).toContain('<h3>Enhance Faces</h3>');
     expect(applied).toContain('data-testid="face-enhance-ml"');
-    expect(applied).toContain('data-testid="face-enhance-ml-revert"');
+    expect(applied).toContain('aria-label="Reset enhance faces"');
     expect(applied).not.toContain('data-testid="face-enhance-detect"');
   });
 
-  it('highlights the header ML button and offers revert while a face adjust is stored', () => {
+  it('highlights the header ML button and offers reset while a face adjust is stored', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT },
       assist({ applied: { faces: 1, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 0 } }),
@@ -132,8 +132,7 @@ describe('face enhance control', () => {
     expect(html).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('title="ML enhance faces applied — click to revert"');
-    expect(html).toContain('data-testid="face-enhance-ml-revert"');
-    expect(html).toContain('aria-label="Revert ML enhance faces"');
+    expect(html).toContain('section-reset is-dirty" title="Reset enhance faces"');
   });
 
   it('summarizes an ML result with skin WB, lift, and red-eye', () => {
@@ -199,7 +198,7 @@ describe('face enhance control', () => {
     expect(html).toContain('Remove the recorded no-face scan');
     // Stored info highlights the header ML button, like a stored adjust.
     expect(html).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
-    expect(html).toContain('data-testid="face-enhance-ml-revert"');
+    expect(html).toContain('section-reset is-dirty" title="Reset enhance faces"');
   });
 
   it('labels a recorded classical no-face scan without the ML tag', () => {
@@ -254,6 +253,6 @@ describe('face enhance control', () => {
     // The header ML highlight means "face adjust stored", not "enabled" —
     // the content toggle owns on/off, so bypassing keeps the highlight.
     expect(off).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
-    expect(off).toContain('data-testid="face-enhance-ml-revert"');
+    expect(off).toContain('section-reset is-dirty" title="Reset enhance faces"');
   });
 });
