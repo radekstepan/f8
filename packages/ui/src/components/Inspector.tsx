@@ -592,12 +592,12 @@ function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
 /** Manual slider start for clean captures (the auto ladder suggests 0 there). */
 const DENOISE_MANUAL_DEFAULT = 45;
 
-/** 2× closeup of the before/after pair: sensor noise is unreadable at sidebar thumbnail scale. */
+/** 4× closeup of the before/after pair: sensor noise is unreadable at sidebar thumbnail scale. */
 function DenoiseCloseup({ preview, loupe }: { preview: NonNullable<DenoiseAssist['preview']>; loupe: { x: number; y: number } }) {
   const position = `${loupe.x}% ${loupe.y}%`;
   return <div className="denoise-closeup" data-testid="denoise-closeup">
-    <figure><div className="denoise-zoom" role="img" aria-label="Noisy closeup at 2x magnification" data-testid="denoise-closeup-before" style={{ backgroundImage: `url("${preview.beforeUrl}")`, backgroundPosition: position }} /><figcaption>Before · 2×</figcaption></figure>
-    <figure><div className="denoise-zoom" role="img" aria-label="Denoised closeup at 2x magnification" data-testid="denoise-closeup-after" style={{ backgroundImage: `url("${preview.afterUrl}")`, backgroundPosition: position }} /><figcaption>After · 2×</figcaption></figure>
+    <figure><div className="denoise-zoom" role="img" aria-label="Noisy closeup at 4x magnification" data-testid="denoise-closeup-before" style={{ backgroundImage: `url("${preview.beforeUrl}")`, backgroundPosition: position }} /><figcaption>Before · 4×</figcaption></figure>
+    <figure><div className="denoise-zoom" role="img" aria-label="Denoised closeup at 4x magnification" data-testid="denoise-closeup-after" style={{ backgroundImage: `url("${preview.afterUrl}")`, backgroundPosition: position }} /><figcaption>After · 4×</figcaption></figure>
   </div>;
 }
 
@@ -643,7 +643,7 @@ function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo
       <p className="inspector-note">Denoises on the photo server — a small preview first, then the full photo on apply. The recipe keeps only the strength.</p>
     </>}
     {!working && assist.state === 'preview-ready' && assist.preview && <>
-      <div className="denoise-compare" data-testid="denoise-compare" title="Click to move the 2× closeup" onClick={(event) => {
+      <div className="denoise-compare" data-testid="denoise-compare" title="Click to move the 4× closeup" onClick={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return;
         const x = Math.round(((event.clientX - rect.left) / rect.width) * 100);

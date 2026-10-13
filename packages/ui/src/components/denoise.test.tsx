@@ -188,7 +188,7 @@ describe('denoise control', () => {
     expect(html).not.toContain('secondary-button');
   });
 
-  it('shows a centered 2x closeup under the small preview pair', () => {
+  it('shows a centered 4x closeup under the small preview pair', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT },
       makePhoto(3200),
@@ -200,11 +200,13 @@ describe('denoise control', () => {
     expect(html).toContain('data-testid="denoise-closeup"');
     expect(html).toContain('data-testid="denoise-closeup-before"');
     expect(html).toContain('data-testid="denoise-closeup-after"');
-    expect(html).toContain('Before · 2×');
-    expect(html).toContain('After · 2×');
+    expect(html).toContain('Before · 4×');
+    expect(html).toContain('After · 4×');
+    expect(html).toContain('Noisy closeup at 4x magnification');
+    expect(html).toContain('Denoised closeup at 4x magnification');
     // Default loupe sits on the center until the user clicks the preview.
     expect(html).toContain('background-position:50% 50%');
-    expect(html).toContain('Click to move the 2× closeup');
+    expect(html).toContain('Click to move the 4× closeup');
   });
 
   it('keeps the closeup as proof after apply and points at Compare', () => {
@@ -222,10 +224,10 @@ describe('denoise control', () => {
     expect(html).toContain('Compare (B) shows the noisy original against the clean photo.');
   });
 
-  it('magnifies the closeup boxes 2x without tiling', () => {
+  it('magnifies the closeup boxes 4x without tiling', () => {
     const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
     const rule = readFileSync(cssPath, 'utf8').match(/\.denoise-zoom\s*\{([^}]*)\}/)?.[1] ?? '';
-    expect(rule).toMatch(/background-size\s*:\s*200%/);
+    expect(rule).toMatch(/background-size\s*:\s*400%/);
     expect(rule).toMatch(/background-repeat\s*:\s*no-repeat/);
   });
 });
