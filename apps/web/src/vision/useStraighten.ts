@@ -3,14 +3,16 @@
 // confidence is low — automatically falls back to the server ML estimate
 // (gradient vote today, tilt-regressor ONNX once weights land), reporting
 // the same progress stages as ML heal. Estimates are auto-applied by the
-// Inspector (one undo step each); the pre-Auto value is snapshotted there
-// for one-click Revert. Suggestions never carry across photos.
+// Inspector (one undo step each); the pre-Auto value is snapshotted here
+// from the passed slider value and survives manual dismisses for the
+// revert icon. Snapshots never carry across photos.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD,
   STRAIGHTEN_WORKING_WIDTH,
   decodeDownsampled,
+  hasStraightenHorizon,
 } from "@f8/core";
 import { getVisionWorkerClient } from "./visionClient";
 import { runRemoteStraighten, warmupRemoteStraighten } from "./remoteStraighten";
@@ -41,8 +43,13 @@ export interface StraightenAssistResult {
   mlNote: string | null;
   /** Human-readable error; set only when state is error. */
   message: string | null;
-  detect: (src: string) => void;
+  /** Pre-Auto slider value; set while a revert is available, even after manual edits. */
+  snapshot: number | null;
+  detect: (src: string, currentValue: number) => void;
+  /** Dismiss the detection highlight; the snapshot stays for the revert icon. */
   dismiss: () => void;
+  /** Clear the snapshot and dismiss (the control restores the value itself first). */
+  revert: () => void;
   cancelMl: () => void;
 }
 
@@ -57,10 +64,11 @@ export function useStraighten(photoId: string): StraightenAssistResult {
   const [mlWarming, setMlWarming] = useState(false);
   const [mlNote, setMlNote] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<number | null>(null);
   const requestRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
-  const reset = useCallback(() => {
+  const resetDetection = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
     requestRef.current += 1;
@@ -76,12 +84,26 @@ export function useStraighten(photoId: string): StraightenAssistResult {
   }, []);
 
   useEffect(() => {
-    reset();
-  }, [photoId, reset]);
+    resetDetection();
+    setSnapshot(null);
+  }, [photoId, resetDetection]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const dismiss = useCallback(() => reset(), [reset]);
+  // A failed run or a below-threshold result applies nothing, so no revert
+  // is owed: drop the snapshot the detect click captured. Manual dismisses
+  // (slider, rotate) keep it — the revert icon stays after manual edits.
+  useEffect(() => {
+    if (state === "error") setSnapshot(null);
+    else if (state === "ready" && angle !== null && !hasStraightenHorizon(confidence)) setSnapshot(null);
+  }, [state, angle, confidence]);
+
+  const dismiss = useCallback(() => resetDetection(), [resetDetection]);
+
+  const revert = useCallback(() => {
+    setSnapshot(null);
+    resetDetection();
+  }, [resetDetection]);
 
   const cancelMl = useCallback(() => {
     // Cancel the server run but keep the classic suggestion: the user asked
@@ -104,12 +126,15 @@ export function useStraighten(photoId: string): StraightenAssistResult {
   }, []);
 
   const detect = useCallback(
-    (src: string) => {
+    (src: string, currentValue: number) => {
       const request = requestRef.current + 1;
       requestRef.current = request;
       abortRef.current?.abort();
       const aborter = new AbortController();
       abortRef.current = aborter;
+      // A new run supersedes any previous snapshot; a failed or
+      // horizon-less run drops it again (see the clearing effect above).
+      setSnapshot(currentValue);
       setAngle(null);
       setConfidence(null);
       setSource(null);
@@ -189,5 +214,5 @@ export function useStraighten(photoId: string): StraightenAssistResult {
     [client, reportMl],
   );
 
-  return { state, angle, confidence, source, runId, mlProgress, mlWarming, mlNote, message, detect, dismiss, cancelMl };
+  return { state, angle, confidence, source, runId, mlProgress, mlWarming, mlNote, message, snapshot, detect, dismiss, revert, cancelMl };
 }

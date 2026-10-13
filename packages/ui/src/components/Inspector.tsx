@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bandage, Brush, ChevronDown, Circle, CircleDashed, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Layers, MoreHorizontal, Palette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Waves, X } from 'lucide-react';
+import { Bandage, Brush, ChevronDown, Circle, CircleDashed, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Layers, MoreHorizontal, Palette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Undo2, Waves, X } from 'lucide-react';
 import { CROP_RATIOS, SCENE_DISPLAY_NAMES, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, shouldAutoDenoise, strokeIdForPoint } from '@f8/core';
 import type { ChangeEdit, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, MlCategory, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
@@ -40,8 +40,14 @@ export interface StraightenAssist {
   mlNote?: string | null;
   /** Human-readable error; set only when state is error. */
   message: string | null;
-  onDetect: () => void;
+  /** Pre-Auto slider value; set while a revert is available, even after manual edits cleared the highlight. */
+  snapshot: number | null;
+  /** The control passes its current slider value so the app can snapshot it before detecting. */
+  onDetect: (currentValue: number) => void;
+  /** Dismiss the detection highlight; the snapshot stays for the revert icon. */
   onDismiss: () => void;
+  /** Clear the snapshot and dismiss. The control restores the value itself first. */
+  onRevert: () => void;
   onCancelMl?: () => void;
 }
 
@@ -260,22 +266,20 @@ function MlProgressView({ progress, onCancel }: { progress: { fraction: number; 
 function StraightenControl({ value, assist, onStraighten, onDraggingChange }: { value: number; assist: StraightenAssist; onStraighten: (next: number, mergeKey?: string) => void; onDraggingChange?: (dragging: boolean) => void }) {
   const working = assist.state === 'loading' || assist.state === 'detecting';
   const mlActive = Boolean(working && assist.mlProgress);
-  // Single-button toggle: applied derives from the assist result alone, so a
-  // manual slider move or 90° rotate (both dismiss the assist) untoggles the
-  // button while the value stays — undo still offers the revert. Below the
-  // horizon threshold nothing applies; the app flashes the no-horizon message
-  // over the photo instead (see PhotoCanvas straightenFlash).
+  // One Auto button plus a revert icon, like the per-category ML actions:
+  // applied derives from the assist result alone, so a manual slider move
+  // or 90° rotate (both dismiss the assist) untoggles the button while the
+  // value stays — and the snapshot-backed revert icon stays available.
+  // Below the horizon threshold nothing applies; the app flashes the
+  // no-horizon message over the photo instead (see PhotoCanvas
+  // straightenFlash).
   const applied = assist.state === 'ready' && assist.angle !== null && hasStraightenHorizon(assist.confidence) && (assist.runId ?? 0) !== 0;
-  // Pre-Auto slider value for click-again revert. Captured in the Auto click
-  // handler (the vision hook never sees the edit); cleared whenever the
-  // assist returns to idle (revert, manual edit, photo switch).
-  const [snapshot, setSnapshot] = useState<number | null>(null);
   // Applied key `${runId}:${angle}`: the server fallback overwrites with the
   // same runId but a new angle, and StrictMode double-effects never
   // double-apply.
   const appliedKey = useRef('');
   useEffect(() => {
-    if (assist.state === 'idle') { setSnapshot(null); appliedKey.current = ''; }
+    if (assist.state === 'idle') appliedKey.current = '';
   }, [assist.state]);
   const runId = assist.runId ?? 0;
   const readyAngle = applied ? assist.angle : null;
@@ -290,22 +294,22 @@ function StraightenControl({ value, assist, onStraighten, onDraggingChange }: { 
       }
     }
   }, [readyAngle, runId, onStraighten]);
+  const revert = () => {
+    if (assist.snapshot !== null) onStraighten(assist.snapshot);
+    assist.onRevert();
+  };
   const onToggle = () => {
     if (applied) {
-      // A remount (tool switch) can drop the snapshot while the assist still
-      // reports ready: dismissing then only clears the highlight — the value
-      // stays and undo still reverts it.
-      if (snapshot !== null) onStraighten(snapshot);
-      assist.onDismiss();
+      revert();
       return;
     }
-    setSnapshot(value);
-    assist.onDetect();
+    assist.onDetect(value);
   };
   return <div className="straighten-assist">
     <RangeControl label="Straighten" value={value} min={-15} max={15} step={0.1} suffix="deg" signed valueHint="Click to type an exact value in degrees" onDraggingChange={onDraggingChange} onChange={(next) => { assist.onDismiss(); onStraighten(next, 'straighten'); }} />
     <div className="straighten-auto-row">
       <button className={`auto-small straighten-auto${applied ? ' is-active' : ''}`} data-testid="straighten-auto" aria-pressed={applied} disabled={working} title={applied ? 'Auto-straighten applied — click to revert' : 'Detect the horizon tilt automatically and apply it'} onClick={onToggle}>{working ? (assist.state === 'loading' ? 'Loading…' : mlActive ? 'Estimating…' : 'Detecting…') : 'Auto'}</button>
+      {assist.snapshot !== null && <IconButton className="ml-revert" data-testid="straighten-auto-revert" label="Revert auto-straighten" onClick={revert}><Undo2 size={11} /></IconButton>}
       {working && !mlActive && <span className="straighten-status" role="status">{assist.state === 'loading' ? 'Loading vision engine…' : 'Detecting horizon tilt…'}</span>}
       {assist.state === 'error' && assist.message && <span className="straighten-status is-error" role="alert">{assist.message}</span>}
     </div>
@@ -462,11 +466,18 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
   </div>;
 }
 
-function SceneEnhanceControl({ edit, onAutoScene }: { edit: EditState; onAutoScene: () => void }) {
-  const active = edit.autoEnhanced && Boolean(edit.sceneEnhance);
+function SceneEnhanceControl({ edit, active, canRevert, onAutoScene, onRevert }: { edit: EditState; active: boolean; canRevert: boolean; onAutoScene: () => void; onRevert: () => void }) {
+  const title = active
+    ? 'Scene Enhance applied — click to revert'
+    : canRevert
+    ? 'Re-apply Scene Enhance with ML'
+    : 'Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings';
   return <div className="scene-enhance" data-testid="scene-enhance">
-    <button className={`slim-button full-width${active ? ' is-active' : ''}`} data-testid="scene-enhance-apply" aria-pressed={active} title="Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings" onClick={onAutoScene}><span>Scene Enhance <span className="ml-badge" title="The scene is classified by a machine-learning model on your device">ML</span></span></button>
-    {active && edit.sceneEnhance && <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}% · ML</span>}
+    <div className="scene-enhance-row">
+      <button className={`slim-button full-width${active ? ' is-active' : ''}`} data-testid="scene-enhance-apply" aria-pressed={active} title={title} onClick={onAutoScene}><span>Scene Enhance <span className="ml-badge" title="The scene is classified by a machine-learning model on your device">ML</span></span></button>
+      {canRevert && <IconButton className="ml-revert" data-testid="scene-enhance-revert" label="Revert scene enhance" onClick={onRevert}><Undo2 size={11} /></IconButton>}
+    </div>
+    {edit.sceneEnhance && <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}% · ML</span>}
   </div>;
 }
 
@@ -738,6 +749,12 @@ interface InspectorProps {
   onAuto: () => void;
   /** ML subject-aware enhance; omit to hide the scene row. */
   onAutoScene?: () => void;
+  /** Last enhance mode with a stored snapshot; null when no enhance revert is available. */
+  enhanceMode?: 'classic' | 'scene' | null;
+  /** True while the recipe still holds exactly the last enhance's values. */
+  enhancePure?: boolean;
+  /** Restore the pre-enhance snapshot (shared by both enhance modes). */
+  onRevertEnhance: () => void;
   /** ML face-aware exposure; omit to hide the faces control. */
   faceAssist?: FaceEnhanceAssist;
   /** ML selective (masked) adjustments; omit to hide the subject control. */
@@ -747,8 +764,13 @@ interface InspectorProps {
   onAutoWhiteBalance: () => void;
   onAutoLightness: () => void;
   onAutoColor: () => void;
-  /** Per-category ML applied flags; a set flag highlights the ML button and shows the revert icon. */
+  onRevertWhiteBalance: () => void;
+  onRevertLightness: () => void;
+  onRevertColor: () => void;
+  /** Per-category ML highlight flags; a set flag lights the ML button (pure auto values). */
   mlApplied?: Partial<Record<MlCategory, boolean>>;
+  /** Per-category ML revert flags; a set flag shows the revert icon, even after manual edits. */
+  mlRevert?: Partial<Record<MlCategory, boolean>>;
   onCopy: () => void;
   onPaste: () => void;
   onSavePreset: () => void;
@@ -757,13 +779,14 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, mlApplied, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, enhanceMode = null, enhancePure = false, onRevertEnhance, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, onRevertWhiteBalance, onRevertLightness, onRevertColor, mlApplied, mlRevert, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
-  // Header toggles show/hide their category (the disclosure chevron drives
-  // the same state). Details starts collapsed, as before.
-  const [visibleSections, setVisibleSections] = useState({ whiteBalance: true, lightness: true, color: true, details: false });
-  const setSectionVisible = (section: keyof typeof visibleSections, visible: boolean) => setVisibleSections((current) => ({ ...current, [section]: visible }));
+  // The Details header toggle shows/hides its category (the disclosure
+  // chevron drives the same state). Details starts collapsed, as before.
+  // Sections with an ML button carry no toggle — the ML button is the one
+  // header control and the chevron alone collapses them.
+  const [detailsVisible, setDetailsVisible] = useState(false);
   const [extraSections, setExtraSections] = useState<string[]>([]);
   const [openedExtra, setOpenedExtra] = useState('');
   const [extraRevision, setExtraRevision] = useState(0);
@@ -796,6 +819,18 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
     if (name === 'Black & White') onChange({ blackAndWhite: true });
     window.setTimeout(() => ref.current?.querySelector('.inspector-scroll')?.scrollTo({ top: 2000, behavior: 'smooth' }), 50);
   };
+  // Whole-photo enhance UI: each mode's button highlights only its own pure
+  // state, and the last-used mode carries the shared revert icon — manual
+  // look edits clear the highlight but keep the revert.
+  const classicActive = enhanceMode === 'classic' && enhancePure;
+  const classicRevert = enhanceMode === 'classic';
+  const classicTitle = classicActive
+    ? 'Auto Enhance applied — click to revert'
+    : classicRevert
+    ? 'Re-apply automatic enhancement'
+    : 'Automatically enhance exposure, contrast, and color; click again to revert';
+  const sceneActive = enhanceMode === 'scene' && enhancePure;
+  const sceneRevert = enhanceMode === 'scene';
 
   return <aside className="adjustments-sidebar" ref={ref} aria-label="Editing inspector">
     <div className="inspector-title">
@@ -812,12 +847,12 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="classic-enhance" data-testid="auto-enhance"><button className={`slim-button full-width${edit.autoEnhanced && !edit.sceneEnhance ? ' is-active' : ''}`} data-testid="auto-enhance-apply" aria-pressed={edit.autoEnhanced && !edit.sceneEnhance} title="Automatically enhance exposure, contrast, and color; click again to revert" onClick={onAuto}><Sparkles size={13} /><span>Auto Enhance</span></button></div>{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} badge={<span className="ml-badge" title="The scene is classified by a machine-learning model on your device">ML</span>}><SceneEnhanceControl edit={edit} onAutoScene={onAutoScene} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} badge={<span className="ml-badge" title="Faces are detected by a machine-learning model on the photo server">ML</span>}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} badge={<span className="ml-badge" title="The subject is segmented by a machine-learning model on the photo server">ML</span>}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <AdjustmentSection title="Denoise" icon={<Waves size={14} />} badge={<span className="ml-badge" title="Denoised by a machine-learning model on the photo server">ML</span>}><DenoiseControl assist={denoiseAssist} photo={photo} /></AdjustmentSection>}<Histogram data={histogram} photo={photo} />
-      <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} enabled={visibleSections.whiteBalance} onToggle={() => setSectionVisible('whiteBalance', !visibleSections.whiteBalance)} open={visibleSections.whiteBalance} onOpenChange={(open) => setSectionVisible('whiteBalance', open)} ml={{ id: 'white-balance', applied: Boolean(mlApplied?.whiteBalance), onToggle: onAutoWhiteBalance }} onReset={() => onChange({ temperature: 5500, tint: 0 })}>
+    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="classic-enhance" data-testid="auto-enhance"><button className={`slim-button full-width${classicActive ? ' is-active' : ''}`} data-testid="auto-enhance-apply" aria-pressed={classicActive} title={classicTitle} onClick={onAuto}><Sparkles size={13} /><span>Auto Enhance</span></button>{classicRevert && <IconButton className="ml-revert" data-testid="auto-enhance-revert" label="Revert auto enhance" onClick={onRevertEnhance}><Undo2 size={11} /></IconButton>}</div>{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} badge={<span className="ml-badge" title="The scene is classified by a machine-learning model on your device">ML</span>}><SceneEnhanceControl edit={edit} active={sceneActive} canRevert={sceneRevert} onAutoScene={onAutoScene} onRevert={onRevertEnhance} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} badge={<span className="ml-badge" title="Faces are detected by a machine-learning model on the photo server">ML</span>}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} badge={<span className="ml-badge" title="The subject is segmented by a machine-learning model on the photo server">ML</span>}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <AdjustmentSection title="Denoise" icon={<Waves size={14} />} badge={<span className="ml-badge" title="Denoised by a machine-learning model on the photo server">ML</span>}><DenoiseControl assist={denoiseAssist} photo={photo} /></AdjustmentSection>}<Histogram data={histogram} photo={photo} />
+      <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} ml={{ id: 'white-balance', applied: Boolean(mlApplied?.whiteBalance), canRevert: Boolean(mlRevert?.whiteBalance), onToggle: onAutoWhiteBalance, onRevert: onRevertWhiteBalance }} onReset={() => onChange({ temperature: 5500, tint: 0 })}>
         {rangeEnabled('whiteBalanceEnabled', 'temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false })}
         {rangeEnabled('whiteBalanceEnabled', 'tint', 'Tint', { color: 'tint' })}
       </AdjustmentSection>
-      <AdjustmentSection title="Lightness" icon={<Sun size={15} />} enabled={visibleSections.lightness} onToggle={() => setSectionVisible('lightness', !visibleSections.lightness)} open={visibleSections.lightness} onOpenChange={(open) => setSectionVisible('lightness', open)} ml={{ id: 'lightness', applied: Boolean(mlApplied?.lightness), onToggle: onAutoLightness }} onReset={() => onChange({ exposure: 0, brightness: 0, contrast: 0, highlights: 0, shadows: 0, blacks: 0 })}>
+      <AdjustmentSection title="Lightness" icon={<Sun size={15} />} ml={{ id: 'lightness', applied: Boolean(mlApplied?.lightness), canRevert: Boolean(mlRevert?.lightness), onToggle: onAutoLightness, onRevert: onRevertLightness }} onReset={() => onChange({ exposure: 0, brightness: 0, contrast: 0, highlights: 0, shadows: 0, blacks: 0 })}>
         {rangeEnabled('lightnessEnabled', 'exposure', 'Exposure', { min: -3, max: 3, step: 0.01 })}
         {rangeEnabled('lightnessEnabled', 'brightness', 'Brightness')}
         {rangeEnabled('lightnessEnabled', 'contrast', 'Contrast')}
@@ -825,7 +860,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
         {rangeEnabled('lightnessEnabled', 'shadows', 'Shadows')}
         {rangeEnabled('lightnessEnabled', 'blacks', 'Black Point')}
       </AdjustmentSection>
-      <AdjustmentSection title="Hue & Saturation" icon={<Palette size={14} />} enabled={visibleSections.color} onToggle={() => setSectionVisible('color', !visibleSections.color)} open={visibleSections.color} onOpenChange={(open) => setSectionVisible('color', open)} ml={{ id: 'color', applied: Boolean(mlApplied?.color), onToggle: onAutoColor }} onReset={() => onChange({ hue: 0, saturation: 0, vibrance: 0 })}>
+      <AdjustmentSection title="Hue & Saturation" icon={<Palette size={14} />} ml={{ id: 'color', applied: Boolean(mlApplied?.color), canRevert: Boolean(mlRevert?.color), onToggle: onAutoColor, onRevert: onRevertColor }} onReset={() => onChange({ hue: 0, saturation: 0, vibrance: 0 })}>
         {rangeEnabled('colorEnabled', 'saturation', 'Saturation')}
         {rangeEnabled('colorEnabled', 'vibrance', 'Vibrance')}
         {rangeEnabled('colorEnabled', 'hue', 'Hue', { min: -180, max: 180, color: 'hue' })}
@@ -833,7 +868,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       <AdjustmentSection key={`curves-${openedExtra === 'Curves' ? extraRevision : 0}`} title="Curves" icon={<Spline size={14} />} initiallyOpen={openedExtra === 'Curves'} onReset={() => onChange({ curve: 0 })}>
         <div className="curve-graph"><span>RGB</span><svg viewBox="0 0 240 160" aria-label="Interactive tone curve" role="slider" tabIndex={0} aria-valuemin={-100} aria-valuemax={100} aria-valuenow={edit.curve} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const rect = event.currentTarget.getBoundingClientRect(); onChange({ curve: Math.max(-100, Math.min(100, (0.5 - (event.clientY - rect.top) / rect.height) * 200)) }, 'curve'); }} onPointerMove={(event) => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; const rect = event.currentTarget.getBoundingClientRect(); onChange({ curve: Math.max(-100, Math.min(100, (0.5 - (event.clientY - rect.top) / rect.height) * 200)) }, 'curve'); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); event.stopPropagation(); onChange({ curve: Math.max(-100, Math.min(100, edit.curve + (event.key === 'ArrowUp' ? 5 : -5))) }, 'curve'); } }}><g className="curve-grid">{[60, 120, 180].map((x) => <path key={x} d={`M${x} 0V160`} />)}{[40, 80, 120].map((y) => <path key={y} d={`M0 ${y}H240`} />)}</g><path d="M0 160L240 0" stroke="#555" strokeDasharray="3 4" /><path d={`M0 160Q120 ${80 - edit.curve * 0.8} 240 0`} fill="none" stroke="#e4c67d" strokeWidth="2" /><circle cx="120" cy={80 - edit.curve * 0.4} r="4" fill="#f3d492" /></svg></div>{range('curve', 'Midtones')}
       </AdjustmentSection>
-      <AdjustmentSection key={`details-${openedExtra === 'Details' ? extraRevision : 0}`} title="Details" icon={<Focus size={14} />} enabled={visibleSections.details} onToggle={() => setSectionVisible('details', !visibleSections.details)} open={visibleSections.details} onOpenChange={(open) => setSectionVisible('details', open)}>
+      <AdjustmentSection key={`details-${openedExtra === 'Details' ? extraRevision : 0}`} title="Details" icon={<Focus size={14} />} enabled={detailsVisible} onToggle={() => setDetailsVisible(!detailsVisible)} open={detailsVisible} onOpenChange={setDetailsVisible}>
         {rangeEnabled('detailsEnabled', 'clarity', 'Clarity')}{rangeEnabled('detailsEnabled', 'sharpness', 'Sharpness', { min: 0 })}{rangeEnabled('detailsEnabled', 'grain', 'Grain', { min: 0 })}
       </AdjustmentSection>
       <AdjustmentSection key={`effects-${openedExtra === 'Effects' ? extraRevision : 0}`} title="Effects" icon={<CircleDashed size={14} />} initiallyOpen={openedExtra === 'Effects'} onReset={() => onChange({ vignette: 0, fade: 0 })}>

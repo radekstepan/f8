@@ -48,10 +48,14 @@ function renderAdjust(edit: EditState, onAutoScene?: () => void): string {
       onStraighten={noop}
       onReset={noop}
       onAuto={noop}
+      onRevertEnhance={noop}
       {...(onAutoScene === undefined ? {} : { onAutoScene })}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
+      onRevertWhiteBalance={noop}
+      onRevertLightness={noop}
+      onRevertColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -95,16 +99,23 @@ describe('scene enhance row', () => {
     expect(html).toContain('Portrait · 86% · ML');
   });
 
-  it('shows no scene label for classic enhance or after toggling off', () => {
+  it('shows no scene label for classic enhance, which stores no scene', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, noop)).not.toContain(
       'data-testid="scene-enhance-scene"',
     );
-    expect(
-      renderAdjust(
-        { ...DEFAULT_EDIT, autoEnhanced: false, sceneEnhance: { scene: 'night', confidence: 0.9 } },
-        noop,
-      ),
-    ).not.toContain('data-testid="scene-enhance-scene"');
+  });
+
+  it('keeps the persisted scene label even once the highlight is gone', () => {
+    // The badge is persisted recipe context (detected scene + confidence),
+    // not session highlight state: it survives manual edits and reloads
+    // that drop the button highlight. A real revert nulls sceneEnhance and
+    // takes the badge with it.
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT, autoEnhanced: false, sceneEnhance: { scene: 'night', confidence: 0.9 } },
+      noop,
+    );
+    expect(html).toContain('data-testid="scene-enhance-scene"');
+    expect(html).toContain('Night · 90% · ML');
   });
 
   it('keeps the classic Auto Enhance row alongside the ML row', () => {

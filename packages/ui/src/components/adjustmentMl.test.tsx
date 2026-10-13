@@ -36,7 +36,7 @@ function makePhoto(): Photo {
 
 const noop = () => {};
 
-function renderAdjust(edit: EditState, mlApplied?: Partial<Record<MlCategory, boolean>>): string {
+function renderAdjust(edit: EditState, mlApplied?: Partial<Record<MlCategory, boolean>>, mlRevert?: Partial<Record<MlCategory, boolean>>): string {
   return renderToStaticMarkup(
     <Inspector
       photo={makePhoto()}
@@ -51,10 +51,15 @@ function renderAdjust(edit: EditState, mlApplied?: Partial<Record<MlCategory, bo
       onStraighten={noop}
       onReset={noop}
       onAuto={noop}
+      onRevertEnhance={noop}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
+      onRevertWhiteBalance={noop}
+      onRevertLightness={noop}
+      onRevertColor={noop}
       {...(mlApplied ? { mlApplied } : {})}
+      {...(mlRevert ? { mlRevert } : {})}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -86,7 +91,7 @@ describe('adjustment ML buttons', () => {
   });
 
   it('shows a revert icon next to the applied ML button only', () => {
-    const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true });
+    const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true }, { whiteBalance: true });
     expect(html).toContain('class="ml-button is-active" data-testid="white-balance-ml"');
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('title="ML white balance applied — click to revert"');
@@ -106,8 +111,21 @@ describe('adjustment ML buttons', () => {
     expect(html).not.toContain('data-testid="color-ml-revert"');
   });
 
+  it('keeps the revert icon after manual edits cleared the highlight', () => {
+    // A slider drag after the ML apply drops the pure-auto highlight but
+    // leaves the pre-ML snapshot: idle button, re-apply title, revert
+    // icon still beside it.
+    const html = renderAdjust({ ...DEFAULT_EDIT }, {}, { whiteBalance: true });
+    expect(html).toContain('class="ml-button" data-testid="white-balance-ml"');
+    expect(html).toContain('title="Re-apply automatic white balance with ML"');
+    expect(html).toContain('data-testid="white-balance-ml-revert"');
+    expect(html).toContain('aria-label="Revert ML white balance"');
+    expect(html).not.toContain('data-testid="lightness-ml-revert"');
+    expect(html).not.toContain('data-testid="color-ml-revert"');
+  });
+
   it('tracks applied state per category', () => {
-    const html = renderAdjust({ ...DEFAULT_EDIT }, { lightness: true, color: true });
+    const html = renderAdjust({ ...DEFAULT_EDIT }, { lightness: true, color: true }, { lightness: true, color: true });
     expect(html).toContain('class="ml-button is-active" data-testid="lightness-ml"');
     expect(html).toContain('class="ml-button is-active" data-testid="color-ml"');
     expect(html).toContain('data-testid="lightness-ml-revert"');
@@ -117,7 +135,7 @@ describe('adjustment ML buttons', () => {
   });
 
   it('gives no ML button to sections without an automatic action', () => {
-    const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true, lightness: true, color: true });
+    const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true, lightness: true, color: true }, { whiteBalance: true, lightness: true, color: true });
     expect(html).not.toContain('data-testid="curves-ml"');
     expect(html).not.toContain('data-testid="details-ml"');
     expect(html).not.toContain('data-testid="effects-ml"');
@@ -125,21 +143,22 @@ describe('adjustment ML buttons', () => {
 });
 
 describe('adjustment visibility toggles', () => {
-  it('labels header toggles as visibility, not effect bypass', () => {
+  it('carries no toggle beside the ML button — the ML button is the one control', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
-    expect(html).toContain('aria-label="Show white balance"');
-    expect(html).toContain('aria-label="Show lightness"');
-    expect(html).toContain('aria-label="Show hue &amp; saturation"');
-    expect(html).toContain('aria-label="Show details"');
+    // The chevron alone collapses ML sections; no toggle sits next to the
+    // ML button, neither as visibility nor as effect bypass.
+    expect(html).not.toContain('aria-label="Show white balance"');
+    expect(html).not.toContain('aria-label="Show lightness"');
+    expect(html).not.toContain('aria-label="Show hue &amp; saturation"');
     expect(html).not.toContain('Enable white balance');
     expect(html).not.toContain('Enable lightness');
     expect(html).not.toContain('Enable hue');
+    // Details has no automatic action, so it keeps its visibility toggle.
+    expect(html).toContain('aria-label="Show details"');
   });
 
-  it('reflects visibility in the toggle state', () => {
+  it('reflects Details visibility in its toggle state', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
-    expect(html).toContain('aria-checked="true" aria-label="Show white balance"');
-    expect(html).toContain('aria-checked="true" aria-label="Show lightness"');
     // Details starts collapsed, as before the toggle change.
     expect(html).toContain('aria-checked="false" aria-label="Show details"');
     expect(html).not.toContain('>Clarity</label>');
@@ -165,7 +184,7 @@ describe('AdjustmentSection', () => {
     );
 
   it('hides content, ML, and revert behind controlled visibility', () => {
-    const html = section({ enabled: false, open: false, ml: { id: 'white-balance', applied: true, onToggle: noop } });
+    const html = section({ enabled: false, open: false, ml: { id: 'white-balance', applied: true, canRevert: true, onToggle: noop, onRevert: noop } });
     expect(html).toContain('is-collapsed');
     expect(html).not.toContain('slider-stub');
     // The ML action follows the Auto precedent: heading-only when collapsed.
@@ -174,11 +193,18 @@ describe('AdjustmentSection', () => {
   });
 
   it('renders content and ML when controlled open', () => {
-    const html = section({ enabled: true, open: true, ml: { id: 'white-balance', applied: false, onToggle: noop } });
+    const html = section({ enabled: true, open: true, ml: { id: 'white-balance', applied: false, canRevert: false, onToggle: noop, onRevert: noop } });
     expect(html).not.toContain('is-collapsed');
     expect(html).toContain('slider-stub');
     expect(html).toContain('data-testid="white-balance-ml"');
     expect(html).not.toContain('data-testid="white-balance-ml-revert"');
+  });
+
+  it('shows the revert icon without the highlight after manual edits', () => {
+    const html = section({ enabled: true, open: true, ml: { id: 'white-balance', applied: false, canRevert: true, onToggle: noop, onRevert: noop } });
+    expect(html).toContain('class="ml-button" data-testid="white-balance-ml"');
+    expect(html).toContain('title="Re-apply automatic white balance with ML"');
+    expect(html).toContain('data-testid="white-balance-ml-revert"');
   });
 
   it('stays self-managed without controlled visibility', () => {

@@ -42,6 +42,22 @@ export function presetForPatch(current: string, patch: Partial<EditState>): stri
   return touchesColor ? 'Custom' : current;
 }
 
+/** Edit keys that only label the recipe and never change the rendered look. */
+const LOOK_BOOKKEEPING_KEYS = new Set(['preset', 'autoEnhanced', 'sceneEnhance']);
+
+/**
+ * True when a manual edit patch moves the recipe off pure whole-photo
+ * enhance values. Enhance resets the full color look to its computed base,
+ * so any look change (sliders, curves, black & white, face/selective
+ * adjusts, denoise) drops the enhance highlight — while geometry, retouch,
+ * and label-only patches leave it alone. The revert snapshot stays.
+ */
+export function patchBreaksEnhancePure(patch: Partial<EditState>): boolean {
+  return Object.keys(patch).some(
+    (key) => !PRESET_PRESERVING_KEYS.has(key) && !LOOK_BOOKKEEPING_KEYS.has(key),
+  );
+}
+
 /** Edit keys compared when deciding whether a recipe still shows Original. */
 const ORIGINAL_LOOK_KEYS = (Object.keys(DEFAULT_EDIT) as (keyof EditState)[]).filter(
   (key) => key !== 'preset' && !PRESET_PRESERVING_KEYS.has(key),

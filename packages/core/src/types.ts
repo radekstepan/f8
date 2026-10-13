@@ -214,7 +214,8 @@ export interface EditState {
   /**
    * Set when ML scene enhance applied this recipe (the detected scene +
    * confidence for the UI badge). Null/absent for classic enhances and
-   * legacy server recipes. Shown only while autoEnhanced is true.
+   * legacy server recipes. The badge shows whenever set; the button
+   * highlight is session-only and drops on the first manual look edit.
    */
   sceneEnhance?: SceneEnhanceResult | null;
   /**

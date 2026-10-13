@@ -4,10 +4,11 @@ import { DEFAULT_EDIT, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD } from '@f8/core';
 import type { Photo } from '@f8/core';
 import { Inspector, type StraightenAssist } from './Inspector.js';
 
-// Auto-straighten single-button toggle, rendered on the server (no jsdom):
-// effects never run, so this pins the markup + prop wiring — one Auto
-// button that highlights when a horizon is applied and reverts on a second
-// click, with no separate Revert/Dismiss panel — not click behavior.
+// Auto-straighten button + revert icon, rendered on the server (no
+// jsdom): effects never run, so this pins the markup + prop wiring — one
+// Auto button that highlights when a horizon is applied (reverting on a
+// second click) plus a revert icon whenever a pre-Auto snapshot exists,
+// with no Revert/Dismiss panel — not click behavior.
 
 function makePhoto(): Photo {
   return {
@@ -51,9 +52,13 @@ function renderCrop(assist: StraightenAssist): string {
       onStraighten={noop}
       onReset={noop}
       onAuto={noop}
+      onRevertEnhance={noop}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
+      onRevertWhiteBalance={noop}
+      onRevertLightness={noop}
+      onRevertColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -69,24 +74,26 @@ const idleAssist: StraightenAssist = {
   angle: null,
   confidence: null,
   message: null,
+  snapshot: null,
   onDetect: noop,
   onDismiss: noop,
+  onRevert: noop,
 };
 
 describe('straighten single-button toggle', () => {
-  it('renders one idle Auto pill with no separate revert or dismiss action', () => {
+  it('renders one idle Auto pill with no revert icon and no dismiss action', () => {
     const html = renderCrop(idleAssist);
     expect(html).toContain('class="auto-small straighten-auto" data-testid="straighten-auto"');
     expect(html).toContain('aria-pressed="false"');
     expect(html).toContain('title="Detect the horizon tilt automatically and apply it"');
     expect(html).toContain('>Auto</button>');
-    // No suggestion panel and no standalone Revert/Dismiss buttons.
+    // No suggestion panel, no revert icon, and no Dismiss button.
     expect(html).not.toContain('straighten-suggestion');
-    expect(html).not.toContain('>Revert</button>');
+    expect(html).not.toContain('data-testid="straighten-auto-revert"');
     expect(html).not.toContain('>Dismiss</button>');
   });
 
-  it('highlights the button once a horizon is applied, still with no extra actions', () => {
+  it('highlights the button and shows a revert icon once a horizon is applied', () => {
     const html = renderCrop({
       ...idleAssist,
       state: 'ready',
@@ -94,18 +101,30 @@ describe('straighten single-button toggle', () => {
       confidence: STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD,
       source: 'classic',
       runId: 1,
+      snapshot: 0,
     });
     expect(html).toContain('class="auto-small straighten-auto is-active" data-testid="straighten-auto"');
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('title="Auto-straighten applied — click to revert"');
+    expect(html).toContain('data-testid="straighten-auto-revert"');
+    expect(html).toContain('aria-label="Revert auto-straighten"');
     expect(html).not.toContain('straighten-suggestion');
-    expect(html).not.toContain('>Revert</button>');
     expect(html).not.toContain('>Dismiss</button>');
+  });
+
+  it('keeps the revert icon after a manual edit dismissed the highlight', () => {
+    // A manual slider move or 90° rotate dismisses the assist (idle, no
+    // highlight) while the hook keeps the snapshot for the revert icon.
+    const html = renderCrop({ ...idleAssist, snapshot: 0 });
+    expect(html).toContain('class="auto-small straighten-auto" data-testid="straighten-auto"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('data-testid="straighten-auto-revert"');
   });
 
   it('leaves the button idle when no horizon was detected', () => {
     // Below-threshold results never apply; the over-photo flash (not the
-    // sidebar) carries the message, so the button stays untouched.
+    // sidebar) carries the message, so the button stays untouched — and
+    // the hook drops the snapshot, so no revert icon is owed either.
     const html = renderCrop({
       ...idleAssist,
       state: 'ready',
@@ -117,6 +136,7 @@ describe('straighten single-button toggle', () => {
     expect(html).toContain('class="auto-small straighten-auto" data-testid="straighten-auto"');
     expect(html).toContain('aria-pressed="false"');
     expect(html).not.toContain('straighten-suggestion');
+    expect(html).not.toContain('data-testid="straighten-auto-revert"');
   });
 
   it('disables the button while detecting', () => {

@@ -64,9 +64,13 @@ function renderRepair(dustSpots?: DustSpotsAssist): string {
       onStraighten={noop}
       onReset={noop}
       onAuto={noop}
+      onRevertEnhance={noop}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
+      onRevertWhiteBalance={noop}
+      onRevertLightness={noop}
+      onRevertColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}

@@ -109,9 +109,13 @@ function renderInspector(tool: 'adjust' | 'repair'): string {
       onStraighten={noop}
       onReset={noop}
       onAuto={noop}
+      onRevertEnhance={noop}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
+      onRevertWhiteBalance={noop}
+      onRevertLightness={noop}
+      onRevertColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}

@@ -101,7 +101,7 @@ function denoiseAssist(): DenoiseAssist {
   };
 }
 
-function renderAdjust(edit: EditState, ml?: { scene?: boolean; face?: boolean; selective?: boolean; denoise?: boolean }): string {
+function renderAdjust(edit: EditState, ml?: { scene?: boolean; face?: boolean; selective?: boolean; denoise?: boolean }, enhance?: { mode: 'classic' | 'scene' | null; pure?: boolean }): string {
   return renderToStaticMarkup(
     <Inspector
       photo={makePhoto()}
@@ -116,6 +116,8 @@ function renderAdjust(edit: EditState, ml?: { scene?: boolean; face?: boolean; s
       onStraighten={noop}
       onReset={noop}
       onAuto={noop}
+      onRevertEnhance={noop}
+      {...(enhance ? { enhanceMode: enhance.mode, enhancePure: enhance.pure ?? false } : {})}
       {...(ml?.scene ? { onAutoScene: noop } : {})}
       {...(ml?.face ? { faceAssist: faceAssist() } : {})}
       {...(ml?.selective ? { selectiveAssist: selectiveAssist() } : {})}
@@ -123,6 +125,9 @@ function renderAdjust(edit: EditState, ml?: { scene?: boolean; face?: boolean; s
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
+      onRevertWhiteBalance={noop}
+      onRevertLightness={noop}
+      onRevertColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -200,18 +205,71 @@ describe('ml enhance sections', () => {
     expect(html).not.toContain('auto-enhance-row');
   });
 
-  it('marks exactly the active enhance mode as pressed', () => {
-    const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML);
+  it('marks exactly the pure enhance mode as pressed', () => {
+    const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: true });
     expect(classic).toContain('class="slim-button full-width is-active" data-testid="auto-enhance-apply"');
     expect(classic).toContain('class="slim-button full-width" data-testid="scene-enhance-apply"');
+    expect(classic).toContain('title="Auto Enhance applied — click to revert"');
     const scene = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       ALL_ML,
+      { mode: 'scene', pure: true },
     );
     expect(scene).toContain('class="slim-button full-width" data-testid="auto-enhance-apply"');
     expect(scene).toContain('class="slim-button full-width is-active" data-testid="scene-enhance-apply"');
+    expect(scene).toContain('title="Scene Enhance applied — click to revert"');
     expect(scene).toContain('data-testid="scene-enhance-scene"');
     expect(scene).toContain('Night · 90% · ML');
+  });
+
+  it('shows the enhance revert icon beside the last-used mode only', () => {
+    const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: true });
+    expect(classic).toContain('data-testid="auto-enhance-revert"');
+    expect(classic).toContain('aria-label="Revert auto enhance"');
+    expect(classic).not.toContain('data-testid="scene-enhance-revert"');
+    const scene = renderAdjust(
+      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
+      ALL_ML,
+      { mode: 'scene', pure: true },
+    );
+    expect(scene).toContain('data-testid="scene-enhance-revert"');
+    expect(scene).toContain('aria-label="Revert scene enhance"');
+    expect(scene).not.toContain('data-testid="auto-enhance-revert"');
+    // No snapshot, no revert icon anywhere.
+    const idle = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
+    expect(idle).not.toContain('data-testid="auto-enhance-revert"');
+    expect(idle).not.toContain('data-testid="scene-enhance-revert"');
+  });
+
+  it('keeps the revert icon after manual edits cleared the enhance highlight', () => {
+    // A slider drag after the enhance drops pure (both buttons idle) while
+    // the last-used mode keeps its revert icon with a re-apply title.
+    const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: false });
+    expect(classic).toContain('class="slim-button full-width" data-testid="auto-enhance-apply"');
+    expect(classic).toContain('class="slim-button full-width" data-testid="scene-enhance-apply"');
+    expect(classic).toContain('title="Re-apply automatic enhancement"');
+    expect(classic).toContain('data-testid="auto-enhance-revert"');
+    const scene = renderAdjust(
+      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
+      ALL_ML,
+      { mode: 'scene', pure: false },
+    );
+    expect(scene).toContain('class="slim-button full-width" data-testid="scene-enhance-apply"');
+    expect(scene).toContain('title="Re-apply Scene Enhance with ML"');
+    expect(scene).toContain('data-testid="scene-enhance-revert"');
+    // The persisted scene badge survives the highlight loss.
+    expect(scene).toContain('Night · 90% · ML');
+  });
+
+  it('lays the enhance buttons and revert icons out in flex rows', () => {
+    // The full-width buttons share their row with the revert icon: flex
+    // row, button grows, icon sits beside it.
+    expect(cssRule('.classic-enhance')).toMatch(/display\s*:\s*flex/);
+    expect(cssRule('.classic-enhance')).toMatch(/align-items\s*:\s*center/);
+    expect(cssRule('.classic-enhance .slim-button.full-width')).toMatch(/flex\s*:\s*1/);
+    expect(cssRule('.scene-enhance-row')).toMatch(/display\s*:\s*flex/);
+    expect(cssRule('.scene-enhance-row')).toMatch(/align-items\s*:\s*center/);
+    expect(cssRule('.scene-enhance-row .slim-button.full-width')).toMatch(/flex\s*:\s*1/);
   });
 
   it('uses slim buttons for every ML action, never chunky secondary ones', () => {

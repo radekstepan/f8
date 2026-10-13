@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_EDIT, INITIAL_EDIT, PRESETS, isDefaultEdit, isOriginalLook, presetForPatch } from "./data.js";
+import { DEFAULT_EDIT, INITIAL_EDIT, PRESETS, isDefaultEdit, isOriginalLook, patchBreaksEnhancePure, presetForPatch } from "./data.js";
 import type { EditState } from "./types.js";
 
 const stroke = { x: 0.5, y: 0.5, size: 0.05, strength: 100, kind: "repair" } as const;
@@ -33,6 +33,34 @@ describe("presetForPatch", () => {
 
   it("marks mixed color + geometry patches as Custom", () => {
     expect(presetForPatch("Original", { exposure: 1, rotation: 90 })).toBe("Custom");
+  });
+});
+
+describe("patchBreaksEnhancePure", () => {
+  it("breaks on any slider or look change", () => {
+    expect(patchBreaksEnhancePure({ exposure: 0.5 })).toBe(true);
+    expect(patchBreaksEnhancePure({ temperature: 6000 })).toBe(true);
+    expect(patchBreaksEnhancePure({ brightness: 10 })).toBe(true);
+    expect(patchBreaksEnhancePure({ curve: 10 })).toBe(true);
+    expect(patchBreaksEnhancePure({ blackAndWhite: true })).toBe(true);
+    expect(patchBreaksEnhancePure({ faceAdjust: null })).toBe(true);
+    expect(patchBreaksEnhancePure({ selectiveAdjust: null })).toBe(true);
+    expect(patchBreaksEnhancePure({ denoise: null })).toBe(true);
+  });
+
+  it("holds for geometry, retouch, and label-only patches", () => {
+    expect(patchBreaksEnhancePure({ rotation: 90 })).toBe(false);
+    expect(patchBreaksEnhancePure({ straighten: 1.2 })).toBe(false);
+    expect(patchBreaksEnhancePure({ cropRatio: "1:1" })).toBe(false);
+    expect(patchBreaksEnhancePure({ flipH: true, flipV: true })).toBe(false);
+    expect(patchBreaksEnhancePure({ retouches: [{ ...stroke }] })).toBe(false);
+    expect(patchBreaksEnhancePure({ preset: "Custom" })).toBe(false);
+    expect(patchBreaksEnhancePure({ autoEnhanced: false, sceneEnhance: null })).toBe(false);
+    expect(patchBreaksEnhancePure({})).toBe(false);
+  });
+
+  it("breaks on mixed look + geometry patches", () => {
+    expect(patchBreaksEnhancePure({ exposure: 1, rotation: 90 })).toBe(true);
   });
 });
 

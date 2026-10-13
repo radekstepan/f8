@@ -38,3 +38,15 @@ export function snapshotMlCategory(edit: EditState, category: MlCategory): Parti
   }
   return snapshot;
 }
+
+/**
+ * ML categories a manual edit patch touches: any category owning at least
+ * one of the patch's keys is no longer on pure auto values, so its ML
+ * button highlight drops (the revert snapshot stays available).
+ */
+export function touchedMlCategories(patch: Partial<EditState>): MlCategory[] {
+  const keys = new Set(Object.keys(patch));
+  return ML_CATEGORIES.filter((category) =>
+    ML_CATEGORY_KEYS[category].some((key) => keys.has(key)),
+  );
+}

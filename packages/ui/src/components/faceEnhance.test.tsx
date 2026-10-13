@@ -71,10 +71,14 @@ function renderAdjust(edit: EditState, faceAssist?: FaceEnhanceAssist): string {
       onStraighten={noop}
       onReset={noop}
       onAuto={noop}
+      onRevertEnhance={noop}
       {...(faceAssist === undefined ? {} : { faceAssist })}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
+      onRevertWhiteBalance={noop}
+      onRevertLightness={noop}
+      onRevertColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}

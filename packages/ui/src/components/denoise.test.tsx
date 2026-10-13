@@ -71,10 +71,14 @@ function renderAdjust(edit: EditState, photo: Photo, denoiseAssist?: DenoiseAssi
       onStraighten={noop}
       onReset={noop}
       onAuto={noop}
+      onRevertEnhance={noop}
       {...(denoiseAssist === undefined ? {} : { denoiseAssist })}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
+      onRevertWhiteBalance={noop}
+      onRevertLightness={noop}
+      onRevertColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}

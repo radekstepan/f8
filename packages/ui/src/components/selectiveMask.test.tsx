@@ -77,10 +77,14 @@ function renderAdjust(edit: EditState, selectiveAssist?: SelectiveMaskAssist): s
       onStraighten={noop}
       onReset={noop}
       onAuto={noop}
+      onRevertEnhance={noop}
       {...(selectiveAssist === undefined ? {} : { selectiveAssist })}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
+      onRevertWhiteBalance={noop}
+      onRevertLightness={noop}
+      onRevertColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
