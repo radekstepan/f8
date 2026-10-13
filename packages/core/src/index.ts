@@ -8,6 +8,7 @@ export * from "./data.js";
 export * from "./detectionPreview.js";
 export * from "./escapeNavigation.js";
 export * from "./filmstripScroll.js";
+export * from "./folderImport.js";
 export * from "./image.js";
 export * from "./inspectorVisibility.js";
 export * from "./jpeg.js";

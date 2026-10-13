@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
 import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDenoiseActive, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches, shouldEscapeToLibrary } from '@f8/core';
-import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent, sortAlbumPhotos } from '@f8/core';
+import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, Tool, ViewMode } from '@f8/core';
 import { Sidebar } from '@f8/ui';
@@ -132,6 +132,7 @@ export default function App() {
   const [importProgress, setImportProgress] = useState<ImportStatus | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   const dragCount = useRef(0);
   const importRun = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -773,26 +774,112 @@ export default function App() {
     notify('Adjustments pasted onto this photo.');
   };
 
-  const importFiles = async (files: FileList | File[]) => {
+  // Upload picked or dropped files. Files carrying folder context (a folder
+  // pick, or a folder drop) group by top-level folder, and each group files
+  // into its own album named from the folder; loose files keep the old
+  // behavior of filing into the viewed album (or the 'imports' collection).
+  const importFiles = async (files: FileList | File[], relativePathOf?: (file: File) => string) => {
     const list = Array.from(files);
     if (!list.length) return;
-    const albumId = albums.some((album) => album.id === collection) ? collection : 'imports';
+    const groups = groupFilesByFolder(list.map((file) => ({ file, relativePath: relativePathOf?.(file) ?? '' })));
+    // Progress denominator mirrors the per-group upload batches below, so the
+    // toast runs 0..total across folders instead of restarting per album.
+    const planned = groups.map((group) => ({
+      group,
+      batch: resolveImportSelection(group.files).files.slice(0, MAX_IMPORTS_PER_REQUEST),
+    }));
+    const total = planned.reduce((sum, item) => sum + item.batch.length, 0);
+    const defaultAlbumId = albums.some((album) => album.id === collection) ? collection : 'imports';
+    // Folder albums reuse an existing album of the same humanized name
+    // (case-insensitive, like server-side folder imports); albums created
+    // mid-run join the map so same-named folders in one drop share one album.
+    const targets = new Map<string, string>();
+    for (const album of albums) {
+      const key = album.name.toLowerCase();
+      if (!targets.has(key)) targets.set(key, album.id);
+    }
     // Overlapping imports each run to completion; only the latest drives the
     // progress toast, and a stale finish must not clear a live one.
     const run = ++importRun.current;
     const alive = () => importRun.current === run;
-    setImportProgress({ done: 0, total: list.length });
-    const summary = await library.uploadFiles(list, albumId, (progress) => {
-      if (alive()) setImportProgress(progress);
-    });
+    setImportProgress({ done: 0, total });
+    const aggregate = { imported: 0, deduplicated: 0, failed: 0, suppressedSidecars: 0, truncated: 0 };
+    let firstId: string | null = null;
+    let homeAlbum: string | null = null;
+    const createdAlbums: string[] = [];
+    const albumFallbacks: string[] = [];
+    let base = 0;
+    for (const { group, batch } of planned) {
+      let albumId = defaultAlbumId;
+      let createdId: string | null = null;
+      let createdKey: string | null = null;
+      if (group.albumName) {
+        const key = group.albumName.toLowerCase();
+        const reused = targets.get(key);
+        if (reused) {
+          albumId = reused;
+        } else {
+          try {
+            const album = await library.createAlbum(group.albumName);
+            targets.set(key, album.id);
+            albumId = album.id;
+            createdId = album.id;
+            createdKey = key;
+          } catch {
+            // The photos still import into the default album; the summary says so.
+            albumId = defaultAlbumId;
+            if (!albumFallbacks.includes(group.albumName)) albumFallbacks.push(group.albumName);
+          }
+        }
+      }
+      const summary = await library.uploadFiles(group.files, albumId, (progress) => {
+        if (alive()) setImportProgress({ done: base + progress.done, total });
+      });
+      base += batch.length;
+      aggregate.imported += summary.imported;
+      aggregate.deduplicated += summary.deduplicated;
+      aggregate.failed += summary.failed;
+      aggregate.suppressedSidecars += summary.suppressedSidecars;
+      aggregate.truncated += summary.truncated;
+      firstId ??= summary.firstId;
+      homeAlbum ??= summary.firstId ? albumId : null;
+      if (createdId && createdKey && summary.imported === 0) {
+        // A run-created album that gained no photos (all duplicates or all
+        // failed) goes away again, mirroring the server's lazy album creation.
+        targets.delete(createdKey);
+        await library.removeAlbum(createdId).catch(() => undefined);
+      } else if (createdId && group.albumName) {
+        createdAlbums.push(group.albumName);
+      }
+    }
     if (alive()) setImportProgress(null);
-    if (summary.firstId) {
-      setCollection(albumId);
+    if (firstId) {
+      setCollection(homeAlbum ?? defaultAlbumId);
       setSearch('');
       semantic.search('');
-      selectPhoto(summary.firstId);
+      selectPhoto(firstId);
     }
-    notify(formatUploadSummary(summary));
+    const notes = [
+      formatUploadSummary(aggregate),
+      createdAlbums.length === 1 ? `New album "${createdAlbums[0]}".` : '',
+      createdAlbums.length > 1 ? `${createdAlbums.length} new albums created.` : '',
+      albumFallbacks.length === 1 ? `Could not create the "${albumFallbacks[0]}" album; those photos were filed with the rest.` : '',
+      albumFallbacks.length > 1 ? `Could not create ${albumFallbacks.length} albums; those photos were filed with the rest.` : '',
+    ];
+    notify(notes.filter(Boolean).join(' '));
+  };
+
+  // Drops arrive as entries (folders need traversal) or plain files; folder
+  // context survives so each dropped folder becomes its own album.
+  const importDrop = async (data: DataTransfer) => {
+    const collected = await collectDroppedFiles(data.items, data.files);
+    if (!collected.length) return;
+    const paths = new Map<File, string>();
+    for (const entry of collected) paths.set(entry.file, entry.relativePath);
+    await importFiles(
+      collected.map((entry) => entry.file),
+      (file) => paths.get(file) ?? '',
+    );
   };
 
   const importFromPaths = async (paths: string[]) => {
@@ -846,6 +933,7 @@ export default function App() {
   const handleAction = (action: MenuAction) => {
     switch (action) {
       case 'import': fileInput.current?.click(); break;
+      case 'import-local-folder': folderInput.current?.click(); break;
       case 'import-folder': setFolderDialog({ mode: 'import' }); break;
       case 'export': setDialog('export'); break;
       case 'album': setDialog('album'); break;
@@ -1066,6 +1154,7 @@ export default function App() {
         <button className="secondary-button" onClick={() => setFolderDialog({ mode: 'import' })}>Import from folder</button>
       </div>
       <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
+      <input className="hidden" ref={folderInput} type="file" {...{ webkitdirectory: '' }} accept={`image/*,${RAW_ACCEPT}`} aria-label="Import folder as album" onChange={(event) => { if (event.target.files?.length) void importFiles(event.target.files, (file) => file.webkitRelativePath || ''); event.target.value = ''; }} />
       {folderDialog && <FsBrowser title="Import from folder" subtitle="Referenced in place — nothing is copied." actionLabel="Import selected" onClose={() => setFolderDialog(null)} onSelect={(paths) => void importFromPaths(paths)} />}
       {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
       {importProgress && <ImportProgressToast status={importProgress} />}
@@ -1083,7 +1172,7 @@ export default function App() {
   const straightenFlash = straighten.state === 'ready' && !hasStraightenHorizon(straighten.confidence)
     ? { runId: straighten.runId, message: 'No clear horizon found — adjust Straighten manually.' }
     : null;
-  return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importFiles(event.dataTransfer.files); }}>
+  return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importDrop(event.dataTransfer); }}>
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} presetsOpen={presetsOpen} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
@@ -1152,6 +1241,7 @@ export default function App() {
       }}
     />
     <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
+    <input className="hidden" ref={folderInput} type="file" {...{ webkitdirectory: '' }} accept={`image/*,${RAW_ACCEPT}`} aria-label="Import folder as album" onChange={(event) => { if (event.target.files?.length) void importFiles(event.target.files, (file) => file.webkitRelativePath || ''); event.target.value = ''; }} />
     <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : (viewPhoto ?? photo)} edit={editor.edit} inpaintRepair={canvasRepairBinding} superres={superresBinding} initialSuperres={export2xArmed} onClose={() => { setDialog(null); setRemoveTargetId(null); setRemoveAlbumTargetId(null); setExport2xArmed(false); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} removeAlbum={removeAlbumTarget} onRemoveAlbum={confirmRemoveAlbum} onAddLabel={(photoId, label) => { void library.updateLabels(photoId, { add: [label] }).then(() => notify(`Labeled “${label}”.`), (reason: unknown) => notifyError(reason, 'Could not add the label.')); }} onRemoveLabel={(photoId, label) => { void library.updateLabels(photoId, { remove: [label] }).catch((reason: unknown) => notifyError(reason, 'Could not remove the label.')); }} onSearchLabel={(label) => { setDialog(null); setCollection('all'); clearFilters(); updateSearch(label); setView('library'); }} />
     {folderDialog && <FsBrowser
       title={folderDialog.mode === 'locate' ? 'Locate original' : 'Import from folder'}
@@ -1164,6 +1254,6 @@ export default function App() {
     {importProgress && <ImportProgressToast status={importProgress} />}
     {semantic.labeling && <ImportProgressToast status={{ done: 0, total: 0, label: semantic.labelProgress?.stage ?? 'Labeling album…' }} />}
     {cull.culling && <ImportProgressToast status={{ done: 0, total: 0, label: 'Finding blurry photos…' }} />}
-    {dragging && <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos anywhere to start creating.</p><span>JPEG, PNG, WebP, RAW and more</span></div></div>}
+    {dragging && <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos or a folder anywhere to start creating.</p><span>JPEG, PNG, WebP, RAW and more</span></div></div>}
   </div>;
 }

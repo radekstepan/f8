@@ -4,7 +4,7 @@ import type { DialogType, Tool, VisionWorkerStatus } from '@f8/core';
 import { APP_EDITION_SHORT, APP_NAME } from '@f8/core';
 import { BrandMark, IconButton, MenuItem } from './EditorUI.js';
 
-export type MenuAction = 'import' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'enhance-scene' | 'enhance-faces' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'fit' | 'fullscreen' | 'shortcuts' | 'about';
+export type MenuAction = 'import' | 'import-local-folder' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'enhance-scene' | 'enhance-faces' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'fit' | 'fullscreen' | 'shortcuts' | 'about';
 
 interface MenuBarProps {
   onAction: (action: MenuAction) => void;
@@ -32,7 +32,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
   const item = (name: string, value: MenuAction, shortcut?: string, disabled?: boolean, checked?: boolean, danger?: boolean) => <MenuItem key={value} onClick={() => action(value)} shortcut={shortcut} disabled={disabled} checked={checked} danger={danger}>{name}</MenuItem>;
   const menus: Record<string, ReactNode> = {
     [APP_NAME]: <>{item(`About ${APP_NAME}`, 'about')}<div className="menu-separator" />{item('Keyboard Shortcuts', 'shortcuts', '?')}</>,
-    File: <>{item('Import Photos...', 'import', 'Ctrl O')}{item('Import from Folder...', 'import-folder', 'Ctrl Shift O')}{item('New Album...', 'album')}<div className="menu-separator" />{item('Export Photo...', 'export', 'Ctrl Shift E')}</>,
+    File: <>{item('Import Photos...', 'import', 'Ctrl O')}{item('Import Folder as Album...', 'import-local-folder')}{item('Import from Folder...', 'import-folder', 'Ctrl Shift O')}{item('New Album...', 'album')}<div className="menu-separator" />{item('Export Photo...', 'export', 'Ctrl Shift E')}</>,
     Edit: <>{item('Undo', 'undo', 'Ctrl Z', !canUndo)}{item('Redo', 'redo', 'Ctrl Shift Z', !canRedo)}<div className="menu-separator" />{item('Copy Adjustments', 'copy', 'Ctrl Shift C')}{item('Paste Adjustments', 'paste', 'Ctrl Shift V', !canPaste)}<div className="menu-separator" />{item('Reset All Adjustments', 'reset')}</>,
     Image: <>{item('Auto Enhance', 'enhance', 'A')}<MenuItem key="enhance-scene" onClick={() => action('enhance-scene')} shortcut="Shift A"><span>Scene Enhance <span className="ml-badge" title="The scene is classified by a machine-learning model on your device">ML</span></span></MenuItem><MenuItem key="enhance-faces" onClick={() => action('enhance-faces')} shortcut="Shift E"><span>Enhance Faces <span className="ml-badge" title="Faces are detected by a machine-learning model on the photo server">ML</span></span></MenuItem>{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<div className="menu-separator" />{item('Compare with Original', 'compare', 'B', compareDisabled)}<div className="menu-separator" />{item('Remove from Library…', 'remove', 'Del', false, undefined, true)}</>,
     View: <>{item('Show Library', 'sidebar', undefined, false, sidebar)}{item('Show Adjustments', 'inspector', undefined, false, inspector)}{item('Show Presets', 'presets', undefined, false, presets)}{item('Show Filmstrip', 'filmstrip', undefined, false, filmstrip)}<div className="menu-separator" />{item('Photo Browser', 'grid', 'G')}{item('Zoom to Fit', 'fit', '0')}</>,
