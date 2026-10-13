@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
-import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
+import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
 import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 import { ToolHint } from './ToolHint.js';
@@ -33,6 +33,8 @@ interface PhotoCanvasProps {
   zoom: number;
   compare: boolean;
   showOriginal: boolean;
+  /** True-original src for the Compare "Original" layer; omit when photo.src already is the original. */
+  originalSrc?: string;
   brushSize: number;
   brushStrength: number;
   /** Worker inpainting for repair strokes; absent means blur repair only. */
@@ -56,7 +58,7 @@ interface PhotoCanvasProps {
   onHistogram: (data: HistogramData) => void;
 }
 
-export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onRemove, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
+export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, originalSrc, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onRemove, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -196,6 +198,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       const runKey = previewRenderKey(photo.id, photo.src, edit);
       // Image decode starts immediately so it overlaps the cache read below.
       const imagePromise = loadImage(photo.src);
+      // While a derived base (denoised pixels) is on screen, the Compare
+      // "Original" side decodes the true original alongside — otherwise both
+      // sides would show denoised pixels and Compare would show nothing.
+      const extraOriginalSrc = separateOriginalSrc(photo.src, originalSrc);
+      const trueOriginalPromise = extraOriginalSrc ? loadImage(extraOriginalSrc) : null;
       // Instant preview: the cached last render is pixel-identical when its
       // version key matches, so it shows immediately while the pipeline
       // prepares behind it and swaps in invisibly. Shows whenever the canvas
@@ -222,6 +229,14 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
           setLoading(false);
         }
         return;
+      }
+      // The true original is best-effort: a decode failure falls back to the
+      // display image (the old Compare behavior) rather than failing the run.
+      let trueOriginal: HTMLImageElement | null = null;
+      if (trueOriginalPromise) {
+        try {
+          trueOriginal = await trueOriginalPromise;
+        } catch { trueOriginal = null; }
       }
       // Best-effort: drop server overlays for deleted strokes. Safe to call
       // from any branch — only entries with no live stroke are deleted.
@@ -495,7 +510,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       // pass feeds seeding, partitioning, and rendering alike.
       const baseEditSync = { ...edit, retouches: edit.retouches.filter((point) => point.kind !== 'repair') };
       const paintOriginal = () => {
-        const original = geometryCanvas(image, { ...DEFAULT_EDIT, cropRatio: edit.cropRatio, rotation: edit.rotation, flipH: edit.flipH, flipV: edit.flipV, straighten: edit.straighten });
+        const original = geometryCanvas(trueOriginal ?? image, { ...DEFAULT_EDIT, cropRatio: edit.cropRatio, rotation: edit.rotation, flipH: edit.flipH, flipV: edit.flipV, straighten: edit.straighten });
         originalRef.current!.width = original.width;
         originalRef.current!.height = original.height;
         originalRef.current!.getContext('2d')!.drawImage(original, 0, 0);
@@ -881,7 +896,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, br
       }
     })();
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
-  }, [photo.src, edit, tool, activeStroke, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.seamlessLight, inpaintRepair?.featherPx, inpaintRepair?.status]);
+  }, [photo.src, originalSrc, edit, tool, activeStroke, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.seamlessLight, inpaintRepair?.featherPx, inpaintRepair?.status]);
 
   // Idle persistence: once the pipeline settles (painted, nothing healing,
   // nothing queued, not painting), stash the on-screen pixels under the

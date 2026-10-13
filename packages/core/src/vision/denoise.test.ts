@@ -8,6 +8,7 @@ import {
   isDenoiseActive,
   packDenoiseInput,
   parseDenoiseOutput,
+  separateOriginalSrc,
   shouldAutoDenoise,
 } from "./denoise.js";
 import type { PixelImage } from "./analyze.js";
@@ -96,6 +97,19 @@ describe("isDenoiseActive", () => {
     expect(isDenoiseActive(undefined)).toBe(false);
     expect(isDenoiseActive({ strength: 0, auto: true, source: "onnx" })).toBe(false);
     expect(isDenoiseActive({ strength: 45, auto: true, source: "onnx" })).toBe(true);
+  });
+});
+
+describe("separateOriginalSrc", () => {
+  it("returns the true original while a derived base is on screen", () => {
+    expect(separateOriginalSrc("blob:denoised", "http://localhost/photo.jpg")).toBe("http://localhost/photo.jpg");
+  });
+
+  it("returns null when the display src already is the original", () => {
+    expect(separateOriginalSrc("http://localhost/photo.jpg", "http://localhost/photo.jpg")).toBeNull();
+    expect(separateOriginalSrc("http://localhost/photo.jpg", undefined)).toBeNull();
+    expect(separateOriginalSrc("http://localhost/photo.jpg", null)).toBeNull();
+    expect(separateOriginalSrc("http://localhost/photo.jpg", "")).toBeNull();
   });
 });
 

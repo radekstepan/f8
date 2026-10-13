@@ -406,13 +406,17 @@ img { display: block; }
 .ml-enhance > * + * { border-top: 1px solid #343438; margin-top: 12px; padding-top: 12px; }
 .ml-enhance .face-enhance, .ml-enhance .selective-mask { padding: 0; border-bottom: 0; }
 .dust-spots .retouch-group-list { max-height: 220px; }
+.denoise-head { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: #c9c9d1; }
 .denoise-auto-row { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #c9c9d1; margin-top: 2px; }
-.denoise-auto-row .ml-badge { margin-left: 2px; }
 .denoise .range-control { margin-top: 8px; }
 .denoise-compare { display: flex; gap: 8px; margin-top: 10px; }
-.denoise-compare > figure { flex: 1; min-width: 0; margin: 0; }
+.denoise-compare > figure { flex: 1; min-width: 0; margin: 0; cursor: crosshair; }
 .denoise-compare img { display: block; width: 100%; border-radius: 4px; border: 1px solid #3a3a3e; }
 .denoise-compare figcaption { margin-top: 4px; font-size: 9px; color: #85858f; text-align: center; }
+.denoise-closeup { display: flex; gap: 8px; margin-top: 10px; }
+.denoise-closeup > figure { flex: 1; min-width: 0; margin: 0; }
+.denoise-zoom { width: 100%; aspect-ratio: 1 / 1; background-size: 200%; background-repeat: no-repeat; border-radius: 4px; border: 1px solid #3a3a3e; }
+.denoise-closeup figcaption { margin-top: 4px; font-size: 9px; color: #85858f; text-align: center; }
 
 .app-status { height: 23px; flex-shrink: 0; background: #242426; border-top: 1px solid #36363b; padding: 0 17px; display: flex; align-items: center; justify-content: space-between; font-size: 8px; color: #85858f; position: relative; }
 .status-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; font-size: 7.5px; color: #74747e; gap: 8px; }

@@ -1094,7 +1094,7 @@ export default function App() {
             ) : (
               <PhotoCanvas
                 photo={viewPhoto ?? photo} edit={editor.edit} tool={tool} zoom={zoom}
-                compare={compare} showOriginal={showOriginal}
+                compare={compare} showOriginal={showOriginal} originalSrc={photo.src}
                 brushSize={brushSize} brushStrength={brushStrength} fineGrid={straightenDragging}
                 inpaintRepair={canvasRepairBinding}
                 highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke} highlightRegion={removalPreview}

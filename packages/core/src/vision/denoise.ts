@@ -93,6 +93,17 @@ export function isDenoiseActive(state: DenoiseState | null | undefined): state i
   return Number.isFinite(state.strength) && state.strength > 0;
 }
 
+/**
+ * Src the Compare "Original" layer must decode, or null when the display src
+ * already is the original (no denoise base on screen). While denoised pixels
+ * are applied the canvas shows a derived base, so Compare would show no
+ * difference unless the Original side decodes the true original instead.
+ */
+export function separateOriginalSrc(displaySrc: string, originalSrc?: string | null): string | null {
+  if (!originalSrc || originalSrc === displaySrc) return null;
+  return originalSrc;
+}
+
 /** Effective strength 0..100: the Auto suggestion or the manual slider. */
 export function effectiveDenoiseStrength(auto: boolean, slider: number, iso: number): number {
   if (auto) return denoiseStrengthForIso(iso);

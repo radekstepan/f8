@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
 import type { EditState, Photo } from '@f8/core';
 import { Inspector } from './Inspector.js';
-import type { FaceEnhanceAssist, SelectiveMaskAssist } from './Inspector.js';
+import type { DenoiseAssist, FaceEnhanceAssist, SelectiveMaskAssist } from './Inspector.js';
 
 // ML Enhance section grouping, rendered on the server (no jsdom): effects
 // never run, so this pins the markup + prop wiring, not click behavior.
@@ -72,7 +72,23 @@ function selectiveAssist(): SelectiveMaskAssist {
   };
 }
 
-function renderAdjust(edit: EditState, ml?: { scene?: boolean; face?: boolean; selective?: boolean }): string {
+function denoiseAssist(): DenoiseAssist {
+  return {
+    state: 'idle',
+    preview: null,
+    applied: null,
+    hasBase: false,
+    progress: null,
+    note: null,
+    message: null,
+    onPreview: noop,
+    onApply: noop,
+    onClear: noop,
+    onDismiss: noop,
+  };
+}
+
+function renderAdjust(edit: EditState, ml?: { scene?: boolean; face?: boolean; selective?: boolean; denoise?: boolean }): string {
   return renderToStaticMarkup(
     <Inspector
       photo={makePhoto()}
@@ -90,6 +106,7 @@ function renderAdjust(edit: EditState, ml?: { scene?: boolean; face?: boolean; s
       {...(ml?.scene ? { onAutoScene: noop } : {})}
       {...(ml?.face ? { faceAssist: faceAssist() } : {})}
       {...(ml?.selective ? { selectiveAssist: selectiveAssist() } : {})}
+      {...(ml?.denoise ? { denoiseAssist: denoiseAssist() } : {})}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onCopy={noop}
@@ -102,20 +119,22 @@ function renderAdjust(edit: EditState, ml?: { scene?: boolean; face?: boolean; s
   );
 }
 
-const ALL_ML = { scene: true, face: true, selective: true };
+const ALL_ML = { scene: true, face: true, selective: true, denoise: true };
 
 describe('ml enhance section', () => {
-  it('groups scene, faces, and subject actions into one collapsible ML section', () => {
+  it('groups scene, faces, subject, and denoise actions into one collapsible ML section', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
     expect(html).toContain('<h3>ML Enhance</h3><span class="ml-badge"');
     expect(html).toContain('data-testid="ml-enhance"');
     const heading = html.indexOf('<h3>ML Enhance</h3>');
-    for (const testId of ['data-testid="scene-enhance"', 'data-testid="face-enhance"', 'data-testid="selective-mask"']) {
+    for (const testId of ['data-testid="scene-enhance"', 'data-testid="face-enhance"', 'data-testid="selective-mask"', 'data-testid="denoise"']) {
       expect(html).toContain(testId);
       expect(html.indexOf(testId)).toBeGreaterThan(heading);
     }
     // The whole group sits above the histogram, like the old loose rows did.
-    expect(html.indexOf('data-testid="selective-mask"')).toBeLessThan(html.indexOf('histogram-section'));
+    expect(html.indexOf('data-testid="denoise"')).toBeLessThan(html.indexOf('histogram-section'));
+    // Denoise no longer gets its own section below Details.
+    expect(html).not.toContain('<h3>Denoise</h3>');
   });
 
   it('omits the section without any ML assist but keeps classic Auto Enhance', () => {
@@ -162,6 +181,7 @@ describe('ml enhance section', () => {
     expect(html).toContain('class="slim-button full-width" data-testid="scene-enhance-apply"');
     expect(html).toContain('class="slim-button full-width" data-testid="face-enhance-detect"');
     expect(html).toContain('class="slim-button full-width" data-testid="selective-mask-detect"');
+    expect(html).toContain('class="slim-button full-width" data-testid="denoise-preview"');
     expect(html).not.toContain('secondary-button');
   });
 });

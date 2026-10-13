@@ -604,16 +604,31 @@ function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
 /** Manual slider start for clean captures (the auto ladder suggests 0 there). */
 const DENOISE_MANUAL_DEFAULT = 45;
 
+/** 2× closeup of the before/after pair: sensor noise is unreadable at sidebar thumbnail scale. */
+function DenoiseCloseup({ preview, loupe }: { preview: NonNullable<DenoiseAssist['preview']>; loupe: { x: number; y: number } }) {
+  const position = `${loupe.x}% ${loupe.y}%`;
+  return <div className="denoise-closeup" data-testid="denoise-closeup">
+    <figure><div className="denoise-zoom" role="img" aria-label="Noisy closeup at 2x magnification" data-testid="denoise-closeup-before" style={{ backgroundImage: `url("${preview.beforeUrl}")`, backgroundPosition: position }} /><figcaption>Before · 2×</figcaption></figure>
+    <figure><div className="denoise-zoom" role="img" aria-label="Denoised closeup at 2x magnification" data-testid="denoise-closeup-after" style={{ backgroundImage: `url("${preview.afterUrl}")`, backgroundPosition: position }} /><figcaption>After · 2×</figcaption></figure>
+  </div>;
+}
+
 function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo }) {
   const working = assist.state === 'previewing' || assist.state === 'applying';
   // Draft strength + auto toggle, reset per photo: high-ISO captures start
   // on Auto at the ISO suggestion, clean captures on manual 45.
   const [auto, setAuto] = useState(() => shouldAutoDenoise(photo.iso));
   const [slider, setSlider] = useState(() => denoiseStrengthForIso(photo.iso) || DENOISE_MANUAL_DEFAULT);
+  // Closeup center in % of the small preview; clicking the preview moves it.
+  const [loupe, setLoupe] = useState({ x: 50, y: 50 });
+  const previewUrl = assist.preview?.beforeUrl;
   useEffect(() => {
     setAuto(shouldAutoDenoise(photo.iso));
     setSlider(denoiseStrengthForIso(photo.iso) || DENOISE_MANUAL_DEFAULT);
   }, [photo.id]);
+  useEffect(() => {
+    setLoupe({ x: 50, y: 50 });
+  }, [previewUrl]);
   const suggestion = denoiseStrengthForIso(photo.iso);
   const effective = auto ? suggestion : slider;
   // Stale after reload (recipe strength, no session pixels) — except while
@@ -622,8 +637,9 @@ function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo
   const appliedTag = assist.applied?.source === 'onnx' ? ' · ML' : '';
   const previewTag = assist.preview?.source === 'onnx' ? ' · ML' : '';
   return <div className="denoise" data-testid="denoise">
+    <div className="denoise-head"><span>Denoise</span><span className="ml-badge" title="Denoised by a machine-learning model on the photo server">ML</span></div>
     <div className="denoise-auto-row" data-testid="denoise-auto-row">
-      <span>Auto <span className="ml-badge" title="The strength is suggested by the capture ISO for a machine-learning denoise on the photo server">ML</span></span>
+      <span>Auto</span>
       <Toggle checked={auto} onChange={() => setAuto(!auto)} label="Auto denoise strength from ISO" />
     </div>
     <RangeControl label="Strength" value={auto ? suggestion : slider} min={0} max={100} step={1} defaultValue={DENOISE_MANUAL_DEFAULT} disabled={auto || working} testId="denoise-strength" onChange={setSlider} />
@@ -635,24 +651,33 @@ function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
     {working && <div className="suggestion-actions"><button className="text-button" data-testid="denoise-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
     {!working && assist.state !== 'preview-ready' && !assist.applied && <>
-      <button className="secondary-button full-width" data-testid="denoise-preview" disabled={effective <= 0} title={effective <= 0 ? 'Raise the strength to preview' : 'Preview this strength on a small downsample'} onClick={() => assist.onPreview(effective, auto)}>Preview denoise</button>
+      <button className="slim-button full-width" data-testid="denoise-preview" disabled={effective <= 0} title={effective <= 0 ? 'Raise the strength to preview' : 'Preview this strength on a small downsample'} onClick={() => assist.onPreview(effective, auto)}><span>Preview denoise</span></button>
       <p className="inspector-note">Denoises on the photo server — a small preview first, then the full photo on apply. The recipe keeps only the strength.</p>
     </>}
     {!working && assist.state === 'preview-ready' && assist.preview && <>
-      <div className="denoise-compare" data-testid="denoise-compare">
+      <div className="denoise-compare" data-testid="denoise-compare" title="Click to move the 2× closeup" onClick={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        const x = Math.round(((event.clientX - rect.left) / rect.width) * 100);
+        const y = Math.round(((event.clientY - rect.top) / rect.height) * 100);
+        setLoupe({ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) });
+      }}>
         <figure><img src={assist.preview.beforeUrl} alt="Noisy preview" data-testid="denoise-before" /><figcaption>Before</figcaption></figure>
         <figure><img src={assist.preview.afterUrl} alt="Denoised preview" data-testid="denoise-after" /><figcaption>After</figcaption></figure>
       </div>
+      <DenoiseCloseup preview={assist.preview} loupe={loupe} />
       <p className="inspector-note" role="status" data-testid="denoise-summary">Preview {assist.preview.strength}{previewTag}</p>
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="secondary-button" data-testid="denoise-apply" title="Denoise the full photo and edit from the clean pixels" onClick={() => assist.onApply(effective, auto)}>Apply to photo</button>
+        <button className="slim-button" data-testid="denoise-apply" title="Denoise the full photo and edit from the clean pixels" onClick={() => assist.onApply(effective, auto)}>Apply to photo</button>
         <button className="text-button" data-testid="denoise-repreview" title="Preview the current strength again" onClick={() => assist.onPreview(effective, auto)}>Update preview</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>}
     {!working && assist.state === 'applied' && assist.hasBase && assist.applied && <>
       <p className="inspector-note" role="status" data-testid="denoise-applied">Denoised {assist.applied.strength}{appliedTag} — the canvas and export use the clean photo.</p>
+      {assist.preview && <DenoiseCloseup preview={assist.preview} loupe={loupe} />}
+      <p className="inspector-note">Compare (B) shows the noisy original against the clean photo.</p>
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
         <button className="text-button" data-testid="denoise-repreview" title="Try another strength on a small preview first" onClick={() => assist.onPreview(effective, auto)}>Try another strength</button>
@@ -662,7 +687,7 @@ function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo
     {!working && stale && assist.applied && <>
       <p className="inspector-note" role="status" data-testid="denoise-stale">Denoise {assist.applied.strength}{appliedTag} was applied — re-run to restore the clean photo.</p>
       <div className="suggestion-actions">
-        <button className="secondary-button" data-testid="denoise-restore" title="Denoise the full photo again at the stored strength" onClick={() => assist.onApply(assist.applied!.strength, assist.applied!.auto)}>Restore denoise</button>
+        <button className="slim-button" data-testid="denoise-restore" title="Denoise the full photo again at the stored strength" onClick={() => assist.onApply(assist.applied!.strength, assist.applied!.auto)}>Restore denoise</button>
         <button className="text-button" data-testid="denoise-clear" title="Drop the stored strength and keep the original" onClick={assist.onClear}>Clear</button>
       </div>
     </>}
@@ -738,7 +763,7 @@ interface InspectorProps {
   faceAssist?: FaceEnhanceAssist;
   /** ML selective (masked) adjustments; omit to hide the subject control. */
   selectiveAssist?: SelectiveMaskAssist;
-  /** Lightweight denoise; omit to hide the denoise section. */
+  /** Lightweight denoise; omit to hide it from the ML Enhance section. */
   denoiseAssist?: DenoiseAssist;
   onAutoWhiteBalance: () => void;
   onAutoLightness: () => void;
@@ -797,7 +822,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="classic-enhance" data-testid="auto-enhance"><button className={`slim-button full-width${edit.autoEnhanced && !edit.sceneEnhance ? ' is-active' : ''}`} data-testid="auto-enhance-apply" aria-pressed={edit.autoEnhanced && !edit.sceneEnhance} title="Automatically enhance exposure, contrast, and color; click again to revert" onClick={onAuto}><Sparkles size={13} /><span>Auto Enhance</span></button></div>{(onAutoScene || faceAssist || selectiveAssist) && <AdjustmentSection title="ML Enhance" icon={<Sparkles size={14} />} badge={<span className="ml-badge" title="Each action below is powered by a machine-learning model">ML</span>}><div className="ml-enhance" data-testid="ml-enhance">{onAutoScene && <SceneEnhanceControl edit={edit} onAutoScene={onAutoScene} />}{faceAssist && <FaceEnhanceControl assist={faceAssist} />}{selectiveAssist && <SelectiveMaskControl assist={selectiveAssist} />}</div></AdjustmentSection>}<Histogram data={histogram} photo={photo} />
+    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="classic-enhance" data-testid="auto-enhance"><button className={`slim-button full-width${edit.autoEnhanced && !edit.sceneEnhance ? ' is-active' : ''}`} data-testid="auto-enhance-apply" aria-pressed={edit.autoEnhanced && !edit.sceneEnhance} title="Automatically enhance exposure, contrast, and color; click again to revert" onClick={onAuto}><Sparkles size={13} /><span>Auto Enhance</span></button></div>{(onAutoScene || faceAssist || selectiveAssist || denoiseAssist) && <AdjustmentSection title="ML Enhance" icon={<Sparkles size={14} />} badge={<span className="ml-badge" title="Each action below is powered by a machine-learning model">ML</span>}><div className="ml-enhance" data-testid="ml-enhance">{onAutoScene && <SceneEnhanceControl edit={edit} onAutoScene={onAutoScene} />}{faceAssist && <FaceEnhanceControl assist={faceAssist} />}{selectiveAssist && <SelectiveMaskControl assist={selectiveAssist} />}{denoiseAssist && <DenoiseControl assist={denoiseAssist} photo={photo} />}</div></AdjustmentSection>}<Histogram data={histogram} photo={photo} />
       <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} enabled={edit.whiteBalanceEnabled} onToggle={() => onChange({ whiteBalanceEnabled: !edit.whiteBalanceEnabled })} onAuto={onAutoWhiteBalance} onReset={() => onChange({ temperature: 5500, tint: 0 })}>
         {range('temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false, disabled: !edit.whiteBalanceEnabled })}
         {range('tint', 'Tint', { color: 'tint', disabled: !edit.whiteBalanceEnabled })}
@@ -821,9 +846,6 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       <AdjustmentSection key={`details-${openedExtra === 'Details' ? extraRevision : 0}`} title="Details" icon={<Focus size={14} />} initiallyOpen={openedExtra === 'Details'} enabled={edit.detailsEnabled} onToggle={() => onChange({ detailsEnabled: !edit.detailsEnabled })}>
         {range('clarity', 'Clarity', { disabled: !edit.detailsEnabled })}{range('sharpness', 'Sharpness', { min: 0, disabled: !edit.detailsEnabled })}{range('grain', 'Grain', { min: 0, disabled: !edit.detailsEnabled })}
       </AdjustmentSection>
-      {denoiseAssist && <AdjustmentSection title="Denoise" icon={<Sparkles size={14} />} onReset={denoiseAssist.onClear}>
-        <DenoiseControl assist={denoiseAssist} photo={photo} />
-      </AdjustmentSection>}
       <AdjustmentSection key={`effects-${openedExtra === 'Effects' ? extraRevision : 0}`} title="Effects" icon={<CircleDashed size={14} />} initiallyOpen={openedExtra === 'Effects'} onReset={() => onChange({ vignette: 0, fade: 0 })}>
         {range('vignette', 'Vignette', { min: 0 })}{range('fade', 'Fade', { min: 0 })}
       </AdjustmentSection>

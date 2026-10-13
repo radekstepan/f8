@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
@@ -165,5 +168,63 @@ describe('denoise control', () => {
     );
     expect(html).toContain('Photo server unreachable.');
     expect(html).toContain('data-testid="denoise-retry"');
+  });
+
+  it('lives inside the ML Enhance section, with no standalone Denoise section', () => {
+    const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
+    expect(html).not.toContain('<h3>Denoise</h3>');
+    const heading = html.indexOf('<h3>ML Enhance</h3>');
+    const control = html.indexOf('data-testid="denoise"');
+    expect(heading).toBeGreaterThan(-1);
+    expect(control).toBeGreaterThan(heading);
+    // Still above the histogram, with the other ML actions.
+    expect(control).toBeLessThan(html.indexOf('histogram-section'));
+  });
+
+  it('uses a slim preview button like the other ML actions', () => {
+    const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
+    expect(html).toContain('class="slim-button full-width" data-testid="denoise-preview"');
+    expect(html).not.toContain('secondary-button');
+  });
+
+  it('shows a centered 2x closeup under the small preview pair', () => {
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT },
+      makePhoto(3200),
+      assist({
+        state: 'preview-ready',
+        preview: { beforeUrl: 'data:before', afterUrl: 'data:after', strength: 65, source: 'onnx' },
+      }),
+    );
+    expect(html).toContain('data-testid="denoise-closeup"');
+    expect(html).toContain('data-testid="denoise-closeup-before"');
+    expect(html).toContain('data-testid="denoise-closeup-after"');
+    expect(html).toContain('Before · 2×');
+    expect(html).toContain('After · 2×');
+    // Default loupe sits on the center until the user clicks the preview.
+    expect(html).toContain('background-position:50% 50%');
+    expect(html).toContain('Click to move the 2× closeup');
+  });
+
+  it('keeps the closeup as proof after apply and points at Compare', () => {
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT, denoise: APPLIED },
+      makePhoto(3200),
+      assist({
+        state: 'applied',
+        applied: APPLIED,
+        hasBase: true,
+        preview: { beforeUrl: 'data:before', afterUrl: 'data:after', strength: 65, source: 'onnx' },
+      }),
+    );
+    expect(html).toContain('data-testid="denoise-closeup"');
+    expect(html).toContain('Compare (B) shows the noisy original against the clean photo.');
+  });
+
+  it('magnifies the closeup boxes 2x without tiling', () => {
+    const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
+    const rule = readFileSync(cssPath, 'utf8').match(/\.denoise-zoom\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(rule).toMatch(/background-size\s*:\s*200%/);
+    expect(rule).toMatch(/background-repeat\s*:\s*no-repeat/);
   });
 });
