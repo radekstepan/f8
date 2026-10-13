@@ -590,13 +590,27 @@ function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
 /** Manual slider start for clean captures (the auto ladder suggests 0 there). */
 const DENOISE_MANUAL_DEFAULT = 45;
 
-/** 4× closeup of the before/after pair: sensor noise is unreadable at sidebar thumbnail scale. */
+/** 16× closeup of the before/after pair: sensor noise is unreadable at sidebar thumbnail scale. */
 function DenoiseCloseup({ preview, loupe }: { preview: NonNullable<DenoiseAssist['preview']>; loupe: { x: number; y: number } }) {
   const position = `${loupe.x}% ${loupe.y}%`;
   return <div className="denoise-closeup" data-testid="denoise-closeup">
-    <figure><div className="denoise-zoom" role="img" aria-label="Noisy closeup at 4x magnification" data-testid="denoise-closeup-before" style={{ backgroundImage: `url("${preview.beforeUrl}")`, backgroundPosition: position }} /><figcaption>Before · 4×</figcaption></figure>
-    <figure><div className="denoise-zoom" role="img" aria-label="Denoised closeup at 4x magnification" data-testid="denoise-closeup-after" style={{ backgroundImage: `url("${preview.afterUrl}")`, backgroundPosition: position }} /><figcaption>After · 4×</figcaption></figure>
+    <figure><div className="denoise-zoom" role="img" aria-label="Noisy closeup at 16x magnification" data-testid="denoise-closeup-before" style={{ backgroundImage: `url("${preview.beforeUrl}")`, backgroundPosition: position }} /><figcaption>Before · 16×</figcaption></figure>
+    <figure><div className="denoise-zoom" role="img" aria-label="Denoised closeup at 16x magnification" data-testid="denoise-closeup-after" style={{ backgroundImage: `url("${preview.afterUrl}")`, backgroundPosition: position }} /><figcaption>After · 16×</figcaption></figure>
   </div>;
+}
+
+/**
+ * Focus-rect half-size in % of the After preview width: a 16× loupe samples
+ * 1/16 of the image width, so the rect is 6.25% wide and the center stays a
+ * half-rect inside each edge. (The rect is an on-screen square, which is
+ * exactly the sampled region: the square zoom box always shows a W/16 × W/16
+ * patch of the preview, whatever the photo aspect.)
+ */
+const DENOISE_FOCUS_HALF = 100 / 32;
+
+/** Clamp a loupe % so the centered focus rect stays inside the After preview. */
+function clampDenoiseFocus(value: number): number {
+  return Math.max(DENOISE_FOCUS_HALF, Math.min(100 - DENOISE_FOCUS_HALF, value));
 }
 
 function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo }) {
@@ -653,15 +667,14 @@ function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo
     </>}
     {!working && assist.state === 'preview-ready' && assist.preview && <>
       <p className="denoise-preview-title" data-testid="denoise-preview-title">Preview — small downsample, shown here</p>
-      <div className="denoise-compare" data-testid="denoise-compare" title="Click to move the 4× closeup" onClick={(event) => {
+      <div className="denoise-compare" data-testid="denoise-compare" title="Click to move the 16× closeup" onClick={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return;
         const x = Math.round(((event.clientX - rect.left) / rect.width) * 100);
         const y = Math.round(((event.clientY - rect.top) / rect.height) * 100);
         setLoupe({ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) });
       }}>
-        <figure><img src={assist.preview.beforeUrl} alt="Noisy preview" data-testid="denoise-before" /><figcaption>Before</figcaption></figure>
-        <figure><img src={assist.preview.afterUrl} alt="Denoised preview" data-testid="denoise-after" /><figcaption>After</figcaption></figure>
+        <figure><div className="denoise-after-wrap"><img src={assist.preview.afterUrl} alt="Denoised preview" data-testid="denoise-after" /><div className="denoise-focus-rect" data-testid="denoise-focus-rect" aria-hidden="true" style={{ left: `${clampDenoiseFocus(loupe.x)}%`, top: `${clampDenoiseFocus(loupe.y)}%` }} /></div><figcaption>After</figcaption></figure>
       </div>
       <DenoiseCloseup preview={assist.preview} loupe={loupe} />
       <p className="inspector-note" role="status" data-testid="denoise-summary">Preview {assist.preview.strength}{previewTag} · small downsample</p>

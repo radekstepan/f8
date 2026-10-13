@@ -129,7 +129,7 @@ describe('denoise control', () => {
     expect(html).toContain('title="Show strength 50 as a small before/after below, in this panel"');
   });
 
-  it('shows the preview before/after with apply and the ML tag', () => {
+  it('shows an After-only first row with a focus rect, then apply and the ML tag', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT },
       makePhoto(3200),
@@ -141,8 +141,22 @@ describe('denoise control', () => {
     expect(html).toContain('data-testid="denoise-preview-title"');
     expect(html).toContain('Preview — small downsample, shown here');
     expect(html).toContain('data-testid="denoise-compare"');
-    expect(html).toContain('data-testid="denoise-before"');
+    // First row is the After image alone — the before/after comparison
+    // lives in the 16× closeup pair below.
     expect(html).toContain('data-testid="denoise-after"');
+    expect(html).not.toContain('data-testid="denoise-before"');
+    expect(html).not.toContain('<figcaption>Before</figcaption>');
+    expect(html).toContain('<figcaption>After</figcaption>');
+    // The focus rect overlays the After image at the default centered loupe.
+    expect(html).toContain('data-testid="denoise-focus-rect"');
+    const rectTag = html.match(/<div[^>]*data-testid="denoise-focus-rect"[^>]*>/)?.[0] ?? '';
+    expect(rectTag).toContain('aria-hidden="true"');
+    expect(rectTag).toContain('left:50%');
+    expect(rectTag).toContain('top:50%');
+    // The rect wraps the After image (positioning context), before its caption.
+    const wrap = html.indexOf('class="denoise-after-wrap"');
+    expect(wrap).toBeGreaterThan(-1);
+    expect(wrap).toBeLessThan(html.indexOf('data-testid="denoise-focus-rect"'));
     expect(html).toContain('Preview 65 · ML');
     expect(html).toContain('data-testid="denoise-apply"');
     expect(html).toContain('Apply to photo');
@@ -262,7 +276,7 @@ describe('denoise control', () => {
     expect(html).not.toContain('secondary-button');
   });
 
-  it('shows a centered 4x closeup under the small preview pair', () => {
+  it('shows a centered 16x closeup pair under the After-only first row', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT },
       makePhoto(3200),
@@ -274,13 +288,15 @@ describe('denoise control', () => {
     expect(html).toContain('data-testid="denoise-closeup"');
     expect(html).toContain('data-testid="denoise-closeup-before"');
     expect(html).toContain('data-testid="denoise-closeup-after"');
-    expect(html).toContain('Before · 4×');
-    expect(html).toContain('After · 4×');
-    expect(html).toContain('Noisy closeup at 4x magnification');
-    expect(html).toContain('Denoised closeup at 4x magnification');
+    expect(html).toContain('Before · 16×');
+    expect(html).toContain('After · 16×');
+    expect(html).toContain('Noisy closeup at 16x magnification');
+    expect(html).toContain('Denoised closeup at 16x magnification');
     // Default loupe sits on the center until the user clicks the preview.
     expect(html).toContain('background-position:50% 50%');
-    expect(html).toContain('Click to move the 4× closeup');
+    expect(html).toContain('Click to move the 16× closeup');
+    // Closeup pair renders below the After-only first row.
+    expect(html.indexOf('data-testid="denoise-closeup"')).toBeGreaterThan(html.indexOf('data-testid="denoise-after"'));
   });
 
   it('keeps the closeup as proof after apply and points at Compare', () => {
@@ -299,11 +315,28 @@ describe('denoise control', () => {
     expect(html).toContain('On the photo, Compare (B in the toolbar) toggles the noisy original against this clean photo.');
   });
 
-  it('magnifies the closeup boxes 4x without tiling', () => {
+  it('magnifies the closeup boxes 16x without tiling', () => {
     const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
     const rule = readFileSync(cssPath, 'utf8').match(/\.denoise-zoom\s*\{([^}]*)\}/)?.[1] ?? '';
-    expect(rule).toMatch(/background-size\s*:\s*400%/);
+    expect(rule).toMatch(/background-size\s*:\s*1600%/);
     expect(rule).toMatch(/background-repeat\s*:\s*no-repeat/);
+  });
+
+  it('overlays a 1/16 focus square on the After image without stealing clicks', () => {
+    const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
+    const css = readFileSync(cssPath, 'utf8');
+    const wrap = css.match(/\.denoise-after-wrap\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(wrap).toMatch(/position\s*:\s*relative/);
+    const rect = css.match(/\.denoise-focus-rect\s*\{([^}]*)\}/)?.[1] ?? '';
+    // 1/16 of the preview width, square on screen = exactly the sampled patch.
+    expect(rect).toMatch(/position\s*:\s*absolute/);
+    expect(rect).toMatch(/width\s*:\s*6\.25%/);
+    expect(rect).toMatch(/aspect-ratio\s*:\s*1\s*\/\s*1/);
+    expect(rect).toMatch(/transform\s*:\s*translate\(-50%,\s*-50%\)/);
+    // Visible on any photo, and clicks pass through to the loupe mover.
+    expect(rect).toMatch(/border\s*:/);
+    expect(rect).toMatch(/box-shadow\s*:/);
+    expect(rect).toMatch(/pointer-events\s*:\s*none/);
   });
 
   it('lays the suggestion row out in flex and titles the preview like its siblings', () => {
