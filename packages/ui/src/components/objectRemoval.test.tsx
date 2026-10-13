@@ -99,13 +99,46 @@ describe('object removal control', () => {
     expect(renderRepair()).not.toContain('data-testid="object-removal"');
   });
 
-  it('offers ML people removal with an ML badge when idle', () => {
+  it('runs detection from a right-aligned header ML button, with no detect bar', () => {
     const html = renderRepair(idleRemoval);
     expect(html).toContain('data-testid="object-removal"');
-    expect(html).toContain('data-testid="object-removal-detect"');
-    expect(html).toContain('Remove people');
-    expect(html).toContain('ml-badge');
-    expect(html).toContain('>ML<');
+    expect(html).toContain('<h3>One-Click Removal</h3></button>');
+    // The idle state is just the explanatory note — detection runs from
+    // the header ML button (Face Enhance pattern).
+    expect(html).toContain('Finds people with ML, then heals each one like a brush stroke. Nothing is removed until you apply.');
+    expect(html).not.toContain('data-testid="object-removal-detect"');
+    expect(html).not.toContain('>Remove people</button>');
+    // The ML action sits in the shared header row (badge gone) and closes
+    // it, like every other ML section.
+    const header = html.slice(html.indexOf('<h3>One-Click Removal</h3>'), html.indexOf('data-testid="object-removal"'));
+    expect(header).toContain('section-actions');
+    expect(header).toContain('data-testid="object-removal-ml"');
+    expect(header).not.toContain('ml-badge');
+    const after = html.slice(html.indexOf('data-testid="object-removal-ml"'), html.indexOf('data-testid="object-removal-ml"') + 400);
+    expect(after).toMatch(/data-testid="object-removal-ml"[^>]*>ML<\/button><\/div>/);
+    expect(html).toContain('title="Find people with ML, then review before removing"');
+  });
+
+  it('keeps the header ML idle-styled in every state, disabled only while detecting', () => {
+    // The assist is ephemeral — apply dismisses back to idle and the
+    // strokes live in Repairs — so the button never highlights and the
+    // section carries no reset; every click runs a fresh detection.
+    const idle = renderRepair(idleRemoval);
+    expect(idle).toContain('class="ml-button" data-testid="object-removal-ml" aria-pressed="false"');
+    expect(idle).not.toContain('aria-label="Reset one-click removal"');
+    const ready = renderRepair({
+      ...idleRemoval,
+      state: 'ready',
+      source: 'onnx',
+      detections: [{ label: 'person', score: 0.9, box: { x0: 0, y0: 0, x1: 0.5, y1: 0.5 }, checked: true }],
+    });
+    expect(ready).toContain('class="ml-button" data-testid="object-removal-ml" aria-pressed="false"');
+    expect(ready).toContain('title="Detect people again"');
+    expect(ready).not.toContain('aria-label="Reset one-click removal"');
+    const failed = renderRepair({ ...idleRemoval, state: 'error', message: 'Photo server unreachable.' });
+    expect(failed).toContain('title="Detect people again"');
+    const working = renderRepair({ ...idleRemoval, state: 'detecting', progress: { fraction: 0.2, stage: 'Detecting people…' } });
+    expect(working).toContain('data-testid="object-removal-ml" aria-pressed="false" title="Detecting people…" disabled=""');
   });
 
   it('lists ML detections with confirm checkboxes and a count apply', () => {

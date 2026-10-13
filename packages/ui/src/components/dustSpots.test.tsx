@@ -99,13 +99,46 @@ describe('dust spots control', () => {
     expect(renderRepair()).not.toContain('data-testid="dust-spots"');
   });
 
-  it('offers ML dust-spot detection with an ML badge when idle', () => {
+  it('runs detection from a right-aligned header ML button, with no detect bar', () => {
     const html = renderRepair(idleDustSpots);
     expect(html).toContain('data-testid="dust-spots"');
-    expect(html).toContain('data-testid="dust-spots-detect"');
-    expect(html).toContain('Find dust spots');
-    expect(html).toContain('ml-badge');
-    expect(html).toContain('>ML<');
+    expect(html).toContain('<h3>Dust Spots</h3></button>');
+    // The idle state is just the explanatory note — detection runs from
+    // the header ML button (Face Enhance pattern).
+    expect(html).toContain('Scans for dust and spots with ML, then repairs each accepted one like a brush stroke. Nothing is repaired until you apply.');
+    expect(html).not.toContain('data-testid="dust-spots-detect"');
+    expect(html).not.toContain('>Find dust spots</button>');
+    // The ML action sits in the shared header row (badge gone) and closes
+    // it, like every other ML section.
+    const header = html.slice(html.indexOf('<h3>Dust Spots</h3>'), html.indexOf('data-testid="dust-spots"'));
+    expect(header).toContain('section-actions');
+    expect(header).toContain('data-testid="dust-spots-ml"');
+    expect(header).not.toContain('ml-badge');
+    const after = html.slice(html.indexOf('data-testid="dust-spots-ml"'), html.indexOf('data-testid="dust-spots-ml"') + 400);
+    expect(after).toMatch(/data-testid="dust-spots-ml"[^>]*>ML<\/button><\/div>/);
+    expect(html).toContain('title="Find dust spots with ML, then review before repairing"');
+  });
+
+  it('keeps the header ML idle-styled in every state, disabled only while detecting', () => {
+    // The assist is ephemeral — apply dismisses back to idle and the
+    // strokes live in Repairs — so the button never highlights and the
+    // section carries no reset; every click runs a fresh detection.
+    const idle = renderRepair(idleDustSpots);
+    expect(idle).toContain('class="ml-button" data-testid="dust-spots-ml" aria-pressed="false"');
+    expect(idle).not.toContain('aria-label="Reset dust spots"');
+    const ready = renderRepair({
+      ...idleDustSpots,
+      state: 'ready',
+      source: 'ml',
+      spots: [{ x: 0.2, y: 0.2, radius: 0.01, score: 0.92, polarity: 'dark', checked: true }],
+    });
+    expect(ready).toContain('class="ml-button" data-testid="dust-spots-ml" aria-pressed="false"');
+    expect(ready).toContain('title="Detect dust spots again"');
+    expect(ready).not.toContain('aria-label="Reset dust spots"');
+    const failed = renderRepair({ ...idleDustSpots, state: 'error', message: 'Photo server unreachable.' });
+    expect(failed).toContain('title="Detect dust spots again"');
+    const working = renderRepair({ ...idleDustSpots, state: 'detecting', progress: { fraction: 0.2, stage: 'Scanning for dust spots…' } });
+    expect(working).toContain('data-testid="dust-spots-ml" aria-pressed="false" title="Detecting dust spots…" disabled=""');
   });
 
   it('lists ML spots with per-spot checkboxes and a count apply', () => {

@@ -143,10 +143,25 @@ describe('repair sidebar sections', () => {
     expect(html).not.toContain('Dust Spots');
   });
 
-  it('carries the ML badge in the ML section headings', () => {
+  it('runs the ML assists from right-aligned header ML buttons, never badges', () => {
     const html = renderRepair(idleRemoval, idleDustSpots);
-    expect(html).toContain('<h3>One-Click Removal</h3><span class="ml-badge"');
-    expect(html).toContain('<h3>Dust Spots</h3><span class="ml-badge"');
+    expect(html).toContain('<h3>One-Click Removal</h3></button>');
+    expect(html).toContain('<h3>Dust Spots</h3></button>');
+    // Each ML action sits in the shared header row and closes it, like
+    // every other ML section.
+    for (const [heading, next, button] of [
+      ['<h3>One-Click Removal</h3>', '<h3>Dust Spots</h3>', 'object-removal-ml'],
+      ['<h3>Dust Spots</h3>', '<h3>Repairs</h3>', 'dust-spots-ml'],
+    ] as const) {
+      const section = html.slice(html.indexOf(heading), html.indexOf(next));
+      expect(section).toContain('section-actions');
+      expect(section).toContain(`data-testid="${button}"`);
+      expect(section).not.toContain('ml-badge');
+      const after = html.slice(html.indexOf(`data-testid="${button}"`), html.indexOf(`data-testid="${button}"`) + 400);
+      expect(after).toMatch(new RegExp(`data-testid="${button}"[^>]*>ML</button></div>`));
+    }
+    // The row itself is pushed right.
+    expect(cssRule('.section-actions')).toMatch(/margin-left\s*:\s*auto/);
   });
 
   it('renders every repair action as a golden link, never a grey button', () => {
@@ -167,8 +182,11 @@ describe('repair sidebar sections', () => {
     expect(html).toContain('class="text-button" data-testid="object-removal-apply"');
     expect(html).toContain('class="text-button" data-testid="dust-spots-apply"');
     const idle = renderRepair(idleRemoval, idleDustSpots);
-    expect(idle).toContain('class="text-button full-width" data-testid="object-removal-detect"');
-    expect(idle).toContain('class="text-button full-width" data-testid="dust-spots-detect"');
+    // Idle has no detect bars: detection runs from the header ML buttons.
+    expect(idle).not.toContain('object-removal-detect');
+    expect(idle).not.toContain('dust-spots-detect');
+    expect(idle).toContain('class="ml-button" data-testid="object-removal-ml"');
+    expect(idle).toContain('class="ml-button" data-testid="dust-spots-ml"');
     // The people retry matches the dust retry: both golden links now.
     const failed = renderRepair(
       { ...idleRemoval, state: 'error', message: 'Photo server unreachable.' },

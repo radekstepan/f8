@@ -4,7 +4,7 @@ import { CROP_RATIOS, SCENE_DISPLAY_NAMES, denoiseStrengthForIso, groupRetouchSt
 import type { ChangeEdit, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, MlCategory, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { AdjustmentSection } from './AdjustmentSection.js';
-import { CheckField, IconButton, MenuItem, MenuSeparator, MlBadge, RangeControl, RevertButton, SegmentedControl, SelectField, Toggle } from './EditorUI.js';
+import { CheckField, IconButton, MenuItem, MenuSeparator, RangeControl, RevertButton, SegmentedControl, SelectField, Toggle } from './EditorUI.js';
 import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
 
 function Histogram({ data, photo }: { data: HistogramData | null; photo: Photo }) {
@@ -367,10 +367,9 @@ function ObjectRemovalControl({ assist }: { assist: ObjectRemovalAssist }) {
   const working = assist.state === 'detecting';
   const checked = assist.detections.filter((detection) => detection.checked).length;
   return <div className="object-removal" data-testid="object-removal">
-    {assist.state === 'idle' && <>
-      <button className="text-button full-width" data-testid="object-removal-detect" title="Find people with ML, then review before removing" onClick={assist.onDetect}>Remove people</button>
+    {assist.state === 'idle' &&
       <p className="inspector-note">Finds people with ML, then heals each one like a brush stroke. Nothing is removed until you apply.</p>
-    </>}
+    }
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
     {working && <div className="suggestion-actions"><button className="text-button" data-testid="object-removal-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
     {assist.state === 'ready' && (assist.detections.length === 0 ? <>
@@ -420,10 +419,9 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
     .map((spot, index) => ({ spot, index }))
     .sort((a, b) => b.spot.score - a.spot.score);
   return <div className="object-removal dust-spots" data-testid="dust-spots">
-    {assist.state === 'idle' && <>
-      <button className="text-button full-width" data-testid="dust-spots-detect" title="Find dust spots with ML, then review before repairing" onClick={assist.onDetect}>Find dust spots</button>
+    {assist.state === 'idle' &&
       <p className="inspector-note">Scans for dust and spots with ML, then repairs each accepted one like a brush stroke. Nothing is repaired until you apply.</p>
-    </>}
+    }
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
     {working && <div className="suggestion-actions"><button className="text-button" data-testid="dust-spots-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
     {assist.state === 'ready' && (assist.spots.length === 0 ? <>
@@ -742,6 +740,62 @@ function DenoiseSection({ assist, photo }: { assist: DenoiseAssist; photo: Photo
   </AdjustmentSection>;
 }
 
+/**
+ * The One-Click Removal section: detection runs from the shared header ML
+ * button (Face Enhance pattern), so the content holds the review list but
+ * no detect bar — the idle state is just the explanatory note. The assist
+ * is ephemeral (apply dismisses back to idle; the strokes live in the
+ * Repairs section from there), so the button never highlights and carries
+ * no reset: every click runs a fresh detection.
+ */
+function RemovalSection({ assist }: { assist: ObjectRemovalAssist }) {
+  const working = assist.state === 'detecting';
+  const title = working
+    ? 'Detecting people…'
+    : assist.state === 'idle'
+      ? 'Find people with ML, then review before removing'
+      : 'Detect people again';
+  return <AdjustmentSection title="One-Click Removal" icon={<Eraser size={14} />}
+    ml={{
+      id: 'object-removal',
+      applied: false,
+      canRevert: false,
+      onToggle: assist.onDetect,
+      onRevert: assist.onDismiss,
+      disabled: working,
+      title,
+    }}>
+    <ObjectRemovalControl assist={assist} />
+  </AdjustmentSection>;
+}
+
+/**
+ * The Dust Spots section: the same shared-header convergence as
+ * RemovalSection — the header ML button runs the scan, the content keeps
+ * the review list with no detect bar, and the ephemeral assist means no
+ * highlight and no reset.
+ */
+function DustSpotsSection({ assist }: { assist: DustSpotsAssist }) {
+  const working = assist.state === 'detecting';
+  const title = working
+    ? 'Detecting dust spots…'
+    : assist.state === 'idle'
+      ? 'Find dust spots with ML, then review before repairing'
+      : 'Detect dust spots again';
+  return <AdjustmentSection title="Dust Spots" icon={<Sparkles size={14} />}
+    ml={{
+      id: 'dust-spots',
+      applied: false,
+      canRevert: false,
+      onToggle: assist.onDetect,
+      onRevert: assist.onDismiss,
+      disabled: working,
+      title,
+    }}>
+    <DustSpotsControl assist={assist} />
+  </AdjustmentSection>;
+}
+
 function RetouchGroups({ edit, highlightStroke, onHighlightStroke, onChange }: { edit: EditState; highlightStroke: number | null; onHighlightStroke?: (stroke: number | null) => void; onChange: ChangeEdit }) {
   const groups = useMemo(() => groupRetouchStrokes(edit.retouches), [edit.retouches]);
   const counters = { repair: 0 };
@@ -915,7 +969,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </AdjustmentSection>
       {extraSections.includes('Black & White') && <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} enabled={edit.blackAndWhite} toggleLabel="Enable black & white" onToggle={() => onChange({ blackAndWhite: !edit.blackAndWhite })}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>}
       <div className="inspector-end-note"><Circle size={10} />Every change. Always reversible.</div>
-    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onRotate(-1)}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onRotate(1)}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onStraighten={onStraighten} onDraggingChange={onStraightenDragging} /> : <RangeControl label="Straighten" value={edit.straighten} min={-15} max={15} step={0.1} suffix="deg" signed onDraggingChange={onStraightenDragging} onChange={(next) => onStraighten(next, 'straighten')} />}<p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <><AdjustmentSection title="Brush" icon={<Brush size={14} />}><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} /></AdjustmentSection>{repairAssist && <AdjustmentSection title="Reconstruction" icon={<Layers size={14} />}><RepairMethodControl assist={repairAssist} /></AdjustmentSection>}{repairAssist?.removal && <AdjustmentSection title="One-Click Removal" icon={<Eraser size={14} />} badge={<MlBadge hint="Detected by a machine-learning model on the photo server" />}><ObjectRemovalControl assist={repairAssist.removal} /></AdjustmentSection>}{repairAssist?.dustSpots && <AdjustmentSection title="Dust Spots" icon={<Sparkles size={14} />} badge={<MlBadge hint="Filtered by a machine-learning model on the photo server" />}><DustSpotsControl assist={repairAssist.dustSpots} /></AdjustmentSection>}<AdjustmentSection title="Repairs" icon={<Bandage size={14} />}><RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></AdjustmentSection></>}</div>
+    </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onRotate(-1)}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onRotate(1)}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onStraighten={onStraighten} onDraggingChange={onStraightenDragging} /> : <RangeControl label="Straighten" value={edit.straighten} min={-15} max={15} step={0.1} suffix="deg" signed onDraggingChange={onStraightenDragging} onChange={(next) => onStraighten(next, 'straighten')} />}<p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <><AdjustmentSection title="Brush" icon={<Brush size={14} />}><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} /></AdjustmentSection>{repairAssist && <AdjustmentSection title="Reconstruction" icon={<Layers size={14} />}><RepairMethodControl assist={repairAssist} /></AdjustmentSection>}{repairAssist?.removal && <RemovalSection assist={repairAssist.removal} />}{repairAssist?.dustSpots && <DustSpotsSection assist={repairAssist.dustSpots} />}<AdjustmentSection title="Repairs" icon={<Bandage size={14} />}><RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></AdjustmentSection></>}</div>
     {tool === 'adjust' && <div className="inspector-footer" ref={addMenuRef}><button className="add-adjustment" onClick={() => setAddMenu(!addMenu)} aria-expanded={addMenu}>Add Adjustment<ChevronDown size={12} /></button>{addMenu && <div className="dropdown-menu add-adjustment-menu" role="menu">{['Black & White'].filter((name) => !extraSections.includes(name)).map((name) => <MenuItem key={name} onClick={() => addSection(name)}>{name}</MenuItem>)}{!extraSections.includes('Black & White') && <MenuSeparator />}<MenuItem onClick={() => { onSavePreset(); setAddMenu(false); }}>Save as Preset...</MenuItem></div>}</div>}
   </aside>;
 }
