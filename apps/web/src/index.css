@@ -117,6 +117,7 @@ img { display: block; }
 .album-row:has(.album-menu-trigger):hover .item-count, .album-row:has(.album-menu-trigger):focus-within .item-count, .album-row.is-menu-open .item-count { visibility: hidden; }
 .album-menu-trigger:hover { background: #ffffff14; color: #fff; }
 .album-menu { left: auto; right: 0; min-width: 150px; }
+.sidebar-album-menu { position: fixed; top: auto; left: auto; right: auto; z-index: 120; }
 .sidebar-bottom { margin-top: auto; padding: 24px 14px 16px; }
 .import-button { height: 32px; display: flex; align-items: center; width: 100%; gap: 8px; font-size: 10.5px; padding: 0 10px; color: #c9c9d0; background: #2c2c30; border: 1px solid #45454b; border-radius: 5px; box-shadow: 0 1px 2px #0002; }
 .import-button:hover { background: #363639; border-color: #676153; }

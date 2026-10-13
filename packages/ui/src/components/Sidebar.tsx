@@ -1,8 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Clock3, MoreHorizontal, Folder, Heart, Images, Import, Plus, Search } from 'lucide-react';
 import type { Album, Photo } from '@f8/core';
-import { MOVE_PHOTOS_MIME, decodeMovePayload, isRecentlyEdited } from '@f8/core';
+import { MOVE_PHOTOS_MIME, anchorMenuBelowTrigger, decodeMovePayload, isRecentlyEdited } from '@f8/core';
 import { IconButton, MenuItem } from './EditorUI.js';
+
+// The open menu is measured before paint so its first frame already sits at
+// the anchored position; on the server (test renders) this degrades to a
+// plain effect.
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 interface SidebarProps {
   photos: Photo[];
@@ -38,14 +43,37 @@ function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, onLabelAlbu
   onDropHighlight: (id: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Viewport coordinates for the fixed-positioned menu (null until measured
+  // after opening). The menu floats above the UI instead of clipping inside
+  // the sidebar's scroll container.
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     const onPointer = (event: PointerEvent) => { if (!ref.current?.contains(event.target as Node)) setOpen(false); };
     const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    // The menu floats at measured coordinates, so a scroll or resize would
+    // strand it away from its row: dismiss instead of letting it drift.
+    const onViewport = () => setOpen(false);
     document.addEventListener('pointerdown', onPointer);
     document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('pointerdown', onPointer); document.removeEventListener('keydown', onKey); };
+    document.addEventListener('scroll', onViewport, true);
+    window.addEventListener('resize', onViewport);
+    return () => { document.removeEventListener('pointerdown', onPointer); document.removeEventListener('keydown', onKey); document.removeEventListener('scroll', onViewport, true); window.removeEventListener('resize', onViewport); };
+  }, [open ]);
+  // Measure the open menu and pin it into the viewport: below the trigger
+  // and right-aligned, flipping above near the bottom edge. The menu stays
+  // in the row's React subtree, so outside-click dismissal is unchanged.
+  useIsomorphicLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) return;
+    const rect = trigger.getBoundingClientRect();
+    const size = menu.getBoundingClientRect();
+    setMenuPos(anchorMenuBelowTrigger(rect, { width: size.width, height: size.height }, { width: window.innerWidth, height: window.innerHeight }));
   }, [open ]);
   const showMenu = Boolean(onRemoveAlbum || onLabelAlbum || onCullAlbum);
   // Photo drops only: file drags from the OS pass through to the app-shell
@@ -80,13 +108,14 @@ function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, onLabelAlbu
           className="album-menu-trigger"
           aria-haspopup="menu"
           aria-expanded={open}
+          ref={triggerRef}
           onClick={(event) => { event.stopPropagation(); setOpen((current) => !current); }}
         >
           <MoreHorizontal size={15} />
         </IconButton>
       )}
       {showMenu && open && (
-        <div className="dropdown-menu album-menu" role="menu" aria-label={`Album actions for ${album.name}`}>
+        <div className="dropdown-menu album-menu sidebar-album-menu" role="menu" aria-label={`Album actions for ${album.name}`} ref={menuRef} style={menuPos ? { left: menuPos.x, top: menuPos.y } : undefined}>
           {onLabelAlbum && <MenuItem onClick={() => { setOpen(false); onLabelAlbum(album.id); }}><span>Label unlabeled photos <span className="ml-badge" title="Photos are labeled by a machine-learning model on the photo server">ML</span></span></MenuItem>}
           {onCullAlbum && <MenuItem onClick={() => { setOpen(false); onCullAlbum(album.id); }}><span>Find blurry photos <span className="ml-badge" title="Blurry photos and near-duplicates are flagged by ML cull assist on the photo server">ML</span></span></MenuItem>}
           {(onLabelAlbum || onCullAlbum) && onRemoveAlbum && <div className="menu-separator" role="separator" />}

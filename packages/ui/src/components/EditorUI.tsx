@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { Check, ChevronDown, X } from 'lucide-react';
 
 export function BrandMark({ size = 24 }: { size?: number }) {
@@ -16,6 +16,8 @@ export function BrandMark({ size = 24 }: { size?: number }) {
 interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string;
   active?: boolean;
+  /** Forwards to the underlying button (e.g. to measure a menu trigger). */
+  ref?: Ref<HTMLButtonElement>;
   /** Stable e2e selector; passed through to the button. */
   'data-testid'?: string;
   children: ReactNode;
