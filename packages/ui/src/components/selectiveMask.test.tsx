@@ -100,27 +100,48 @@ describe('selective mask control', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT })).not.toContain('data-testid="selective-mask"');
   });
 
-  it('offers ML subject-and-background enhance with an ML badge', () => {
+  it('runs segmentation from a header ML button, never a full-width bar', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, assist());
     expect(html).toContain('data-testid="selective-mask"');
-    expect(html).toContain('data-testid="selective-mask-detect"');
-    expect(html).toContain('Enhance Subject &amp; Background');
-    expect(html).toContain('ml-badge');
+    expect(html).toContain('data-testid="selective-mask-ml"');
+    expect(html).toContain('class="ml-button" data-testid="selective-mask-ml"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('title="Automatically adjust subject &amp; background with ML"');
     expect(html).toContain('>ML<');
     expect(html).toContain('Changes save automatically');
+    // No detect bar in the content and no badge doubling the header button.
+    expect(html).not.toContain('data-testid="selective-mask-detect"');
+    expect(html).not.toContain('Enhance Subject &amp; Background');
+    expect(html).not.toContain('ml-badge');
+    expect(html).not.toContain('data-testid="selective-mask-ml-revert"');
   });
 
   it('keeps the section title visible before and after detection', () => {
     // The title names the action in every state, so the sliders always
-    // have a visible group — the detect button may come and go.
+    // have a visible group; the header ML button drives segment/clear.
     const idle = renderAdjust({ ...DEFAULT_EDIT }, assist());
     expect(idle).toContain('<h3>Subject &amp; Background</h3>');
+    expect(idle).toContain('data-testid="selective-mask-ml"');
     const applied = renderAdjust(
       { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
       assist({ applied: APPLIED }),
     );
     expect(applied).toContain('<h3>Subject &amp; Background</h3>');
+    expect(applied).toContain('data-testid="selective-mask-ml"');
+    expect(applied).toContain('data-testid="selective-mask-ml-revert"');
     expect(applied).not.toContain('data-testid="selective-mask-detect"');
+  });
+
+  it('highlights the header ML button and offers revert while a mask is stored', () => {
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
+      assist({ applied: APPLIED }),
+    );
+    expect(html).toContain('class="ml-button is-active" data-testid="selective-mask-ml"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('title="ML subject &amp; background applied — click to revert"');
+    expect(html).toContain('data-testid="selective-mask-ml-revert"');
+    expect(html).toContain('aria-label="Revert ML subject &amp; background"');
   });
 
   it('auto-applies an ML result with no apply step or target toggle', () => {
@@ -202,7 +223,7 @@ describe('selective mask control', () => {
     expect(html).toContain('data-testid="selective-mask-background-saturation"');
   });
 
-  it('keeps the sliders on a stored-but-neutral mask instead of dropping to the detect button', () => {
+  it('keeps the sliders on a stored-but-neutral mask instead of an empty state', () => {
     const neutral: SelectiveAdjustState = {
       ...APPLIED,
       subject: { exposure: 0, contrast: 0, saturation: 0 },
@@ -235,5 +256,9 @@ describe('selective mask control', () => {
     expect(off).toContain('data-testid="selective-mask-background-exposure"');
     expect(off).toContain('data-testid="selective-mask-redetect"');
     expect(off).toContain('data-testid="selective-mask-clear"');
+    // The header ML highlight means "mask stored", not "enabled" — the
+    // content toggle owns on/off, so bypassing keeps the highlight.
+    expect(off).toContain('class="ml-button is-active" data-testid="selective-mask-ml"');
+    expect(off).toContain('data-testid="selective-mask-ml-revert"');
   });
 });

@@ -169,12 +169,17 @@ describe('ml enhance sections', () => {
     expect(html.indexOf('data-testid="denoise"')).toBeLessThan(html.indexOf('histogram-section'));
   });
 
-  it('marks every ML section header with an ML badge', () => {
+  it('marks every ML section header with an ML badge or button', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
     for (const [title] of SECTIONS) {
+      if (title === 'Subject &amp; Background') continue;
       const heading = html.match(new RegExp(`<h3>${title}</h3><span class="ml-badge"`));
       expect(heading, `${title} header carries an ML badge`).not.toBeNull();
     }
+    // Subject & Background runs from the header ML button (White Balance
+    // pattern), so it carries the button instead of a badge.
+    expect(html).toContain('data-testid="selective-mask-ml"');
+    expect(html.match(/<h3>Subject &amp; Background<\/h3><span class="ml-badge"/)).toBeNull();
   });
 
   it('omits every ML section without any assist but keeps classic Auto Enhance', () => {
@@ -276,7 +281,9 @@ describe('ml enhance sections', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
     expect(html).toContain('class="slim-button full-width" data-testid="scene-enhance-apply"');
     expect(html).toContain('class="slim-button full-width" data-testid="face-enhance-detect"');
-    expect(html).toContain('class="slim-button full-width" data-testid="selective-mask-detect"');
+    // Subject segmentation runs from the header ML button, not a content bar.
+    expect(html).toContain('class="ml-button" data-testid="selective-mask-ml"');
+    expect(html).not.toContain('data-testid="selective-mask-detect"');
     expect(html).toContain('class="slim-button full-width" data-testid="denoise-preview"');
     expect(html).not.toContain('secondary-button');
   });
