@@ -19,6 +19,7 @@ export * from "./menuAnchor.js";
 export * from "./mlCategories.js";
 export * from "./photoBacklink.js";
 export * from "./photoMeta.js";
+export * from "./photoTools.js";
 export * from "./photoSelection.js";
 export * from "./raw.js";
 export * from "./retouch.js";

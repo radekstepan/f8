@@ -92,6 +92,8 @@ interface ToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   showBacklink: boolean;
+  /** False in the library grid: the photo-only controls are omitted. Defaults to true. */
+  showPhotoTools?: boolean;
   presetsOpen?: boolean;
   /** False when the recipe already matches the factory default (nothing to reset). Defaults to true. */
   canReset?: boolean;
@@ -101,7 +103,7 @@ interface ToolbarProps {
   onTogglePresets?: () => void;
 }
 
-export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo, showBacklink, presetsOpen, canReset = true, onTool, onAction, onDialog, onTogglePresets }: ToolbarProps) {
+export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo, showBacklink, showPhotoTools = true, presetsOpen, canReset = true, onTool, onAction, onDialog, onTogglePresets }: ToolbarProps) {
   // Tools only: the one-shot Auto Enhance lives in the Adjust sidebar
   // (Image menu + A shortcut still reach it from anywhere).
   const tools = [
@@ -122,7 +124,7 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
             <div className="collection-title"><span className="collection-name">{collectionName}</span><span className="collection-count">{count} photos</span></div>
           )}
         </div>
-        <div className="editing-tools" role="toolbar" aria-label="Editing tools">
+        {showPhotoTools && <div className="editing-tools" role="toolbar" aria-label="Editing tools">
           {tools.map(({ id, label, icon: Icon, active }) => (
             <button
               key={id}
@@ -133,17 +135,17 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
               onClick={() => onTool(id as Tool)}
             ><Icon size={20} strokeWidth={1.55} /><span>{label}</span></button>
           ))}
-        </div>
+        </div>}
         <div className="history-buttons">
           <IconButton label="Undo (Ctrl Z)" disabled={!canUndo} onClick={() => onAction('undo')}><Undo2 size={18} /></IconButton>
           <IconButton label="Redo (Ctrl Shift Z, Ctrl Y)" disabled={!canRedo} onClick={() => onAction('redo')}><Redo2 size={18} /></IconButton>
         </div>
       </div>
       <div className="toolbar-actions">
-        {onTogglePresets && <IconButton label={presetsOpen ? 'Hide presets' : 'Show presets'} active={presetsOpen} onClick={onTogglePresets}><SwatchBook size={18} strokeWidth={1.6} /></IconButton>}
+        {showPhotoTools && onTogglePresets && <IconButton label={presetsOpen ? 'Hide presets' : 'Show presets'} active={presetsOpen} onClick={onTogglePresets}><SwatchBook size={18} strokeWidth={1.6} /></IconButton>}
         <IconButton label="Reset to original" disabled={!canReset} onClick={() => onAction('reset')}><RotateCcw size={18} strokeWidth={1.6} /></IconButton>
-        <IconButton label={tool === 'crop' ? 'Compare with original (unavailable while cropping)' : 'Compare with original (B)'} active={compare} disabled={tool === 'crop'} onClick={() => onAction('compare')}><Columns2 size={18} strokeWidth={1.6} /></IconButton>
-        <IconButton label="Photo information (I)" onClick={() => onDialog('info')}><Info size={18} strokeWidth={1.6} /></IconButton>
+        {showPhotoTools && <IconButton label={tool === 'crop' ? 'Compare with original (unavailable while cropping)' : 'Compare with original (B)'} active={compare} disabled={tool === 'crop'} onClick={() => onAction('compare')}><Columns2 size={18} strokeWidth={1.6} /></IconButton>}
+        {showPhotoTools && <IconButton label="Photo information (I)" onClick={() => onDialog('info')}><Info size={18} strokeWidth={1.6} /></IconButton>}
         <button className="export-button" onClick={() => onDialog('export')}><Share size={15} /><span>Export</span></button>
         <IconButton label="Focus mode (Shift F)" className="mobile-focus" onClick={() => onAction('fullscreen')}><Maximize2 size={17} /></IconButton>
       </div>
