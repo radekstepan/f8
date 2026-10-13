@@ -79,7 +79,11 @@ export function RangeControl({ label, value, min = -100, max = 100, step = 1, de
   const displayed = String(Number(value.toFixed(digits)));
   const progress = (value - min) / (max - min) * 100;
   const center = (defaultValue - min) / (max - min) * 100;
-  const showOrigin = !color && center >= 0 && center <= 100;
+  // The origin tick marks the neutral zero of a bipolar (signed) slider.
+  // Unsigned sliders (brush size, feather, denoise strength) use
+  // defaultValue only as a starting preset / double-click reset target, so
+  // a tick there would be a meaningless line mid-track.
+  const showOrigin = signed && !color && center >= 0 && center <= 100;
   const style = { '--range-progress': `${progress}%`, '--range-center': `${center}%` } as CSSProperties;
   return (
     <div className={`range-control ${disabled ? 'is-disabled' : ''}`} {...(testId ? { 'data-testid': testId } : {})}>
