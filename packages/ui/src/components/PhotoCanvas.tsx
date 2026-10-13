@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
-import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
+import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, frameAspectForPhoto, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
 import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 import { ToolHint } from './ToolHint.js';
@@ -1079,7 +1079,16 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
     jumpToFraction((clientX - boxRect.left) / boxRect.width, (clientY - boxRect.top) / boxRect.height);
   }, [jumpToFraction]);
 
-  const fitWidth = Math.max(100, Math.min(stageSize.width - 64, (stageSize.height - 48) * aspect));
+  /**
+   * Frame aspect while the full-res image decodes: predicted from the stored
+   * upright dimensions + rotation/crop (the same recipe the pipeline paints),
+   * so the album-thumbnail preview already sits at the final size and the
+   * frame never resizes when the canvas lands. Falls back to the last
+   * measured aspect when metadata is unusable; after first paint the decoded
+   * pixels are ground truth.
+   */
+  const displayAspect = loading ? frameAspectForPhoto(photo, edit, aspect) : aspect;
+  const fitWidth = Math.max(100, Math.min(stageSize.width - 64, (stageSize.height - 48) * displayAspect));
   const frameWidth = fitWidth * zoom;
 
   const positionFromClient = (clientX: number, clientY: number) => {
@@ -1206,7 +1215,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
     return null;
   };
 
-  const frameHeight = frameWidth / aspect;
+  const frameHeight = frameWidth / displayAspect;
   /** Grab cursor when a drag would pan: the frame overflows the stage and the brush isn't painting (Space/pan override it). */
   const pannableCursor = viewport !== null && (!isBrush || spaceHeld || panning);
   const showOverlay = isBrush && !loading && !compare && !showOriginal;
@@ -1249,8 +1258,8 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   const zoomOptions = ZOOM_STEPS.includes(zoom) ? ZOOM_STEPS : [...ZOOM_STEPS, zoom].sort((a, b) => a - b);
   const zoomLabel = (value: number) => (value === 1 ? 'Fit' : `${Math.round(value * 100)}%`);
   // Minimap footprint at the frame's aspect, capped for portrait frames.
-  const miniWidth = Math.round(Math.min(148, 104 * aspect));
-  const miniHeight = Math.round(Math.min(104, 148 / aspect));
+  const miniWidth = Math.round(Math.min(148, 104 * displayAspect));
+  const miniHeight = Math.round(Math.min(104, 148 / displayAspect));
 
   return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{!isDefaultEdit(edit) && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} title={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton>{onRemove && <IconButton label="Remove from library (Del)" className="photo-remove" onClick={onRemove}><Trash2 size={15} strokeWidth={1.5} /></IconButton>}</div></div><div className="canvas-stage-wrap"><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${pannableCursor ? 'is-pannable' : ''} ${panning ? 'is-panning' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} data-testid="photo-frame" style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onMouseDown={swallowMiddleClick} onPointerMove={(event) => { const pan = panDrag.current; if (pan && event.pointerId === pan.pointerId) { const stage = stageRef.current; if (stage) { const next = panScrollFromDrag(pan, { clientX: event.clientX, clientY: event.clientY }); stage.scrollLeft = next.scrollLeft; stage.scrollTop = next.scrollTop; } return; } if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
       {/* Album-thumbnail hold: the grid already decoded this URL, so it paints

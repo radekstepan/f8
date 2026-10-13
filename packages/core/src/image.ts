@@ -48,6 +48,34 @@ export function isPortraitPhoto(photo: { width: number; height: number }): boole
   return photo.height > photo.width;
 }
 
+// Frame aspect (width / height) the editor canvas will paint for this photo
+// under the given geometry, predicted from the stored upright dimensions —
+// the same recipe geometryCanvas applies to the decoded pixels (quarter-turn
+// swaps dimensions, the crop ratio fits inside, straighten/flips keep the
+// output size). The editor frame uses this while the full-res image decodes
+// so the album-thumbnail preview already sits at the final size and the
+// frame never resizes when the canvas lands. Falls back when the stored
+// dimensions are unusable (0, negative, non-finite); callers pass the last
+// measured aspect to keep the previous frame instead of jumping.
+export function frameAspectForPhoto(
+  photo: { width: number; height: number },
+  edit: Pick<EditState, 'rotation' | 'cropRatio'>,
+  fallback = 1200 / 627,
+): number {
+  const { width, height } = photo;
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return fallback;
+  const rotated = Math.abs(edit.rotation % 180) === 90;
+  let frameWidth = rotated ? height : width;
+  let frameHeight = rotated ? width : height;
+  const ratio = CROP_RATIOS[edit.cropRatio];
+  if (ratio) {
+    if (frameWidth / frameHeight > ratio) frameWidth = frameHeight * ratio;
+    else frameHeight = frameWidth / ratio;
+  }
+  const aspect = frameWidth / frameHeight;
+  return Number.isFinite(aspect) && aspect > 0 ? aspect : fallback;
+}
+
 // Decode an imported file with the browser's own EXIF handling so portrait
 // phone photos report upright dimensions. The returned size is orientation 1;
 // every later decode of the same blob URL (<img> auto-orients for display)
