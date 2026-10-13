@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LibraryError,
   MAX_IMPORTS_PER_REQUEST,
+  applyPhotoMetaPatch,
   createLibraryClient,
+  createPendingPhotoMeta,
   resolveImportSelection,
 } from "@f8/core";
 import type {
@@ -44,6 +46,13 @@ export function useLibrary() {
   const [editsSeed, setEditsSeed] = useState<Record<string, HistoryState> | null>(null);
   const [error, setError] = useState("");
   const generation = useRef(0);
+  // Optimistic star/rating state: meta patches apply locally at click time
+  // (even while a repair saturates the server) and the PATCH reconciles.
+  // The tracker re-applies pending patches over every incoming server
+  // record, so a concurrent repair save cannot clobber the star.
+  const [pendingMeta] = useState(createPendingPhotoMeta);
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
 
   const markOfflineIfDown = useCallback((reason: unknown) => {
     if (reason instanceof LibraryError && reason.status === 0) setStatus("offline");
@@ -53,10 +62,13 @@ export function useLibrary() {
     if (!incoming.length) return;
     setPhotos((current) => {
       const map = new Map(current.map((photo) => [photo.id, photo]));
-      for (const photo of incoming) map.set(photo.id, photo);
+      // Pending optimistic meta wins over incoming server state: a repair
+      // save answering with pre-PATCH rows must not wipe the star. (Pure
+      // overlay — safe under the updater's double-invoke.)
+      for (const photo of incoming) map.set(photo.id, pendingMeta.serverPhoto(photo.id, photo));
       return [...map.values()];
     });
-  }, []);
+  }, [pendingMeta]);
 
   const load = useCallback(async () => {
     const ticket = ++generation.current;
@@ -154,15 +166,37 @@ export function useLibrary() {
 
   const updatePhoto = useCallback(
     async (id: string, patch: PhotoPatch) => {
+      // Optimistic: the star flips synchronously at click time instead of
+      // waiting out the PATCH — the server may be saturated by a running
+      // repair for tens of seconds. Rapid toggles read the optimistic
+      // state, so each click still inverts what the user sees.
+      const current = photosRef.current.find((photo) => photo.id === id);
+      const seq = current ? pendingMeta.begin(id, current, patch) : null;
+      if (seq !== null) {
+        setPhotos((photos) => photos.map((photo) => (photo.id === id ? pendingMeta.serverPhoto(id, photo) : photo)));
+      }
       try {
         const { photo } = await client.updatePhoto(id, patch);
-        upsertPhotos([photo]);
+        // Only the latest PATCH per photo settles authoritatively; a
+        // superseded out-of-order response is dropped so it cannot
+        // resurrect a state the user already toggled past.
+        if (seq === null || pendingMeta.resolve(id, seq)) {
+          upsertPhotos([photo]);
+        }
       } catch (reason) {
+        // Roll back to the pre-optimistic values — unless a newer toggle
+        // superseded this one, in which case its state stands.
+        if (seq !== null) {
+          const prev = pendingMeta.reject(id, seq);
+          if (prev) {
+            setPhotos((photos) => photos.map((photo) => (photo.id === id ? applyPhotoMetaPatch(photo, prev) : photo)));
+          }
+        }
         markOfflineIfDown(reason);
         throw reason;
       }
     },
-    [client, markOfflineIfDown, upsertPhotos],
+    [client, markOfflineIfDown, pendingMeta, upsertPhotos],
   );
 
   const updateLabels = useCallback(

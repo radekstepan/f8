@@ -16,6 +16,7 @@ export * from "./library.js";
 export * from "./libraryUrl.js";
 export * from "./menuAnchor.js";
 export * from "./mlCategories.js";
+export * from "./photoMeta.js";
 export * from "./photoSelection.js";
 export * from "./raw.js";
 export * from "./retouch.js";
