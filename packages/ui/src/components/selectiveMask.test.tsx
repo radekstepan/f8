@@ -45,7 +45,6 @@ function assist(overrides: Partial<SelectiveMaskAssist> = {}): SelectiveMaskAssi
     message: null,
     applied: null,
     onDetect: noop,
-    onApply: noop,
     onAdjust: noop,
     onClear: noop,
     onDismiss: noop,
@@ -57,10 +56,8 @@ const APPLIED: SelectiveAdjustState = {
   maskB64: 'eA==',
   maskWidth: 4,
   maskHeight: 4,
-  target: 'subject',
-  exposure: 0.5,
-  contrast: 10,
-  saturation: 0,
+  subject: { exposure: 0.5, contrast: 10, saturation: 0 },
+  background: { exposure: 0, contrast: 0, saturation: 0 },
   source: 'onnx',
 };
 
@@ -97,16 +94,17 @@ describe('selective mask control', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT })).not.toContain('data-testid="selective-mask"');
   });
 
-  it('offers ML brighten-subject-only with an ML badge', () => {
+  it('offers ML subject-and-background enhance with an ML badge', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, assist());
     expect(html).toContain('data-testid="selective-mask"');
     expect(html).toContain('data-testid="selective-mask-detect"');
-    expect(html).toContain('Brighten Subject Only');
+    expect(html).toContain('Enhance Subject &amp; Background');
     expect(html).toContain('ml-badge');
     expect(html).toContain('>ML<');
+    expect(html).toContain('Changes save automatically');
   });
 
-  it('summarizes an ML result with target toggle, sliders, and apply', () => {
+  it('auto-applies an ML result with no apply step or target toggle', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT },
       assist({ state: 'ready', found: true, coverage: 0.23, source: 'onnx' }),
@@ -114,13 +112,10 @@ describe('selective mask control', () => {
     expect(html).toContain('data-testid="selective-mask-summary"');
     expect(html).toContain('Subject 23%');
     expect(html).toContain('· ML');
-    expect(html).toContain('data-testid="selective-mask-target-subject"');
-    expect(html).toContain('data-testid="selective-mask-target-background"');
-    expect(html).toContain('data-testid="selective-mask-exposure"');
-    expect(html).toContain('data-testid="selective-mask-contrast"');
-    expect(html).toContain('data-testid="selective-mask-saturation"');
-    expect(html).toContain('data-testid="selective-mask-apply"');
-    expect(html).toContain('Apply to subject');
+    expect(html).toContain('applying to photo');
+    expect(html).not.toContain('data-testid="selective-mask-apply"');
+    expect(html).not.toContain('-target-subject');
+    expect(html).not.toContain('-target-background');
   });
 
   it('labels classical results as a scan and omits the ML tag', () => {
@@ -136,7 +131,6 @@ describe('selective mask control', () => {
     );
     expect(html).toContain('Subject 31%');
     expect(html).toContain('Classical scan');
-    expect(html).toContain('data-testid="selective-mask-apply"');
     expect(html).not.toContain('· ML');
   });
 
@@ -150,25 +144,53 @@ describe('selective mask control', () => {
     expect(failed).toContain('data-testid="selective-mask-retry"');
   });
 
-  it('shows the applied badge with live sliders, rescan, and clear', () => {
+  it('shows the applied badge with both live slider groups, rescan, and clear', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
       assist({ applied: APPLIED }),
     );
     expect(html).toContain('data-testid="selective-mask-applied"');
-    expect(html).toContain('Subject · +0.5 EV · C +10 · ML');
-    expect(html).toContain('data-testid="selective-mask-applied-exposure"');
-    expect(html).toContain('data-testid="selective-mask-applied-target-background"');
+    expect(html).toContain('Subject (+0.5 EV · C +10) · ML');
+    expect(html).toContain('data-testid="selective-mask-subject-group"');
+    expect(html).toContain('data-testid="selective-mask-subject-exposure"');
+    expect(html).toContain('data-testid="selective-mask-subject-contrast"');
+    expect(html).toContain('data-testid="selective-mask-background-group"');
+    expect(html).toContain('data-testid="selective-mask-background-exposure"');
+    expect(html).toContain('data-testid="selective-mask-background-saturation"');
     expect(html).toContain('data-testid="selective-mask-redetect"');
     expect(html).toContain('data-testid="selective-mask-clear"');
+    expect(html).not.toContain('data-testid="selective-mask-apply"');
+    expect(html).not.toContain('data-testid="selective-mask-detect"');
   });
 
-  it('summarizes a background-target adjust without an ML tag for classical masks', () => {
+  it('summarizes both sides at once without an ML tag for classical masks', () => {
+    const both: SelectiveAdjustState = {
+      ...APPLIED,
+      subject: { exposure: 0.5, contrast: 0, saturation: 0 },
+      background: { exposure: 0, contrast: 0, saturation: -20 },
+      source: 'classic',
+    };
     const html = renderAdjust(
-      { ...DEFAULT_EDIT, selectiveAdjust: { ...APPLIED, target: 'background', exposure: 0, contrast: 0, saturation: -20, source: 'classic' } },
-      assist({ applied: { ...APPLIED, target: 'background', exposure: 0, contrast: 0, saturation: -20, source: 'classic' } }),
+      { ...DEFAULT_EDIT, selectiveAdjust: both },
+      assist({ applied: both }),
     );
-    expect(html).toContain('Background · S -20');
+    expect(html).toContain('Subject (+0.5 EV) · Background (S -20)');
     expect(html).not.toContain('· ML');
+  });
+
+  it('keeps the sliders on a stored-but-neutral mask instead of dropping to the detect button', () => {
+    const neutral: SelectiveAdjustState = {
+      ...APPLIED,
+      subject: { exposure: 0, contrast: 0, saturation: 0 },
+      background: { exposure: 0, contrast: 0, saturation: 0 },
+    };
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT, selectiveAdjust: neutral },
+      assist({ applied: neutral }),
+    );
+    expect(html).toContain('No changes yet · ML');
+    expect(html).toContain('data-testid="selective-mask-subject-exposure"');
+    expect(html).toContain('data-testid="selective-mask-background-exposure"');
+    expect(html).not.toContain('data-testid="selective-mask-detect"');
   });
 });

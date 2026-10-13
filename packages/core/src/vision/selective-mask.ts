@@ -3,7 +3,7 @@
 //
 // A small ONNX portrait segmenter (U^2-Net portrait "u2netp", ~4.6MB) finds
 // the subject, and its soft mask drives masked exposure/contrast/saturation
-// over just the subject or just the background — "brighten subject only".
+// over the subject side and the background side independently.
 // This module holds the deterministic pieces:
 //
 // - packSelectiveMaskInput: stretch resize to the 320 grid (RGB float32,
@@ -19,13 +19,16 @@
 //   (base64 8-bit mask at <=160px long edge, resolution-free enough to
 //   resample onto any render size).
 // - applySelectiveAdjust: the mask-composite pass the adjustment pipeline
-//   renders from the recipe (subject mask or its inverse).
+//   renders from the recipe (subject side through the mask, background
+//   side through its inverse).
+// - normalizeSelectiveAdjust: legacy single-target recipes map onto their
+//   side so old persisted edits keep rendering.
 //
 // Inputs are never mutated (except the documented in-place buffer pass,
 // which takes a caller-owned buffer); masks are soft 0..1, resampled with
 // bilinear filtering so recipe masks stay smooth at any render size.
 
-import type { EditState, SelectiveAdjustState, SelectiveMaskSource } from "../types.js";
+import type { EditState, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource } from "../types.js";
 import { assertValidImage, type PixelImage } from "./analyze.js";
 import { type DetectedFace } from "./face-exposure.js";
 import { isSkinPixel } from "./scene-enhance.js";
@@ -404,58 +407,100 @@ export function proposeClassicSubjectMask(image: PixelImage, faces: readonly Det
   return mask;
 }
 
-/** Masked exposure/contrast/saturation in the same units as the global sliders. */
-export interface SelectiveAdjustParams {
-  exposure: number;
-  contrast: number;
-  saturation: number;
-}
+export type { SelectiveAdjustParams } from "../types.js";
 
 /** True when the masked params would change at least one pixel. */
 export function isSelectiveAdjustParamsNeutral(params: SelectiveAdjustParams): boolean {
   return params.exposure === 0 && params.contrast === 0 && params.saturation === 0;
 }
 
-/** True when a stored selective adjust changes at least one pixel. */
-export function isSelectiveAdjustActive(state: SelectiveAdjustState | null | undefined): state is SelectiveAdjustState {
-  if (!state) return false;
-  if (state.target !== "subject" && state.target !== "background") return false;
-  return !isSelectiveAdjustParamsNeutral(state);
+/**
+ * Pre-dual-side recipe shape: a single target plus one param set. Recipes
+ * persisted before subject+background shipped still carry this; the render
+ * path and the UI normalize it instead of dropping the user's edit.
+ */
+export interface LegacySelectiveAdjustState {
+  maskB64: string;
+  maskWidth: number;
+  maskHeight: number;
+  target: "subject" | "background";
+  exposure: number;
+  contrast: number;
+  saturation: number;
+  source: SelectiveMaskSource;
+}
+
+/**
+ * Normalize a stored selective adjust to the dual-side shape: legacy
+ * single-target recipes map their params onto the targeted side (the other
+ * side stays neutral). Returns null for null/absent/garbage input so the
+ * render path never throws on a damaged recipe.
+ */
+export function normalizeSelectiveAdjust(
+  state: SelectiveAdjustState | LegacySelectiveAdjustState | null | undefined,
+): SelectiveAdjustState | null {
+  if (!state || typeof state !== "object") return null;
+  const candidate = state as Partial<SelectiveAdjustState> & Partial<LegacySelectiveAdjustState>;
+  const maskB64 = candidate.maskB64;
+  const maskWidth = candidate.maskWidth;
+  const maskHeight = candidate.maskHeight;
+  if (typeof maskB64 !== "string" || typeof maskWidth !== "number" || typeof maskHeight !== "number") return null;
+  if (!Number.isInteger(maskWidth) || !Number.isInteger(maskHeight)) return null;
+  const neutral = { exposure: 0, contrast: 0, saturation: 0 };
+  const clean = (params: unknown): SelectiveAdjustParams => ({
+    exposure: typeof (params as SelectiveAdjustParams)?.exposure === "number" ? ((params as SelectiveAdjustParams).exposure as number) : 0,
+    contrast: typeof (params as SelectiveAdjustParams)?.contrast === "number" ? ((params as SelectiveAdjustParams).contrast as number) : 0,
+    saturation: typeof (params as SelectiveAdjustParams)?.saturation === "number" ? ((params as SelectiveAdjustParams).saturation as number) : 0,
+  });
+  if (candidate.subject !== undefined || candidate.background !== undefined) {
+    return {
+      maskB64,
+      maskWidth,
+      maskHeight,
+      subject: candidate.subject === undefined ? { ...neutral } : clean(candidate.subject),
+      background: candidate.background === undefined ? { ...neutral } : clean(candidate.background),
+      source: candidate.source === "classic" ? "classic" : "onnx",
+    };
+  }
+  if (candidate.target !== "subject" && candidate.target !== "background") return null;
+  const params = clean(candidate);
+  return {
+    maskB64,
+    maskWidth,
+    maskHeight,
+    subject: candidate.target === "subject" ? params : { ...neutral },
+    background: candidate.target === "background" ? params : { ...neutral },
+    source: candidate.source === "classic" ? "classic" : "onnx",
+  };
+}
+
+/** True when a stored selective adjust changes at least one pixel (either side). */
+export function isSelectiveAdjustActive(
+  state: SelectiveAdjustState | LegacySelectiveAdjustState | null | undefined,
+): state is SelectiveAdjustState {
+  const normalized = normalizeSelectiveAdjust(state);
+  if (!normalized) return false;
+  return !isSelectiveAdjustParamsNeutral(normalized.subject) || !isSelectiveAdjustParamsNeutral(normalized.background);
 }
 
 function luminanceOf(r: number, g: number, b: number): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-/**
- * Apply masked exposure/contrast/saturation in place: each pixel is
- * adjusted with the global pipeline's math (2^(EV*0.6) gain, pivot
- * contrast, chroma saturation) and composited with the original by the
- * subject mask (or its inverse for the background target), so the
- * unselected region passes through bit-identical. The buffer must be
- * caller-owned (the pipeline passes its fresh output); tests pass a copy.
- * No-op when the params are neutral; corrupt masks skip silently.
- */
-export function applySelectiveAdjust(
+function applySelectiveSide(
   data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  mask: SelectiveMask,
-  adjust: SelectiveAdjustParams & { target: SelectiveAdjustState["target"] },
+  full: Float32Array,
+  pixelCount: number,
+  params: SelectiveAdjustParams,
+  invert: boolean,
 ): void {
-  if (data.length !== width * height * 4) {
-    throw new RangeError(`Buffer length ${data.length} does not match dimensions ${width}x${height}.`);
-  }
-  if (isSelectiveAdjustParamsNeutral(adjust)) return;
-  assertValidSelectiveMask(mask);
-  const full = mask.width === width && mask.height === height ? mask.data : resizeSelectiveMask(mask, width, height).data;
-  const exposure = Math.min(3, Math.max(-3, adjust.exposure));
+  const exposure = Math.min(3, Math.max(-3, params.exposure));
   const gain = Math.pow(2, exposure * 0.6);
-  const contrastFactor = 1 + Math.min(100, Math.max(-100, adjust.contrast)) / 100;
-  const saturationFactor = Math.max(0, 1 + Math.min(100, Math.max(-100, adjust.saturation)) / 100);
-  for (let p = 0; p < width * height; p += 1) {
+  const contrastFactor = 1 + Math.min(100, Math.max(-100, params.contrast)) / 100;
+  const saturationFactor = Math.max(0, 1 + Math.min(100, Math.max(-100, params.saturation)) / 100);
+  for (let p = 0; p < pixelCount; p += 1) {
     const subject = full[p] ?? 0;
-    const m = adjust.target === "background" ? 1 - subject : subject;
+    const m = invert ? 1 - subject : subject;
     if (!(m > 0)) continue;
     const i = p * 4;
     const r0 = data[i] ?? 0;
@@ -482,10 +527,52 @@ export function applySelectiveAdjust(
 }
 
 /**
+ * Apply masked exposure/contrast/saturation in place: each side is adjusted
+ * with the global pipeline's math (2^(EV*0.6) gain, pivot contrast, chroma
+ * saturation) and composited by the subject mask (subject side) or its
+ * inverse (background side), so a fully unselected region passes through
+ * bit-identical. Both sides run in one pass each, subject first — with a
+ * hard 0/1 mask the sides never interact. The buffer must be caller-owned
+ * (the pipeline passes its fresh output); tests pass a copy. No-op when
+ * both sides are neutral. Legacy single-target adjusts are normalized, so
+ * old recipes render unchanged.
+ */
+export function applySelectiveAdjust(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  mask: SelectiveMask,
+  adjust: Pick<SelectiveAdjustState, "subject" | "background"> | (SelectiveAdjustParams & { target: "subject" | "background" }),
+): void {
+  if (data.length !== width * height * 4) {
+    throw new RangeError(`Buffer length ${data.length} does not match dimensions ${width}x${height}.`);
+  }
+  const sides: Pick<SelectiveAdjustState, "subject" | "background"> =
+    "subject" in adjust || "background" in adjust
+      ? {
+          subject: (adjust as Partial<Pick<SelectiveAdjustState, "subject">>).subject ?? { exposure: 0, contrast: 0, saturation: 0 },
+          background: (adjust as Partial<Pick<SelectiveAdjustState, "background">>).background ?? { exposure: 0, contrast: 0, saturation: 0 },
+        }
+      : (() => {
+          const legacy = adjust as SelectiveAdjustParams & { target: "subject" | "background" };
+          const params = { exposure: legacy.exposure, contrast: legacy.contrast, saturation: legacy.saturation };
+          const neutral = { exposure: 0, contrast: 0, saturation: 0 };
+          return legacy.target === "background"
+            ? { subject: neutral, background: params }
+            : { subject: params, background: neutral };
+        })();
+  if (isSelectiveAdjustParamsNeutral(sides.subject) && isSelectiveAdjustParamsNeutral(sides.background)) return;
+  assertValidSelectiveMask(mask);
+  const full = mask.width === width && mask.height === height ? mask.data : resizeSelectiveMask(mask, width, height).data;
+  if (!isSelectiveAdjustParamsNeutral(sides.subject)) applySelectiveSide(data, full, width * height, sides.subject, false);
+  if (!isSelectiveAdjustParamsNeutral(sides.background)) applySelectiveSide(data, full, width * height, sides.background, true);
+}
+
+/**
  * Build the recipe state for a segmentation result: the downsampled mask
- * plus the default "brighten subject only" suggestion. Returns null when
- * the mask has no usable subject (empty or full-frame), so a no-op apply
- * stores no badge.
+ * plus the default "brighten subject" suggestion (background neutral).
+ * Returns null when the mask has no usable subject (empty or full-frame),
+ * so a no-op apply stores no badge.
  */
 export function selectiveAdjustForMask(mask: SelectiveMask, source: SelectiveMaskSource): SelectiveAdjustState | null {
   assertValidSelectiveMask(mask);
@@ -496,10 +583,8 @@ export function selectiveAdjustForMask(mask: SelectiveMask, source: SelectiveMas
     maskB64: encodeSelectiveMask(stored),
     maskWidth: stored.width,
     maskHeight: stored.height,
-    target: "subject",
-    exposure: SELECTIVE_MASK_DEFAULT_EXPOSURE,
-    contrast: 0,
-    saturation: 0,
+    subject: { exposure: SELECTIVE_MASK_DEFAULT_EXPOSURE, contrast: 0, saturation: 0 },
+    background: { exposure: 0, contrast: 0, saturation: 0 },
     source,
   };
 }

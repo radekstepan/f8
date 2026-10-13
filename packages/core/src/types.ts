@@ -110,26 +110,34 @@ export interface DenoiseState {
   source: DenoiseSource;
 }
 
-/** Which side of the subject mask the masked adjustments apply to. */
+/** Which side of the subject mask a masked adjustment applies to. */
 export type SelectiveTarget = 'subject' | 'background';
 
-/**
- * ML selective (masked) adjustments: a soft subject mask plus masked
- * exposure/contrast/saturation over the subject or the background.
- * Null/absent when no selective adjust is applied.
- */
-export interface SelectiveAdjustState {
-  /** Base64 8-bit subject mask (1 = subject), resampled at render. */
-  maskB64: string;
-  maskWidth: number;
-  maskHeight: number;
-  target: SelectiveTarget;
+/** Masked exposure/contrast/saturation in the same units as the global sliders. */
+export interface SelectiveAdjustParams {
   /** Masked exposure in EV (-3..3), same response as the global slider. */
   exposure: number;
   /** Masked contrast (-100..100), same pivot as the global slider. */
   contrast: number;
   /** Masked saturation (-100..100), same chroma scale as the global slider. */
   saturation: number;
+}
+
+/**
+ * ML selective (masked) adjustments: a soft subject mask plus masked
+ * exposure/contrast/saturation for the subject AND the background, each
+ * side independently adjustable. Null/absent when no selective adjust is
+ * applied.
+ */
+export interface SelectiveAdjustState {
+  /** Base64 8-bit subject mask (1 = subject), resampled at render. */
+  maskB64: string;
+  maskWidth: number;
+  maskHeight: number;
+  /** Subject-side params, composited through the mask. */
+  subject: SelectiveAdjustParams;
+  /** Background-side params, composited through the inverse mask. */
+  background: SelectiveAdjustParams;
   /** Which segmenter found the subject (drives the UI's ML badge). */
   source: SelectiveMaskSource;
 }
@@ -210,8 +218,8 @@ export interface EditState {
   faceAdjust?: FaceAdjustState | null;
   /**
    * Set when ML selective segmentation applied masked adjustments to the
-   * subject or background. Null/absent otherwise (including legacy server
-   * recipes).
+   * subject and/or background. Null/absent otherwise (including legacy
+   * server recipes).
    */
   selectiveAdjust?: SelectiveAdjustState | null;
   /**

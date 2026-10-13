@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDeletableCollection, isDenoiseActive, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, isSelectiveAdjustActive, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@f8/core';
+import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, groupRetouchStrokes, isDeletableCollection, isDenoiseActive, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, rotateRetouches } from '@f8/core';
 import { RAW_ACCEPT, formatImportProgress, formatUploadSummary, importPercent, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, Tool, ViewMode } from '@f8/core';
@@ -19,7 +19,7 @@ import { useSelectiveMask } from './vision/useSelectiveMask';
 import { useDenoise } from './vision/useDenoise';
 import { useSemanticSearch } from './vision/useSemanticSearch';
 import { useCullAssist } from './vision/useCullAssist';
-import type { SelectiveMaskDraft } from '@f8/ui';
+import type { SelectiveAdjustParams, SelectiveTarget } from '@f8/core';
 import { useInpaintRepair } from './vision/useInpaintRepair';
 import { fetchSuperresHealth, runRemoteSuperres, warmupRemoteSuperres } from './vision/remoteSuperres';
 import { FsBrowser } from './components/FsBrowser';
@@ -623,41 +623,47 @@ export default function App() {
     notify('Face lift and red-eye fixes cleared.');
   }, [photo, handleEditChange]);
 
-  // Selective mask: the segmented subject mask plus the draft target/params
-  // in one atomic history entry. A fresh scan replaces the stored adjust,
-  // so Rescan never stacks masks.
-  const applySelectiveMask = useCallback((draft: SelectiveMaskDraft) => {
-    if (!photo || selectiveMask.state !== 'ready' || !selectiveMask.result?.mask) return;
-    const { mask, source } = selectiveMask.result;
+  // Selective mask: the segmented subject mask lands in the recipe the
+  // moment segmentation finishes — no Apply step, so the subject and
+  // background sliders preview live from the first drag and persist via the
+  // normal recipe save. A rescan swaps the mask but keeps prior slider
+  // values, so Rescan never loses work nor stacks masks.
+  const selectiveResult = selectiveMask.state === 'ready' ? selectiveMask.result : null;
+  useEffect(() => {
+    if (!photo || !selectiveResult?.mask) return;
+    const { mask, coverage, source } = selectiveResult;
+    const prior = normalizeSelectiveAdjust(editor.edit.selectiveAdjust);
+    // Idempotent: StrictMode double-effects (and re-renders before the
+    // dismiss lands) must not stack duplicate undo entries.
+    if (prior && prior.source === source && prior.maskB64 === mask.maskB64 && prior.maskWidth === mask.maskWidth && prior.maskHeight === mask.maskHeight) {
+      selectiveMask.dismiss();
+      return;
+    }
     handleEditChange({
       selectiveAdjust: {
         maskB64: mask.maskB64,
         maskWidth: mask.maskWidth,
         maskHeight: mask.maskHeight,
-        target: draft.target,
-        exposure: draft.exposure,
-        contrast: draft.contrast,
-        saturation: draft.saturation,
+        subject: prior?.subject ?? { exposure: SELECTIVE_MASK_DEFAULT_EXPOSURE, contrast: 0, saturation: 0 },
+        background: prior?.background ?? { exposure: 0, contrast: 0, saturation: 0 },
         source,
       },
     });
     selectiveMask.dismiss();
     const ml = source === 'onnx' ? ' (ML)' : '';
-    const signed = (value: number): string => `${value >= 0 ? '+' : ''}${Math.round(value * 100) / 100}`;
-    const parts = [
-      draft.target,
-      ...(draft.exposure !== 0 ? [`exposure ${signed(draft.exposure)} EV`] : []),
-      ...(draft.contrast !== 0 ? [`contrast ${signed(draft.contrast)}`] : []),
-      ...(draft.saturation !== 0 ? [`saturation ${signed(draft.saturation)}`] : []),
-    ];
-    notify(`Selective adjust${ml}: ${parts.join(', ')}.`);
-  }, [photo, selectiveMask, handleEditChange]);
+    notify(`Subject segmented${ml}: ${Math.round(coverage * 100)}% of frame — drag either side's sliders.`);
+    // Runs once per ready transition; dismiss() flips state back to idle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photo?.id, selectiveResult]);
 
-  // Live-tweak the stored target/params; slider drags coalesce into one
-  // undo step via the shared merge key.
-  const adjustSelectiveMask = useCallback((patch: Partial<SelectiveMaskDraft>) => {
-    if (!photo || !editor.edit.selectiveAdjust) return;
-    handleEditChange({ selectiveAdjust: { ...editor.edit.selectiveAdjust, ...patch } }, 'selective-mask');
+  // Live-tweak one side's stored params; slider drags coalesce into one
+  // undo step via the shared merge key. Normalizes legacy single-target
+  // recipes on first touch, so old edits self-migrate.
+  const adjustSelectiveMask = useCallback((target: SelectiveTarget, patch: Partial<SelectiveAdjustParams>) => {
+    if (!photo) return;
+    const stored = normalizeSelectiveAdjust(editor.edit.selectiveAdjust);
+    if (!stored) return;
+    handleEditChange({ selectiveAdjust: { ...stored, [target]: { ...stored[target], ...patch } } }, 'selective-mask');
   }, [photo, editor, handleEditChange]);
 
   const clearSelectiveMask = useCallback(() => {
@@ -1119,7 +1125,7 @@ export default function App() {
         onStraightenDragging={setStraightenDragging}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={handleEditChange} onRotate={rotateImage} onStraighten={changeStraighten} onReset={() => handleAction('reset')}
-        onAuto={() => editor.autoEnhance(photo.src)} onAutoScene={() => editor.autoEnhanceScene(photo.src)} faceAssist={{ state: faceEnhance.state, faces: faceEnhance.result?.faces.length ?? 0, source: faceEnhance.result?.source ?? null, whiteBalance: faceEnhance.result ? (faceEnhance.result.skinWhiteBalance ?? faceEnhance.result.classicWhiteBalance) : null, skinAnchored: Boolean(faceEnhance.result?.skinWhiteBalance), liftAmount: faceEnhance.result?.faceAdjust?.amount ?? 0, redEyeCount: faceEnhance.result?.faceAdjust?.redEye.length ?? 0, progress: faceEnhance.progress, note: faceEnhance.note, message: faceEnhance.message, applied: isFaceAdjustStored(editor.edit.faceAdjust) ? { faces: editor.edit.faceAdjust.boxes.length, source: editor.edit.faceAdjust.source, enabled: editor.edit.faceAdjust.enabled !== false, liftAmount: editor.edit.faceAdjust.amount, redEyeCount: editor.edit.faceAdjust.redEye.length } : null, onDetect: () => faceEnhance.detect(photo.src), onApply: applyFaceEnhance, onToggle: toggleFaceEnhance, onClear: clearFaceEnhance, onDismiss: faceEnhance.dismiss }} selectiveAssist={{ state: selectiveMask.state, found: Boolean(selectiveMask.result?.mask), coverage: selectiveMask.result?.coverage ?? 0, source: selectiveMask.result?.source ?? null, progress: selectiveMask.progress, note: selectiveMask.note, message: selectiveMask.message, applied: isSelectiveAdjustActive(editor.edit.selectiveAdjust) ? editor.edit.selectiveAdjust : null, onDetect: () => selectiveMask.detect(photo.src), onApply: applySelectiveMask, onAdjust: adjustSelectiveMask, onClear: clearSelectiveMask, onDismiss: selectiveMask.dismiss }} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
+        onAuto={() => editor.autoEnhance(photo.src)} onAutoScene={() => editor.autoEnhanceScene(photo.src)} faceAssist={{ state: faceEnhance.state, faces: faceEnhance.result?.faces.length ?? 0, source: faceEnhance.result?.source ?? null, whiteBalance: faceEnhance.result ? (faceEnhance.result.skinWhiteBalance ?? faceEnhance.result.classicWhiteBalance) : null, skinAnchored: Boolean(faceEnhance.result?.skinWhiteBalance), liftAmount: faceEnhance.result?.faceAdjust?.amount ?? 0, redEyeCount: faceEnhance.result?.faceAdjust?.redEye.length ?? 0, progress: faceEnhance.progress, note: faceEnhance.note, message: faceEnhance.message, applied: isFaceAdjustStored(editor.edit.faceAdjust) ? { faces: editor.edit.faceAdjust.boxes.length, source: editor.edit.faceAdjust.source, enabled: editor.edit.faceAdjust.enabled !== false, liftAmount: editor.edit.faceAdjust.amount, redEyeCount: editor.edit.faceAdjust.redEye.length } : null, onDetect: () => faceEnhance.detect(photo.src), onApply: applyFaceEnhance, onToggle: toggleFaceEnhance, onClear: clearFaceEnhance, onDismiss: faceEnhance.dismiss }} selectiveAssist={{ state: selectiveMask.state, found: Boolean(selectiveMask.result?.mask), coverage: selectiveMask.result?.coverage ?? 0, source: selectiveMask.result?.source ?? null, progress: selectiveMask.progress, note: selectiveMask.note, message: selectiveMask.message, applied: normalizeSelectiveAdjust(editor.edit.selectiveAdjust), onDetect: () => selectiveMask.detect(photo.src), onAdjust: adjustSelectiveMask, onClear: clearSelectiveMask, onDismiss: selectiveMask.dismiss }} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
         onClose={() => setInspectorOpen(false)}
       />}

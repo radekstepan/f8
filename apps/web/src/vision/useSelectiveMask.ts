@@ -1,6 +1,6 @@
 // React binding for ML selective (masked) adjustments: segment the subject
 // on the photo server, then composite masked exposure/contrast/saturation
-// through the subject mask or its inverse ("brighten subject only").
+// through the subject mask and its inverse (subject and background sides).
 //
 // Segmentation runs on the source photo (photo.src), so the mask aligns
 // with unrotated, uncropped framing; rotation/crop remapping is a follow-up.

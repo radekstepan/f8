@@ -7,6 +7,7 @@ import {
   encodeSelectiveMask,
   isSelectiveAdjustActive,
   isSelectiveAdjustParamsNeutral,
+  normalizeSelectiveAdjust,
   packSelectiveMaskInput,
   parseSelectiveMaskOutput,
   proposeClassicSubjectMask,
@@ -235,10 +236,8 @@ describe("applySelectiveAdjust", () => {
     const image = solid(8, 4, 100, 100, 100);
     const before = new Uint8ClampedArray(image.data);
     applySelectiveAdjust(image.data, 8, 4, halfMask(8, 4, true), {
-      target: "subject",
-      exposure: 1,
-      contrast: 0,
-      saturation: 0,
+      subject: { exposure: 1, contrast: 0, saturation: 0 },
+      background: { exposure: 0, contrast: 0, saturation: 0 },
     });
     const gain = Math.pow(2, 0.6);
     for (let y = 0; y < 4; y += 1) {
@@ -255,14 +254,12 @@ describe("applySelectiveAdjust", () => {
     }
   });
 
-  it("applies the inverse mask for the background target", () => {
+  it("applies the inverse mask for the background side", () => {
     const image = solid(8, 4, 100, 100, 100);
     const before = new Uint8ClampedArray(image.data);
     applySelectiveAdjust(image.data, 8, 4, halfMask(8, 4, true), {
-      target: "background",
-      exposure: 1,
-      contrast: 0,
-      saturation: 0,
+      subject: { exposure: 0, contrast: 0, saturation: 0 },
+      background: { exposure: 1, contrast: 0, saturation: 0 },
     });
     const gain = Math.pow(2, 0.6);
     for (let y = 0; y < 4; y += 1) {
@@ -277,13 +274,38 @@ describe("applySelectiveAdjust", () => {
     }
   });
 
-  it("blends softly at mid mask values", () => {
-    const image = solid(2, 1, 100, 100, 100);
-    applySelectiveAdjust(image.data, 2, 1, { width: 2, height: 1, data: new Float32Array([0.5, 0]) }, {
-      target: "subject",
+  it("adjusts both sides at once without cross-talk on hard masks", () => {
+    const image = solid(8, 4, 100, 100, 100);
+    applySelectiveAdjust(image.data, 8, 4, halfMask(8, 4, true), {
+      subject: { exposure: 1, contrast: 0, saturation: 0 },
+      background: { exposure: -1, contrast: 0, saturation: 0 },
+    });
+    const up = Math.min(255, Math.round(100 * Math.pow(2, 0.6)));
+    const down = Math.round(100 * Math.pow(2, -0.6));
+    expect(image.data[0] ?? 0).toBe(up);
+    const right = (0 * 8 + 7) * 4;
+    expect(image.data[right] ?? 0).toBe(down);
+  });
+
+  it("renders legacy single-target adjusts onto their side", () => {
+    const image = solid(8, 4, 100, 100, 100);
+    applySelectiveAdjust(image.data, 8, 4, halfMask(8, 4, true), {
+      target: "background",
       exposure: 1,
       contrast: 0,
       saturation: 0,
+    });
+    const gain = Math.pow(2, 0.6);
+    expect(image.data[0] ?? 0).toBe(100);
+    const right = (0 * 8 + 7) * 4;
+    expect(image.data[right] ?? 0).toBe(Math.min(255, Math.round(100 * gain)));
+  });
+
+  it("blends softly at mid mask values", () => {
+    const image = solid(2, 1, 100, 100, 100);
+    applySelectiveAdjust(image.data, 2, 1, { width: 2, height: 1, data: new Float32Array([0.5, 0]) }, {
+      subject: { exposure: 1, contrast: 0, saturation: 0 },
+      background: { exposure: 0, contrast: 0, saturation: 0 },
     });
     const full = 100 * Math.pow(2, 0.6);
     expect(image.data[0] ?? 0).toBe(Math.round(100 + (full - 100) * 0.5));
@@ -293,10 +315,8 @@ describe("applySelectiveAdjust", () => {
   it("applies contrast and saturation through the mask", () => {
     const image = solid(4, 1, 100, 140, 180);
     applySelectiveAdjust(image.data, 4, 1, halfMask(4, 1, true), {
-      target: "subject",
-      exposure: 0,
-      contrast: 50,
-      saturation: -100,
+      subject: { exposure: 0, contrast: 50, saturation: -100 },
+      background: { exposure: 0, contrast: 0, saturation: 0 },
     });
     // Left half: contrast pivots around 128, then full desaturation grays.
     const luma = Math.round(0.2126 * ((100 - 128) * 1.5 + 128) + 0.7152 * ((140 - 128) * 1.5 + 128) + 0.0722 * ((180 - 128) * 1.5 + 128));
@@ -312,10 +332,8 @@ describe("applySelectiveAdjust", () => {
   it("resamples recipe masks onto the render size", () => {
     const image = solid(8, 8, 100, 100, 100);
     applySelectiveAdjust(image.data, 8, 8, { width: 2, height: 2, data: new Float32Array([1, 1, 1, 1]) }, {
-      target: "subject",
-      exposure: 1,
-      contrast: 0,
-      saturation: 0,
+      subject: { exposure: 1, contrast: 0, saturation: 0 },
+      background: { exposure: 0, contrast: 0, saturation: 0 },
     });
     const gain = Math.pow(2, 0.6);
     expect(image.data[0] ?? 0).toBe(Math.min(255, Math.round(100 * gain)));
@@ -324,25 +342,22 @@ describe("applySelectiveAdjust", () => {
   it("is a no-op for neutral params and rejects mismatched buffers", () => {
     const image = solid(4, 4, 100, 100, 100);
     const before = new Uint8ClampedArray(image.data);
-    applySelectiveAdjust(image.data, 4, 4, halfMask(4, 4, true), { target: "subject", exposure: 0, contrast: 0, saturation: 0 });
+    const neutral = { exposure: 0, contrast: 0, saturation: 0 };
+    applySelectiveAdjust(image.data, 4, 4, halfMask(4, 4, true), { subject: neutral, background: neutral });
     expect([...image.data]).toEqual([...before]);
     expect(() => applySelectiveAdjust(new Uint8ClampedArray(4), 4, 4, halfMask(4, 4, true), {
-      target: "subject",
-      exposure: 1,
-      contrast: 0,
-      saturation: 0,
+      subject: { exposure: 1, contrast: 0, saturation: 0 },
+      background: neutral,
     })).toThrow(RangeError);
   });
 });
 
 describe("selectiveAdjustForMask", () => {
-  it("builds the default brighten-subject suggestion", () => {
+  it("builds the default brighten-subject suggestion with a neutral background", () => {
     const state = selectiveAdjustForMask(halfMask(160, 120, true), "onnx");
     expect(state).not.toBeNull();
-    expect(state!.target).toBe("subject");
-    expect(state!.exposure).toBe(SELECTIVE_MASK_DEFAULT_EXPOSURE);
-    expect(state!.contrast).toBe(0);
-    expect(state!.saturation).toBe(0);
+    expect(state!.subject).toEqual({ exposure: SELECTIVE_MASK_DEFAULT_EXPOSURE, contrast: 0, saturation: 0 });
+    expect(state!.background).toEqual({ exposure: 0, contrast: 0, saturation: 0 });
     expect(state!.source).toBe("onnx");
     expect(state!.maskWidth).toBe(96);
     expect(state!.maskHeight).toBe(72);
@@ -355,6 +370,37 @@ describe("selectiveAdjustForMask", () => {
   });
 });
 
+describe("normalizeSelectiveAdjust", () => {
+  it("maps legacy single-target recipes onto their side", () => {
+    const base = selectiveAdjustForMask(halfMask(16, 16, true), "onnx")!;
+    const legacy = {
+      maskB64: base.maskB64,
+      maskWidth: base.maskWidth,
+      maskHeight: base.maskHeight,
+      target: "background" as const,
+      exposure: 0,
+      contrast: 0,
+      saturation: -20,
+      source: "classic" as const,
+    };
+    expect(normalizeSelectiveAdjust(legacy)).toEqual({
+      maskB64: base.maskB64,
+      maskWidth: base.maskWidth,
+      maskHeight: base.maskHeight,
+      subject: { exposure: 0, contrast: 0, saturation: 0 },
+      background: { exposure: 0, contrast: 0, saturation: -20 },
+      source: "classic",
+    });
+  });
+
+  it("returns null for null, absent, and garbage input", () => {
+    expect(normalizeSelectiveAdjust(null)).toBeNull();
+    expect(normalizeSelectiveAdjust(undefined)).toBeNull();
+    expect(normalizeSelectiveAdjust({} as never)).toBeNull();
+    expect(normalizeSelectiveAdjust({ target: "nobody", maskB64: "eA==", maskWidth: 2, maskHeight: 2 } as never)).toBeNull();
+  });
+});
+
 describe("active-state contract", () => {
   it("is neutral only when every param is zero", () => {
     expect(isSelectiveAdjustParamsNeutral({ exposure: 0, contrast: 0, saturation: 0 })).toBe(true);
@@ -363,15 +409,38 @@ describe("active-state contract", () => {
     expect(isSelectiveAdjustParamsNeutral({ exposure: 0, contrast: 0, saturation: 10 })).toBe(false);
   });
 
-  it("activates on stored non-neutral adjusts with a valid target", () => {
+  it("activates when either side is non-neutral", () => {
     const base = selectiveAdjustForMask(halfMask(16, 16, true), "classic")!;
     expect(isSelectiveAdjustActive(base)).toBe(true);
-    expect(isSelectiveAdjustActive({ ...base, exposure: 0 })).toBe(false);
-    expect(isSelectiveAdjustActive({ ...base, target: "nobody" as never })).toBe(false);
+    expect(isSelectiveAdjustActive({ ...base, subject: { exposure: 0, contrast: 0, saturation: 0 } })).toBe(false);
+    expect(
+      isSelectiveAdjustActive({
+        ...base,
+        subject: { exposure: 0, contrast: 0, saturation: 0 },
+        background: { exposure: 0, contrast: 0, saturation: 5 },
+      }),
+    ).toBe(true);
     expect(isSelectiveAdjustActive(null)).toBe(false);
     expect(isSelectiveAdjustActive(undefined)).toBe(false);
     expect(editHasSelectiveAdjust({ ...DEFAULT_EDIT, selectiveAdjust: base })).toBe(true);
     expect(editHasSelectiveAdjust({ ...DEFAULT_EDIT })).toBe(false);
+  });
+
+  it("activates on legacy single-target recipes", () => {
+    const base = selectiveAdjustForMask(halfMask(16, 16, true), "classic")!;
+    const legacy = {
+      maskB64: base.maskB64,
+      maskWidth: base.maskWidth,
+      maskHeight: base.maskHeight,
+      target: "subject" as const,
+      exposure: 0.5,
+      contrast: 0,
+      saturation: 0,
+      source: "classic" as const,
+    };
+    expect(isSelectiveAdjustActive(legacy)).toBe(true);
+    expect(isSelectiveAdjustActive({ ...legacy, exposure: 0 })).toBe(false);
+    expect(isSelectiveAdjustActive({ ...legacy, target: "nobody" as never })).toBe(false);
   });
 });
 
@@ -380,7 +449,9 @@ describe("pipeline integration", () => {
     const base = selectiveAdjustForMask(halfMask(16, 16, true), "onnx")!;
     const edit = { ...DEFAULT_EDIT, selectiveAdjust: base };
     expect(isNeutralEdit(edit)).toBe(false);
-    expect(isNeutralEdit({ ...DEFAULT_EDIT, selectiveAdjust: { ...base, exposure: 0 } })).toBe(true);
+    expect(
+      isNeutralEdit({ ...DEFAULT_EDIT, selectiveAdjust: { ...base, subject: { exposure: 0, contrast: 0, saturation: 0 } } }),
+    ).toBe(true);
     const rendered = renderAdjustedPixels(solid(16, 16, 100, 100, 100), edit);
     const gain = Math.pow(2, SELECTIVE_MASK_DEFAULT_EXPOSURE * 0.6);
     // Left half lifted, right half untouched.
@@ -401,5 +472,26 @@ describe("pipeline integration", () => {
   it("marks the look non-original", () => {
     const base = selectiveAdjustForMask(halfMask(16, 16, true), "onnx")!;
     expect(isOriginalLook({ ...DEFAULT_EDIT, selectiveAdjust: base })).toBe(false);
+  });
+
+  it("renders legacy single-target recipes through the pipeline", () => {
+    const base = selectiveAdjustForMask(halfMask(16, 16, true), "onnx")!;
+    const legacy = {
+      maskB64: base.maskB64,
+      maskWidth: base.maskWidth,
+      maskHeight: base.maskHeight,
+      target: "subject" as const,
+      exposure: SELECTIVE_MASK_DEFAULT_EXPOSURE,
+      contrast: 0,
+      saturation: 0,
+      source: "onnx" as const,
+    };
+    // Legacy shape persisted on disk; cast rides the real untyped JSON path.
+    const edit = { ...DEFAULT_EDIT, selectiveAdjust: legacy as unknown as typeof base };
+    expect(isNeutralEdit(edit)).toBe(false);
+    const rendered = renderAdjustedPixels(solid(16, 16, 100, 100, 100), edit);
+    const gain = Math.pow(2, SELECTIVE_MASK_DEFAULT_EXPOSURE * 0.6);
+    expect(rendered.data[0] ?? 0).toBe(Math.min(255, Math.round(100 * gain)));
+    expect(rendered.data[8 * 4] ?? 0).toBe(100);
   });
 });

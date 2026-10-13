@@ -17,7 +17,7 @@ import type { PixelImage } from "./vision/analyze.js";
 import { assertValidImage } from "./vision/analyze.js";
 import type { WhiteBalanceGains } from "./vision/enhance.js";
 import { applyFaceLift, applyRedEyeFix, isFaceAdjustActive } from "./vision/face-exposure.js";
-import { applySelectiveAdjust, decodeSelectiveMask, isSelectiveAdjustActive } from "./vision/selective-mask.js";
+import { applySelectiveAdjust, decodeSelectiveMask, isSelectiveAdjustActive, normalizeSelectiveAdjust } from "./vision/selective-mask.js";
 
 export const TEMPERATURE_NEUTRAL = 5500;
 export const TEMPERATURE_MIN = 2000;
@@ -317,13 +317,16 @@ export function renderAdjustedPixels(source: PixelImage, edit: EditState): Pixel
   }
 
   // ML selective adjust (masked exposure/contrast/saturation over the
-  // subject or background) lands with the face pass, after the point pass
-  // and before the detail passes. Corrupt masks skip silently — a damaged
+  // subject and background sides) lands with the face pass, after the
+  // point pass and before the detail passes. Legacy single-target recipes
+  // normalize onto their side; corrupt masks skip silently — a damaged
   // recipe must never break the render.
-  if (isSelectiveAdjustActive(edit.selectiveAdjust)) {
-    const selective = edit.selectiveAdjust;
-    const mask = decodeSelectiveMask(selective.maskB64, selective.maskWidth, selective.maskHeight);
-    if (mask) applySelectiveAdjust(output, width, height, mask, selective);
+  {
+    const selective = normalizeSelectiveAdjust(edit.selectiveAdjust);
+    if (selective && isSelectiveAdjustActive(selective)) {
+      const mask = decodeSelectiveMask(selective.maskB64, selective.maskWidth, selective.maskHeight);
+      if (mask) applySelectiveAdjust(output, width, height, mask, selective);
+    }
   }
 
   const clarity = edit.detailsEnabled ? clamp(edit.clarity, -100, 100) : 0;

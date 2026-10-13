@@ -66,7 +66,6 @@ function selectiveAssist(): SelectiveMaskAssist {
     message: null,
     applied: null,
     onDetect: noop,
-    onApply: noop,
     onAdjust: noop,
     onClear: noop,
     onDismiss: noop,

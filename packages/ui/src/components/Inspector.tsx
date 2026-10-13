@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Bandage, Brush, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Layers, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, X } from 'lucide-react';
-import { CROP_RATIOS, SCENE_DISPLAY_NAMES, SELECTIVE_MASK_DEFAULT_EXPOSURE, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, denoiseStrengthForIso, groupRetouchStrokes, shouldAutoDenoise, strokeIdForPoint } from '@f8/core';
-import type { ChangeEdit, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
+import { CROP_RATIOS, SCENE_DISPLAY_NAMES, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, denoiseStrengthForIso, groupRetouchStrokes, shouldAutoDenoise, strokeIdForPoint } from '@f8/core';
+import type { ChangeEdit, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { IconButton, MenuItem, RangeControl, SelectField, Toggle } from './EditorUI.js';
 
@@ -168,14 +168,6 @@ export interface FaceEnhanceAssist {
   onDismiss: () => void;
 }
 
-/** Masked exposure/contrast/saturation over the subject or background (pre-apply draft or live patch). */
-export interface SelectiveMaskDraft {
-  target: SelectiveTarget;
-  exposure: number;
-  contrast: number;
-  saturation: number;
-}
-
 /** View model for ML selective (masked) adjustments, driven by the app's vision hook. */
 export interface SelectiveMaskAssist {
   state: 'idle' | 'detecting' | 'ready' | 'error';
@@ -191,13 +183,12 @@ export interface SelectiveMaskAssist {
   note: string | null;
   /** Human-readable error; set only when state is error. */
   message: string | null;
-  /** Stored selective adjust from the recipe; shown with live sliders while idle. */
+  /** Stored selective adjust from the recipe (set whenever a mask is stored, even fully neutral). */
   applied: SelectiveAdjustState | null;
+  /** Segment the subject; the app stores the mask immediately so sliders preview live. */
   onDetect: () => void;
-  /** Store the mask with the draft target/params as one undo step. */
-  onApply: (draft: SelectiveMaskDraft) => void;
-  /** Live-tweak the stored target/params (each drag coalesces to one undo step). */
-  onAdjust: (patch: Partial<SelectiveMaskDraft>) => void;
+  /** Live-tweak one side's stored params (each drag coalesces to one undo step). */
+  onAdjust: (target: SelectiveTarget, patch: Partial<SelectiveAdjustParams>) => void;
   /** Remove the stored mask + params. */
   onClear: () => void;
   onDismiss: () => void;
@@ -546,74 +537,60 @@ function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
   </div>;
 }
 
-function SelectiveTargetToggle({ target, onTarget, testIdPrefix }: { target: SelectiveTarget; onTarget: (target: SelectiveTarget) => void; testIdPrefix: string }) {
-  return <div className="selective-target" role="group" aria-label="Masked adjustment target">
-    <button className={target === 'subject' ? 'is-active' : ''} data-testid={`${testIdPrefix}-target-subject`} aria-pressed={target === 'subject'} title="Apply the masked adjustments to the subject" onClick={() => onTarget('subject')}>Subject</button>
-    <button className={target === 'background' ? 'is-active' : ''} data-testid={`${testIdPrefix}-target-background`} aria-pressed={target === 'background'} title="Apply the masked adjustments to the background" onClick={() => onTarget('background')}>Background</button>
-  </div>;
-}
-
-function SelectiveParamSliders({ values, onParam, testIdPrefix }: { values: SelectiveMaskDraft; onParam: (patch: Partial<SelectiveMaskDraft>) => void; testIdPrefix: string }) {
-  return <>
+function SelectiveParamGroup({ label, values, onParam, testIdPrefix }: { label: string; values: SelectiveAdjustParams; onParam: (patch: Partial<SelectiveAdjustParams>) => void; testIdPrefix: string }) {
+  return <div className="selective-group" data-testid={`${testIdPrefix}-group`}>
+    <span className="selective-group-label">{label}</span>
     <RangeControl label="Exposure" value={values.exposure} min={-1} max={1} step={0.05} suffix=" EV" signed testId={`${testIdPrefix}-exposure`} onChange={(exposure) => onParam({ exposure })} />
     <RangeControl label="Contrast" value={values.contrast} min={-50} max={50} step={1} signed testId={`${testIdPrefix}-contrast`} onChange={(contrast) => onParam({ contrast })} />
     <RangeControl label="Saturation" value={values.saturation} min={-50} max={50} step={1} signed testId={`${testIdPrefix}-saturation`} onChange={(saturation) => onParam({ saturation })} />
-  </>;
+  </div>;
 }
 
-function selectiveSummary(values: SelectiveMaskDraft, source: SelectiveMaskSource | null): string {
+function selectiveSummary(values: SelectiveAdjustState, source: SelectiveMaskSource | null): string {
   const signed = (value: number): string => `${value >= 0 ? '+' : ''}${Math.round(value * 100) / 100}`;
-  const parts = [
-    values.target === 'subject' ? 'Subject' : 'Background',
-    ...(values.exposure !== 0 ? [`${signed(values.exposure)} EV`] : []),
-    ...(values.contrast !== 0 ? [`C ${signed(values.contrast)}`] : []),
-    ...(values.saturation !== 0 ? [`S ${signed(values.saturation)}`] : []),
-  ];
-  return parts.join(' · ') + (source === 'onnx' ? ' · ML' : '');
+  const side = (label: string, params: SelectiveAdjustParams): string | null => {
+    const parts = [
+      ...(params.exposure !== 0 ? [`${signed(params.exposure)} EV`] : []),
+      ...(params.contrast !== 0 ? [`C ${signed(params.contrast)}`] : []),
+      ...(params.saturation !== 0 ? [`S ${signed(params.saturation)}`] : []),
+    ];
+    return parts.length > 0 ? `${label} (${parts.join(' · ')})` : null;
+  };
+  const sides = [side('Subject', values.subject), side('Background', values.background)].filter((entry): entry is string => entry !== null);
+  return (sides.length > 0 ? sides.join(' · ') : 'No changes yet') + (source === 'onnx' ? ' · ML' : '');
 }
 
 function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
   const working = assist.state === 'detecting';
   const mlTag = assist.source === 'onnx' ? ' · ML' : '';
-  // Pre-apply draft: reset whenever a fresh result arrives (a rescan with
-  // identical coverage keeps the draft, which is harmless).
-  const [draft, setDraft] = useState<SelectiveMaskDraft>(() => ({ target: 'subject', exposure: SELECTIVE_MASK_DEFAULT_EXPOSURE, contrast: 0, saturation: 0 }));
-  const readyKey = `${assist.state}:${assist.coverage}:${assist.source}`;
-  useEffect(() => {
-    setDraft({ target: 'subject', exposure: SELECTIVE_MASK_DEFAULT_EXPOSURE, contrast: 0, saturation: 0 });
-  }, [readyKey]);
-  const patchDraft = (patch: Partial<SelectiveMaskDraft>): void => setDraft((current) => ({ ...current, ...patch }));
+  // No draft state: the app stores the mask the moment segmentation lands,
+  // so every slider below patches the recipe and previews live.
   return <div className="selective-mask" data-testid="selective-mask">
     {assist.state === 'idle' && !assist.applied && <>
-      <button className="slim-button full-width" data-testid="selective-mask-detect" title="Segment the subject with ML, then adjust just the subject or background" onClick={assist.onDetect}><span>Brighten Subject Only <span className="ml-badge" title="The subject is segmented by a machine-learning model on the photo server">ML</span></span></button>
-      <p className="inspector-note">Finds the subject with ML, then adjusts just the subject or background. Nothing changes until you apply.</p>
+      <button className="slim-button full-width" data-testid="selective-mask-detect" title="Segment the subject with ML, then adjust the subject and background live" onClick={assist.onDetect}><span>Enhance Subject &amp; Background <span className="ml-badge" title="The subject is segmented by a machine-learning model on the photo server">ML</span></span></button>
+      <p className="inspector-note">Finds the subject with ML and applies instantly — drag either side&apos;s sliders and watch the photo. Changes save automatically.</p>
     </>}
-    {assist.state === 'idle' && assist.applied && <>
+    {assist.applied && <>
       <div className="auto-enhance-row selective-mask-row">
         <span className="scene-enhance-scene" data-testid="selective-mask-applied" title="Selective adjustments applied through the subject mask">{selectiveSummary(assist.applied, assist.applied.source)}</span>
         <div className="suggestion-actions">
-          <button className="text-button" data-testid="selective-mask-redetect" title="Segment the subject again" onClick={assist.onDetect}>Rescan</button>
+          <button className="text-button" data-testid="selective-mask-redetect" title="Segment the subject again (keeps your slider values)" onClick={assist.onDetect}>Rescan</button>
           <button className="text-button" data-testid="selective-mask-clear" title="Remove the subject mask and its adjustments" onClick={assist.onClear}>Clear</button>
         </div>
       </div>
-      <SelectiveTargetToggle target={assist.applied.target} onTarget={(target) => assist.onAdjust({ target })} testIdPrefix="selective-mask-applied" />
-      <SelectiveParamSliders values={assist.applied} onParam={assist.onAdjust} testIdPrefix="selective-mask-applied" />
+      <SelectiveParamGroup label="Subject" values={assist.applied.subject} onParam={(patch) => assist.onAdjust('subject', patch)} testIdPrefix="selective-mask-subject" />
+      <SelectiveParamGroup label="Background" values={assist.applied.background} onParam={(patch) => assist.onAdjust('background', patch)} testIdPrefix="selective-mask-background" />
     </>}
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
     {working && <div className="suggestion-actions"><button className="text-button" data-testid="selective-mask-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
-    {assist.state === 'ready' && (!assist.found ? <>
+    {assist.state === 'ready' && !assist.found && <>
       <p className="inspector-note" role="status">No subject found{assist.source === 'classic' ? ' by the classical scan' : ''}.</p>
       <div className="suggestion-actions"><button className="text-button" onClick={assist.onDismiss}>Dismiss</button></div>
-    </> : <>
-      <p className="inspector-note" role="status" data-testid="selective-mask-summary">Subject {Math.round(assist.coverage * 100)}%{mlTag}</p>
+    </>}
+    {assist.state === 'ready' && assist.found && !assist.applied && <>
+      <p className="inspector-note" role="status" data-testid="selective-mask-summary">Subject {Math.round(assist.coverage * 100)}%{mlTag} — applying to photo…</p>
       {assist.note && <p className="inspector-note">{assist.note}</p>}
-      <SelectiveTargetToggle target={draft.target} onTarget={(target) => patchDraft({ target })} testIdPrefix="selective-mask" />
-      <SelectiveParamSliders values={draft} onParam={patchDraft} testIdPrefix="selective-mask" />
-      <div className="suggestion-actions">
-        <button className="slim-button" data-testid="selective-mask-apply" title="Store the subject mask with these adjustments" onClick={() => assist.onApply(draft)}>Apply to {draft.target}</button>
-        <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
-      </div>
-    </>)}
+    </>}
     {assist.state === 'error' && <>
       <p className="inspector-note" role="alert">{assist.message ?? 'Segmentation failed.'}</p>
       <div className="suggestion-actions">
