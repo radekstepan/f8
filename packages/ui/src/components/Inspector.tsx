@@ -461,18 +461,14 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
   </div>;
 }
 
-function SceneEnhanceControl({ edit, active, canRevert, onAutoScene, onRevert }: { edit: EditState; active: boolean; canRevert: boolean; onAutoScene: () => void; onRevert: () => void }) {
-  const title = active
-    ? 'Scene Enhance applied — click to revert'
-    : canRevert
-    ? 'Re-apply Scene Enhance with ML'
-    : 'Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings';
+function SceneEnhanceControl({ edit }: { edit: EditState }) {
+  // Enhancement runs from the section header's ML button (White Balance
+  // pattern), so there is no apply bar in the content in any state — just
+  // the persisted scene label, or the explanatory note before the first run.
   return <div className="scene-enhance" data-testid="scene-enhance">
-    <div className="scene-enhance-row">
-      <button className={`slim-button full-width${active ? ' is-active' : ''}`} data-testid="scene-enhance-apply" aria-pressed={active} title={title} onClick={onAutoScene}><span>Scene Enhance <MlBadge hint="The scene is classified by a machine-learning model on your device" /></span></button>
-      {canRevert && <RevertButton testId="scene-enhance-revert" label="Revert scene enhance" onClick={onRevert} />}
-    </div>
-    {edit.sceneEnhance && <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}% · ML</span>}
+    {edit.sceneEnhance
+      ? <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}% · ML</span>
+      : <p className="inspector-note">Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings.</p>}
   </div>;
 }
 
@@ -497,11 +493,13 @@ function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
       ...(assist.redEyeCount > 0 ? [`${assist.redEyeCount} red-eye`] : []),
     ].join(' · ') + mlTag
     : null;
+  // Detection runs from the section header's ML button (White Balance
+  // pattern), so there is no detect bar in the content in any state — the
+  // idle state is just the explanatory note.
   return <div className="face-enhance" data-testid="face-enhance">
-    {assist.state === 'idle' && !assist.applied && <>
-      <button className="slim-button full-width" data-testid="face-enhance-detect" title="Find faces with ML, anchor white balance on skin, lift dark faces, fix red-eye" onClick={assist.onDetect}><span>Enhance Faces <MlBadge hint="Faces are detected by a machine-learning model on the photo server" /></span></button>
+    {assist.state === 'idle' && !assist.applied &&
       <p className="inspector-note">Finds faces with ML, then anchors white balance on skin, lifts dark faces, and fixes red-eye. Nothing changes until you apply.</p>
-    </>}
+    }
     {assist.state === 'idle' && assist.applied && <div className="auto-enhance-row face-enhance-row">
       <span className={`scene-enhance-scene${assist.applied.enabled ? '' : ' is-off'}`} data-testid="face-enhance-applied" title={assist.applied.enabled ? `Face enhance on: ${appliedSummary(assist.applied)}` : 'Face enhance off — the lift and red-eye fixes are bypassed'}>{appliedSummary(assist.applied)}</span>
       <Toggle checked={assist.applied.enabled} onChange={assist.onToggle} label="Enable face enhance" />
@@ -849,7 +847,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="classic-enhance" data-testid="auto-enhance"><button className={`slim-button full-width${classicActive ? ' is-active' : ''}`} data-testid="auto-enhance-apply" aria-pressed={classicActive} title={classicTitle} onClick={onAuto}><Sparkles size={13} /><span>Auto Enhance</span></button>{classicRevert && <RevertButton testId="auto-enhance-revert" label="Revert auto enhance" onClick={onRevertEnhance} />}</div>{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} badge={<MlBadge hint="The scene is classified by a machine-learning model on your device" />}><SceneEnhanceControl edit={edit} active={sceneActive} canRevert={sceneRevert} onAutoScene={onAutoScene} onRevert={onRevertEnhance} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} badge={<MlBadge hint="Faces are detected by a machine-learning model on the photo server" />}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} ml={{ id: 'selective-mask', applied: Boolean(selectiveAssist.applied), canRevert: Boolean(selectiveAssist.applied), onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect, onRevert: selectiveAssist.onClear }}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <AdjustmentSection title="Denoise" icon={<Waves size={14} />} badge={<MlBadge hint="Denoised by a machine-learning model on the photo server" />}><DenoiseControl assist={denoiseAssist} photo={photo} /></AdjustmentSection>}<Histogram data={histogram} photo={photo} />
+    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="classic-enhance" data-testid="auto-enhance"><button className={`slim-button full-width${classicActive ? ' is-active' : ''}`} data-testid="auto-enhance-apply" aria-pressed={classicActive} title={classicTitle} onClick={onAuto}><Sparkles size={13} /><span>Auto Enhance</span></button>{classicRevert && <RevertButton testId="auto-enhance-revert" label="Revert auto enhance" onClick={onRevertEnhance} />}</div>{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} ml={{ id: 'scene-enhance', applied: sceneActive, canRevert: sceneRevert, onToggle: onAutoScene, onRevert: onRevertEnhance }}><SceneEnhanceControl edit={edit} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} ml={{ id: 'face-enhance', applied: Boolean(faceAssist.applied), canRevert: Boolean(faceAssist.applied), onToggle: faceAssist.applied ? faceAssist.onClear : faceAssist.onDetect, onRevert: faceAssist.onClear }}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} ml={{ id: 'selective-mask', applied: Boolean(selectiveAssist.applied), canRevert: Boolean(selectiveAssist.applied), onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect, onRevert: selectiveAssist.onClear }}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <AdjustmentSection title="Denoise" icon={<Waves size={14} />} badge={<MlBadge hint="Denoised by a machine-learning model on the photo server" />}><DenoiseControl assist={denoiseAssist} photo={photo} /></AdjustmentSection>}<Histogram data={histogram} photo={photo} />
       <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} ml={{ id: 'white-balance', applied: Boolean(mlApplied?.whiteBalance), canRevert: Boolean(mlRevert?.whiteBalance), onToggle: onAutoWhiteBalance, onRevert: onRevertWhiteBalance }} onReset={() => onChange({ temperature: 5500, tint: 0 })}>
         {rangeEnabled('whiteBalanceEnabled', 'temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false })}
         {rangeEnabled('whiteBalanceEnabled', 'tint', 'Tint', { color: 'tint' })}

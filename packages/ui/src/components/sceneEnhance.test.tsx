@@ -33,7 +33,7 @@ function makePhoto(): Photo {
 
 const noop = () => {};
 
-function renderAdjust(edit: EditState, onAutoScene?: () => void): string {
+function renderAdjust(edit: EditState, onAutoScene?: () => void, enhance?: { mode: 'classic' | 'scene' | null; pure?: boolean }): string {
   return renderToStaticMarkup(
     <Inspector
       photo={makePhoto()}
@@ -49,6 +49,7 @@ function renderAdjust(edit: EditState, onAutoScene?: () => void): string {
       onReset={noop}
       onAuto={noop}
       onRevertEnhance={noop}
+      {...(enhance ? { enhanceMode: enhance.mode, enhancePure: enhance.pure ?? false } : {})}
       {...(onAutoScene === undefined ? {} : { onAutoScene })}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
@@ -71,23 +72,47 @@ describe('scene enhance row', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT })).not.toContain('data-testid="scene-enhance"');
   });
 
-  it('offers ML scene enhance with an ML badge', () => {
+  it('runs scene enhance from a header ML button, never a repeated bar', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, noop);
     expect(html).toContain('data-testid="scene-enhance"');
-    expect(html).toContain('data-testid="scene-enhance-apply"');
-    expect(html).toContain('Scene Enhance');
-    expect(html).toContain('ml-badge');
+    expect(html).toContain('data-testid="scene-enhance-ml"');
+    expect(html).toContain('class="ml-button" data-testid="scene-enhance-ml"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('title="Automatically adjust scene enhance with ML"');
     expect(html).toContain('>ML<');
+    expect(html).toContain('Classify the scene with ML');
+    // No apply bar repeating the section title, and no badge doubling the
+    // header button.
+    expect(html).not.toContain('data-testid="scene-enhance-apply"');
+    expect(html).not.toContain('ml-badge');
+    expect(html).not.toContain('data-testid="scene-enhance-ml-revert"');
+  });
+
+  it('highlights the header ML button and offers revert while applied', () => {
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
+      noop,
+      { mode: 'scene', pure: true },
+    );
+    expect(html).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('title="ML scene enhance applied — click to revert"');
+    expect(html).toContain('data-testid="scene-enhance-ml-revert"');
+    expect(html).toContain('aria-label="Revert ML scene enhance"');
   });
 
   it('keeps the section title visible before and after applying', () => {
     const idle = renderAdjust({ ...DEFAULT_EDIT }, noop);
     expect(idle).toContain('<h3>Scene Enhance</h3>');
+    expect(idle).toContain('data-testid="scene-enhance-ml"');
     const applied = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       noop,
+      { mode: 'scene', pure: true },
     );
     expect(applied).toContain('<h3>Scene Enhance</h3>');
+    expect(applied).toContain('data-testid="scene-enhance-ml"');
+    expect(applied).not.toContain('data-testid="scene-enhance-apply"');
   });
 
   it('labels the detected scene with confidence once ML enhance is applied', () => {

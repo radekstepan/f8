@@ -94,24 +94,46 @@ describe('face enhance control', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT })).not.toContain('data-testid="face-enhance"');
   });
 
-  it('offers ML face enhance with an ML badge', () => {
+  it('runs face detection from a header ML button, never a repeated bar', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, assist());
     expect(html).toContain('data-testid="face-enhance"');
-    expect(html).toContain('data-testid="face-enhance-detect"');
-    expect(html).toContain('Enhance Faces');
-    expect(html).toContain('ml-badge');
+    expect(html).toContain('data-testid="face-enhance-ml"');
+    expect(html).toContain('class="ml-button" data-testid="face-enhance-ml"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('title="Automatically adjust enhance faces with ML"');
     expect(html).toContain('>ML<');
+    expect(html).toContain('Nothing changes until you apply');
+    // No detect bar repeating the section title, and no badge doubling the
+    // header button.
+    expect(html).not.toContain('data-testid="face-enhance-detect"');
+    expect(html).not.toContain('ml-badge');
+    expect(html).not.toContain('data-testid="face-enhance-ml-revert"');
   });
 
   it('keeps the section title visible before and after applying', () => {
     const idle = renderAdjust({ ...DEFAULT_EDIT }, assist());
     expect(idle).toContain('<h3>Enhance Faces</h3>');
+    expect(idle).toContain('data-testid="face-enhance-ml"');
     const applied = renderAdjust(
       { ...DEFAULT_EDIT },
       assist({ applied: { faces: 1, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 0 } }),
     );
     expect(applied).toContain('<h3>Enhance Faces</h3>');
+    expect(applied).toContain('data-testid="face-enhance-ml"');
+    expect(applied).toContain('data-testid="face-enhance-ml-revert"');
     expect(applied).not.toContain('data-testid="face-enhance-detect"');
+  });
+
+  it('highlights the header ML button and offers revert while a face adjust is stored', () => {
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT },
+      assist({ applied: { faces: 1, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 0 } }),
+    );
+    expect(html).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('title="ML enhance faces applied — click to revert"');
+    expect(html).toContain('data-testid="face-enhance-ml-revert"');
+    expect(html).toContain('aria-label="Revert ML enhance faces"');
   });
 
   it('summarizes an ML result with skin WB, lift, and red-eye', () => {
@@ -200,5 +222,9 @@ describe('face enhance control', () => {
     // The badge stays with rescan/clear so the stored adjust survives the toggle.
     expect(off).toContain('data-testid="face-enhance-redetect"');
     expect(off).toContain('data-testid="face-enhance-clear"');
+    // The header ML highlight means "face adjust stored", not "enabled" —
+    // the content toggle owns on/off, so bypassing keeps the highlight.
+    expect(off).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
+    expect(off).toContain('data-testid="face-enhance-ml-revert"');
   });
 });
