@@ -83,9 +83,12 @@ describe('adjustment ML buttons', () => {
     }
     expect(html).toContain('aria-pressed="false"');
     expect(html).toContain('>ML</button>');
-    // No Auto pills remain in the adjust tool (straighten's lives in crop).
-    expect(html).not.toContain('auto-small');
-    expect(html).not.toContain('>Auto</button>');
+    // The one Auto pill in the adjust tool is classic enhance (a non-ML
+    // heuristic with a header Auto button); the slider categories use ML,
+    // and straighten's pill lives in crop.
+    expect(html.match(/auto-small/g)).toHaveLength(1);
+    expect(html).toContain('class="auto-small" data-testid="auto-enhance-auto"');
+    expect(html.match(/>Auto<\/button>/g)).toHaveLength(1);
     // No revert icon before anything is applied.
     expect(html).not.toContain('-ml-revert');
   });

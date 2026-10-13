@@ -187,8 +187,8 @@ describe('ml enhance sections', () => {
       expect(html).not.toContain(testId);
     }
     expect(html).not.toContain('<h3>ML Enhance</h3>');
-    expect(html).toContain('data-testid="auto-enhance-apply"');
-    expect(html).toContain('Auto Enhance');
+    expect(html).toContain('<h3>Auto Enhance</h3>');
+    expect(html).toContain('data-testid="auto-enhance-auto"');
   });
 
   it('renders a lone ML assist in its own section only', () => {
@@ -200,18 +200,22 @@ describe('ml enhance sections', () => {
     expect(html).not.toContain('data-testid="denoise"');
   });
 
-  it('uses one slim toggle button for classic Auto Enhance, no switch', () => {
+  it('runs classic Auto Enhance from a header Auto button, no bar or switch', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
-    expect(html).toContain('data-testid="auto-enhance-apply"');
-    expect(html).toContain('class="slim-button full-width" data-testid="auto-enhance-apply"');
-    expect(html).toContain('aria-pressed="false"');
-    // No toggle switches or loose label rows around the enhance actions.
+    expect(html).toContain('<h3>Auto Enhance</h3>');
+    expect(html).toContain('class="auto-small" data-testid="auto-enhance-auto" aria-pressed="false"');
+    expect(html).toContain('title="Apply auto enhance automatically"');
+    expect(html).toContain('>Auto</button>');
+    // No full-width bar, no toggle switches, no loose label rows around
+    // the enhance actions.
+    expect(html).not.toContain('data-testid="auto-enhance-apply"');
+    expect(html).not.toContain('classic-enhance');
     expect(html).not.toContain('auto-enhance-row');
   });
 
   it('marks exactly the pure enhance mode as pressed', () => {
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: true });
-    expect(classic).toContain('class="slim-button full-width is-active" data-testid="auto-enhance-apply"');
+    expect(classic).toContain('class="auto-small is-active" data-testid="auto-enhance-auto"');
     expect(classic).toContain('class="ml-button" data-testid="scene-enhance-ml"');
     expect(classic).toContain('title="Auto Enhance applied — click to revert"');
     const scene = renderAdjust(
@@ -219,7 +223,7 @@ describe('ml enhance sections', () => {
       ALL_ML,
       { mode: 'scene', pure: true },
     );
-    expect(scene).toContain('class="slim-button full-width" data-testid="auto-enhance-apply"');
+    expect(scene).toContain('class="auto-small" data-testid="auto-enhance-auto"');
     expect(scene).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
     expect(scene).toContain('title="ML scene enhance applied — click to revert"');
     expect(scene).toContain('data-testid="scene-enhance-scene"');
@@ -228,7 +232,7 @@ describe('ml enhance sections', () => {
 
   it('shows the enhance revert icon beside the last-used mode only', () => {
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: true });
-    expect(classic).toContain('data-testid="auto-enhance-revert"');
+    expect(classic).toContain('data-testid="auto-enhance-auto-revert"');
     expect(classic).toContain('aria-label="Revert auto enhance"');
     expect(classic).not.toContain('data-testid="scene-enhance-ml-revert"');
     const scene = renderAdjust(
@@ -238,10 +242,10 @@ describe('ml enhance sections', () => {
     );
     expect(scene).toContain('data-testid="scene-enhance-ml-revert"');
     expect(scene).toContain('aria-label="Revert ML scene enhance"');
-    expect(scene).not.toContain('data-testid="auto-enhance-revert"');
+    expect(scene).not.toContain('data-testid="auto-enhance-auto-revert"');
     // No snapshot, no revert icon anywhere.
     const idle = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
-    expect(idle).not.toContain('data-testid="auto-enhance-revert"');
+    expect(idle).not.toContain('data-testid="auto-enhance-auto-revert"');
     expect(idle).not.toContain('data-testid="scene-enhance-ml-revert"');
   });
 
@@ -249,10 +253,10 @@ describe('ml enhance sections', () => {
     // A slider drag after the enhance drops pure (both buttons idle) while
     // the last-used mode keeps its revert icon with a re-apply title.
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: false });
-    expect(classic).toContain('class="slim-button full-width" data-testid="auto-enhance-apply"');
+    expect(classic).toContain('class="auto-small" data-testid="auto-enhance-auto"');
     expect(classic).toContain('class="ml-button" data-testid="scene-enhance-ml"');
-    expect(classic).toContain('title="Re-apply automatic enhancement"');
-    expect(classic).toContain('data-testid="auto-enhance-revert"');
+    expect(classic).toContain('title="Re-apply auto enhance"');
+    expect(classic).toContain('data-testid="auto-enhance-auto-revert"');
     const scene = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       ALL_ML,
@@ -265,13 +269,13 @@ describe('ml enhance sections', () => {
     expect(scene).toContain('Night · 90% · ML');
   });
 
-  it('lays the classic enhance button and revert icon out in a flex row', () => {
-    // The full-width button shares its row with the revert icon: flex
-    // row, button grows, icon sits beside it. Scene enhance runs from the
-    // header ML button now, so its old content row and CSS are gone.
-    expect(cssRule('.classic-enhance')).toMatch(/display\s*:\s*flex/);
-    expect(cssRule('.classic-enhance')).toMatch(/align-items\s*:\s*center/);
-    expect(cssRule('.classic-enhance .slim-button.full-width')).toMatch(/flex\s*:\s*1/);
+  it('runs classic enhance from the shared header row, with no content bar', () => {
+    // The old full-width content bar and its CSS are gone: the Auto button
+    // and revert icon live in the shared section-actions header row, like
+    // every ML section. Scene enhance's old content row is gone too.
+    expect(css()).not.toMatch(/\.classic-enhance/);
+    expect(cssRule('.section-actions')).toMatch(/display\s*:\s*flex/);
+    expect(cssRule('.section-actions')).toMatch(/align-items\s*:\s*center/);
     expect(css()).not.toMatch(/\.scene-enhance-row/);
   });
 

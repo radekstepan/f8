@@ -134,7 +134,7 @@ describe('histogram leads the adjustments panel', () => {
     expect(histogramAt).toBeGreaterThan(-1);
     // Every contender that used to (or could) precede it now follows it.
     for (const marker of [
-      'data-testid="auto-enhance"',
+      '<h3>Auto Enhance</h3>',
       'data-testid="scene-enhance"',
       'data-testid="face-enhance"',
       'data-testid="selective-mask"',

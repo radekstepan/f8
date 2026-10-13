@@ -143,7 +143,7 @@ describe('scene enhance row', () => {
     expect(html).toContain('Night · 90% · ML');
   });
 
-  it('keeps the classic Auto Enhance row alongside the ML row', () => {
+  it('keeps the classic Auto Enhance section alongside the ML section', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, noop);
     expect(html).toContain('Auto Enhance');
     expect(html).toContain('Scene Enhance');

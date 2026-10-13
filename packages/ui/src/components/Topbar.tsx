@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { ArrowLeft, Bandage, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Sparkles, Undo2 } from 'lucide-react';
+import { ArrowLeft, Bandage, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, Share, SlidersHorizontal, Undo2 } from 'lucide-react';
 import type { DialogType, Tool, VisionWorkerStatus } from '@f8/core';
 import { APP_EDITION_SHORT, APP_NAME } from '@f8/core';
 import { BrandMark, IconButton, MenuItem, MenuSeparator, MlBadge } from './EditorUI.js';
@@ -89,7 +89,6 @@ interface ToolbarProps {
   collectionName: string;
   count: number;
   tool: Tool;
-  enhanced: boolean;
   compare: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -101,12 +100,13 @@ interface ToolbarProps {
   onTogglePresets?: () => void;
 }
 
-export function Toolbar({ collectionName, count, tool, enhanced, compare, canUndo, canRedo, libraryView, presetsOpen, onTool, onAction, onDialog, onTogglePresets }: ToolbarProps) {
+export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo, libraryView, presetsOpen, onTool, onAction, onDialog, onTogglePresets }: ToolbarProps) {
+  // Tools only: the one-shot Auto Enhance lives in the Adjust sidebar
+  // (Image menu + A shortcut still reach it from anywhere).
   const tools = [
     { id: 'adjust', label: 'Adjust', icon: SlidersHorizontal, active: tool === 'adjust' },
     { id: 'repair', label: 'Repair', icon: Bandage, active: tool === 'repair' },
     { id: 'crop', label: 'Crop', icon: Crop, active: tool === 'crop' },
-    { id: 'enhance', label: 'Enhance', icon: Sparkles, active: enhanced },
   ];
   return (
     <header className="toolbar">
@@ -125,11 +125,11 @@ export function Toolbar({ collectionName, count, tool, enhanced, compare, canUnd
           {tools.map(({ id, label, icon: Icon, active }) => (
             <button
               key={id}
-              className={`tool-button ${active ? 'is-active' : ''} ${id === 'enhance' ? 'enhance-tool' : ''}`}
+              className={`tool-button ${active ? 'is-active' : ''}`}
               aria-label={label}
               aria-pressed={active}
-              title={id === 'enhance' ? 'Auto Enhance (A) — one-shot, not a tool' : label}
-              onClick={() => id === 'enhance' ? onAction('enhance') : onTool(id as Tool)}
+              title={label}
+              onClick={() => onTool(id as Tool)}
             ><Icon size={20} strokeWidth={1.55} /><span>{label}</span></button>
           ))}
         </div>
