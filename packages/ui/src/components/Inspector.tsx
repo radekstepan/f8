@@ -479,6 +479,14 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
   </div>;
 }
 
+function SceneEnhanceControl({ edit, onAutoScene }: { edit: EditState; onAutoScene: () => void }) {
+  const active = edit.autoEnhanced && Boolean(edit.sceneEnhance);
+  return <div className="scene-enhance" data-testid="scene-enhance">
+    <button className={`slim-button full-width${active ? ' is-active' : ''}`} data-testid="scene-enhance-apply" aria-pressed={active} title="Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings" onClick={onAutoScene}><span>Scene Enhance <span className="ml-badge" title="The scene is classified by a machine-learning model on your device">ML</span></span></button>
+    {active && edit.sceneEnhance && <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}% · ML</span>}
+  </div>;
+}
+
 function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
   const working = assist.state === 'detecting';
   const mlTag = assist.source === 'onnx' ? ' · ML' : '';
@@ -492,7 +500,7 @@ function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
     : null;
   return <div className="face-enhance" data-testid="face-enhance">
     {assist.state === 'idle' && !assist.applied && <>
-      <button className="secondary-button full-width" data-testid="face-enhance-detect" title="Find faces with ML, anchor white balance on skin, lift dark faces, fix red-eye" onClick={assist.onDetect}><span>Enhance Faces <span className="ml-badge" title="Faces are detected by a machine-learning model on the photo server">ML</span></span></button>
+      <button className="slim-button full-width" data-testid="face-enhance-detect" title="Find faces with ML, anchor white balance on skin, lift dark faces, fix red-eye" onClick={assist.onDetect}><span>Enhance Faces <span className="ml-badge" title="Faces are detected by a machine-learning model on the photo server">ML</span></span></button>
       <p className="inspector-note">Finds faces with ML, then anchors white balance on skin, lifts dark faces, and fixes red-eye. Nothing changes until you apply.</p>
     </>}
     {assist.state === 'idle' && assist.applied && <div className="auto-enhance-row face-enhance-row">
@@ -511,7 +519,7 @@ function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
       <p className="inspector-note" role="status" data-testid="face-enhance-summary">{summary}</p>
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="secondary-button" data-testid="face-enhance-apply" title="Set white balance from faces and store the masked lift plus red-eye fixes" onClick={assist.onApply}>Apply face enhance</button>
+        <button className="slim-button" data-testid="face-enhance-apply" title="Set white balance from faces and store the masked lift plus red-eye fixes" onClick={assist.onApply}>Apply face enhance</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>)}
@@ -564,7 +572,7 @@ function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
   const patchDraft = (patch: Partial<SelectiveMaskDraft>): void => setDraft((current) => ({ ...current, ...patch }));
   return <div className="selective-mask" data-testid="selective-mask">
     {assist.state === 'idle' && !assist.applied && <>
-      <button className="secondary-button full-width" data-testid="selective-mask-detect" title="Segment the subject with ML, then adjust just the subject or background" onClick={assist.onDetect}><span>Brighten Subject Only <span className="ml-badge" title="The subject is segmented by a machine-learning model on the photo server">ML</span></span></button>
+      <button className="slim-button full-width" data-testid="selective-mask-detect" title="Segment the subject with ML, then adjust just the subject or background" onClick={assist.onDetect}><span>Brighten Subject Only <span className="ml-badge" title="The subject is segmented by a machine-learning model on the photo server">ML</span></span></button>
       <p className="inspector-note">Finds the subject with ML, then adjusts just the subject or background. Nothing changes until you apply.</p>
     </>}
     {assist.state === 'idle' && assist.applied && <>
@@ -589,7 +597,7 @@ function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
       <SelectiveTargetToggle target={draft.target} onTarget={(target) => patchDraft({ target })} testIdPrefix="selective-mask" />
       <SelectiveParamSliders values={draft} onParam={patchDraft} testIdPrefix="selective-mask" />
       <div className="suggestion-actions">
-        <button className="secondary-button" data-testid="selective-mask-apply" title="Store the subject mask with these adjustments" onClick={() => assist.onApply(draft)}>Apply to {draft.target}</button>
+        <button className="slim-button" data-testid="selective-mask-apply" title="Store the subject mask with these adjustments" onClick={() => assist.onApply(draft)}>Apply to {draft.target}</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>)}
@@ -799,7 +807,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="auto-enhance-row"><button onClick={onAuto}><Sparkles size={17} /><span>Auto Enhance</span></button><Toggle checked={edit.autoEnhanced} label="Auto Enhance" onChange={onAuto} /></div>{onAutoScene && <div className="auto-enhance-row scene-enhance-row" data-testid="scene-enhance"><button data-testid="scene-enhance-apply" title="Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings" onClick={onAutoScene}><Sparkles size={17} /><span>Scene Enhance</span><span className="ml-badge" title="The scene is classified by a machine-learning model on your device">ML</span></button>{edit.autoEnhanced && edit.sceneEnhance && <span className="scene-enhance-scene" data-testid="scene-enhance-scene" title={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}% · ML</span>}</div>}{faceAssist && <FaceEnhanceControl assist={faceAssist} />}{selectiveAssist && <SelectiveMaskControl assist={selectiveAssist} />}<Histogram data={histogram} photo={photo} />
+    <div className="inspector-scroll">{tool === 'adjust' ? <><div className="classic-enhance" data-testid="auto-enhance"><button className={`slim-button full-width${edit.autoEnhanced && !edit.sceneEnhance ? ' is-active' : ''}`} data-testid="auto-enhance-apply" aria-pressed={edit.autoEnhanced && !edit.sceneEnhance} title="Automatically enhance exposure, contrast, and color; click again to revert" onClick={onAuto}><Sparkles size={13} /><span>Auto Enhance</span></button></div>{(onAutoScene || faceAssist || selectiveAssist) && <AdjustmentSection title="ML Enhance" icon={<Sparkles size={14} />} badge={<span className="ml-badge" title="Each action below is powered by a machine-learning model">ML</span>}><div className="ml-enhance" data-testid="ml-enhance">{onAutoScene && <SceneEnhanceControl edit={edit} onAutoScene={onAutoScene} />}{faceAssist && <FaceEnhanceControl assist={faceAssist} />}{selectiveAssist && <SelectiveMaskControl assist={selectiveAssist} />}</div></AdjustmentSection>}<Histogram data={histogram} photo={photo} />
       <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} enabled={edit.whiteBalanceEnabled} onToggle={() => onChange({ whiteBalanceEnabled: !edit.whiteBalanceEnabled })} onAuto={onAutoWhiteBalance} onReset={() => onChange({ temperature: 5500, tint: 0 })}>
         {range('temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false, disabled: !edit.whiteBalanceEnabled })}
         {range('tint', 'Tint', { color: 'tint', disabled: !edit.whiteBalanceEnabled })}

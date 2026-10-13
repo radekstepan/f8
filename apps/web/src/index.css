@@ -250,7 +250,8 @@ img { display: block; }
 .auto-enhance-row > button:first-child { display: flex; align-items: center; gap: 8px; flex: 1; text-align: left; color: #d2d2d9; font-size: 10.5px; }
 .auto-enhance-row > button:first-child > svg { color: #d6bd85; }
 .scene-enhance-scene { font-size: 10px; color: #f0d397; white-space: nowrap; }
-.scene-enhance-row .ml-badge { margin-left: 2px; }
+.classic-enhance { padding: 10px 18px; border-bottom: 1px solid #3a3a3e; }
+.scene-enhance .scene-enhance-scene { display: block; margin-top: 8px; }
 .toggle { width: 25px; height: 14px; border-radius: 8px; padding: 2px; background: #515155; display: flex; align-items: center; flex-shrink: 0; transition: background-color 180ms ease; }
 .toggle > span { display: block; border-radius: 50%; height: 10px; width: 10px; background: #c2c2c7; box-shadow: 0 1px 2px #0003; transition: transform 180ms cubic-bezier(.2,.7,.3,1), background-color 180ms; }
 .toggle.is-on { background: #8d7a53; }
@@ -399,6 +400,9 @@ img { display: block; }
 .selective-target > button { flex: 1; height: 24px; font-size: 9.5px; color: #a2a2ac; background: #2c2c31; border: 1px solid #3a3a3e; border-radius: 4px; }
 .selective-target > button.is-active { color: #f0d397; border-color: #8b7650; background: #33302a; }
 .selective-mask .range-control { margin-top: 8px; }
+.ml-enhance { display: flex; flex-direction: column; }
+.ml-enhance > * + * { border-top: 1px solid #343438; margin-top: 12px; padding-top: 12px; }
+.ml-enhance .face-enhance, .ml-enhance .selective-mask { padding: 0; border-bottom: 0; }
 .dust-spots .retouch-group-list { max-height: 220px; }
 .denoise-auto-row { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #c9c9d1; margin-top: 2px; }
 .denoise-auto-row .ml-badge { margin-left: 2px; }
@@ -478,6 +482,7 @@ img { display: block; }
 .text-button:hover { color: #f0d496; }
 .slim-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 27px; padding: 0 10px; border-radius: 5px; font-size: 9.5px; font-weight: 500; white-space: nowrap; background: #303034; border: 1px solid #4a4a50; color: #c5c5cf; box-shadow: 0 1px 2px #0002; }
 .slim-button:hover:not(:disabled) { background: #3c3a32; border-color: #71654d; color: #e4d1ad; }
+.slim-button.is-active { color: #f0d397; border-color: #8b7650; background: #33302a; }
 .slim-button:disabled { opacity: .45; cursor: default; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; background: #09090b94; backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; padding: 24px; animation: backdrop-in 160ms ease-out; }
 .modal { width: 430px; max-width: 100%; max-height: calc(100dvh - 48px); overflow-y: auto; color: #c8c8d2; background: #2a2a2e; border: 1px solid #55555d; border-radius: 12px; box-shadow: 0 24px 90px #0008, inset 0 1px 0 #ffffff04; padding: 24px; animation: modal-in 220ms cubic-bezier(.18,.65,.3,1); user-select: text; }
