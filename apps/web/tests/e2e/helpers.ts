@@ -199,11 +199,16 @@ export async function paintStroke(
 }
 
 /**
- * Wait until healing starts: a pending group, an active queue, or a recorded
- * transport call. Required before waitForHealingDone — the queue debounces
- * ~600ms, so an immediate "settled" poll would pass before work begins.
+ * Wait until healing starts: a pending group, an active queue, or a NEW
+ * recorded transport call. Required before waitForHealingDone — the queue
+ * debounces ~600ms, so an immediate "settled" poll would pass before work
+ * begins. The call log is snapshotted: calls from earlier strokes must not
+ * satisfy this wait, or a second healStroke returns while the new stroke is
+ * still pre-paint (the pipeline skips live drags, so pending appears only
+ * after release plus a full-res paint — a wide false-"done" window).
  */
 export async function waitForHealingStart(page: Page, timeout = 30_000): Promise<void> {
+  const callsBefore = (await getHealCalls(page)).length;
   await expect
     .poll(
       async () => {
@@ -212,7 +217,7 @@ export async function waitForHealingStart(page: Page, timeout = 30_000): Promise
           getQueue(page),
           getHealCalls(page),
         ]);
-        return pending.length > 0 || queue.active || queue.pendingJobs > 0 || calls.length > 0
+        return pending.length > 0 || queue.active || queue.pendingJobs > 0 || calls.length > callsBefore
           ? "started"
           : "idle";
       },

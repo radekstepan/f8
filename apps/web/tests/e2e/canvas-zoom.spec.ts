@@ -66,10 +66,13 @@ test("wheel zooms at the cursor and the minimap jumps the viewport", async ({ pa
   await expect.poll(async () => (await stageScroll(page)).left).toBeGreaterThan(100);
   await expect.poll(viewportLeft).toBeGreaterThan(40);
 
-  // Zooming back out hides the minimap once the frame fits again.
-  const fitBox = await frame.boundingBox();
-  if (!fitBox) throw new Error("photo-frame has no bounding box.");
-  await page.mouse.move(fitBox.x + fitBox.width / 2, fitBox.y + fitBox.height / 2);
+  // Zooming back out hides the minimap once the frame fits again. Aim at
+  // the stage center, not the frame center: zoomed 3x and scrolled to the
+  // far end, the frame's center sits a full viewport outside the visible
+  // area, where wheel events hit nothing and the zoom never moves.
+  const stageBox = await page.locator(".canvas-stage").boundingBox();
+  if (!stageBox) throw new Error(".canvas-stage has no bounding box.");
+  await page.mouse.move(stageBox.x + stageBox.width / 2, stageBox.y + stageBox.height / 2);
   for (let i = 0; i < 8; i += 1) await page.mouse.wheel(0, 300);
   await expect(zoom).toHaveValue("0.5");
   await expect(page.getByTestId("minimap")).toHaveCount(0);

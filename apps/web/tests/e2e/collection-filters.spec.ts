@@ -50,6 +50,8 @@ async function seedEditedState(page: Page): Promise<void> {
   expect(mark.ok()).toBeTruthy();
 }
 
+// Album name patterns below must anchor at the start: every album row also
+// has an "Album actions for <name>" menu trigger matching a loose substring.
 function sidebar(page: Page) {
   return page.getByRole("complementary", { name: "Photo library" });
 }
@@ -63,7 +65,7 @@ function grid(page: Page) {
 }
 
 async function openLibraryOnAll(page: Page): Promise<void> {
-  await sidebar(page).getByRole("button", { name: /All Photos/ }).click();
+  await sidebar(page).getByRole("button", { name: /^All Photos/ }).click();
   await expect(grid(page)).toBeVisible();
 }
 
@@ -95,10 +97,10 @@ test("reload on a coast photo highlights Coastal Escape in sidebar and filmstrip
   // The collection is inferred from the photo, never in the editor URL.
   await expect(page).not.toHaveURL(/collection=/);
   await expect(
-    sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
+    sidebar(page).getByRole("button", { name: /^Coastal Escape/ }),
   ).toHaveClass(/is-selected/);
   await expect(
-    sidebar(page).getByRole("button", { name: /Dolomites 2024/ }),
+    sidebar(page).getByRole("button", { name: /^Dolomites 2024/ }),
   ).not.toHaveClass(/is-selected/);
   await expect(filmstrip(page).locator("h2")).toHaveText("Coastal Escape");
   await expect(
@@ -110,7 +112,7 @@ test("reload on a coast photo highlights Coastal Escape in sidebar and filmstrip
 
   await expect(page).not.toHaveURL(/collection=/);
   await expect(
-    sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
+    sidebar(page).getByRole("button", { name: /^Coastal Escape/ }),
   ).toHaveClass(/is-selected/);
   await expect(filmstrip(page).locator("h2")).toHaveText("Coastal Escape");
   await expect(
@@ -126,7 +128,7 @@ test("stale collection param is ignored and stripped", async ({
 
   // The photo's album wins over the stale param, which is dropped.
   await expect(
-    sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
+    sidebar(page).getByRole("button", { name: /^Coastal Escape/ }),
   ).toHaveClass(/is-selected/);
   await expect(
     sidebar(page).getByRole("button", { name: /^Favorites/ }),
@@ -141,7 +143,7 @@ test("sidebar album click switches the grid to that album's URL", async ({
   await page.goto("/?photo=photo-1");
   await awaitEditor(page);
 
-  await sidebar(page).getByRole("button", { name: /Coastal Escape/ }).click();
+  await sidebar(page).getByRole("button", { name: /^Coastal Escape/ }).click();
 
   // In an album the URL shows the album, not the stale photo.
   await expect(grid(page)).toBeVisible();
@@ -158,7 +160,7 @@ test("album URL deep-links the grid and survives reload", async ({
 
   await expect(grid(page).locator("h1")).toHaveText("Coastal Escape");
   await expect(
-    sidebar(page).getByRole("button", { name: /Coastal Escape/ }),
+    sidebar(page).getByRole("button", { name: /^Coastal Escape/ }),
   ).toHaveClass(/is-selected/);
 
   await page.reload();
@@ -171,7 +173,7 @@ test("back returns from a photo to the album URL", async ({ page }) => {
   await page.goto("/?photo=photo-1");
   await awaitEditor(page);
 
-  await sidebar(page).getByRole("button", { name: /Coastal Escape/ }).click();
+  await sidebar(page).getByRole("button", { name: /^Coastal Escape/ }).click();
   await expect(grid(page)).toBeVisible();
   await expect(page).toHaveURL(/album=coast/);
 
@@ -244,7 +246,7 @@ test("chip clicks inside Library shortcuts drop back to All Photos", async ({
     .click();
   await expect(grid(page).locator("h1")).toHaveText("All Photos");
   await expect(
-    sidebar(page).getByRole("button", { name: /All Photos/ }),
+    sidebar(page).getByRole("button", { name: /^All Photos/ }),
   ).toHaveClass(/is-selected/);
   await expect(grid(page).locator("p").first()).toContainText("12 photos");
 
@@ -313,7 +315,7 @@ test("edited chips filter the grid and the filmstrip", async ({ page }) => {
 test("favorite chips filter, clear, and empty-state", async ({ page }) => {
   await page.goto("/");
   await awaitEditor(page);
-  await sidebar(page).getByRole("button", { name: /Coastal Escape/ }).click();
+  await sidebar(page).getByRole("button", { name: /^Coastal Escape/ }).click();
   await expect(grid(page)).toBeVisible();
 
   const favGroup = page.getByRole("group", { name: "Favorite status" });

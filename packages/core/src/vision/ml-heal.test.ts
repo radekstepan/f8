@@ -68,10 +68,21 @@ describe("packMlHealInput", () => {
     const packed = packMlHealInput(image, rectMask(24, 24, 10, 10, 12, 12), roi);
     expect(packed.image.length).toBe(3 * ML_HEAL_MODEL_SIZE * ML_HEAL_MODEL_SIZE);
     expect(packed.mask.length).toBe(ML_HEAL_MODEL_SIZE * ML_HEAL_MODEL_SIZE);
+    // Aggregate first: one expect per element (1.5M calls) times out under vitest.
+    let min = Infinity;
+    let max = -Infinity;
+    let nonFinite = 0;
     for (const v of packed.image) {
-      expect(v).toBeGreaterThanOrEqual(0);
-      expect(v).toBeLessThanOrEqual(1);
+      if (!Number.isFinite(v)) {
+        nonFinite += 1;
+      } else {
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
     }
+    expect(nonFinite).toBe(0);
+    expect(min).toBeGreaterThanOrEqual(0);
+    expect(max).toBeLessThanOrEqual(1);
     expect([...packed.mask].some((v) => v === 1)).toBe(true);
     expect([...packed.mask].every((v) => v === 0 || v === 1)).toBe(true);
   });
