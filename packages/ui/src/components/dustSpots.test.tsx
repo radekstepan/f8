@@ -120,6 +120,42 @@ describe('dust spots control', () => {
     expect(html).toContain('Repair 1 selected');
   });
 
+  it('shows spots sorted by confidence descending with each score', () => {
+    const html = renderRepair({
+      ...idleDustSpots,
+      state: 'ready',
+      source: 'ml',
+      spots: [
+        { x: 0.7, y: 0.7, radius: 0.015, score: 0.68, polarity: 'bright', checked: true },
+        { x: 0.2, y: 0.2, radius: 0.01, score: 0.92, polarity: 'dark', checked: true },
+        { x: 0.5, y: 0.5, radius: 0.012, score: 0.81, polarity: 'dark', checked: false },
+      ],
+    });
+    const first = html.indexOf('Spot 1 · 92%');
+    const second = html.indexOf('Spot 2 · 81%');
+    const third = html.indexOf('Spot 3 · 68%');
+    expect(first).toBeGreaterThan(-1);
+    expect(second).toBeGreaterThan(first);
+    expect(third).toBeGreaterThan(second);
+  });
+
+  it('keeps the highlight on the hovered spot after sorting', () => {
+    const html = renderRepair({
+      ...idleDustSpots,
+      state: 'ready',
+      source: 'ml',
+      highlighted: 0, // the 68% spot: lowest score, so it renders as the last row
+      spots: [
+        { x: 0.7, y: 0.7, radius: 0.015, score: 0.68, polarity: 'bright', checked: true },
+        { x: 0.2, y: 0.2, radius: 0.01, score: 0.92, polarity: 'dark', checked: true },
+      ],
+    });
+    expect(html.match(/retouch-group is-highlighted/g)?.length).toBe(1);
+    expect(html).toContain('is-highlighted" data-testid="dust-spots-item-1"');
+    const row = html.indexOf('dust-spots-item-1');
+    expect(html.indexOf('Spot 2 · 68%')).toBeGreaterThan(row);
+  });
+
   it('labels classical results as a scan, never ML', () => {
     const html = renderRepair({
       ...idleDustSpots,

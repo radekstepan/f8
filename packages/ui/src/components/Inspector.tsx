@@ -428,6 +428,12 @@ function ObjectRemovalControl({ assist }: { assist: ObjectRemovalAssist }) {
 function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
   const working = assist.state === 'detecting';
   const checked = assist.spots.filter((spot) => spot.checked).length;
+  // Highest confidence first regardless of server order. Original indices are
+  // kept alongside so toggle/highlight callbacks still address the hook's
+  // array (the canvas preview and checkbox state are index-based).
+  const ordered = assist.spots
+    .map((spot, index) => ({ spot, index }))
+    .sort((a, b) => b.spot.score - a.spot.score);
   return <div className="object-removal dust-spots" data-testid="dust-spots">
     {assist.state === 'idle' && <>
       <button className="slim-button full-width" data-testid="dust-spots-detect" title="Find dust spots with ML, then review before repairing" onClick={assist.onDetect}>Find dust spots</button>
@@ -440,19 +446,19 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
       <div className="suggestion-actions"><button className="text-button" onClick={assist.onDismiss}>Dismiss</button></div>
     </> : <>
       <ul className="retouch-group-list" data-testid="dust-spots-list" aria-label="Detected dust spots">
-        {assist.spots.map((spot, index) => (
+        {ordered.map(({ spot, index }, display) => (
           <li
             key={index}
             className={`retouch-group${assist.highlighted === index ? ' is-highlighted' : ''}`}
-            data-testid={`dust-spots-item-${index}`}
+            data-testid={`dust-spots-item-${display}`}
             onMouseEnter={() => assist.onHighlight?.(index)}
             onMouseLeave={() => assist.onHighlight?.(null)}
             onFocus={() => assist.onHighlight?.(index)}
             onBlur={() => assist.onHighlight?.(null)}
           >
             <label className="checkbox-field">
-              <input type="checkbox" data-testid={`dust-spots-check-${index}`} checked={spot.checked} onChange={() => assist.onToggle(index)} />
-              <span>Spot {index + 1} · {Math.round(spot.score * 100)}%{assist.source === 'ml' ? ' · ML' : ''}</span>
+              <input type="checkbox" data-testid={`dust-spots-check-${display}`} checked={spot.checked} onChange={() => assist.onToggle(index)} />
+              <span>Spot {display + 1} · {Math.round(spot.score * 100)}%{assist.source === 'ml' ? ' · ML' : ''}</span>
             </label>
           </li>
         ))}
