@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
-import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
+import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
 import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 import { ToolHint } from './ToolHint.js';
@@ -194,6 +194,19 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
     let timer: number | null = null;
     const generation = repairGeneration.current + 1;
     repairGeneration.current = generation;
+    // Live repair drag: skip every bit of canvas work — decode, geometry,
+    // render, histogram, and heal scheduling. The base canvas excludes
+    // repair stamps so it cannot change mid-drag; only the red SVG overlay
+    // (a pure render of the edit state) needs to update, and it paints on
+    // the same React render without waiting on the pipeline. Previously
+    // every pointermove re-ran the full-res repaint synchronously, blocking
+    // the main thread so the patch visibly lagged behind the cursor. The
+    // release flips the active stroke back to null, which re-runs this
+    // effect and schedules the post-release heal — nothing is lost.
+    if (isLiveRepairDrag(tool, activeStroke)) {
+      setPendingRepairIds((prev) => (prev.length ? [] : prev));
+      return () => { cancelled = true; };
+    }
     void (async () => {
       // Content key of the state this run will paint; doubles as the
       // preview-cache key.
@@ -489,12 +502,10 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
         }
         onHistogram(histogram);
       };
-      // While a repair stroke is being painted, every repair stamp stays out
-      // of the canvas: the red mask overlay shows those areas instead of the
-      // blur placeholder. Otherwise the single paint below already contains
-      // the final healed pixels — saved work is composited before anything
-      // becomes visible, so reloads never flash clean first.
-      const paintingRepair = tool === 'repair' && activeStroke !== null;
+      // Live drags never reach this run (the early return above owns them),
+      // so the single paint below already contains the final healed pixels
+      // — saved work is composited before anything becomes visible, so
+      // reloads never flash clean first.
       const repairs = edit.retouches.filter((point) => point.kind === 'repair');
       const run = inpaintRun.current;
       const method = inpaintRepair?.method;
@@ -536,14 +547,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
       // True when the queue below must run; false once everything is cached —
       // the single paint above already shows the final state.
       let needsQueue = true;
-      if (paintingRepair) {
-        // Live drag feedback only; the debounced queue below still schedules
-        // the post-release heal.
-        renderBase(geometryCanvas(image, baseEditSync), 'sync-painting');
-        paintOriginal();
-        setPendingRepairIds((prev) => (prev.length ? [] : prev));
-        finishPaint();
-      } else if ((method === 'ml-heal' || method === 'heal') && repairs.length && canvasRef.current) {
+      if ((method === 'ml-heal' || method === 'heal') && repairs.length && canvasRef.current) {
         // Finished groups stay visibly healed while follow-up groups heal:
         // valid patches composite here, dirty areas stay clean with a red
         // mask until their group heals. Pending ids drive the red overlay:
@@ -1213,7 +1217,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   // Compare and healing are mutually exclusive on canvas: comparing shows
   // the before/after slider with no heal cursor and no painting.
   const showBrushCursor = isBrush && cursor && !compare && !showOriginal && !mlRepairBlocked;
-  const draggingRepair = showOverlay && tool === 'repair' && activeStroke !== null;
+  const draggingRepair = showOverlay && isLiveRepairDrag(tool, activeStroke);
   // While dragging, every repair area shows red — not just the new stroke —
   // so the single worker pass over all areas is visible. While healing,
   // only still-pending groups stay red; healed groups already show their

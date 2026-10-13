@@ -7,6 +7,8 @@
  * or shift the stage scroll).
  */
 
+import type { Tool } from "./types.js";
+
 export interface CanvasDragIntent {
   /** True when a primary press would paint (brush tool, not comparing, ML tier ready). */
   canPaint: boolean;
@@ -38,6 +40,20 @@ export function resolveCanvasDrag(intent: CanvasDragIntent): CanvasDragAction {
   if (intent.spaceHeld) return intent.pannable ? 'pan' : 'none';
   if (intent.canPaint) return 'paint';
   return intent.pannable ? 'pan' : 'none';
+}
+
+/** True while a repair stroke is being painted (pointer down, not yet released).
+ *
+ * The render pipeline skips all canvas work while this holds: the base
+ * canvas excludes repair stamps, so it cannot change mid-drag, and the red
+ * mask overlay is a pure function of the edit state that React paints on
+ * the same render. Repainting the full-res canvas on every pointermove only
+ * blocks the main thread and makes the patch lag behind the cursor. The
+ * release (active stroke back to null) re-runs the pipeline and schedules
+ * the heal, so no work is lost — it just waits for the drag to end.
+ */
+export function isLiveRepairDrag(tool: Tool, activeStroke: number | null): boolean {
+  return tool === "repair" && activeStroke !== null;
 }
 
 /** Stage scroll position after dragging from a press point to the current one.

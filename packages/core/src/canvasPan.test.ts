@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { panScrollFromDrag, resolveCanvasDrag, type CanvasDragIntent } from "./canvasPan.js";
+import { isLiveRepairDrag, panScrollFromDrag, resolveCanvasDrag, type CanvasDragIntent } from "./canvasPan.js";
 
 const base: CanvasDragIntent = { canPaint: false, pannable: true, button: 0, pointerType: "mouse", spaceHeld: false };
 
@@ -47,6 +47,28 @@ describe("resolveCanvasDrag", () => {
   it("treats pen like a mouse", () => {
     expect(resolveCanvasDrag({ ...base, pointerType: "pen" })).toBe("pan");
     expect(resolveCanvasDrag({ ...base, pointerType: "pen", canPaint: true })).toBe("paint");
+  });
+});
+
+describe("isLiveRepairDrag", () => {
+  it("holds while a repair stroke is being painted", () => {
+    expect(isLiveRepairDrag("repair", 1)).toBe(true);
+    expect(isLiveRepairDrag("repair", 7)).toBe(true);
+  });
+
+  it("treats any non-null stroke id as live, including the legacy id", () => {
+    expect(isLiveRepairDrag("repair", 0)).toBe(true);
+  });
+
+  it("releases when the stroke ends (null), so the pipeline repaints and heals", () => {
+    expect(isLiveRepairDrag("repair", null)).toBe(false);
+  });
+
+  it("never holds outside the repair tool, even with a stale stroke id", () => {
+    expect(isLiveRepairDrag("adjust", 1)).toBe(false);
+    expect(isLiveRepairDrag("crop", 1)).toBe(false);
+    expect(isLiveRepairDrag("adjust", null)).toBe(false);
+    expect(isLiveRepairDrag("crop", null)).toBe(false);
   });
 });
 
