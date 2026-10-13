@@ -306,15 +306,15 @@ describe('single reset icon', () => {
     expect(count(html, 'ml-revert')).toBe(0);
   });
 
-  it('shows at most one hover-only reset per adjust header at defaults', () => {
+  it('shows no revert/reset icon in any adjust header at defaults', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, null, false);
     const headers = auditHeaders(html);
     for (const header of headers) {
-      expect(header.resets + header.reverts, `${header.title} must show at most one revert/reset icon`).toBeLessThanOrEqual(1);
+      expect(header.resets + header.reverts, `${header.title} must show no revert/reset icon at defaults`).toBe(0);
     }
-    // The five slider sections tease their hover-only reset; the snapshot
-    // sections render no icon at all when there is nothing to restore.
-    expect(count(html, 'section-reset')).toBe(5);
+    // Clean sections render no reset at all — not even hover-only; the
+    // snapshot sections likewise render no icon with nothing to restore.
+    expect(count(html, 'section-reset')).toBe(0);
     expect(count(html, 'ml-revert')).toBe(0);
   });
 

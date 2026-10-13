@@ -38,7 +38,7 @@ export interface AdjustmentSectionProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onReset?: () => void;
-  /** True when the section differs from its defaults: the reset icon stays visible. Otherwise it is hover-only. */
+  /** True when the section differs from its defaults: the reset icon renders. Otherwise no reset renders at all. */
   dirty?: boolean;
 }
 
@@ -71,11 +71,12 @@ export function AdjustmentSection({ title, icon, children, initiallyOpen = true,
     : (ml.applied ? (ml.canRevert ? `ML ${lower} applied — click to revert` : `ML ${lower} applied — click to re-apply`) : ml.canRevert ? `Re-apply automatic ${lower} with ML` : `Automatically adjust ${lower} with ML`)));
   // One reset control per header, left of the action button: while a
   // pre-apply snapshot exists it restores the pre-apply values, otherwise
-  // it resets the sliders to defaults. The icon stays visible while the
-  // section is non-default (dirty values or a live snapshot) and is
-  // hover-only at defaults. The action button stays rightmost (on/off via
-  // .is-active + aria-pressed, styled in apps/web/src/index.css).
+  // it resets the sliders to defaults. The icon renders only while the
+  // section is non-default (dirty values or a live snapshot) — a clean
+  // section renders no reset at all, not even hover-only. The action
+  // button stays rightmost (on/off via .is-active + aria-pressed, styled
+  // in apps/web/src/index.css).
   const resetActive = dirty || Boolean(ml?.canRevert);
   const onResetClick = ml && ml.canRevert ? ml.onRevert : onReset;
-  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onReset && <IconButton className={`section-reset${resetActive ? ' is-dirty' : ''}`} label={`Reset ${lower}`} onClick={onResetClick}><RotateCcw size={11} /></IconButton>}{ml && open && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} title={actionTitle} disabled={ml.disabled} onClick={ml.onToggle}>{actionLabel}</button>}{onToggle && <Toggle checked={Boolean(enabled)} onChange={onToggle} label={toggleLabel ?? `Show ${lower}`} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
+  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onReset && resetActive && <IconButton className="section-reset is-dirty" label={`Reset ${lower}`} onClick={onResetClick}><RotateCcw size={11} /></IconButton>}{ml && open && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} title={actionTitle} disabled={ml.disabled} onClick={ml.onToggle}>{actionLabel}</button>}{onToggle && <Toggle checked={Boolean(enabled)} onChange={onToggle} label={toggleLabel ?? `Show ${lower}`} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
 }

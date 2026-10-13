@@ -280,9 +280,8 @@ img { display: block; }
 .ml-button:hover { color: #f0d397; background: #6856383d; border-color: #8b7650; }
 .ml-button.is-active { color: #f0d397; background: #33302a; border-color: #8b7650; box-shadow: inset 0 0 0 1px #8b7650; }
 .ml-revert { width: 14px; height: 19px; color: #f0d397; }
-.section-reset { width: 14px; height: 19px; color: #90909c; opacity: 0; transition: opacity 130ms ease; }
+.section-reset { width: 14px; height: 19px; color: #90909c; opacity: 1; }
 .section-reset.is-dirty { opacity: 1; }
-.adjustment-heading:hover .section-reset, .section-reset:focus-visible { opacity: 1; }
 .section-actions .toggle { width: 23px; height: 13px; }
 .section-actions .toggle > span { width: 9px; height: 9px; }
 .section-actions .toggle.is-on > span { transform: translateX(10px); }

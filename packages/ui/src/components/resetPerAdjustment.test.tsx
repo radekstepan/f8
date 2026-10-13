@@ -119,11 +119,11 @@ function renderAdjust(
 }
 
 describe('reset per adjustment', () => {
-  it('shows a hover-only reset on every slider section at defaults', () => {
+  it('renders no reset on any slider section at defaults — not even hover-only', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
+    expect(html).not.toContain('section-reset');
     for (const label of ['Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation', 'Reset curves', 'Reset effects']) {
-      expect(html).toContain(`section-reset" title="${label}"`);
-      expect(html).not.toContain(`section-reset is-dirty" title="${label}"`);
+      expect(html).not.toContain(`aria-label="${label}"`);
     }
   });
 
@@ -149,18 +149,17 @@ describe('reset per adjustment', () => {
       const html = renderAdjust({ ...DEFAULT_EDIT, ...patch });
       expect(html).toContain(`section-reset is-dirty" title="${label}"`);
       for (const other of labels.filter((candidate) => candidate !== label)) {
-        expect(html, `${JSON.stringify(patch)} must not persist ${other}`).not.toContain(`section-reset is-dirty" title="${other}"`);
+        expect(html, `${JSON.stringify(patch)} must not render ${other}`).not.toContain(`aria-label="${other}"`);
       }
     }
   });
 
   it('treats a legacy-disabled category at default values as clean', () => {
     // The enabled flag flips back on the first slider drag, so values
-    // alone decide dirtiness: a disabled-but-default section owes no
-    // persistent reset (and its reset would have nothing to restore).
+    // alone decide dirtiness: a disabled-but-default section renders no
+    // reset at all (and its reset would have nothing to restore).
     const html = renderAdjust({ ...DEFAULT_EDIT, whiteBalanceEnabled: false });
-    expect(html).toContain('section-reset" title="Reset white balance"');
-    expect(html).not.toContain('section-reset is-dirty" title="Reset white balance"');
+    expect(html).not.toContain('aria-label="Reset white balance"');
   });
 
   it('keeps the dirty reset in the header while collapsed', () => {
@@ -212,15 +211,17 @@ describe('reset per adjustment', () => {
     expect(applied).toContain('section-reset is-dirty" title="Reset denoise"');
   });
 
-  it('keeps the reset box while making the dirty state persistent', () => {
-    // Base rule: same 14x19 icon box, hidden until hover at defaults.
+  it('keeps the reset box while rendering it only when dirty', () => {
+    // Base rule: same 14x19 icon box, always visible — clean sections
+    // render no reset at all, so there is nothing to hide until hover.
     expect(cssRule('.section-reset')).toMatch(/width\s*:\s*14px/);
     expect(cssRule('.section-reset')).toMatch(/height\s*:\s*19px/);
-    expect(cssRule('.section-reset')).toMatch(/opacity\s*:\s*0/);
-    // Dirty rule: a standalone selector (for the cssRule helper) that
-    // defeats the hover-only base without touching it.
+    expect(cssRule('.section-reset')).toMatch(/opacity\s*:\s*1/);
+    // Dirty rule: standalone selector (for the cssRule helper) matching
+    // the markup's always-dirty reset class.
     expect(cssRule('.section-reset.is-dirty')).toMatch(/opacity\s*:\s*1/);
-    // The hover reveal for clean sections stays until Task 10 retires it.
-    expect(css()).toMatch(/\.adjustment-heading:hover \.section-reset[^{]*\{\s*opacity\s*:\s*1/);
+    // The hover-only reveal is retired: no hover or focus rule may resurrect it.
+    expect(css()).not.toMatch(/\.adjustment-heading:hover \.section-reset/);
+    expect(css()).not.toMatch(/\.section-reset:focus-visible/);
   });
 });

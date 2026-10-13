@@ -90,10 +90,10 @@ describe('adjustment ML buttons', () => {
     expect(html.match(/auto-small/g)).toHaveLength(1);
     expect(html).toContain('class="auto-small" data-testid="auto-enhance-auto"');
     expect(html.match(/>Auto<\/button>/g)).toHaveLength(1);
-    // No snapshot and default values: every reset is hover-only.
+    // No snapshot and default values: no reset renders at all.
     expect(html).not.toContain('-ml-revert');
-    expect(html).not.toContain('section-reset is-dirty');
-    expect(html).toContain('aria-label="Reset white balance"');
+    expect(html).not.toContain('section-reset');
+    expect(html).not.toContain('aria-label="Reset white balance"');
   });
 
   it('shows a persistent reset next to the applied ML button only', () => {
@@ -111,11 +111,11 @@ describe('adjustment ML buttons', () => {
     expect(ml).toBeGreaterThan(-1);
     expect(reset).toBeGreaterThan(-1);
     expect(reset).toBeLessThan(ml);
-    // The other categories stay idle, with hover-only resets.
+    // The other categories stay idle, with no reset at all.
     expect(html).toContain('class="ml-button" data-testid="lightness-ml"');
     expect(html).toContain('class="ml-button" data-testid="color-ml"');
-    expect(html).toContain('section-reset" title="Reset lightness"');
-    expect(html).toContain('section-reset" title="Reset hue &amp; saturation"');
+    expect(html).not.toContain('aria-label="Reset lightness"');
+    expect(html).not.toContain('aria-label="Reset hue &amp; saturation"');
   });
 
   it('keeps the reset persistent after manual edits cleared the highlight', () => {
@@ -126,8 +126,7 @@ describe('adjustment ML buttons', () => {
     expect(html).toContain('class="ml-button" data-testid="white-balance-ml"');
     expect(html).toContain('title="Re-apply automatic white balance with ML"');
     expect(html).toContain('section-reset is-dirty" title="Reset white balance"');
-    expect(html).toContain('section-reset" title="Reset lightness"');
-    expect(html).not.toContain('section-reset is-dirty" title="Reset lightness"');
+    expect(html).not.toContain('aria-label="Reset lightness"');
   });
 
   it('tracks applied state per category', () => {
@@ -137,45 +136,49 @@ describe('adjustment ML buttons', () => {
     expect(html).toContain('section-reset is-dirty" title="Reset lightness"');
     expect(html).toContain('section-reset is-dirty" title="Reset hue &amp; saturation"');
     expect(html).toContain('class="ml-button" data-testid="white-balance-ml"');
-    expect(html).toContain('section-reset" title="Reset white balance"');
-    expect(html).not.toContain('section-reset is-dirty" title="Reset white balance"');
+    expect(html).not.toContain('aria-label="Reset white balance"');
   });
 
-  it('offers one reset control per header: persistent while non-default, hover-only at defaults', () => {
+  it('offers one reset control per header: persistent while non-default, absent at defaults', () => {
     // A pre-ML snapshot keeps the reset persistent even at default slider values.
     const applied = renderAdjust({ ...DEFAULT_EDIT }, { lightness: true }, { lightness: true });
     expect(applied).toContain('section-reset is-dirty" title="Reset lightness"');
     expect(applied).not.toContain('-ml-revert');
-    // No snapshot, default values: the same control, hover-only.
+    // No snapshot, default values: no reset control at all.
     const idle = renderAdjust({ ...DEFAULT_EDIT });
-    expect(idle).toContain('section-reset" title="Reset lightness"');
-    expect(idle).not.toContain('section-reset is-dirty" title="Reset lightness"');
+    expect(idle).not.toContain('aria-label="Reset lightness"');
     // The touched-but-unhighlighted state stays persistent (snapshot kept).
     const touched = renderAdjust({ ...DEFAULT_EDIT }, {}, { lightness: true });
     expect(touched).toContain('section-reset is-dirty" title="Reset lightness"');
     // Dirty sliders persist the reset with no snapshot at all.
     const dirty = renderAdjust({ ...DEFAULT_EDIT, exposure: 0.5 });
     expect(dirty).toContain('section-reset is-dirty" title="Reset lightness"');
-    expect(dirty).toContain('section-reset" title="Reset white balance"');
+    expect(dirty).not.toContain('aria-label="Reset white balance"');
   });
 
   it('keeps the ML button rightmost with the reset control left of it', () => {
-    for (const html of [
-      renderAdjust({ ...DEFAULT_EDIT }),
-      renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true }, { whiteBalance: true }),
-    ]) {
-      for (const id of ['white-balance', 'lightness', 'color'] as const) {
-        const ml = html.indexOf(`data-testid="${id}-ml"`);
-        expect(ml).toBeGreaterThan(-1);
-        const section = html.slice(Math.max(0, ml - 800), ml);
-        // The single reset icon precedes the ML button in its row.
-        const actions = section.slice(section.lastIndexOf('section-actions'));
-        expect(actions).toContain('section-reset');
-        expect(actions).not.toContain('ml-revert');
-        // The ML button closes the row: button end tag, then the row end tag.
-        const after = html.slice(ml, ml + 400);
-        expect(after).toMatch(new RegExp(`data-testid="${id}-ml"[^>]*>ML</button></div>`));
-      }
+    // Every category dirty, so every header carries its reset.
+    const html = renderAdjust({ ...DEFAULT_EDIT, temperature: 5800, exposure: 0.5, saturation: 8 });
+    for (const id of ['white-balance', 'lightness', 'color'] as const) {
+      const ml = html.indexOf(`data-testid="${id}-ml"`);
+      expect(ml).toBeGreaterThan(-1);
+      const section = html.slice(Math.max(0, ml - 800), ml);
+      // The single reset icon precedes the ML button in its row.
+      const actions = section.slice(section.lastIndexOf('section-actions'));
+      expect(actions).toContain('section-reset');
+      expect(actions).not.toContain('ml-revert');
+      // The ML button closes the row: button end tag, then the row end tag.
+      const after = html.slice(ml, ml + 400);
+      expect(after).toMatch(new RegExp(`data-testid="${id}-ml"[^>]*>ML</button></div>`));
+    }
+    // At defaults no header carries a reset, so the ML button stands alone.
+    const idle = renderAdjust({ ...DEFAULT_EDIT });
+    expect(idle).not.toContain('section-reset');
+    for (const id of ['white-balance', 'lightness', 'color'] as const) {
+      const ml = idle.indexOf(`data-testid="${id}-ml"`);
+      expect(ml).toBeGreaterThan(-1);
+      const after = idle.slice(ml, ml + 400);
+      expect(after).toMatch(new RegExp(`data-testid="${id}-ml"[^>]*>ML</button></div>`));
     }
   });
 
