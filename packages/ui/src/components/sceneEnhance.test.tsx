@@ -4,9 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
-import type { EditState, HistoryState, Photo } from '@f8/core';
+import type { ActionStack, ActionStackEntry, EditState, Photo } from '@f8/core';
 import { Inspector } from './Inspector.js';
 import { useEditor } from '../hooks/useEditor.js';
+import type { EditorSeed } from '../hooks/useEditor.js';
 
 // ML scene-enhance row, rendered on the server (no jsdom): effects never
 // run, so this pins the markup + prop wiring, not click behavior.
@@ -175,33 +176,110 @@ describe('scene enhance row', () => {
   });
 });
 
+/** Reload wiring probe: the seeded editor drives the Inspector, like App does after a hard reload. */
+function ReloadProbe({ seed }: { seed: EditorSeed }) {
+  const editor = useEditor('p1', { initial: seed });
+  return (
+    <Inspector
+      photo={makePhoto()}
+      edit={editor.edit}
+      tool="adjust"
+      histogram={null}
+      brushSize={45}
+      brushStrength={100}
+      canPaste={false}
+      onChange={noop}
+      onRotate={noop}
+      onStraighten={noop}
+      onReset={noop}
+      onAuto={noop}
+      onAutoScene={noop}
+      enhanceMode={editor.enhanceMode}
+      enhancePure={editor.enhancePure}
+      enhanceCanRevert={editor.enhanceCanRevert}
+      onRevertEnhance={noop}
+      onAutoWhiteBalance={noop}
+      onAutoLightness={noop}
+      onAutoColor={noop}
+      onRevertWhiteBalance={noop}
+      onRevertLightness={noop}
+      onRevertColor={noop}
+      mlApplied={editor.mlApplied}
+      mlRevert={editor.mlRevert}
+      onCopy={noop}
+      onPaste={noop}
+      onSavePreset={noop}
+      onBrushSize={noop}
+      onBrushStrength={noop}
+      onClose={noop}
+    />
+  );
+}
+
 describe('scene enhance reload', () => {
   // Server-rendered probe: SSR runs the hook's state initializers but never
   // effects, so this pins the synchronous seed path — the async seed effect
-  // maps the same flags through the same helper.
-  const seedFor = (present: EditState): Record<string, HistoryState> => ({ p1: { past: [], present, future: [] } });
-
-  function EnhanceSeedProbe({ seed, photoId }: { seed: Record<string, HistoryState>; photoId: string }) {
-    const editor = useEditor(photoId, { initial: seed });
-    return <span data-testid="enhance-seed" data-mode={editor.enhanceMode ?? 'none'} data-pure={String(editor.enhancePure)} data-revert={String(editor.enhanceCanRevert)} />;
-  }
-
-  const seedHtml = (seed: Record<string, HistoryState>, photoId = 'p1'): string =>
-    renderToStaticMarkup(<EnhanceSeedProbe seed={seed} photoId={photoId} />);
-
-  it('seeds no scene highlight from the persisted scene', () => {
-    // The pre-enhance snapshot is session-only, so a reload cannot offer
-    // a revert — and must not show the enabled highlight either (an
-    // enabled button with no reset next to it). The persisted flags stay
-    // in the recipe; only the highlight waits for a fresh apply.
-    const html = seedHtml(seedFor({ ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } }));
-    expect(html).toContain('data-mode="none"');
-    expect(html).toContain('data-pure="false"');
-    expect(html).toContain('data-revert="false"');
+  // maps the same seed through the same sanitizer.
+  const seedFor = (present: EditState, actions: ActionStack = []): EditorSeed => ({
+    histories: { p1: { past: [], present, future: [] } },
+    actions: { p1: actions },
   });
 
-  it('seeds no classic highlight from the auto flag alone', () => {
-    const html = seedHtml(seedFor({ ...DEFAULT_EDIT, autoEnhanced: true }));
+  function EnhanceSeedProbe({ seed, photoId }: { seed: EditorSeed; photoId: string }) {
+    const editor = useEditor(photoId, { initial: seed });
+    return <span data-testid="enhance-seed" data-mode={editor.enhanceMode ?? 'none'} data-pure={String(editor.enhancePure)} data-revert={String(editor.enhanceCanRevert)} data-wb={`${String(Boolean(editor.mlApplied.whiteBalance))}/${String(Boolean(editor.mlRevert.whiteBalance))}`} data-lightness={`${String(Boolean(editor.mlApplied.lightness))}/${String(Boolean(editor.mlRevert.lightness))}`} data-color={`${String(Boolean(editor.mlApplied.color))}/${String(Boolean(editor.mlRevert.color))}`} />;
+  }
+
+  const seedHtml = (seed: EditorSeed, photoId = 'p1'): string =>
+    renderToStaticMarkup(<EnhanceSeedProbe seed={seed} photoId={photoId} />);
+
+  const sceneStack: ActionStack = [{
+    kind: 'enhance',
+    mode: 'scene',
+    pure: true,
+    snapshot: { exposure: 0, contrast: 0, preset: 'Original' },
+    appliedAt: '2026-10-13T00:00:00.000Z',
+  }];
+
+  it('restores the scene highlight and revert from the persisted stack', () => {
+    // The reload state: recipe plus its action stack — the ML button keeps
+    // its highlight AND its revert instead of reopening idle.
+    const html = seedHtml(seedFor(
+      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
+      sceneStack,
+    ));
+    expect(html).toContain('data-mode="scene"');
+    expect(html).toContain('data-pure="true"');
+    expect(html).toContain('data-revert="true"');
+  });
+
+  it('restores a manually-touched stack as revert-without-highlight', () => {
+    // Pure cleared in-session (manual edit after the apply) persists that
+    // way: the revert survives the reload, the highlight stays off.
+    const html = seedHtml(seedFor(
+      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 }, exposure: 0.5 },
+      [{ ...sceneStack[0], pure: false } as ActionStackEntry],
+    ));
+    expect(html).toContain('data-mode="scene"');
+    expect(html).toContain('data-pure="false"');
+    expect(html).toContain('data-revert="true"');
+  });
+
+  it('restores every per-category auto highlight and revert from the stack', () => {
+    const html = seedHtml(seedFor({ ...DEFAULT_EDIT, temperature: 5800, tint: 6, exposure: 0.2 }, [
+      { kind: 'whiteBalance', pure: true, snapshot: { temperature: 5500, tint: 0 }, appliedAt: '2026-10-13T00:00:00.000Z' },
+      { kind: 'lightness', pure: false, snapshot: { exposure: 0 }, appliedAt: '2026-10-13T00:01:00.000Z' },
+    ]));
+    expect(html).toContain('data-wb="true/true"');
+    expect(html).toContain('data-lightness="false/true"');
+    expect(html).toContain('data-color="false/false"');
+  });
+
+  it('seeds no highlight from persisted flags alone (legacy stack-less recipe)', () => {
+    // Pre-stack recipes carry the auto flags but no revert snapshot — the
+    // buttons reopen idle (never enabled-without-a-reset) until a fresh
+    // apply pushes a stack entry.
+    const html = seedHtml(seedFor({ ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } }));
     expect(html).toContain('data-mode="none"');
     expect(html).toContain('data-pure="false"');
     expect(html).toContain('data-revert="false"');
@@ -209,13 +287,28 @@ describe('scene enhance reload', () => {
 
   it('seeds no highlight for unenhanced recipes or unknown photos', () => {
     expect(seedHtml(seedFor({ ...DEFAULT_EDIT }))).toContain('data-mode="none"');
-    expect(seedHtml(seedFor({ ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } }), 'p2')).toContain('data-mode="none"');
+    expect(seedHtml(seedFor(
+      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
+      sceneStack,
+    ), 'p2')).toContain('data-mode="none"');
   });
 
-  it('renders the reloaded ML idle with no reset, keeping the scene badge', () => {
-    // The reload state: persisted scene, but no session mode — so the ML
-    // button reopens idle (never enabled-without-a-reset) with the plain
-    // apply tooltip, while the persisted scene badge still shows what ran.
+  it('renders the reloaded ML applied with its reset and scene badge', () => {
+    // The full reload wiring in one render: the seeded editor drives the
+    // Inspector, so the ML button highlights, the reset restores the
+    // persisted snapshot, and the scene badge still shows what ran.
+    const html = renderToStaticMarkup(<ReloadProbe seed={seedFor(
+      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
+      sceneStack,
+    )} />);
+    expect(html).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('title="ML scene enhance applied — click to revert"');
+    expect(html).toContain('aria-label="Reset scene enhance"');
+    expect(html).toContain('data-testid="scene-enhance-scene"');
+  });
+
+  it('renders a legacy stack-less reload idle with no reset, keeping the scene badge', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       noop,
@@ -228,15 +321,13 @@ describe('scene enhance reload', () => {
   });
 
   it('keeps per-section resets for reloaded enhance values', () => {
-    // The stored values are still undoable after a reload — just through
-    // the per-section (and toolbar) resets, not the session revert icon.
+    // The stored values are still adjustable after a reload through the
+    // per-section (and toolbar) resets, alongside the persisted revert.
     const html = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, exposure: 0.22, clarity: 12 },
       noop,
     );
     expect(html).toContain('aria-label="Reset lightness"');
     expect(html).toContain('aria-label="Reset details"');
-    expect(html).not.toContain('aria-label="Reset scene enhance"');
-    expect(html).not.toContain('aria-label="Reset auto enhance"');
   });
 });

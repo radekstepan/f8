@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { DEFAULT_EDIT, normalizeUserLabel } from "@f8/core";
-import type { EditState, LibraryPhoto, PhotoLabel } from "@f8/core";
+import type { ActionStack, EditState, LibraryPhoto, PhotoLabel } from "@f8/core";
 import type { ServerConfig } from "./config.ts";
 import { getHealProgress, getMlHealHealth, kickEngineReady, runRemoteHeal, validateRemoteBody } from "./ml-heal.ts";
 import type { RemoteHealEngine } from "./ml-heal.ts";
@@ -132,6 +132,7 @@ function toApiPhoto(row: PhotoRow, edit: StoredEdit, labels: PhotoLabel[] = []):
     // A reset stamps updated_at too, so only edited photos carry a timestamp.
     editedAt: edit.edited ? edit.updatedAt : null,
     edit: edit.present,
+    actions: edit.actions,
     hash: row.hash,
     path: file ? row.path : null,
     importedAt: row.created_at,
@@ -759,11 +760,15 @@ export function createApp(ctx: AppContext): Hono {
     if (found instanceof Response) return found;
     const parsed = await readJson(c);
     if (!parsed.ok) return c.json({ error: "Invalid request." }, 400);
-    const { present } = parsed.value;
+    const { present, actions } = parsed.value;
     if (!present || typeof present !== "object" || Array.isArray(present)) {
       return c.json({ error: "Invalid edit." }, 400);
     }
-    const edit = store.saveEdit(found.id, { ...DEFAULT_EDIT, ...(present as Partial<EditState>) });
+    // An omitted stack preserves the stored one (legacy recipe-only
+    // writers); a present stack — including [] — replaces it.
+    const edit = actions === undefined
+      ? store.saveEdit(found.id, { ...DEFAULT_EDIT, ...(present as Partial<EditState>) })
+      : store.saveEdit(found.id, { ...DEFAULT_EDIT, ...(present as Partial<EditState>) }, actions as ActionStack);
     const row = store.getPhoto(found.id);
     if (!row) return c.json({ error: "Photo not found." }, 404);
     return c.json({ photo: toApiPhoto(row, edit, store.getLabels(row.id)) });

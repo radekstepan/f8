@@ -72,6 +72,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 | `packages/core/src/data.ts` | Sample library, default adjustments, built-in presets, and crop ratios. |
 | `packages/core/src/image.ts` | Shared image loading, geometry, filter mapping, retouching, effects, and export. |
 | `packages/core/src/library.ts` | Library API contract and framework-free HTTP client. |
+| `packages/core/src/actionStack.ts` | Persisted auto-action stack: applied Autos with their revert snapshots, plus stack transitions and sanitizing. |
 | `packages/ui/src/hooks/useEditor.ts` | Non-destructive per-photo edits, grouped history, server persistence, and preset application. |
 | `packages/ui/src/hooks/useLibrary.ts` | Server library state: loading, uploads, folder import, and metadata. |
 | `packages/ui/src/components/EditorUI.tsx` | Reusable buttons, sliders, switches, selects, menus, and accessible dialogs. |
@@ -111,7 +112,7 @@ Extend the `Tool` or `DialogType` union in `packages/core/src/types.ts`, add the
 - **Hash identity.** Every original is SHA-256 hashed at import. Reimporting a moved file relinks it to its record (edits intact); reimporting the same bytes anywhere reports a duplicate instead of a second record.
 - **Folder albums.** A folder import files each folder into its own album, named from the folder ("2026-europe-trip" becomes "2026 Europe Trip") and reused on reimport; importing while viewing an album files into that album instead. A local folder picked via `File → Import Folder as Album…` or dropped onto the app uploads the same way, into a new album named from the folder.
 - **Missing files.** A photo whose file is gone shows a Missing badge; opening it offers to locate the original, and any folder import that finds the bytes heals it automatically.
-- **Non-destructive edits.** The original is never written to. Each photo keeps one edit recipe in SQLite, saved ~500ms after each change; undo/redo stacks stay session-only.
+- **Non-destructive edits.** The original is never written to. Each photo keeps one edit recipe in SQLite, saved ~500ms after each change, plus a persisted action stack recording every applied Auto adjustment with the snapshot its revert restores — so each Auto stays individually revertible across a hard reload. Only the undo/redo stacks stay session-only.
 - **RAW decoding.** Camera RAW files are decoded at full sensor resolution at import (LibRaw with camera white balance, sRGB output, JPEG quality 92), so the library shows and edits true RAW dimensions — e.g. a 24MP Sony ARW imports as 4024×6024. Requires `dcraw_emu` (`brew install libraw`, or `apt install libraw-bin` on Linux) plus a JPEG encoder (`magick`, `convert`, or macOS `sips`). A file that cannot be decoded fails its import with the reason (missing toolchain, corrupt file, timeout) instead of entering the library as a low-res preview.
 - **Samples.** The first boot seeds the twelve sample photos as URL records (no local bytes, never missing), with photo-1 starting on the Natural preset.
 
@@ -158,7 +159,7 @@ The primary tokens are at the top of `apps/web/src/index.css`: `--accent`, `--ac
 
 ## Persistence and Privacy
 
-Photos, edits, favorites, ratings, albums, and custom presets live in the server's SQLite database; undo/redo history is session-only. The browser keeps no photo state — everything survives reloads, and edits reapply to the referenced originals every time.
+Photos, edits, favorites, ratings, albums, and custom presets live in the server's SQLite database, as does each photo's auto-action stack (every applied Auto plus its revert snapshot); only undo/redo history is session-only. The browser keeps no photo state — everything survives reloads, and edits reapply to the referenced originals every time.
 
 Everything stays on your machine: the server binds to localhost, originals stay in your folders, and nothing is uploaded anywhere. Remote sample images and the optional Inter font require an internet connection.
 

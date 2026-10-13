@@ -127,24 +127,28 @@ describe("cull assist", () => {
     return row;
   }
 
-  it("migrates a v2 catalog to v4 without losing photos", async () => {
+  it("migrates a v2 catalog to v5 without losing photos", async () => {
     const row = photoRow({ id: "keep-me" });
     ctx.store.insertPhoto(row);
     const dbPath = path.join(ctx.dir, "data", "f8.db");
-    // Downgrade in place: drop the v3 tables, stamp version 2, reopen.
+    // Downgrade in place: drop the v3 tables and the v5 stack column, stamp
+    // version 2, reopen. The reopen runs every later migration, so the
+    // version assert tracks the latest schema.
     const { DatabaseSync } = await import("node:sqlite");
     const raw = new DatabaseSync(dbPath);
     try {
-      raw.exec("DROP TABLE photo_cull_labels; DROP TABLE photo_cull; UPDATE meta SET value = '2' WHERE key = 'schema_version';");
+      raw.exec("DROP TABLE photo_cull_labels; DROP TABLE photo_cull; ALTER TABLE photo_edits DROP COLUMN actions_json; UPDATE meta SET value = '2' WHERE key = 'schema_version';");
     } finally {
       raw.close();
     }
     const reopened = openDatabase(dbPath);
     try {
       const version = (reopened.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }).value;
-      expect(version).toBe("4");
+      expect(version).toBe("5");
       const tables = (reopened.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('photo_cull', 'photo_cull_labels')").all() as { name: string }[]).map((entry) => entry.name).sort();
       expect(tables).toEqual(["photo_cull", "photo_cull_labels"]);
+      const columns = (reopened.prepare("SELECT name FROM pragma_table_info('photo_edits')").all() as { name: string }[]).map((entry) => entry.name);
+      expect(columns).toContain("actions_json");
       expect((reopened.prepare("SELECT id FROM photos WHERE id = 'keep-me'").get() as { id: string }).id).toBe("keep-me");
     } finally {
       reopened.close();
@@ -165,14 +169,16 @@ describe("cull assist", () => {
     const { DatabaseSync } = await import("node:sqlite");
     const raw = new DatabaseSync(dbPath);
     try {
-      raw.exec("UPDATE meta SET value = '3' WHERE key = 'schema_version';");
+      // The downgrade also drops the v5 stack column: a real v3 catalog
+      // never had it, and the reopen re-adds it via migration 5.
+      raw.exec("ALTER TABLE photo_edits DROP COLUMN actions_json; UPDATE meta SET value = '3' WHERE key = 'schema_version';");
     } finally {
       raw.close();
     }
     const reopened = openDatabase(dbPath);
     try {
       const version = (reopened.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }).value;
-      expect(version).toBe("4");
+      expect(version).toBe("5");
       const rows = reopened.prepare("SELECT photo_id AS photoId, label, source FROM photo_labels ORDER BY photo_id, label").all() as {
         photoId: string; label: string; source: string;
       }[];

@@ -61,9 +61,10 @@ export function AdjustmentSection({ title, icon, children, initiallyOpen = true,
   const kind = ml?.kind ?? 'ml';
   const actionLabel = kind === 'auto' ? 'Auto' : 'ML';
   const actionClass = kind === 'auto' ? 'auto-small' : 'ml-button';
-  // Applied without a snapshot is the reload-seeded enhance state (flags
-  // persist, the pre-enhance snapshot does not): clicking re-applies fresh
-  // instead of reverting, and the tooltip must not promise a revert.
+  // Applied without a snapshot is a draft state with no revert (Denoise's
+  // ISO suggestion): clicking re-applies fresh instead of reverting, and
+  // the tooltip must not promise a revert. Auto actions always carry their
+  // persisted stack snapshot, so applied implies canRevert for them.
   const actionTitle = !ml ? '' : (ml.title ?? (kind === 'auto'
     ? (ml.applied ? (ml.canRevert ? `${title} applied — click to revert` : `${title} applied — click to re-apply`) : ml.canRevert ? `Re-apply ${lower}` : `Apply ${lower} automatically`)
     : (ml.applied ? (ml.canRevert ? `ML ${lower} applied — click to revert` : `ML ${lower} applied — click to re-apply`) : ml.canRevert ? `Re-apply automatic ${lower} with ML` : `Automatically adjust ${lower} with ML`)));

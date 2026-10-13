@@ -1,3 +1,4 @@
+import type { ActionStack } from "./actionStack.js";
 import type { Album, EditState, Photo, PhotoLabel, Preset } from "./types.js";
 
 // A photo record served by the library server: the shared Photo shape plus
@@ -10,6 +11,8 @@ export interface LibraryPhoto extends Photo {
   /** ISO timestamp of the last saved non-default edit; null when unedited. */
   editedAt: string | null;
   edit: EditState;
+  /** Applied auto actions with their revert snapshots (persisted action stack; empty when no auto revert exists). */
+  actions: ActionStack;
   /** SHA-256 of the original bytes; the stable identity across moves and reimports. Null for URL photos. */
   hash: string | null;
   /** Server-local absolute path of a referenced original; null for URL photos. */
@@ -176,7 +179,7 @@ export interface LibraryClient {
   importByPath: (paths: string[], albumId?: string) => Promise<ImportReport>;
   updatePhoto: (id: string, patch: PhotoPatch) => Promise<{ photo: LibraryPhoto }>;
   updateLabels: (id: string, patch: { add?: string[]; remove?: string[] }) => Promise<{ photo: LibraryPhoto }>;
-  saveEdit: (id: string, present: EditState) => Promise<{ photo: LibraryPhoto }>;
+  saveEdit: (id: string, present: EditState, actions?: ActionStack) => Promise<{ photo: LibraryPhoto }>;
   semanticSearch: (q: string, limit?: number) => Promise<SemanticSearchResponse>;
   labelAlbum: (albumId: string) => Promise<LabelAlbumReport>;
   semanticHealth: () => Promise<SemanticSearchHealth>;
@@ -223,9 +226,9 @@ export function createLibraryClient(baseUrl = ""): LibraryClient {
         ...json(patch),
         method: "PATCH",
       }),
-    saveEdit: (id, present) =>
+    saveEdit: (id, present, actions) =>
       request<{ photo: LibraryPhoto }>(url(`/api/photos/${encodeURIComponent(id)}/edit`), {
-        ...json({ present }),
+        ...json(actions === undefined ? { present } : { present, actions }),
         method: "PUT",
       }),
     updateLabels: (id, patch) =>

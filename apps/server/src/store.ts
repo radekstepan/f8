@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
-import { DEFAULT_EDIT } from "@f8/core";
-import type { Album, EditState, PhotoLabel, Preset } from "@f8/core";
+import { DEFAULT_EDIT, sanitizeActionStack } from "@f8/core";
+import type { ActionStack, Album, EditState, PhotoLabel, Preset } from "@f8/core";
 
 export interface PhotoRow {
   id: string;
@@ -37,6 +37,8 @@ export interface StoredEdit {
   edited: boolean;
   /** ISO timestamp of the last save; null when no recipe was ever stored. */
   updatedAt: string | null;
+  /** Applied auto actions with their revert snapshots; empty when no auto revert exists. */
+  actions: ActionStack;
 }
 
 interface AlbumRow {
@@ -134,13 +136,32 @@ function labelRowToPhotoLabel(row: { label: string; score: number; source: strin
 
 const DEFAULT_EDIT_JSON = JSON.stringify(DEFAULT_EDIT);
 
-function parseEdit(presentJson: string | null | undefined, editedFlag: boolean, updatedAt: string | null): StoredEdit {
-  if (!presentJson) return { present: { ...DEFAULT_EDIT }, edited: false, updatedAt: null };
+function parseActions(actionsJson: string | null | undefined): ActionStack {
+  if (!actionsJson) return [];
+  try {
+    return sanitizeActionStack(JSON.parse(actionsJson) as unknown);
+  } catch {
+    return [];
+  }
+}
+
+function parseEdit(
+  presentJson: string | null | undefined,
+  editedFlag: boolean,
+  updatedAt: string | null,
+  actionsJson: string | null | undefined,
+): StoredEdit {
+  if (!presentJson) return { present: { ...DEFAULT_EDIT }, edited: false, updatedAt: null, actions: [] };
   try {
     // Merging over DEFAULT_EDIT tolerates recipes saved by older app versions.
-    return { present: { ...DEFAULT_EDIT, ...(JSON.parse(presentJson) as Partial<EditState>) }, edited: editedFlag, updatedAt };
+    return {
+      present: { ...DEFAULT_EDIT, ...(JSON.parse(presentJson) as Partial<EditState>) },
+      edited: editedFlag,
+      updatedAt,
+      actions: parseActions(actionsJson),
+    };
   } catch {
-    return { present: { ...DEFAULT_EDIT }, edited: false, updatedAt: null };
+    return { present: { ...DEFAULT_EDIT }, edited: false, updatedAt: null, actions: [] };
   }
 }
 
@@ -229,22 +250,28 @@ export function createStore(db: DatabaseSync) {
 
     getEdit: (photoId: string): StoredEdit => {
       const row = db
-        .prepare("SELECT present_json, edited, updated_at FROM photo_edits WHERE photo_id = ?")
-        .get(photoId) as { present_json: string; edited: number; updated_at: string } | undefined;
-      if (!row) return { present: { ...DEFAULT_EDIT }, edited: false, updatedAt: null };
-      return parseEdit(row.present_json, row.edited === 1, row.updated_at);
+        .prepare("SELECT present_json, edited, updated_at, actions_json FROM photo_edits WHERE photo_id = ?")
+        .get(photoId) as { present_json: string; edited: number; updated_at: string; actions_json: string | null } | undefined;
+      if (!row) return { present: { ...DEFAULT_EDIT }, edited: false, updatedAt: null, actions: [] };
+      return parseEdit(row.present_json, row.edited === 1, row.updated_at, row.actions_json);
     },
 
-    saveEdit: (photoId: string, present: EditState): StoredEdit => {
+    saveEdit: (photoId: string, present: EditState, actions?: ActionStack): StoredEdit => {
       const canonical = { ...DEFAULT_EDIT, ...present };
+      // The stack is provenance, not look: it never marks a photo edited.
       const edited = JSON.stringify(canonical) !== DEFAULT_EDIT_JSON;
       const updatedAt = now();
+      // An omitted stack preserves the stored one, so legacy recipe-only
+      // writers (older clients, scripts) never wipe auto reverts.
+      const nextActions = actions === undefined ? parseActions(
+        (db.prepare("SELECT actions_json FROM photo_edits WHERE photo_id = ?").get(photoId) as { actions_json: string | null } | undefined)?.actions_json,
+      ) : sanitizeActionStack(actions);
       db.prepare(
-        `INSERT INTO photo_edits (photo_id, present_json, edited, updated_at) VALUES (?, ?, ?, ?)
+        `INSERT INTO photo_edits (photo_id, present_json, edited, updated_at, actions_json) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT (photo_id) DO UPDATE SET present_json = excluded.present_json,
-           edited = excluded.edited, updated_at = excluded.updated_at`,
-      ).run(photoId, JSON.stringify(canonical), edited ? 1 : 0, updatedAt);
-      return { present: canonical, edited, updatedAt };
+           edited = excluded.edited, updated_at = excluded.updated_at, actions_json = excluded.actions_json`,
+      ).run(photoId, JSON.stringify(canonical), edited ? 1 : 0, updatedAt, JSON.stringify(nextActions));
+      return { present: canonical, edited, updatedAt, actions: nextActions };
     },
 
     listAlbums: (): Album[] =>

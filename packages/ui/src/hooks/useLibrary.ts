@@ -6,8 +6,10 @@ import {
   createLibraryClient,
   createPendingPhotoMeta,
   resolveImportSelection,
+  sanitizeActionStack,
 } from "@f8/core";
 import type {
+  ActionStack,
   Album,
   EditState,
   HistoryState,
@@ -43,7 +45,7 @@ export function useLibrary() {
   const [photos, setPhotos] = useState<LibraryPhoto[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [customPresets, setCustomPresets] = useState<Preset[]>([]);
-  const [editsSeed, setEditsSeed] = useState<Record<string, HistoryState> | null>(null);
+  const [editsSeed, setEditsSeed] = useState<{ histories: Record<string, HistoryState>; actions: Record<string, ActionStack> } | null>(null);
   const [error, setError] = useState("");
   const generation = useRef(0);
   // Optimistic star/rating state: meta patches apply locally at click time
@@ -80,11 +82,16 @@ export function useLibrary() {
       setPhotos(snapshot.photos);
       setAlbums(snapshot.albums);
       setCustomPresets(snapshot.presets);
-      setEditsSeed(
-        Object.fromEntries(
+      setEditsSeed({
+        histories: Object.fromEntries(
           snapshot.photos.map((photo) => [photo.id, { past: [], present: photo.edit, future: [] }]),
         ),
-      );
+        // Recipes and their auto-action stacks seed together: a reload
+        // restores every Auto's highlight and revert, not just its values.
+        actions: Object.fromEntries(
+          snapshot.photos.map((photo) => [photo.id, sanitizeActionStack(photo.actions)]),
+        ),
+      });
       setStatus("ready");
     } catch (reason) {
       if (generation.current !== ticket) return;
@@ -226,8 +233,8 @@ export function useLibrary() {
   );
 
   const saveEdit = useCallback(
-    (photoId: string, present: EditState) => {
-      void client.saveEdit(photoId, present).then(
+    (photoId: string, present: EditState, actions: ActionStack) => {
+      void client.saveEdit(photoId, present, actions).then(
         ({ photo }) => upsertPhotos([photo]),
         (reason: unknown) => markOfflineIfDown(reason),
       );

@@ -224,9 +224,9 @@ export interface EditState {
    * Set when ML scene enhance applied this recipe (the detected scene +
    * confidence for the UI badge). Null/absent for classic enhances and
    * legacy server recipes. The badge shows whenever set; the button
-   * highlight seeds from these flags on reload and drops on the first
-   * manual look edit, while the pre-enhance snapshot behind the revert
-   * stays session-only.
+   * highlight and revert seed from the persisted action stack on reload
+   * (flags alone seed nothing), and the highlight drops on the first
+   * manual look edit while the revert snapshot stays.
    */
   sceneEnhance?: SceneEnhanceResult | null;
   /**

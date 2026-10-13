@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 // The schema lives here as a string (rather than a .sql asset) so `tsc`
 // emits a self-contained dist with no asset copying.
@@ -114,6 +114,13 @@ const MIGRATION_4 = `
 DELETE FROM photo_labels WHERE label = 'keeper' AND source = 'ml';
 `;
 
+// Persisted auto-action stack: each photo's applied Auto adjustments plus
+// the snapshots their reverts restore, so every Auto stays revertible
+// across a hard reload. NULL on pre-stack rows reads as an empty stack.
+const MIGRATION_5 = `
+ALTER TABLE photo_edits ADD COLUMN actions_json TEXT;
+`;
+
 function currentVersion(db: DatabaseSync): number {
   const row = db
     .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
@@ -147,6 +154,10 @@ function migrate(db: DatabaseSync): void {
   if (currentVersion(db) < 4) {
     db.exec(MIGRATION_4);
     setVersion(db, 4);
+  }
+  if (currentVersion(db) < 5) {
+    db.exec(MIGRATION_5);
+    setVersion(db, 5);
   }
 }
 

@@ -162,10 +162,10 @@ describe('auto enhance header button', () => {
   });
 
   it('renders the reloaded Auto idle with no reset and an apply tooltip', () => {
-    // Same reload state as the scene ML (see sceneEnhance.test.tsx): the
-    // persisted auto flag stays in the recipe, but no session mode exists
-    // — so the header Auto reopens idle (never enabled-without-a-reset)
-    // with the plain apply tooltip, while the stored values keep their
+    // Legacy stack-less reload (see sceneEnhance.test.tsx): the persisted
+    // auto flag stays in the recipe, but no stack entry exists — so the
+    // header Auto reopens idle (never enabled-without-a-reset) with the
+    // plain apply tooltip, while the stored values keep their
     // per-section resets.
     const html = renderInspector(
       'adjust',
