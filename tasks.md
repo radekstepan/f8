@@ -12,29 +12,23 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-For adjustments, on each category, I like to have a "ML" button which applies the change automatically and next to it (when applied) has a revert little icon. Do it that way rather than having toggles. Toggles toggle visibility of the category. You can also click the ML "button" again to revert.
+Review all the components we use throughout the app and make sure we use common ones and not copying code for the same UI.
 
-Auto straighten should jsut be a button and if no hprizon detected flash a message over the photo just like when we say how to use the Repair tool. If we do apply a rotation then toggle the auto straighten button to "on". Clicking it again reverts the change. In fact, I want more actions to work this way. A single button. A toast. A way to revert by clicking again. If I manually rotate a photo after, the Auto straighten button should not show as toggled because I edited the photo manually after the initial ML rotation.
+The "Subject & Background" toggle (is it?) is this wide weird bar. Ugly as sin.
 
-Be able to import a whole folder, extract the album name from the folder name
+ML Denoise I should be able to click "Auto" but then be able to fine-grain adjust it as well. When I try it it says previews on small downsample. Where exactly???  When I move the Strength slider, is it supposed to immediately apply? Am I supposed to see something? What's the "Compare" text below? What does "Try another strength" mean? Document what this fuckign thing does and fix the UX of this. It's ugly.
 
-Remove the "Move the current photo into this album" checkbox, not useful
+Why do Scene Enhance and Enhance Faces have buttons that repeat the same fucking thing? Have an "ML" button with revert just like White Balance and Lightness
 
-Are labels and blurry photos automatically labeled on import? If so then remove the explicit actions from album "..." dropdown.
+If Enhance Faces no face found, save that info.
 
-Scene Enhance, Enhance Faces from film strip should be removed, not useful. And make sure the popover shows such that it's not cutoff. Right now it shows below and is cutoff by the browser viewport.
 
-Why does "Add Adjustment" have two icons? + and downward chevron? Maybe keep the chevron and move it to the right but not extreme right?
+ML button in WHite Balance, Lightness and other should be right aligned with revert to the left of it. Why is there revert and reset lightness both? One fucking button to reset. The "ML" button also can't tell when it's on vs off, fix that.
 
-Repair sidebar "Less distraction", "Rebuild small" etc should be removed including the icon in yellow above it. Just taking up space.
+Histogram in Adjustments comes first ahead of everyhting
 
-When you collapse and expand "Dust Spots", "One-Click Removal" the text shifts by a 1px or so, fix it. We should be resuing the same component for this collapse/expand panel across the app.
+Not fan of the massive "Auto Enhance" button both in the header and sidebar. Pick one. Be consistent. Make it UX/pretty, not a massive ugly button.
 
-There is an ugly horizontal line above "Enhance Faces". Same with "Enhance Subject..."
+Applying Auto straighten pushes the Auto button text lower by a 1px or 2px or so.
 
-The Denoise Before/After 2x is not zoomed in enough. I can't see a fucking thing.
-
-When I click "Enhance Subject and Background the button goes away. It's hard for me to see which sliders and settings belong together. Figure it out. And then when I edit Subject and Background it repeats my settings in a single golden line? Why do we need it? I can see the sliders. Make it easy to toggle this off and again, make sure I can still see the title of that action. Maybe explode the indiviual ML actions into their own sections just like we do Lightness, White Balance ETC.
-
-White Balance and other actions. Why is there a toggle AND an Auto button? And if I click Auto, we should highlight we are on auto settings (toggle it). And show the revert button. And if I adjust the sliders some more then do not highlight Auto because we are not on auto anymore. Still have the revert button though. Apply this approach throughout the app.
-
+Clicking "Export 2x" in the filmstrip does nothing, remove it. OK maybe it does something. When I click it and then switch to Adjust or Repair, the export dialog shows. Bloody fucking hell.
