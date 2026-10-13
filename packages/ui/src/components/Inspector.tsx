@@ -649,7 +649,7 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
     {working && <div className="suggestion-actions"><button className="text-button" data-testid="denoise-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
     {!working && assist.state !== 'preview-ready' && !assist.applied && <>
-      <button className="slim-button full-width" data-testid="denoise-preview" disabled={slider <= 0} title={slider <= 0 ? 'Raise the strength to preview' : `Show strength ${slider} as a small before/after below, in this panel`} onClick={() => assist.onPreview(slider, auto)}><span>Preview denoise</span></button>
+      <button className="text-button full-width" data-testid="denoise-preview" disabled={slider <= 0} title={slider <= 0 ? 'Raise the strength to preview' : `Show strength ${slider} as a small before/after below, in this panel`} onClick={() => assist.onPreview(slider, auto)}><span>Preview denoise</span></button>
       <p className="inspector-note">How it works: 1) pick a strength, 2) Preview shows a small before/after below in this panel, 3) Apply denoises the full photo. Only the strength is saved.</p>
     </>}
     {!working && assist.state === 'preview-ready' && assist.preview && <>
@@ -668,7 +668,7 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
       {previewStale && <p className="inspector-note" data-testid="denoise-preview-stale">Strength is now {slider} — update the preview to see it.</p>}
       {assist.note && <p className="inspector-note">{assist.note}</p>}
       <div className="suggestion-actions">
-        <button className="slim-button" data-testid="denoise-apply" title={`Denoise the full photo at strength ${slider} and edit from the clean pixels`} onClick={() => assist.onApply(slider, auto)}>Apply to photo</button>
+        <button className="text-button" data-testid="denoise-apply" title={`Denoise the full photo at strength ${slider} and edit from the clean pixels`} onClick={() => assist.onApply(slider, auto)}>Apply to photo</button>
         <button className="text-button" data-testid="denoise-repreview" title={`Preview the current strength (${slider}) again`} onClick={() => assist.onPreview(slider, auto)}>Update preview</button>
         <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
       </div>
@@ -687,7 +687,7 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
     {!working && stale && assist.applied && <>
       <p className="inspector-note" role="status" data-testid="denoise-stale">Denoise {assist.applied.strength}{appliedTag} was applied — re-run to restore the clean photo.</p>
       <div className="suggestion-actions">
-        <button className="slim-button" data-testid="denoise-restore" title="Denoise the full photo again at the stored strength" onClick={() => assist.onApply(assist.applied!.strength, assist.applied!.auto)}>Restore denoise</button>
+        <button className="text-button" data-testid="denoise-restore" title="Denoise the full photo again at the stored strength" onClick={() => assist.onApply(assist.applied!.strength, assist.applied!.auto)}>Restore denoise</button>
         <button className="text-button" data-testid="denoise-clear" title="Drop the stored strength and keep the original" onClick={assist.onClear}>Clear</button>
       </div>
     </>}

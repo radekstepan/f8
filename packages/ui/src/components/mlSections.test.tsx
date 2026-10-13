@@ -284,7 +284,7 @@ describe('ml enhance sections', () => {
     expect(html).not.toContain('data-testid="scene-enhance-apply"');
     expect(html).not.toContain('data-testid="face-enhance-detect"');
     expect(html).not.toContain('data-testid="selective-mask-detect"');
-    expect(html).toContain('class="slim-button full-width" data-testid="denoise-preview"');
+    expect(html).toContain('class="text-button full-width" data-testid="denoise-preview"');
     expect(html).not.toContain('secondary-button');
   });
 

@@ -11,6 +11,15 @@ import type { DenoiseAssist } from './Inspector.js';
 // Lightweight-denoise control, rendered on the server (no jsdom): effects
 // never run, so this pins the markup + prop wiring, not click behavior.
 
+const here = dirname(fileURLToPath(import.meta.url));
+const cssPath = resolve(here, '../../../../apps/web/src/index.css');
+const css = () => readFileSync(cssPath, 'utf8');
+
+const cssRule = (selector: string): string => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return css().match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+};
+
 function makePhoto(iso = 3200): Photo {
   return {
     id: 'p1',
@@ -291,8 +300,7 @@ describe('denoise control', () => {
     expect(after).toMatch(/data-testid="denoise-ml"[^>]*>ML<\/button><\/div>/);
     // The row itself is pushed right, and the engaged tooltip names the
     // suggestion plus its toggle-off.
-    const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
-    const actions = readFileSync(cssPath, 'utf8').match(/\.section-actions\s*\{([^}]*)\}/)?.[1] ?? '';
+    const actions = cssRule('.section-actions');
     expect(actions).toMatch(/margin-left\s*:\s*auto/);
     expect(html).toContain('title="Auto suggestion 50 — click to go manual, or drag the slider to fine-tune"');
   });
@@ -313,10 +321,50 @@ describe('denoise control', () => {
     expect(idle).not.toContain('aria-label="Reset denoise"');
   });
 
-  it('uses a slim preview button like the other ML actions', () => {
-    const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
-    expect(html).toContain('class="slim-button full-width" data-testid="denoise-preview"');
-    expect(html).not.toContain('secondary-button');
+  it('renders every denoise action as a golden link, never a grey button', () => {
+    // Idle: the preview action is a full-width golden link.
+    const idle = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
+    expect(idle).toContain('class="text-button full-width" data-testid="denoise-preview"');
+    // Preview-ready: Apply joins the Update/Cancel links in one text row.
+    const ready = renderAdjust(
+      { ...DEFAULT_EDIT },
+      makePhoto(3200),
+      assist({
+        state: 'preview-ready',
+        preview: { beforeUrl: 'data:before', afterUrl: 'data:after', strength: 65, source: 'onnx' },
+      }),
+    );
+    expect(ready).toContain('class="text-button" data-testid="denoise-apply"');
+    // Stale (recipe outlives the session pixels): Restore is a link too.
+    const stale = renderAdjust(
+      { ...DEFAULT_EDIT, denoise: APPLIED },
+      makePhoto(3200),
+      assist({ state: 'applied', applied: APPLIED, hasBase: false }),
+    );
+    expect(stale).toContain('class="text-button" data-testid="denoise-restore"');
+    // No grey-button class survives anywhere in the Denoise section, in any
+    // of the three states above (the header ML pill + reset icon are not
+    // in-content actions and keep their own styles).
+    for (const html of [idle, ready, stale]) {
+      const section = html.slice(html.indexOf('<h3>Denoise</h3>'), html.indexOf('<h3>White Balance</h3>'));
+      expect(section).not.toContain('slim-button');
+      expect(section).not.toContain('secondary-button');
+    }
+  });
+
+  it('styles the golden link idle gold, dims it when disabled, and never lights a disabled hover', () => {
+    // The link color is the action gold; the idle preview link keeps its
+    // 10px top rhythm below the hint (the rule followed the class swap).
+    expect(cssRule('.text-button')).toMatch(/color\s*:\s*#b8a279/);
+    expect(cssRule('.denoise > .text-button.full-width')).toMatch(/margin-top\s*:\s*10px/);
+    expect(css()).not.toMatch(/\.denoise > \.slim-button\.full-width\s*\{/);
+    // The preview link disables at strength 0 — the first disabled
+    // text-button anywhere — so it dims like a slim button did and the
+    // hover brightening explicitly skips disabled, like every other
+    // button rule in the sheet.
+    expect(cssRule('.text-button:disabled')).toMatch(/opacity\s*:\s*\.45/);
+    expect(cssRule('.text-button:disabled')).toMatch(/cursor\s*:\s*default/);
+    expect(css()).toMatch(/\.text-button:hover:not\(:disabled\)\s*\{[^}]*color\s*:\s*#f0d496/);
   });
 
   it('shows a centered 16x closeup pair under the After-only first row', () => {
@@ -359,18 +407,15 @@ describe('denoise control', () => {
   });
 
   it('magnifies the closeup boxes 16x without tiling', () => {
-    const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
-    const rule = readFileSync(cssPath, 'utf8').match(/\.denoise-zoom\s*\{([^}]*)\}/)?.[1] ?? '';
+    const rule = cssRule('.denoise-zoom');
     expect(rule).toMatch(/background-size\s*:\s*1600%/);
     expect(rule).toMatch(/background-repeat\s*:\s*no-repeat/);
   });
 
   it('overlays a 1/16 focus square on the After image without stealing clicks', () => {
-    const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
-    const css = readFileSync(cssPath, 'utf8');
-    const wrap = css.match(/\.denoise-after-wrap\s*\{([^}]*)\}/)?.[1] ?? '';
+    const wrap = cssRule('.denoise-after-wrap');
     expect(wrap).toMatch(/position\s*:\s*relative/);
-    const rect = css.match(/\.denoise-focus-rect\s*\{([^}]*)\}/)?.[1] ?? '';
+    const rect = cssRule('.denoise-focus-rect');
     // 1/16 of the preview width, square on screen = exactly the sampled patch.
     expect(rect).toMatch(/position\s*:\s*absolute/);
     expect(rect).toMatch(/width\s*:\s*6\.25%/);
@@ -383,15 +428,13 @@ describe('denoise control', () => {
   });
 
   it('lays the suggestion row out in flex and titles the preview like its siblings', () => {
-    const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
-    const css = readFileSync(cssPath, 'utf8');
-    const suggest = css.match(/\.denoise-suggest-row\s*\{([^}]*)\}/)?.[1] ?? '';
+    const suggest = cssRule('.denoise-suggest-row');
     expect(suggest).toMatch(/display\s*:\s*flex/);
     expect(suggest).toMatch(/justify-content\s*:\s*space-between/);
-    const title = css.match(/\.denoise-preview-title\s*\{([^}]*)\}/)?.[1] ?? '';
+    const title = cssRule('.denoise-preview-title');
     expect(title).toMatch(/text-transform\s*:\s*uppercase/);
     // The locking-toggle row is gone; notes use the sibling 8px rhythm.
-    expect(css).not.toMatch(/\.denoise-auto-row\s*\{/);
-    expect(css).toMatch(/\.denoise \.inspector-note\s*\{[^}]*margin:\s*8px 0 0/);
+    expect(css()).not.toMatch(/\.denoise-auto-row\s*\{/);
+    expect(css()).toMatch(/\.denoise \.inspector-note\s*\{[^}]*margin:\s*8px 0 0/);
   });
 });
