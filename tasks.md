@@ -13,18 +13,18 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-In photo mode at the top next to show/hide presets have an action/icon to reset the image to original
+If I apply Auto adjustments and reload the UI, the button is enabled, but there is no reset button anymore. We need to be remembering a stack of actions and have a way to revert for all of them, even after a hard reload.
 
-The show/hide presets icon in photo mode at the top needs to match the icon in the strip at the bottom
+The dropdowns in the menu at the top are flush with the dropdown triggers, but we shouldn't have rounded borders on the button or dropdown where they meet (meaning bottom of the button onhover and top of the dropdown when opened).
 
-In Adjustments the descriptions have too much padding from the header (Classify the scene, Finds faces) etc. Make it line up with where Temperature, Exposure starts
+The backling to all photos when the sidebar is collapsed is not flush with the library sidebar button (that expands it).
 
-If I apply Auto adjustments and reload the UI, the button is enabled, but there is no reset button anymore
+We need to use custom tooltips throughout the app, always showing such that they are not cutoff but the viewport. Use a custom lib for this. Make it match the theme.
 
-When I am in repair mode and drag around the UI, you see a bit of a lag between me drawing and the red "patch" appearing in the UI.
+Why is the hide presets button showing on library view? Same for compare with original and info button at the top. Adjust, Repair, Crop are the same. These only show on the photo view.
 
-When we are loading a photo coming from an album it's nice to see a preview, but the preview is not sized the same way as the actual final image, so you see a resizing. I don't want to see resizing. Make the preview size the same as final.
+When i try to superresolution export the UI says "ML weights are missing — run yarn setup, or export once to download them (~64MB).". I ran "yarn setup" already and there were no errors.
 
-The dropdowns in the menu at the top are not flish with the dropdown triggers.
+When exporting, show estimated file size when we select a preset and before exporting. If this is not possible/not accurate, don't do it.
 
-The backling to all photos is ugly. Rethink it and make it beautiful. And make sure it works when sidebar is on/off.
+When exporting JPEG (lossy formats), show a zoom in preview of a picture showing 16x zoom of an area like we do on the preview denoise view. I also want to see a full view with a box of where we focus and then next to it a 16x zoom of the area I am looking at. If I switch the preset, still remember where I was focused at.
