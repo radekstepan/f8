@@ -4,11 +4,11 @@ import type { Photo, Preset } from '@f8/core';
 import { PresetStrip } from './PhotoStrips.js';
 import { Toolbar } from './Topbar.js';
 
-// Color Presets icon: the preset strip heading used the same SlidersHorizontal
-// glyph as the toolbar's generic Show/Hide presets toggle (and the Adjust
-// tool), so the strip read as a duplicate of the toggle. The strip heading
-// now uses a swatch-book motif — a color collection, not generic sliders —
-// while the toolbar toggle keeps the generic icon. Rendered on the server
+// Color Presets icon: the preset strip heading uses a swatch-book motif —
+// a color collection, not generic sliders — and the toolbar's Show/Hide
+// presets toggle matches it with the same glyph (it previously reused the
+// SlidersHorizontal glyph shared with the Adjust tool, so the toggle read
+// as a duplicate of Adjust instead of presets). Rendered on the server
 // (no jsdom): pins the markup, not live behavior.
 
 const noop = () => {};
@@ -84,9 +84,26 @@ describe('color presets icon', () => {
     expect(renderStrip()).not.toContain('lucide-sliders-horizontal');
   });
 
-  it('keeps the generic sliders icon on the toolbar presets toggle', () => {
+  it('renders the swatch-book icon on the toolbar presets toggle', () => {
     const html = renderToolbar();
-    expect(html).toContain('lucide-sliders-horizontal');
-    expect(html).not.toContain('lucide-swatch-book');
+    const toggle = html.match(/<button[^>]*aria-label="(?:Show|Hide) presets"[^>]*>.*?<\/button>/s)?.[0] ?? '';
+    expect(toggle).toContain('lucide-swatch-book');
+    expect(toggle).not.toContain('lucide-sliders-horizontal');
+  });
+
+  it('matches the toolbar toggle glyph to the strip heading glyph', () => {
+    // The top toggle and the bottom strip title must render the same icon
+    // so the toggle reads as the strip's control, not as the Adjust tool.
+    const stripTitle = renderStrip().match(/<div class="presets-title">.*?<\/div>/s)?.[0] ?? '';
+    const toggle = renderToolbar().match(/<button[^>]*aria-label="(?:Show|Hide) presets"[^>]*>.*?<\/button>/s)?.[0] ?? '';
+    const iconOf = (markup: string) => markup.match(/lucide-[a-z-]+/)?.[0];
+    expect(iconOf(stripTitle)).toBe('lucide-swatch-book');
+    expect(iconOf(toggle)).toBe(iconOf(stripTitle));
+  });
+
+  it('keeps the sliders icon on the Adjust tool itself', () => {
+    const html = renderToolbar();
+    const adjust = html.match(/<button[^>]*aria-label="Adjust"[^>]*>.*?<\/button>/s)?.[0] ?? '';
+    expect(adjust).toContain('lucide-sliders-horizontal');
   });
 });

@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Bandage, ChevronLeft, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, RotateCcw, Share, SlidersHorizontal, Undo2 } from 'lucide-react';
+import { Bandage, ChevronLeft, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, RotateCcw, Share, SlidersHorizontal, SwatchBook, Undo2 } from 'lucide-react';
 import type { DialogType, Tool, VisionWorkerStatus } from '@f8/core';
 import { APP_EDITION_SHORT, APP_NAME } from '@f8/core';
 import { BrandMark, IconButton, MenuItem, MenuSeparator, MlBadge } from './EditorUI.js';
@@ -140,7 +140,7 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
         </div>
       </div>
       <div className="toolbar-actions">
-        {onTogglePresets && <IconButton label={presetsOpen ? 'Hide presets' : 'Show presets'} active={presetsOpen} onClick={onTogglePresets}><SlidersHorizontal size={18} strokeWidth={1.6} /></IconButton>}
+        {onTogglePresets && <IconButton label={presetsOpen ? 'Hide presets' : 'Show presets'} active={presetsOpen} onClick={onTogglePresets}><SwatchBook size={18} strokeWidth={1.6} /></IconButton>}
         <IconButton label="Reset to original" disabled={!canReset} onClick={() => onAction('reset')}><RotateCcw size={18} strokeWidth={1.6} /></IconButton>
         <IconButton label={tool === 'crop' ? 'Compare with original (unavailable while cropping)' : 'Compare with original (B)'} active={compare} disabled={tool === 'crop'} onClick={() => onAction('compare')}><Columns2 size={18} strokeWidth={1.6} /></IconButton>
         <IconButton label="Photo information (I)" onClick={() => onDialog('info')}><Info size={18} strokeWidth={1.6} /></IconButton>
