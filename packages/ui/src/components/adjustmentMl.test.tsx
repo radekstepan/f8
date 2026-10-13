@@ -5,11 +5,11 @@ import type { EditState, MlCategory, Photo } from '@f8/core';
 import { AdjustmentSection } from './AdjustmentSection.js';
 import { Inspector } from './Inspector.js';
 
-// Per-category ML buttons + visibility toggles, rendered on the server (no
-// jsdom): effects never run, so this pins the markup + prop wiring — ML
-// button per auto-capable category, one reset per header (persistent iff
-// non-default, restoring the pre-ML snapshot while one lives), toggles
-// showing/hiding their category — not click behavior.
+// Per-category ML buttons, rendered on the server (no jsdom): effects never
+// run, so this pins the markup + prop wiring — ML button per auto-capable
+// category, one reset per header (persistent iff non-default, restoring
+// the pre-ML snapshot while one lives), the chevron alone collapsing every
+// header — not click behavior.
 
 function makePhoto(): Photo {
   return {
@@ -197,7 +197,7 @@ describe('adjustment ML buttons', () => {
   });
 });
 
-describe('adjustment visibility toggles', () => {
+describe('adjustment header controls', () => {
   it('carries no toggle beside the ML button — the ML button is the one control', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
     // The chevron alone collapses ML sections; no toggle sits next to the
@@ -208,15 +208,20 @@ describe('adjustment visibility toggles', () => {
     expect(html).not.toContain('Enable white balance');
     expect(html).not.toContain('Enable lightness');
     expect(html).not.toContain('Enable hue');
-    // Details has no automatic action, so it keeps its visibility toggle.
-    expect(html).toContain('aria-label="Show details"');
+    // Details has no automatic action and no toggle either — the chevron
+    // alone collapses it, like every other control (Task 11).
+    expect(html).not.toContain('aria-label="Show details"');
   });
 
-  it('reflects Details visibility in its toggle state', () => {
+  it('starts Details collapsed behind its disclosure, with no toggle', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
-    // Details starts collapsed, as before the toggle change.
-    expect(html).toContain('aria-checked="false" aria-label="Show details"');
+    // Details starts collapsed, as before the toggle removal.
+    expect(html).not.toContain('aria-label="Show details"');
     expect(html).not.toContain('>Clarity</label>');
+    const heading = html.indexOf('<h3>Details</h3>');
+    const details = html.slice(html.lastIndexOf('<section', heading), html.indexOf('<h3>Effects</h3>'));
+    expect(details).not.toContain('role="switch"');
+    expect(details).toContain('aria-expanded="false"');
   });
 
   it('keeps sliders enabled so a legacy-disabled category recovers on first drag', () => {
