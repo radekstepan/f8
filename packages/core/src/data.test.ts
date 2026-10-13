@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_EDIT, INITIAL_EDIT, PRESETS, isDefaultEdit, isOriginalLook, patchBreaksEnhancePure, presetForPatch } from "./data.js";
+import { DEFAULT_EDIT, INITIAL_EDIT, PRESETS, enhanceModeForRecipe, isDefaultEdit, isOriginalLook, patchBreaksEnhancePure, presetForPatch } from "./data.js";
 import type { EditState } from "./types.js";
 
 const stroke = { x: 0.5, y: 0.5, size: 0.05, strength: 100, kind: "repair" } as const;
@@ -107,6 +107,23 @@ describe("isDefaultEdit", () => {
     for (const patch of changed) {
       expect(isDefaultEdit({ ...DEFAULT_EDIT, ...patch })).toBe(false);
     }
+  });
+});
+
+describe("enhanceModeForRecipe", () => {
+  it("seeds the scene mode from a stored scene, with or without the auto flag", () => {
+    expect(enhanceModeForRecipe({ ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: "night", confidence: 0.9 } })).toBe("scene");
+    expect(enhanceModeForRecipe({ ...DEFAULT_EDIT, sceneEnhance: { scene: "portrait", confidence: 0.86 } })).toBe("scene");
+  });
+
+  it("seeds the classic mode from the auto flag alone", () => {
+    expect(enhanceModeForRecipe({ ...DEFAULT_EDIT, autoEnhanced: true })).toBe("classic");
+  });
+
+  it("seeds no mode for default, reverted, and reset recipes", () => {
+    expect(enhanceModeForRecipe({ ...DEFAULT_EDIT })).toBeNull();
+    expect(enhanceModeForRecipe({ ...DEFAULT_EDIT, autoEnhanced: false, sceneEnhance: null })).toBeNull();
+    expect(enhanceModeForRecipe({ ...DEFAULT_EDIT, exposure: 0.5 })).toBeNull();
   });
 });
 

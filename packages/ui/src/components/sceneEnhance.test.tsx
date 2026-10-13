@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
-import type { EditState, Photo } from '@f8/core';
+import type { EditState, HistoryState, Photo } from '@f8/core';
 import { Inspector } from './Inspector.js';
+import { useEditor } from '../hooks/useEditor.js';
 
 // ML scene-enhance row, rendered on the server (no jsdom): effects never
 // run, so this pins the markup + prop wiring, not click behavior.
@@ -45,7 +46,7 @@ function makePhoto(): Photo {
 
 const noop = () => {};
 
-function renderAdjust(edit: EditState, onAutoScene?: () => void, enhance?: { mode: 'classic' | 'scene' | null; pure?: boolean }): string {
+function renderAdjust(edit: EditState, onAutoScene?: () => void, enhance?: { mode: 'classic' | 'scene' | null; pure?: boolean; canRevert?: boolean }): string {
   return renderToStaticMarkup(
     <Inspector
       photo={makePhoto()}
@@ -62,6 +63,7 @@ function renderAdjust(edit: EditState, onAutoScene?: () => void, enhance?: { mod
       onAuto={noop}
       onRevertEnhance={noop}
       {...(enhance ? { enhanceMode: enhance.mode, enhancePure: enhance.pure ?? false } : {})}
+      {...(enhance?.canRevert === undefined ? {} : { enhanceCanRevert: enhance.canRevert })}
       {...(onAutoScene === undefined ? {} : { onAutoScene })}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
@@ -169,5 +171,56 @@ describe('scene enhance row', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, noop);
     expect(html).toContain('Auto Enhance');
     expect(html).toContain('Scene Enhance');
+  });
+});
+
+describe('scene enhance reload', () => {
+  // Server-rendered probe: SSR runs the hook's state initializers but never
+  // effects, so this pins the synchronous seed path — the async seed effect
+  // maps the same flags through the same helper.
+  const seedFor = (present: EditState): Record<string, HistoryState> => ({ p1: { past: [], present, future: [] } });
+
+  function EnhanceSeedProbe({ seed, photoId }: { seed: Record<string, HistoryState>; photoId: string }) {
+    const editor = useEditor(photoId, { initial: seed });
+    return <span data-testid="enhance-seed" data-mode={editor.enhanceMode ?? 'none'} data-pure={String(editor.enhancePure)} data-revert={String(editor.enhanceCanRevert)} />;
+  }
+
+  const seedHtml = (seed: Record<string, HistoryState>, photoId = 'p1'): string =>
+    renderToStaticMarkup(<EnhanceSeedProbe seed={seed} photoId={photoId} />);
+
+  it('seeds the scene highlight from the persisted scene, with no revert snapshot', () => {
+    const html = seedHtml(seedFor({ ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } }));
+    expect(html).toContain('data-mode="scene"');
+    expect(html).toContain('data-pure="true"');
+    expect(html).toContain('data-revert="false"');
+  });
+
+  it('seeds the classic highlight from the auto flag alone', () => {
+    const html = seedHtml(seedFor({ ...DEFAULT_EDIT, autoEnhanced: true }));
+    expect(html).toContain('data-mode="classic"');
+    expect(html).toContain('data-pure="true"');
+    expect(html).toContain('data-revert="false"');
+  });
+
+  it('seeds no highlight for unenhanced recipes or unknown photos', () => {
+    expect(seedHtml(seedFor({ ...DEFAULT_EDIT }))).toContain('data-mode="none"');
+    expect(seedHtml(seedFor({ ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } }), 'p2')).toContain('data-mode="none"');
+  });
+
+  it('renders the seeded ML enabled with no reset and a re-apply tooltip', () => {
+    // The reload state: persisted scene + seeded highlight, but no session
+    // snapshot — so the button shows enabled while the reset icon (which
+    // promises a value restore) stays hidden, and the tooltip offers a
+    // re-apply instead of a revert.
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
+      noop,
+      { mode: 'scene', pure: true, canRevert: false },
+    );
+    expect(html).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('title="ML scene enhance applied — click to re-apply"');
+    expect(html).toContain('data-testid="scene-enhance-scene"');
+    expect(html).not.toContain('aria-label="Reset scene enhance"');
   });
 });

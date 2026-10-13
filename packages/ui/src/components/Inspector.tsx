@@ -804,6 +804,8 @@ interface InspectorProps {
   enhanceMode?: 'classic' | 'scene' | null;
   /** True while the recipe still holds exactly the last enhance's values. */
   enhancePure?: boolean;
+  /** True while a pre-enhance snapshot exists for the last mode. False after a reload (flags persist, the snapshot does not), hiding the revert affordance while the highlight stays. Defaults to mode presence — in-session snapshots always accompany a mode. */
+  enhanceCanRevert?: boolean;
   /** Restore the pre-enhance snapshot (shared by both enhance modes). */
   onRevertEnhance: () => void;
   /** ML face-aware exposure; omit to hide the faces control. */
@@ -830,7 +832,7 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, enhanceMode = null, enhancePure = false, onRevertEnhance, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, onRevertWhiteBalance, onRevertLightness, onRevertColor, mlApplied, mlRevert, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, enhanceMode = null, enhancePure = false, enhanceCanRevert, onRevertEnhance, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, onRevertWhiteBalance, onRevertLightness, onRevertColor, mlApplied, mlRevert, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
   // The Details header toggle shows/hides its category (the disclosure
@@ -865,11 +867,14 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   };
   // Whole-photo enhance UI: each mode's button highlights only its own pure
   // state, and the last-used mode carries the shared revert icon — manual
-  // look edits clear the highlight but keep the revert.
+  // look edits clear the highlight but keep the revert. A reload seeds the
+  // highlight from persisted flags with no snapshot, so the revert icon
+  // (and its dirty state) needs the explicit snapshot signal, not the mode.
+  const enhanceSnapshot = enhanceCanRevert ?? enhanceMode !== null;
   const classicActive = enhanceMode === 'classic' && enhancePure;
-  const classicRevert = enhanceMode === 'classic';
+  const classicRevert = enhanceMode === 'classic' && enhanceSnapshot;
   const sceneActive = enhanceMode === 'scene' && enhancePure;
-  const sceneRevert = enhanceMode === 'scene';
+  const sceneRevert = enhanceMode === 'scene' && enhanceSnapshot;
 
   return <aside className="adjustments-sidebar" ref={ref} aria-label="Editing inspector">
     <div className="inspector-title">

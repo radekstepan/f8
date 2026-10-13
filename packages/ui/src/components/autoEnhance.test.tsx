@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
-import type { Photo, Tool } from '@f8/core';
+import type { EditState, Photo, Tool } from '@f8/core';
 import { Inspector } from './Inspector.js';
 import { Toolbar } from './Topbar.js';
 
@@ -59,11 +59,11 @@ function renderToolbar(tool: Tool): string {
   );
 }
 
-function renderAdjust(enhance?: { mode: 'classic' | 'scene' | null; pure?: boolean }): string {
+function renderAdjust(enhance?: { mode: 'classic' | 'scene' | null; pure?: boolean; canRevert?: boolean }, edit: EditState = { ...DEFAULT_EDIT }): string {
   return renderToStaticMarkup(
     <Inspector
       photo={makePhoto()}
-      edit={{ ...DEFAULT_EDIT }}
+      edit={edit}
       tool="adjust"
       histogram={null}
       brushSize={45}
@@ -76,6 +76,7 @@ function renderAdjust(enhance?: { mode: 'classic' | 'scene' | null; pure?: boole
       onAuto={noop}
       onRevertEnhance={noop}
       {...(enhance ? { enhanceMode: enhance.mode, enhancePure: enhance.pure ?? false } : {})}
+      {...(enhance?.canRevert === undefined ? {} : { enhanceCanRevert: enhance.canRevert })}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
@@ -122,6 +123,19 @@ describe('auto enhance single entry point', () => {
     expect(reset).toBeGreaterThan(-1);
     expect(auto).toBeGreaterThan(-1);
     expect(reset).toBeLessThan(auto);
+  });
+
+  it('renders the reload-seeded Auto enabled with no reset and a re-apply tooltip', () => {
+    // Same reload state as the scene ML (see sceneEnhance.test.tsx): the
+    // persisted auto flag seeds the highlight, but no session snapshot
+    // exists — so no reset icon and a re-apply tooltip.
+    const html = renderAdjust(
+      { mode: 'classic', pure: true, canRevert: false },
+      { ...DEFAULT_EDIT, autoEnhanced: true },
+    );
+    expect(html).toContain('class="auto-small is-active" data-testid="auto-enhance-auto" aria-pressed="true"');
+    expect(html).toContain('title="Auto Enhance applied — click to re-apply"');
+    expect(html).not.toContain('aria-label="Reset auto enhance"');
   });
 
   it('leaves no dead enhance-bar CSS behind', () => {

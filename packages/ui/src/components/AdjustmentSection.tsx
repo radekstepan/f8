@@ -63,9 +63,12 @@ export function AdjustmentSection({ title, icon, children, initiallyOpen = true,
   const kind = ml?.kind ?? 'ml';
   const actionLabel = kind === 'auto' ? 'Auto' : 'ML';
   const actionClass = kind === 'auto' ? 'auto-small' : 'ml-button';
+  // Applied without a snapshot is the reload-seeded enhance state (flags
+  // persist, the pre-enhance snapshot does not): clicking re-applies fresh
+  // instead of reverting, and the tooltip must not promise a revert.
   const actionTitle = !ml ? '' : (ml.title ?? (kind === 'auto'
-    ? (ml.applied ? `${title} applied — click to revert` : ml.canRevert ? `Re-apply ${lower}` : `Apply ${lower} automatically`)
-    : (ml.applied ? `ML ${lower} applied — click to revert` : ml.canRevert ? `Re-apply automatic ${lower} with ML` : `Automatically adjust ${lower} with ML`)));
+    ? (ml.applied ? (ml.canRevert ? `${title} applied — click to revert` : `${title} applied — click to re-apply`) : ml.canRevert ? `Re-apply ${lower}` : `Apply ${lower} automatically`)
+    : (ml.applied ? (ml.canRevert ? `ML ${lower} applied — click to revert` : `ML ${lower} applied — click to re-apply`) : ml.canRevert ? `Re-apply automatic ${lower} with ML` : `Automatically adjust ${lower} with ML`)));
   // One reset control per header, left of the action button: while a
   // pre-apply snapshot exists it restores the pre-apply values, otherwise
   // it resets the sliders to defaults. The icon stays visible while the
