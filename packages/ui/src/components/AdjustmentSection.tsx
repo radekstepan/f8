@@ -15,6 +15,10 @@ export interface AdjustmentMl {
   onRevert: () => void;
   /** Header action kind: 'ml' for model actions, 'auto' for heuristics (classic enhance). Defaults to 'ml'. */
   kind?: 'ml' | 'auto';
+  /** Disable the header action (e.g. Denoise while working or with no ISO suggestion). */
+  disabled?: boolean;
+  /** Override the computed tooltip (e.g. Denoise names its ISO suggestion). */
+  title?: string;
 }
 
 export interface AdjustmentSectionProps {
@@ -54,14 +58,14 @@ export function AdjustmentSection({ title, icon, children, initiallyOpen = true,
   };
   const lower = title.toLowerCase();
   // The header action is an ML button for model actions and a small Auto
-  // pill (the straighten/denoise style) for heuristics — same placement,
-  // same toggle contract, honest label either way.
+  // pill (the straighten style) for heuristics — same placement, same
+  // toggle contract, honest label either way.
   const kind = ml?.kind ?? 'ml';
   const actionLabel = kind === 'auto' ? 'Auto' : 'ML';
   const actionClass = kind === 'auto' ? 'auto-small' : 'ml-button';
-  const actionTitle = !ml ? '' : kind === 'auto'
+  const actionTitle = !ml ? '' : (ml.title ?? (kind === 'auto'
     ? (ml.applied ? `${title} applied — click to revert` : ml.canRevert ? `Re-apply ${lower}` : `Apply ${lower} automatically`)
-    : (ml.applied ? `ML ${lower} applied — click to revert` : ml.canRevert ? `Re-apply automatic ${lower} with ML` : `Automatically adjust ${lower} with ML`);
+    : (ml.applied ? `ML ${lower} applied — click to revert` : ml.canRevert ? `Re-apply automatic ${lower} with ML` : `Automatically adjust ${lower} with ML`)));
   // One reset control per header, left of the action button: while a
   // pre-apply snapshot exists it restores the pre-apply values, otherwise
   // it resets the sliders to defaults. The icon stays visible while the
@@ -70,5 +74,5 @@ export function AdjustmentSection({ title, icon, children, initiallyOpen = true,
   // .is-active + aria-pressed, styled in apps/web/src/index.css).
   const resetActive = dirty || Boolean(ml?.canRevert);
   const onResetClick = ml && ml.canRevert ? ml.onRevert : onReset;
-  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onReset && <IconButton className={`section-reset${resetActive ? ' is-dirty' : ''}`} label={`Reset ${lower}`} onClick={onResetClick}><RotateCcw size={11} /></IconButton>}{ml && open && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} title={actionTitle} onClick={ml.onToggle}>{actionLabel}</button>}{onToggle && <Toggle checked={Boolean(enabled)} onChange={onToggle} label={toggleLabel ?? `Show ${lower}`} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
+  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onReset && <IconButton className={`section-reset${resetActive ? ' is-dirty' : ''}`} label={`Reset ${lower}`} onClick={onResetClick}><RotateCcw size={11} /></IconButton>}{ml && open && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} title={actionTitle} disabled={ml.disabled} onClick={ml.onToggle}>{actionLabel}</button>}{onToggle && <Toggle checked={Boolean(enabled)} onChange={onToggle} label={toggleLabel ?? `Show ${lower}`} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
 }

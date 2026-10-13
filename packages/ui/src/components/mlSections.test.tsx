@@ -169,16 +169,14 @@ describe('ml enhance sections', () => {
     expect(html.indexOf('data-testid="denoise"')).toBeGreaterThan(html.indexOf('histogram-section'));
   });
 
-  it('marks every ML section header with an ML badge or button', () => {
+  it('marks every ML section header with a header ML button, never a badge', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
-    // Scene, faces, and subject run from their header ML button (White
-    // Balance pattern), so they carry the button instead of a badge.
-    for (const [title, button] of [['Scene Enhance', 'scene-enhance-ml'], ['Enhance Faces', 'face-enhance-ml'], ['Subject &amp; Background', 'selective-mask-ml']] as const) {
+    // Scene, faces, subject, and denoise run from their header ML button
+    // (White Balance pattern), so they carry the button instead of a badge.
+    for (const [title, button] of [['Scene Enhance', 'scene-enhance-ml'], ['Enhance Faces', 'face-enhance-ml'], ['Subject &amp; Background', 'selective-mask-ml'], ['Denoise', 'denoise-ml']] as const) {
       expect(html).toContain(`data-testid="${button}"`);
       expect(html.match(new RegExp(`<h3>${title}</h3><span class="ml-badge"`)), `${title} header carries no badge`).toBeNull();
     }
-    const heading = html.match(/<h3>Denoise<\/h3><span class="ml-badge"/);
-    expect(heading, 'Denoise header carries an ML badge').not.toBeNull();
   });
 
   it('omits every ML section without any assist but keeps classic Auto Enhance', () => {

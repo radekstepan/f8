@@ -266,6 +266,24 @@ describe('AdjustmentSection', () => {
     expect(html).toContain('slider-stub');
   });
 
+  it('disables the header action and honors a custom tooltip when given', () => {
+    // Denoise (no ISO suggestion): the shared ML button carries the
+    // disabled state and the section-specific tooltip.
+    const html = section({ ml: { id: 'denoise', applied: false, canRevert: false, onToggle: noop, onRevert: noop, disabled: true, title: 'ISO 100 needs no denoise' } });
+    expect(html).toContain('data-testid="denoise-ml"');
+    const tag = html.match(/<button[^>]*data-testid="denoise-ml"[^>]*>/)?.[0] ?? '';
+    expect(tag).toContain('disabled');
+    expect(html).toContain('title="ISO 100 needs no denoise"');
+    expect(html).not.toContain('Automatically adjust');
+  });
+
+  it('omits the disabled attribute and computes the tooltip by default', () => {
+    const html = section({ ml: { id: 'white-balance', applied: false, canRevert: false, onToggle: noop, onRevert: noop } });
+    const tag = html.match(/<button[^>]*data-testid="white-balance-ml"[^>]*>/)?.[0] ?? '';
+    expect(tag).not.toContain('disabled');
+    expect(html).toContain('title="Automatically adjust white balance with ML"');
+  });
+
   it('honors a custom toggle label for effect toggles', () => {
     const html = section({ toggleLabel: 'Enable black & white' });
     expect(html).toContain('aria-label="Enable black &amp; white"');

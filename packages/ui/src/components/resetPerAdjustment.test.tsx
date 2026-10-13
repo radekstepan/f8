@@ -65,10 +65,11 @@ function selectiveAssist(): SelectiveMaskAssist {
   };
 }
 
-function denoiseAssist(): DenoiseAssist {
+function denoiseAssist(overrides: Partial<DenoiseAssist> = {}): DenoiseAssist {
   return {
     state: 'idle', preview: null, applied: null, hasBase: false, progress: null,
     note: null, message: null, onPreview: noop, onApply: noop, onClear: noop, onDismiss: noop,
+    ...overrides,
   };
 }
 
@@ -79,6 +80,7 @@ function renderAdjust(
     mlRevert?: Partial<Record<MlCategory, boolean>>;
     enhance?: { mode: 'classic' | 'scene' | null; pure?: boolean };
     assists?: boolean;
+    denoise?: Partial<DenoiseAssist>;
   },
 ): string {
   return renderToStaticMarkup(
@@ -97,7 +99,7 @@ function renderAdjust(
       onAuto={noop}
       onRevertEnhance={noop}
       {...(options?.enhance ? { enhanceMode: options.enhance.mode, enhancePure: options.enhance.pure ?? false } : {})}
-      {...(options?.assists ? { onAutoScene: noop, faceAssist: faceAssist(), selectiveAssist: selectiveAssist(), denoiseAssist: denoiseAssist() } : {})}
+      {...(options?.assists ? { onAutoScene: noop, faceAssist: faceAssist(), selectiveAssist: selectiveAssist(), denoiseAssist: denoiseAssist(options?.denoise ?? {}) } : {})}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
@@ -194,12 +196,20 @@ describe('reset per adjustment', () => {
     }
   });
 
-  it('gives Details and Denoise no header reset yet', () => {
-    // Details gains its reset in Task 12; Denoise keeps its content-level
-    // Clear/Restore flows until its header rework (Task 4/9).
-    const html = renderAdjust({ ...DEFAULT_EDIT, clarity: 20, sharpness: 30 }, { assists: true });
-    expect(html).not.toContain('aria-label="Reset details"');
-    expect(html).not.toContain('aria-label="Reset denoise"');
+  it('gives Details no header reset yet, and Denoise one exactly while applied', () => {
+    // Details gains its reset in Task 12.
+    const details = renderAdjust({ ...DEFAULT_EDIT, clarity: 20, sharpness: 30 }, { assists: true });
+    expect(details).not.toContain('aria-label="Reset details"');
+    // Denoise (header rework, Task 4): no stored denoise, no reset.
+    const idle = renderAdjust({ ...DEFAULT_EDIT }, { assists: true });
+    expect(idle).not.toContain('aria-label="Reset denoise"');
+    // A stored denoise persists the reset (Enhance Faces pattern).
+    const stored = { strength: 65, auto: true, source: 'onnx' } as const;
+    const applied = renderAdjust(
+      { ...DEFAULT_EDIT, denoise: { ...stored } },
+      { assists: true, denoise: { state: 'applied', applied: { ...stored }, hasBase: true } },
+    );
+    expect(applied).toContain('section-reset is-dirty" title="Reset denoise"');
   });
 
   it('keeps the reset box while making the dirty state persistent', () => {

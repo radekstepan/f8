@@ -101,13 +101,13 @@ describe('denoise control', () => {
     expect(html).toContain('data-testid="denoise-preview"');
     expect(html).toContain('Suggested for ISO 3200: 50');
     expect(html).toContain('Auto 50 — drag the slider to fine-tune');
-    // Auto is a pressed momentary button (straighten pattern), not a locking
-    // toggle: the slider stays enabled so Auto flows into fine-tuning.
-    expect(html).toContain('class="auto-small is-active" data-testid="denoise-auto"');
+    // The auto suggestion runs from the shared header ML button: pressed
+    // while the draft is the ISO suggestion, and the slider stays enabled
+    // so ML flows into fine-tuning.
+    expect(html).toContain('class="ml-button is-active" data-testid="denoise-ml"');
     expect(html).toContain('aria-pressed="true"');
     expect(html).not.toContain('disabled');
-    expect(html).toContain('ml-badge');
-    expect(html).toContain('>ML<');
+    expect(html).toContain('>ML</button>');
   });
 
   it('starts clean captures on a manual strength with auto disabled', () => {
@@ -115,11 +115,11 @@ describe('denoise control', () => {
     expect(html).toContain('Draft strength — Preview, then Apply, to change the photo');
     expect(html).toContain('data-testid="denoise-preview"');
     expect(html).toContain('ISO 100 looks clean — no suggestion');
-    expect(html).toContain('class="auto-small" data-testid="denoise-auto"');
+    expect(html).toContain('class="ml-button" data-testid="denoise-ml"');
     expect(html).toContain('title="ISO 100 needs no denoise"');
-    const autoTag = html.match(/<button[^>]*data-testid="denoise-auto"[^>]*>/)?.[0] ?? '';
-    expect(autoTag).toContain('disabled');
-    // The slider itself is never locked: only the meaningless Auto is off.
+    const mlTag = html.match(/<button[^>]*data-testid="denoise-ml"[^>]*>/)?.[0] ?? '';
+    expect(mlTag).toContain('disabled');
+    // The slider itself is never locked: only the meaningless ML is off.
     expect(html).not.toContain('range-control is-disabled');
   });
 
@@ -259,15 +259,58 @@ describe('denoise control', () => {
 
   it('lives in its own Denoise section, with no inner heading of its own', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
-    expect(html).toContain('<h3>Denoise</h3><span class="ml-badge"');
+    expect(html).toContain('<h3>Denoise</h3></button>');
     const heading = html.indexOf('<h3>Denoise</h3>');
     const control = html.indexOf('data-testid="denoise"');
     expect(control).toBeGreaterThan(heading);
-    // The section header carries the title + ML badge, so the control
+    // The section header carries the title + ML action, so the control
     // renders no duplicate inner heading.
     expect(html).not.toContain('denoise-head');
     // Below the histogram, with the other ML actions — the histogram leads the panel.
     expect(control).toBeGreaterThan(html.indexOf('histogram-section'));
+  });
+
+  it('runs auto from a right-aligned header ML button, with no Auto pill left', () => {
+    const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
+    // Auto Enhance above keeps its header Auto pill; from the Denoise
+    // heading on, no Auto pill or denoise Auto control may remain — the
+    // suggestion text stays as a plain row.
+    const tail = html.slice(html.indexOf('<h3>Denoise</h3>'));
+    expect(tail).not.toContain('data-testid="denoise-auto"');
+    expect(tail).not.toContain('>Auto</button>');
+    expect(tail).not.toContain('auto-small');
+    expect(html).toContain('data-testid="denoise-suggest-row"');
+    expect(html).toContain('Suggested for ISO 3200: 50');
+    // The ML action sits in the shared header row (badge gone) and closes
+    // it, like every other ML section.
+    const header = html.slice(html.indexOf('<h3>Denoise</h3>'), html.indexOf('data-testid="denoise"'));
+    expect(header).toContain('section-actions');
+    expect(header).toContain('data-testid="denoise-ml"');
+    expect(header).not.toContain('ml-badge');
+    const after = html.slice(html.indexOf('data-testid="denoise-ml"'), html.indexOf('data-testid="denoise-ml"') + 400);
+    expect(after).toMatch(/data-testid="denoise-ml"[^>]*>ML<\/button><\/div>/);
+    // The row itself is pushed right, and the engaged tooltip names the
+    // suggestion plus its toggle-off.
+    const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
+    const actions = readFileSync(cssPath, 'utf8').match(/\.section-actions\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(actions).toMatch(/margin-left\s*:\s*auto/);
+    expect(html).toContain('title="Auto suggestion 50 — click to go manual, or drag the slider to fine-tune"');
+  });
+
+  it('offers a persistent header reset exactly while a denoise is stored', () => {
+    // Stored denoise, fresh or stale (session pixels dropped after reload):
+    // the reset stays visible and sits left of the ML button.
+    for (const stored of [
+      assist({ state: 'applied', applied: APPLIED, hasBase: true }),
+      assist({ state: 'applied', applied: APPLIED, hasBase: false }),
+    ]) {
+      const html = renderAdjust({ ...DEFAULT_EDIT, denoise: APPLIED }, makePhoto(3200), stored);
+      expect(html).toContain('section-reset is-dirty" title="Reset denoise"');
+      expect(html.indexOf('aria-label="Reset denoise"')).toBeLessThan(html.indexOf('data-testid="denoise-ml"'));
+    }
+    // Nothing stored: no header reset at all (nothing to restore).
+    const idle = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
+    expect(idle).not.toContain('aria-label="Reset denoise"');
   });
 
   it('uses a slim preview button like the other ML actions', () => {

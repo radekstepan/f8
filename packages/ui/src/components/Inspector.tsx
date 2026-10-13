@@ -613,23 +613,11 @@ function clampDenoiseFocus(value: number): number {
   return Math.max(DENOISE_FOCUS_HALF, Math.min(100 - DENOISE_FOCUS_HALF, value));
 }
 
-function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo }) {
+function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: DenoiseAssist; photo: Photo; slider: number; auto: boolean; onDraft: (strength: number, auto: boolean) => void }) {
   const working = assist.state === 'previewing' || assist.state === 'applying';
-  // Draft strength, reset per photo: high-ISO captures start at the ISO
-  // suggestion (marked auto), clean captures at manual 45. The slider is
-  // always editable — Auto only sets the suggestion, then the user
-  // fine-tunes; any manual move clears the auto mark (White Balance
-  // pattern: manual edits clear the highlight, the value stays). Nothing
-  // on the photo changes until Preview, then Apply.
-  const [slider, setSlider] = useState(() => denoiseStrengthForIso(photo.iso) || DENOISE_MANUAL_DEFAULT);
-  const [auto, setAuto] = useState(() => shouldAutoDenoise(photo.iso));
   // Closeup center in % of the small preview; clicking the preview moves it.
   const [loupe, setLoupe] = useState({ x: 50, y: 50 });
   const previewUrl = assist.preview?.beforeUrl;
-  useEffect(() => {
-    setSlider(denoiseStrengthForIso(photo.iso) || DENOISE_MANUAL_DEFAULT);
-    setAuto(shouldAutoDenoise(photo.iso));
-  }, [photo.id]);
   useEffect(() => {
     setLoupe({ x: 50, y: 50 });
   }, [previewUrl]);
@@ -641,19 +629,17 @@ function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo
   const previewTag = assist.preview?.source === 'onnx' ? ' · ML' : '';
   // The draft moved past what the on-screen preview shows.
   const previewStale = assist.preview !== null && slider !== assist.preview.strength;
-  const autoTitle = suggestion <= 0
-    ? `ISO ${photo.iso} needs no denoise`
-    : auto
-      ? `Auto suggestion ${suggestion} — drag the slider to fine-tune`
-      : `Set strength to the ISO ${photo.iso} suggestion (${suggestion})`;
-  // No inner heading: the control lives in its own "Denoise" section whose
-  // header already carries the title and the ML badge.
+  // No inner heading and no Auto pill: the control lives in its own
+  // "Denoise" section whose header already carries the title and the ML
+  // action (the auto suggestion moved there like everywhere else). The
+  // slider stays always editable — any manual move clears the auto mark
+  // (White Balance pattern: manual edits clear the highlight, the value
+  // stays). Nothing on the photo changes until Preview, then Apply.
   return <div className="denoise" data-testid="denoise">
-    <div className="denoise-suggest-row" data-testid="denoise-auto-row">
+    <div className="denoise-suggest-row" data-testid="denoise-suggest-row">
       <span>{suggestion > 0 ? `Suggested for ISO ${photo.iso}: ${suggestion}` : `ISO ${photo.iso} looks clean — no suggestion`}</span>
-      <button className={`auto-small${auto ? ' is-active' : ''}`} data-testid="denoise-auto" aria-pressed={auto} disabled={working || suggestion <= 0} title={autoTitle} onClick={() => { setSlider(suggestion); setAuto(true); }}>Auto</button>
     </div>
-    <RangeControl label="Strength" value={slider} min={0} max={100} step={1} defaultValue={DENOISE_MANUAL_DEFAULT} disabled={working} testId="denoise-strength" onChange={(next) => { setSlider(next); setAuto(false); }} />
+    <RangeControl label="Strength" value={slider} min={0} max={100} step={1} defaultValue={DENOISE_MANUAL_DEFAULT} disabled={working} testId="denoise-strength" onChange={(next) => onDraft(next, false)} />
     <p className="inspector-note" data-testid="denoise-hint">
       {auto
         ? `Auto ${suggestion} — drag the slider to fine-tune`
@@ -712,6 +698,47 @@ function DenoiseControl({ assist, photo }: { assist: DenoiseAssist; photo: Photo
       </div>
     </>}
   </div>;
+}
+
+/**
+ * The Denoise section: the draft strength lives here (not in the control)
+ * so the shared header ML button drives the same auto suggestion the old
+ * content Auto pill did — it highlights while the draft is the ISO
+ * suggestion, and engaging it sets the suggestion. The reset follows the
+ * Enhance Faces pattern: present exactly while a denoise is stored, and
+ * clearing it (no pre-apply snapshot exists, so canRevert stays false and
+ * the reset always runs onClear).
+ */
+function DenoiseSection({ assist, photo }: { assist: DenoiseAssist; photo: Photo }) {
+  const working = assist.state === 'previewing' || assist.state === 'applying';
+  // Draft strength, reset per photo: high-ISO captures start at the ISO
+  // suggestion (marked auto), clean captures at manual 45.
+  const [slider, setSlider] = useState(() => denoiseStrengthForIso(photo.iso) || DENOISE_MANUAL_DEFAULT);
+  const [auto, setAuto] = useState(() => shouldAutoDenoise(photo.iso));
+  useEffect(() => {
+    setSlider(denoiseStrengthForIso(photo.iso) || DENOISE_MANUAL_DEFAULT);
+    setAuto(shouldAutoDenoise(photo.iso));
+  }, [photo.id]);
+  const suggestion = denoiseStrengthForIso(photo.iso);
+  const applied = assist.applied !== null;
+  const mlTitle = suggestion <= 0
+    ? `ISO ${photo.iso} needs no denoise`
+    : auto
+      ? `Auto suggestion ${suggestion} — click to go manual, or drag the slider to fine-tune`
+      : `Set strength to the ISO ${photo.iso} suggestion (${suggestion})`;
+  return <AdjustmentSection title="Denoise" icon={<Waves size={14} />}
+    ml={{
+      id: 'denoise',
+      applied: auto,
+      canRevert: false,
+      onToggle: () => { if (auto) setAuto(false); else { setSlider(suggestion); setAuto(true); } },
+      onRevert: () => setAuto(false),
+      disabled: working || suggestion <= 0,
+      title: mlTitle,
+    }}
+    onReset={applied ? assist.onClear : undefined} dirty={applied}>
+    <DenoiseControl assist={assist} photo={photo} slider={slider} auto={auto} onDraft={(strength, nextAuto) => { setSlider(strength); setAuto(nextAuto); }} />
+  </AdjustmentSection>;
 }
 
 function RetouchGroups({ edit, highlightStroke, onHighlightStroke, onChange }: { edit: EditState; highlightStroke: number | null; onHighlightStroke?: (stroke: number | null) => void; onChange: ChangeEdit }) {
@@ -858,7 +885,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><Histogram data={histogram} photo={photo} /><AdjustmentSection title="Auto Enhance" icon={<Sparkles size={14} />} ml={{ id: 'auto-enhance', kind: 'auto', applied: classicActive, canRevert: classicRevert, onToggle: onAuto, onRevert: onRevertEnhance }} onReset={classicRevert ? onRevertEnhance : undefined} dirty={classicRevert}><p className="inspector-note">Automatically enhance exposure, contrast, and color.</p></AdjustmentSection>{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} ml={{ id: 'scene-enhance', applied: sceneActive, canRevert: sceneRevert, onToggle: onAutoScene, onRevert: onRevertEnhance }} onReset={sceneRevert ? onRevertEnhance : undefined} dirty={sceneRevert}><SceneEnhanceControl edit={edit} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} ml={{ id: 'face-enhance', applied: Boolean(faceAssist.applied), canRevert: Boolean(faceAssist.applied), onToggle: faceAssist.applied ? faceAssist.onClear : faceAssist.onDetect, onRevert: faceAssist.onClear }} onReset={faceAssist.applied ? faceAssist.onClear : undefined} dirty={Boolean(faceAssist.applied)}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} ml={{ id: 'selective-mask', applied: Boolean(selectiveAssist.applied), canRevert: Boolean(selectiveAssist.applied), onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect, onRevert: selectiveAssist.onClear }} onReset={selectiveAssist.applied ? selectiveAssist.onClear : undefined} dirty={Boolean(selectiveAssist.applied)}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <AdjustmentSection title="Denoise" icon={<Waves size={14} />} badge={<MlBadge hint="Denoised by a machine-learning model on the photo server" />}><DenoiseControl assist={denoiseAssist} photo={photo} /></AdjustmentSection>}
+    <div className="inspector-scroll">{tool === 'adjust' ? <><Histogram data={histogram} photo={photo} /><AdjustmentSection title="Auto Enhance" icon={<Sparkles size={14} />} ml={{ id: 'auto-enhance', kind: 'auto', applied: classicActive, canRevert: classicRevert, onToggle: onAuto, onRevert: onRevertEnhance }} onReset={classicRevert ? onRevertEnhance : undefined} dirty={classicRevert}><p className="inspector-note">Automatically enhance exposure, contrast, and color.</p></AdjustmentSection>{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} ml={{ id: 'scene-enhance', applied: sceneActive, canRevert: sceneRevert, onToggle: onAutoScene, onRevert: onRevertEnhance }} onReset={sceneRevert ? onRevertEnhance : undefined} dirty={sceneRevert}><SceneEnhanceControl edit={edit} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} ml={{ id: 'face-enhance', applied: Boolean(faceAssist.applied), canRevert: Boolean(faceAssist.applied), onToggle: faceAssist.applied ? faceAssist.onClear : faceAssist.onDetect, onRevert: faceAssist.onClear }} onReset={faceAssist.applied ? faceAssist.onClear : undefined} dirty={Boolean(faceAssist.applied)}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} ml={{ id: 'selective-mask', applied: Boolean(selectiveAssist.applied), canRevert: Boolean(selectiveAssist.applied), onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect, onRevert: selectiveAssist.onClear }} onReset={selectiveAssist.applied ? selectiveAssist.onClear : undefined} dirty={Boolean(selectiveAssist.applied)}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <DenoiseSection assist={denoiseAssist} photo={photo} />}
       <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} ml={{ id: 'white-balance', applied: Boolean(mlApplied?.whiteBalance), canRevert: Boolean(mlRevert?.whiteBalance), onToggle: onAutoWhiteBalance, onRevert: onRevertWhiteBalance }} onReset={() => onChange({ temperature: 5500, tint: 0 })} dirty={edit.temperature !== 5500 || edit.tint !== 0}>
         {rangeEnabled('whiteBalanceEnabled', 'temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false })}
         {rangeEnabled('whiteBalanceEnabled', 'tint', 'Tint', { color: 'tint' })}
