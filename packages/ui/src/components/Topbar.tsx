@@ -26,7 +26,6 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
   const action = (value: MenuAction) => { onAction(value); setOpen(null); };
   const item = (name: string, value: MenuAction, shortcut?: string, disabled?: boolean, checked?: boolean, danger?: boolean) => <MenuItem key={value} onClick={() => action(value)} shortcut={shortcut} disabled={disabled} checked={checked} danger={danger}>{name}</MenuItem>;
   const menus: Record<string, ReactNode> = {
-    [APP_NAME]: <>{item(`About ${APP_NAME}`, 'about')}<MenuSeparator />{item('Keyboard Shortcuts', 'shortcuts', '?')}</>,
     File: <>{item('Import Photos...', 'import', 'Ctrl O')}{item('Import Folder as Album...', 'import-local-folder')}{item('Import from Folder...', 'import-folder', 'Ctrl Shift O')}{item('New Album...', 'album')}<MenuSeparator />{item('Export Photo...', 'export', 'Ctrl Shift E')}</>,
     Edit: <>{item('Undo', 'undo', 'Ctrl Z', !canUndo)}{item('Redo', 'redo', 'Ctrl Shift Z', !canRedo)}<MenuSeparator />{item('Copy Adjustments', 'copy', 'Ctrl Shift C')}{item('Paste Adjustments', 'paste', 'Ctrl Shift V', !canPaste)}<MenuSeparator />{item('Reset All Adjustments', 'reset')}</>,
     Image: <>{item('Auto Enhance', 'enhance', 'A')}<MenuItem key="enhance-scene" onClick={() => action('enhance-scene')} shortcut="Shift A"><span>Scene Enhance <MlBadge hint="The scene is classified by a machine-learning model on your device" /></span></MenuItem><MenuItem key="enhance-faces" onClick={() => action('enhance-faces')} shortcut="Shift E"><span>Enhance Faces <MlBadge hint="Faces are detected by a machine-learning model on the photo server" /></span></MenuItem>{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<MenuSeparator />{item('Compare with Original', 'compare', 'B', compareDisabled)}<MenuSeparator />{item('Remove from Library…', 'remove', 'Del', false, undefined, true)}</>,
@@ -70,7 +69,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
         {Object.entries(menus).map(([name, content]) => (
           <div className="menu-anchor" key={name}>
             <button
-              className={`menu-trigger ${name === APP_NAME ? 'brand-name' : ''} ${open === name ? 'is-open' : ''}`}
+              className={`menu-trigger ${open === name ? 'is-open' : ''}`}
               aria-haspopup="menu"
               aria-expanded={open === name}
               onClick={() => setOpen(open === name ? null : name)}
