@@ -207,7 +207,7 @@ describe('shared primitive consumers', () => {
         dialog="export"
         photo={makePhoto()}
         edit={{ ...DEFAULT_EDIT } as EditState}
-        superres={{ run: async () => { throw new Error('unused'); }, health: async () => ({ ready: true, source: 'onnx', downloading: false, downloadPct: 1, error: null }) }}
+        superres={{ run: async () => { throw new Error('unused'); }, health: async () => ({ ready: true, source: 'onnx', downloading: false, downloadPct: 1, weightsReady: true, error: null }) }}
         onClose={noop}
         onToast={noop}
         onCreateAlbum={noop}

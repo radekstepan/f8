@@ -69,7 +69,7 @@ function ExportDialog({ photo, edit, inpaintRepair, superres, initialSuperres, o
     setSuperresHealth(null);
     superres.health().then(
       (snapshot) => { if (live) setSuperresHealth(snapshot); },
-      (reason) => { if (live) setSuperresHealth({ ready: false, source: 'onnx', downloading: false, downloadPct: 0, error: reason instanceof Error ? reason.message : 'Photo server unreachable — start it with yarn dev.' }); },
+      (reason) => { if (live) setSuperresHealth({ ready: false, source: 'onnx', downloading: false, downloadPct: 0, weightsReady: false, error: reason instanceof Error ? reason.message : 'Photo server unreachable — start it with yarn dev.' }); },
     );
     return () => { live = false; };
   }, [upscale2x, superres]);

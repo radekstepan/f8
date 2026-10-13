@@ -305,6 +305,12 @@ export interface SuperresHealthSnapshot {
   source: SuperresSource;
   downloading: boolean;
   downloadPct: number;
+  /**
+   * True when the weight file is cached on disk, even while the ONNX
+   * session is still cold — this is what distinguishes "run yarn setup"
+   * (weights absent) from "first export warms the engine" (cached).
+   */
+  weightsReady: boolean;
   error: string | null;
 }
 
@@ -316,8 +322,11 @@ export interface SuperresEngineNote {
 
 /**
  * One health snapshot → the export dialog's engine note. Errors surface
- * verbatim (hard fail, no fallback); a quiet not-ready box means weights
- * simply aren't cached yet — the first export downloads them once.
+ * verbatim (hard fail, no fallback); a quiet not-ready box splits on
+ * weightsReady — cached weights with a cold session (the normal state
+ * right after `yarn setup`) say so and promise a warm-on-export, while
+ * only truly absent weights point at setup. Never blame setup when the
+ * weights are already on disk.
  */
 export function superresEngineNote(snapshot: SuperresHealthSnapshot): SuperresEngineNote {
   if (snapshot.ready && snapshot.source === "onnx") {
@@ -330,9 +339,52 @@ export function superresEngineNote(snapshot: SuperresHealthSnapshot): SuperresEn
     };
   }
   if (snapshot.error) return { tone: "error", text: snapshot.error };
+  if (snapshot.weightsReady) {
+    return {
+      tone: "ready",
+      text: "Real-ESRGAN weights are cached — the first export warms the engine, then upscales.",
+    };
+  }
   return {
     tone: "missing",
     text: "ML weights are missing — run yarn setup, or export once to download them (~64MB).",
+  };
+}
+
+/**
+ * Parse one GET /api/superres/health payload into a dialog snapshot.
+ * Pure so the web transport and its tests share it: server errors and a
+ * wrong engine reject with the message the dialog shows, while a missing
+ * weightsReady reads as false (older servers predate the field). Mirrors
+ * the server's validateSuperresBody ok/error shape.
+ */
+export function parseSuperresHealthSnapshot(
+  payload: unknown,
+): { ok: true; value: SuperresHealthSnapshot } | { ok: false; error: string } {
+  if (typeof payload !== "object" || payload === null) {
+    return { ok: false, error: "Photo server returned bad health." };
+  }
+  const snapshot = payload as Record<string, unknown>;
+  if (typeof snapshot["error"] === "string" && snapshot["error"]) {
+    return { ok: false, error: (snapshot["error"] as string).slice(0, 220) };
+  }
+  if (snapshot["source"] !== "onnx") {
+    return { ok: false, error: "Photo server returned an unexpected upscale engine." };
+  }
+  const downloadPct =
+    typeof snapshot["downloadPct"] === "number" && Number.isFinite(snapshot["downloadPct"])
+      ? Math.max(0, Math.min(1, snapshot["downloadPct"] as number))
+      : 1;
+  return {
+    ok: true,
+    value: {
+      ready: snapshot["ready"] === true || snapshot["serving"] === true,
+      source: "onnx",
+      downloading: snapshot["downloading"] === true,
+      downloadPct,
+      weightsReady: snapshot["weightsReady"] === true,
+      error: null,
+    },
   };
 }
 

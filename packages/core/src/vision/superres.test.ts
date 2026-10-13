@@ -5,6 +5,7 @@ import {
   SUPERRES_TILE,
   SUPERRES_TILE_OVERLAP,
   packSuperresInput,
+  parseSuperresHealthSnapshot,
   parseSuperresOutput,
   stitchSuperresTiles,
   superresEngineNote,
@@ -186,14 +187,23 @@ describe("super-resolution tile progress", () => {
 
 describe("super-resolution engine note", () => {
   it("names the ready ML engine", () => {
-    expect(superresEngineNote({ ready: true, source: "onnx", downloading: false, downloadPct: 1, error: null })).toEqual({
+    expect(
+      superresEngineNote({ ready: true, source: "onnx", downloading: false, downloadPct: 1, weightsReady: true, error: null }),
+    ).toEqual({
       tone: "ready",
       text: "Real-ESRGAN 2x is ready on the photo server.",
     });
   });
 
   it("shows live download progress without mentioning any fallback", () => {
-    const note = superresEngineNote({ ready: false, source: "onnx", downloading: true, downloadPct: 0.42, error: null });
+    const note = superresEngineNote({
+      ready: false,
+      source: "onnx",
+      downloading: true,
+      downloadPct: 0.42,
+      weightsReady: false,
+      error: null,
+    });
     expect(note.tone).toBe("busy");
     expect(note.text).toContain("42%");
     expect(note.text).not.toMatch(/classical|fallback/i);
@@ -205,15 +215,114 @@ describe("super-resolution engine note", () => {
       source: "onnx",
       downloading: false,
       downloadPct: 0,
+      weightsReady: false,
       error: "Model download failed: HTTP 404.",
     });
     expect(note).toEqual({ tone: "error", text: "Model download failed: HTTP 404." });
   });
 
   it("points missing weights at yarn setup", () => {
-    const note = superresEngineNote({ ready: false, source: "onnx", downloading: false, downloadPct: 1, error: null });
+    const note = superresEngineNote({
+      ready: false,
+      source: "onnx",
+      downloading: false,
+      downloadPct: 1,
+      weightsReady: false,
+      error: null,
+    });
     expect(note.tone).toBe("missing");
     expect(note.text).toContain("yarn setup");
     expect(note.text).not.toMatch(/classical|fallback/i);
+  });
+
+  it("never blames setup when weights are cached but the session is cold", () => {
+    // The normal state right after `yarn setup`: weights on disk, no ONNX
+    // session yet — the dialog must not claim the weights are missing.
+    const note = superresEngineNote({
+      ready: false,
+      source: "onnx",
+      downloading: false,
+      downloadPct: 1,
+      weightsReady: true,
+      error: null,
+    });
+    expect(note.tone).toBe("ready");
+    expect(note.text).not.toContain("yarn setup");
+    expect(note.text).not.toMatch(/missing/i);
+    expect(note.text).toMatch(/cached|warm/i);
+  });
+});
+
+describe("parseSuperresHealthSnapshot", () => {
+  it("passes weightsReady through from the server payload", () => {
+    const cached = parseSuperresHealthSnapshot({
+      ready: false,
+      serving: false,
+      source: "onnx",
+      downloading: false,
+      downloadPct: 1,
+      weightsReady: true,
+      sessionsWarm: false,
+      error: null,
+    });
+    expect(cached.ok).toBe(true);
+    if (cached.ok) {
+      expect(cached.value).toEqual({
+        ready: false,
+        source: "onnx",
+        downloading: false,
+        downloadPct: 1,
+        weightsReady: true,
+        error: null,
+      });
+    }
+    const missing = parseSuperresHealthSnapshot({
+      ready: false,
+      serving: false,
+      source: "onnx",
+      downloading: false,
+      downloadPct: 1,
+      weightsReady: false,
+      sessionsWarm: false,
+      error: null,
+    });
+    expect(missing.ok).toBe(true);
+    if (missing.ok) expect(missing.value.weightsReady).toBe(false);
+  });
+
+  it("reads serving as ready and clamps download progress", () => {
+    const parsed = parseSuperresHealthSnapshot({
+      ready: false,
+      serving: true,
+      source: "onnx",
+      downloading: true,
+      downloadPct: 7,
+      weightsReady: true,
+      error: null,
+    });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value.ready).toBe(true);
+      expect(parsed.value.downloadPct).toBe(1);
+    }
+  });
+
+  it("defaults a missing weightsReady to false", () => {
+    const parsed = parseSuperresHealthSnapshot({ ready: false, source: "onnx" });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.value.weightsReady).toBe(false);
+  });
+
+  it("rejects server errors, wrong engines, and bad payloads", () => {
+    expect(parseSuperresHealthSnapshot({ source: "onnx", error: "Model download failed: HTTP 404." })).toEqual({
+      ok: false,
+      error: "Model download failed: HTTP 404.",
+    });
+    expect(parseSuperresHealthSnapshot({ ready: true, source: "classic" })).toEqual({
+      ok: false,
+      error: "Photo server returned an unexpected upscale engine.",
+    });
+    expect(parseSuperresHealthSnapshot(null)).toEqual({ ok: false, error: "Photo server returned bad health." });
+    expect(parseSuperresHealthSnapshot("nope")).toEqual({ ok: false, error: "Photo server returned bad health." });
   });
 });

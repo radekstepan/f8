@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { SUPERRES_FILE, SUPERRES_FILE_SIZE } from "@f8/core";
 import {
   ensureSuperresReady,
   getSuperresHealth,
@@ -84,6 +85,44 @@ describe("superres (weights absent → hard fail, no fallback)", () => {
       expect(viaHttpBody.ready).toBe(false);
       expect(viaHttpBody.serving).toBe(false);
     } finally {
+      ctx.close();
+    }
+  });
+
+  it("reports weights cached but session cold right after yarn setup", async () => {
+    // `yarn setup` downloads the weights but warms no ONNX session, so a
+    // fresh server must report weightsReady with sessionsWarm false — the
+    // client splits its engine note on exactly this (cached → warm on
+    // export; only absent weights may blame setup). Sparse file: full
+    // logical size, no bytes written.
+    const previousDir = process.env["F8_SUPERRES_DIR"];
+    delete process.env["F8_SUPERRES_DIR"];
+    const ctx = createTestContext();
+    try {
+      const dataDir = path.join(ctx.dir, "data");
+      const dir = superresDir(dataDir);
+      await fs.mkdir(dir, { recursive: true });
+      const dest = path.join(dir, SUPERRES_FILE);
+      await fs.writeFile(dest, Buffer.alloc(0));
+      await fs.truncate(dest, SUPERRES_FILE_SIZE);
+
+      const health = await getSuperresHealth(dataDir);
+      expect(health.ready).toBe(false);
+      expect(health.serving).toBe(false);
+      expect(health.weightsReady).toBe(true);
+      expect(health.sessionsWarm).toBe(false);
+      expect(health.downloading).toBe(false);
+      expect(health.error).toBeNull();
+
+      const viaHttp = await ctx.app.request("/api/superres/health");
+      expect(viaHttp.status).toBe(200);
+      const body = (await viaHttp.json()) as { weightsReady: boolean; sessionsWarm: boolean; ready: boolean };
+      expect(body.weightsReady).toBe(true);
+      expect(body.sessionsWarm).toBe(false);
+      expect(body.ready).toBe(false);
+    } finally {
+      if (previousDir === undefined) delete process.env["F8_SUPERRES_DIR"];
+      else process.env["F8_SUPERRES_DIR"] = previousDir;
       ctx.close();
     }
   });

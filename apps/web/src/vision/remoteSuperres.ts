@@ -11,7 +11,7 @@
 // serving a silent fallback, so this transport mirrors remoteDenoise's
 // warmup/health polling and surfaces those errors verbatim.
 
-import { superresTileProgress } from "@f8/core";
+import { parseSuperresHealthSnapshot, superresTileProgress } from "@f8/core";
 import type { SuperresHealthSnapshot, SuperresRunResult } from "@f8/core";
 
 export class RemoteSuperresError extends Error {
@@ -166,31 +166,18 @@ interface HealthSnapshot {
 
 /** One health read for the dialog's engine note (ready vs downloading vs error). */
 export async function fetchSuperresHealth(signal?: AbortSignal): Promise<SuperresHealthSnapshot> {
-  let snapshot: HealthSnapshot;
+  let payload: unknown;
   try {
     const response = await fetch("/api/superres/health", { signal });
     if (!response.ok) throw new RemoteSuperresError(`Server replied ${response.status}.`);
-    snapshot = (await response.json()) as HealthSnapshot;
+    payload = (await response.json()) as unknown;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new RemoteSuperresError("Photo server unreachable — start it with yarn dev.");
   }
-  if (typeof snapshot.error === "string" && snapshot.error) {
-    throw new RemoteSuperresError(snapshot.error.slice(0, 220));
-  }
-  if (snapshot.source !== "onnx") {
-    throw new RemoteSuperresError("Photo server returned an unexpected upscale engine.");
-  }
-  return {
-    ready: snapshot.ready === true || snapshot.serving === true,
-    source: "onnx",
-    downloading: snapshot.downloading === true,
-    downloadPct:
-      typeof snapshot.downloadPct === "number" && Number.isFinite(snapshot.downloadPct)
-        ? Math.max(0, Math.min(1, snapshot.downloadPct))
-        : 1,
-    error: null,
-  };
+  const parsed = parseSuperresHealthSnapshot(payload);
+  if (!parsed.ok) throw new RemoteSuperresError(parsed.error);
+  return parsed.value;
 }
 
 /**
