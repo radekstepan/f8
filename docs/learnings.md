@@ -8,6 +8,8 @@ toolbar, or library UI so we don't repeat the same mistakes.
   during the task reset; the index below is preserved for archaeology.
 - **R2** = second run, 2026-10-13 (12 tasks). Writeups live in
   `docs/tasks/01–12`.
+- **R3** = third run, 2026-10-13 (8 tasks). Writeups live in
+  `docs/tasks/task-1.md` … `task-8.md`.
 
 ## 1. Honest labels and naming
 
@@ -81,6 +83,22 @@ toolbar, or library UI so we don't repeat the same mistakes.
 - **Converge to the existing sibling shape exactly** (e.g. Curves/
   Effects `initiallyOpen`) rather than inventing a third variant.
   (R1-11)
+- **New toolbar affordances reuse the existing glyph family and dispatch
+  path.** The reset button renders the Inspector's reset motif and
+  dispatches the shared Edit-menu `reset` action — no parallel logic.
+  Its enabled predicate mirrors the action's own (`!isDefaultEdit`) so
+  it is enabled exactly when clicking does something, and the optional
+  prop defaults to enabled so existing renders keep working. (R3-1)
+- **Back-navigation says only where "back" goes.** The count (`N photos`)
+  and the circled-chevron badge were noise — the count already lives in
+  the grid title and status bar — so the backlink is a single-line ghost
+  button whose tooltip advertises the existing G shortcut. Keep the
+  editor-only / one-directional `back` navigation semantics when
+  rethinking looks. (R3-8)
+- **When the reference icon is named, match top to it, not the reverse.**
+  The strip's `SwatchBook` is the presets-specific motif while
+  `SlidersHorizontal` is generic (and already means "Adjust" in the same
+  toolbar) — reusing it made two controls visually ambiguous. (R3-2)
 
 ## 3. Spacing, layout, and motion
 
@@ -134,6 +152,29 @@ toolbar, or library UI so we don't repeat the same mistakes.
   (R2-10)
 - **Every transition needs a `prefers-reduced-motion` off-ramp.**
   (R2-8)
+- **Check what sizes the container before touching the thing inside
+  it.** The album-preview resize lived in the frame's aspect-state
+  lifecycle (stale `useState` never reset on photo change), not the
+  fill CSS (`cover` + 100% was already right). (R3-6)
+- **Absolute `%` offsets resolve against the positioned ancestor, not
+  the visual trigger.** A trigger pill with vertical margin inside a
+  full-height anchor sits 3px above `top: 100%` — compare the menu edge
+  against the trigger's border box and subtract the margin in a scoped
+  override (`.menu-bar .dropdown-menu`), never by changing the shared
+  base rule or removing the trigger's margin. (R3-7)
+- **Prefer `min-width: 0` + ellipsis over fixed slots in flex
+  toolbars.** Fixed slots are fragile across panel toggles (sidebar
+  open/closed, overlay mode); a flexing block with
+  `text-overflow: ellipsis` degrades gracefully by construction.
+  (R3-8)
+- **Magic alignment padding is a smell of diverged variants.**
+  Unifying both variants onto one single-line shape deletes the
+  constant instead of re-tuning it. (R3-8)
+- **Leading-vs-mid-content spacing needs a positional selector.**
+  Keep the base margin as the correct mid-content separator and
+  override only the leading position (`> …:first-child`, flush 0 to
+  match the content edge) — including sibling sections that share the
+  pattern even when the task names only one area. (R3-3)
 
 ## 4. Navigation and state
 
@@ -198,6 +239,25 @@ toolbar, or library UI so we don't repeat the same mistakes.
   changes.** Values-alone dirtiness (flag flips back on first drag)
   is the settled convention — pin it explicitly in each new test
   file rather than assuming it. (R1-12)
+- **A highlight implying an action must share that action's
+  lifetime.** Persisting the enhance "applied" flag while the revert
+  snapshot stayed session-only stranded the button
+  enabled-without-a-reset — the persisted half must reopen idle, and
+  the seed-only helper (`enhanceModeForRecipe`) goes with its tests
+  instead of staying exported to invite reintroduction. (R3-4)
+- **When a drag feels laggy, check what the state update re-triggers,
+  not the handler.** The paint and overlay render were cheap; the cost
+  was a full-res canvas repaint subscribed to the same state on every
+  pointermove. Bail out early for gestures whose pixels the pipeline
+  provably cannot change (base canvas excludes repair stamps) — a
+  proven invariant, not a gamble — after the generation bump so
+  in-flight runs still cancel. (R3-5)
+- **Predict frame size from metadata; keep measured pixels as
+  post-paint truth.** Stored dims plus live rotation/crop fully
+  determine the pipeline's output size, so the loading frame can be
+  right on first paint (`loading ? predicted : measured` tracks edits
+  streaming in after open); fall back to the last measured aspect, not
+  a constant, for corrupt metadata. (R3-6)
 
 ## 5. Testing practices (repo-specific)
 
@@ -265,6 +325,33 @@ toolbar, or library UI so we don't repeat the same mistakes.
 - **"Don't run Playwright" ≠ "don't update Playwright specs."** Grep
   e2e for the changed UI and update stale expectations in the same
   commit, or the next e2e run fails on an intended change. (R2-3)
+- **A test pinning "keep X different" is a deliberate contract, not
+  incidental coverage.** When a task flips it, update the rationale
+  comment too — not just the assertion — and add an explicit match
+  test plus a guard that the donor glyph's other use is untouched.
+  (R3-2)
+- **A more specific selector shape can dodge a "zero overrides"
+  pin.** `> …:first-child` keeps those assertions green while still
+  changing behavior — read the pinned contract and extend it in a new
+  file rather than assuming green means unaffected; and always pin
+  the `:first-child` child order in SSR markup, since a reorder
+  silently disables the style with every test passing. (R3-3)
+- **Stylesheet-pinning tests can assert relationships, not just
+  literals.** Parsing the trigger margin and comparing it to the calc
+  offset couples the two values so they cannot drift apart. (R3-7)
+- **Verify new tests fail on old code** (`git stash` + rerun — R3-6:
+  4 fail / 2 pass) to prove the test pins the fix, not incidental
+  markup. SSR-rendered layout assertions are a cheap, jsdom-free way
+  to do this. (R3-6)
+- **Substring traps in markup assertions.** `'</button>'`-style closers
+  and a target attribute inside its own opening tag break naive
+  `slice(a, b).not.toContain('<button')` checks on the boundary tags
+  themselves — pin element boundaries explicitly
+  (`lastIndexOf('<button', …)`). (R3-1)
+- **Effect internals follow the core-helper seam.** Skip logic living
+  in an effect with post-loading internal state isn't SSR-observable,
+  so coverage goes through a pure `@f8/core` helper truth table — the
+  same pattern as the existing canvas-drag routing. (R3-5)
 
 ## 6. Tooling gotchas
 
@@ -284,8 +371,13 @@ toolbar, or library UI so we don't repeat the same mistakes.
 - **`@f8/web` resolves `@f8/core` and `@f8/ui` from `dist`, not `src`.**
   Rebuild the dependency's dist before typechecking, or you chase
   phantom errors — `TS2305 has no exported member` after adding a core
-  export is a stale-build signal, not a real problem.
-  (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12)
+  export is a stale-build signal, not a real problem. The same
+  applies to `@f8/ui` tests resolving `@f8/core` through
+  `packages/core/dist` — a core `src` change needs a local core build
+  before UI tests see it. "Tests pass but typecheck fails" is the
+  signature of a stale `dist` (unit tests resolve source). Never
+  commit `dist/`.
+  (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6)
 - **Commit by explicit paths, never `git add -A`.** Stray files
   (e.g. `.DS_Store` under `docs/`) get swept in otherwise. (R1)
 - **No CI, no configured linter** — both packages' `lint` scripts
@@ -305,7 +397,12 @@ toolbar, or library UI so we don't repeat the same mistakes.
 - **Icon reuse audit before picking a glyph.** The obvious `Palette`
   pick was already taken by Hue & Saturation; `SwatchBook` had zero
   uses. And change the color-related surface, not the generic chrome.
-  (R2-6)
+  Before swapping, grep every usage of both glyphs to confirm the
+  donor exists only at the reference site and no other test pins the
+  target's glyph. (R2-6, R3-2)
+- **When restyling, grep the responsive overrides too.** Old-shape
+  rules at narrow breakpoints silently re-break the new shape at
+  small widths if left behind. (R3-8)
 - **A control duplicating another control's state is safe to delete
   only after proving no hidden semantics** — git history (e.g. the
   bypass→visibility conversion) can be that proof. Record it in the
@@ -373,3 +470,16 @@ toolbar, or library UI so we don't repeat the same mistakes.
 | 10 | `dc9edb0` | `10-grid-size-slider-direction.md` | Slider value is preview size, mirrored to columns |
 | 11 | `7d265b9` | `11-album-click-deselects.md` | Re-clicking a sidebar album returns to All Photos |
 | 12 | `d669239` | `12-photo-backlink-rethink.md` | Editor-only backlink pill, static grid title |
+
+## Per-task index, R3 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `a53eb50` | `task-1.md` | Reset-to-original toolbar action next to presets toggle |
+| 2 | `4372e63` | `task-2.md` | Toolbar presets toggle matches strip SwatchBook icon |
+| 3 | `3e88164` | `task-3.md` | Adjustments descriptions flush with first slider label |
+| 4 | `082fb5b` | `task-4.md` | Reloaded Auto enhance reopens idle, not enabled-without-reset |
+| 5 | `c867547` | `task-5.md` | Skip canvas repaint during live repair drags |
+| 6 | `66f0ae1` | `task-6.md` | Album preview frame sized at final image aspect |
+| 7 | `ebbd1cb` | `task-7.md` | Top menu dropdowns open flush with trigger pills |
+| 8 | `747a425` | `task-8.md` | Photo backlink becomes single-line ghost back button |
