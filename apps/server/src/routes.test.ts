@@ -175,6 +175,48 @@ describe("routes", () => {
     expect(library.albums).toHaveLength(1);
   });
 
+  it("queues fresh by-path imports for labeling and cull assist, not reimports", async () => {
+    // Both ML passes run automatically at import (there is no manual menu
+    // action anymore), so the route must enqueue fresh files into both
+    // background queues — and nothing for duplicates/relinks.
+    const labeled: string[] = [];
+    const culled: string[] = [];
+    const spy = createTestContext({
+      semanticEnqueue: (photoId: string) => void labeled.push(photoId),
+      cullEnqueue: (photoId: string) => void culled.push(photoId),
+    });
+    try {
+      const folder = path.join(spy.dir, "trip-photos");
+      await fs.mkdir(folder, { recursive: true });
+      await fs.writeFile(path.join(folder, "a.bmp"), makeBmp(4, 4));
+      await fs.writeFile(path.join(folder, "b.bmp"), makeBmp(5, 5));
+      const payload = { paths: [folder] };
+      const first = await json<ImportReport>(
+        await spy.app.request("/api/imports/by-path", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }),
+      );
+      expect(first.imported).toHaveLength(2);
+      const ids = first.imported.map((photo) => photo.id).sort();
+      expect([...labeled].sort()).toEqual(ids);
+      expect([...culled].sort()).toEqual(ids);
+      const second = await json<ImportReport>(
+        await spy.app.request("/api/imports/by-path", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }),
+      );
+      expect(second.duplicates).toHaveLength(2);
+      expect(labeled).toHaveLength(2);
+      expect(culled).toHaveLength(2);
+    } finally {
+      spy.close();
+    }
+  });
+
   it("serves display bytes, distinguishes previews, and 404s the missing", async () => {
     const bmp = path.join(ctx.dir, "pixels.bmp");
     const raw = path.join(ctx.dir, "frame.CR2");

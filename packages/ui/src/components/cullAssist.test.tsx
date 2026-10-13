@@ -7,7 +7,6 @@ import { DEFAULT_EDIT } from '@f8/core';
 import type { Album, Photo } from '@f8/core';
 import { EditorDialogs } from './EditorDialogs.js';
 import { PhotoBrowser } from './PhotoStrips.js';
-import { Sidebar } from './Sidebar.js';
 
 // Cull-assist surfaces, rendered on the server (no jsdom): effects never
 // run, so this pins the markup + prop wiring, not click behavior. The album
@@ -52,26 +51,8 @@ const cssRule = (selector: string): string => {
 };
 
 describe('cull assist', () => {
-  it('renders the sidebar menu trigger for cull alone', () => {
-    const html = renderToStaticMarkup(
-      <Sidebar photos={[makePhoto()]} albums={[makeAlbum()]} collection="a1" search="" onSearch={noop} onSelect={noop} onImport={noop} onNewAlbum={noop} onCullAlbum={noop} />,
-    );
-    expect(html).toContain('Album actions for Road Trip');
-    expect(html).toContain('album-menu-trigger');
-  });
-
-  it('renders the grid album menu for cull alone, never for built-ins', () => {
-    const html = renderToStaticMarkup(
-      <PhotoBrowser photos={[makePhoto()]} title="Road Trip" search="" album={makeAlbum()} onSelect={noop} onFavorite={noop} onCullAlbum={noop} onImport={noop} />,
-    );
-    expect(html).toContain('Album actions for Road Trip');
-    expect(html).toContain('browser-album-menu');
-    const builtIn = renderToStaticMarkup(
-      <PhotoBrowser photos={[makePhoto()]} title="All Photos" search="" album={{ id: 'all', name: 'All Photos', cover: '' }} onSelect={noop} onFavorite={noop} onCullAlbum={noop} onImport={noop} />,
-    );
-    expect(builtIn).not.toContain('browser-album-menu');
-  });
-
+  // Cull assist needs no menu: every import is assessed on the server, so
+  // the album menus carry only Delete (pinned in removeAlbum).
   it('renders the cull filter chips with the active state', () => {
     const html = renderToStaticMarkup(
       <PhotoBrowser photos={[makePhoto()]} title="Road Trip" search="" album={makeAlbum()} editedFilter="all" favoriteFilter="all" onEditedFilter={noop} onFavoriteFilter={noop} onClearFilters={noop} cullFilter="blurry" onCullFilter={noop} onSelect={noop} onFavorite={noop} onImport={noop} />,

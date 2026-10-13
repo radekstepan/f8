@@ -52,31 +52,13 @@ const cssRule = (selector: string): string => {
 };
 
 describe('semantic search', () => {
-  it('renders the sidebar menu trigger for labeling alone', () => {
-    const html = renderToStaticMarkup(
-      <Sidebar photos={[makePhoto()]} albums={[makeAlbum()]} collection="a1" search="" onSearch={noop} onSelect={noop} onImport={noop} onNewAlbum={noop} onLabelAlbum={noop} />,
-    );
-    expect(html).toContain('Album actions for Road Trip');
-    expect(html).toContain('album-menu-trigger');
-  });
-
+  // Labeling needs no menu: every import embeds + labels itself on the
+  // server, so the album menus carry only Delete (pinned in removeAlbum).
   it('renders no sidebar trigger without any album action', () => {
     const html = renderToStaticMarkup(
       <Sidebar photos={[makePhoto()]} albums={[makeAlbum()]} collection="a1" search="" onSearch={noop} onSelect={noop} onImport={noop} onNewAlbum={noop} />,
     );
     expect(html).not.toContain('album-menu-trigger');
-  });
-
-  it('renders the grid album menu for labeling alone, never for built-ins', () => {
-    const html = renderToStaticMarkup(
-      <PhotoBrowser photos={[makePhoto()]} title="Road Trip" search="" album={makeAlbum()} onSelect={noop} onFavorite={noop} onLabelAlbum={noop} onImport={noop} />,
-    );
-    expect(html).toContain('Album actions for Road Trip');
-    expect(html).toContain('browser-album-menu');
-    const builtIn = renderToStaticMarkup(
-      <PhotoBrowser photos={[makePhoto()]} title="All Photos" search="" album={{ id: 'all', name: 'All Photos', cover: '' }} onSelect={noop} onFavorite={noop} onLabelAlbum={noop} onImport={noop} />,
-    );
-    expect(builtIn).not.toContain('browser-album-menu');
   });
 
   it('shows the search result note under a search heading only', () => {

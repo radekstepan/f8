@@ -18,7 +18,6 @@ import { useFaceEnhance } from './vision/useFaceEnhance';
 import { useSelectiveMask } from './vision/useSelectiveMask';
 import { useDenoise } from './vision/useDenoise';
 import { useSemanticSearch } from './vision/useSemanticSearch';
-import { useCullAssist } from './vision/useCullAssist';
 import type { SelectiveAdjustParams, SelectiveTarget } from '@f8/core';
 import { useInpaintRepair } from './vision/useInpaintRepair';
 import { fetchSuperresHealth, runRemoteSuperres, warmupRemoteSuperres } from './vision/remoteSuperres';
@@ -146,7 +145,6 @@ export default function App() {
   const selectiveMask = useSelectiveMask(photo?.id ?? selectedId);
   const denoise = useDenoise(photo?.id ?? selectedId);
   const semantic = useSemanticSearch();
-  const cull = useCullAssist();
   const inpaintRepair = useInpaintRepair();
   // Canvas binding: ML strokes are gated until the tier is warmed, so the
   // brush cursor stays hidden and painting is ignored while loading.
@@ -454,57 +452,6 @@ export default function App() {
       (reason: unknown) => notifyError(reason, 'Could not delete the album.'),
     );
   }, [albums, photos, library, notify, notifyError]);
-
-  // Album ML labeling: embeds + labels every photo that lacks ML labels
-  // yet (the hook downloads the weights once on first use, with progress).
-  // The library reloads afterwards so the new labels land everywhere.
-  const labelAlbumPhotos = useCallback((albumId: string) => {
-    const album = albums.find((entry) => entry.id === albumId);
-    void (async () => {
-      try {
-        const report = await semantic.labelAlbum(albumId);
-        await library.retry();
-        const name = album ? `"${album.name}"` : 'Album';
-        const notes = [
-          report.labeled.length ? `${name}: labeled ${report.labeled.length} ${report.labeled.length === 1 ? 'photo' : 'photos'} with ML.` : `${name}: everything already labeled — new imports label automatically.`,
-          report.alreadyLabeled.length > 0 && report.labeled.length > 0 ? `${report.alreadyLabeled.length} already labeled.` : '',
-          report.skipped.length ? `${report.skipped.length} skipped.` : '',
-          report.failed.length ? `${report.failed.length} failed.` : '',
-        ];
-        notify(notes.filter(Boolean).join(' '));
-      } catch (reason) {
-        notifyError(reason, 'Could not label the album.');
-      }
-    })();
-  }, [albums, library, notify, notifyError, semantic]);
-
-  // Album ML cull assist: flags blurry photos and near-duplicate groups
-  // (files the server already assessed are never re-detected). The library
-  // reloads afterwards so the new flags land everywhere.
-  const cullAlbumPhotos = useCallback((albumId: string) => {
-    const album = albums.find((entry) => entry.id === albumId);
-    void (async () => {
-      try {
-        const report = await cull.cullAlbum(albumId);
-        await library.retry();
-        const name = album ? `"${album.name}"` : 'Album';
-        const duplicates = report.groups.reduce((total, group) => total + group.members.length - 1, 0);
-        const checked = report.labeled.length;
-        const head = checked
-          ? `${name}: checked ${checked} ${checked === 1 ? 'photo' : 'photos'} with ML — ${report.blurry.length} blurry, ${duplicates} ${duplicates === 1 ? 'duplicate' : 'duplicates'}.`
-          : `${name}: everything already checked.`;
-        const notes = [
-          head,
-          report.alreadyLabeled.length > 0 && checked > 0 ? `${report.alreadyLabeled.length} already checked.` : '',
-          report.skipped.length ? `${report.skipped.length} skipped.` : '',
-          report.failed.length ? `${report.failed.length} failed.` : '',
-        ];
-        notify(notes.filter(Boolean).join(' '));
-      } catch (reason) {
-        notifyError(reason, 'Could not check the album.');
-      }
-    })();
-  }, [albums, library, notify, notifyError, cull]);
 
   const confirmRemovePhoto = useCallback((id: string) => {
     const list = filteredPhotos.some((item) => item.id === id) ? filteredPhotos : photos;
@@ -1175,10 +1122,10 @@ export default function App() {
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} presetsOpen={presetsOpen} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
-      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onCullAlbum={cullAlbumPhotos} onMoveToAlbum={movePhotosToAlbum} />}
+      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onMoveToAlbum={movePhotosToAlbum} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} albums={albums} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onCullAlbum={cullAlbumPhotos} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} selectedIds={selection} onSelectionChange={setSelection} onMoveToAlbum={movePhotosToAlbum} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} albums={albums} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} selectedIds={selection} onSelectionChange={setSelection} onMoveToAlbum={movePhotosToAlbum} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (
@@ -1251,8 +1198,6 @@ export default function App() {
     />}
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
     {importProgress && <ImportProgressToast status={importProgress} />}
-    {semantic.labeling && <ImportProgressToast status={{ done: 0, total: 0, label: semantic.labelProgress?.stage ?? 'Labeling album…' }} />}
-    {cull.culling && <ImportProgressToast status={{ done: 0, total: 0, label: 'Finding blurry photos…' }} />}
     {dragging && <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos or a folder anywhere to start creating.</p><span>JPEG, PNG, WebP, RAW and more</span></div></div>}
   </div>;
 }

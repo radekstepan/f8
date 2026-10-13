@@ -7,7 +7,6 @@ import {
 import {
   SEMANTIC_SEARCH_DIM,
   SEMANTIC_SEARCH_EMPTY_LABELS_NOTE,
-  SEMANTIC_SEARCH_LABEL_ACTION_HINT,
   SEMANTIC_SEARCH_LABEL_BOOST,
   SEMANTIC_SEARCH_ML_BADGE_HINT,
   SEMANTIC_SEARCH_NOTE_HINT,
@@ -312,9 +311,8 @@ describe("semantic search", () => {
 
   it("answers 'how do I retrain it' with shared no-training copy", () => {
     // Every surface states the same truth: a frozen pretrained model, new
-    // imports index themselves, the album action only backfills.
+    // imports index themselves.
     for (const copy of [
-      SEMANTIC_SEARCH_LABEL_ACTION_HINT,
       SEMANTIC_SEARCH_ML_BADGE_HINT,
       SEMANTIC_SEARCH_EMPTY_LABELS_NOTE,
       SEMANTIC_SEARCH_NOTE_HINT,
@@ -323,7 +321,6 @@ describe("semantic search", () => {
       expect(copy.toLowerCase()).toContain("no training");
       expect(copy.toLowerCase()).toMatch(/automat/);
     }
-    expect(SEMANTIC_SEARCH_LABEL_ACTION_HINT.toLowerCase()).toContain("backfill");
     expect(SEMANTIC_SEARCH_EMPTY_LABELS_NOTE.startsWith("No labels yet")).toBe(true);
     expect(SEMANTIC_SEARCH_ML_BADGE_HINT.toLowerCase()).toContain("pretrained");
   });

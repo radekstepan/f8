@@ -102,19 +102,16 @@ export const SEMANTIC_SEARCH_LABEL_BOOST = 0.245;
 export const SEMANTIC_SEARCH_MAX_RESULTS = 50;
 /**
  * Shared UI copy answering "how do I retrain it?": there is no training —
- * the model is a frozen pretrained CLIP encoder, imports embed in the
- * background, and the album action only backfills. Kept here so the sidebar
- * menu, grid menu, labels dialog, and search note never drift apart.
+ * the model is a frozen pretrained CLIP encoder and imports embed in the
+ * background. Kept here so the labels dialog, badges, and search note never
+ * drift apart.
  */
-/** Tooltip for the "Label unlabeled photos" album menu item. */
-export const SEMANTIC_SEARCH_LABEL_ACTION_HINT =
-  "Backfills photos imported before the model arrived — new imports are indexed automatically, no training needed.";
-/** Tooltip for the ML badge on semantic labels and menu items. */
+/** Tooltip for the ML badge on semantic labels. */
 export const SEMANTIC_SEARCH_ML_BADGE_HINT =
   "Labeled by a pretrained machine-learning model on the photo server — new imports label automatically, no training needed.";
 /** Empty state for the photo info dialog's Labels section. */
 export const SEMANTIC_SEARCH_EMPTY_LABELS_NOTE =
-  "No labels yet — new imports are labeled automatically (no training needed); label this album from its menu to backfill, or add your own below.";
+  "No labels yet — new imports are labeled automatically (no training needed); add your own below.";
 /** Tooltip for the "Semantic matches" search note over the grid. */
 export const SEMANTIC_SEARCH_NOTE_HINT =
   "Ranked by visual similarity with a pretrained model on this device — new imports join automatically, no training needed.";
