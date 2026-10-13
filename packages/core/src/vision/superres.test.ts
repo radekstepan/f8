@@ -7,10 +7,10 @@ import {
   packSuperresInput,
   parseSuperresOutput,
   stitchSuperresTiles,
+  superresEngineNote,
   superresOutputSize,
   superresTilePlan,
   superresTileProgress,
-  upscaleClassic2x,
 } from "./superres.js";
 import type { PixelImage } from "./analyze.js";
 
@@ -177,53 +177,43 @@ describe("super-resolution tile progress", () => {
     expect(superresTileProgress(9, 4).fraction).toBeCloseTo(0.95, 5);
   });
 
-  it("holds steady copy for single-tile, classical, and invalid counts", () => {
+  it("holds steady copy for single-tile and invalid counts", () => {
     expect(superresTileProgress(0, 1)).toEqual({ fraction: 0.4, stage: "Upscaling…" });
     expect(superresTileProgress(0, 0)).toEqual({ fraction: 0.4, stage: "Upscaling…" });
     expect(superresTileProgress(-1, 4)).toEqual({ fraction: 0.4, stage: "Upscaling…" });
   });
 });
 
-describe("classical 2x fallback", () => {
-  it("doubles dimensions and passes flats through", () => {
-    const upscaled = upscaleClassic2x(solid(8, 6, 100, 150, 200));
-    expect(upscaled.width).toBe(16);
-    expect(upscaled.height).toBe(12);
-    for (let p = 0; p < 16 * 12; p += 1) {
-      expect(upscaled.data[p * 4]).toBe(100);
-      expect(upscaled.data[p * 4 + 1]).toBe(150);
-      expect(upscaled.data[p * 4 + 2]).toBe(200);
-      expect(upscaled.data[p * 4 + 3]).toBe(255);
-    }
+describe("super-resolution engine note", () => {
+  it("names the ready ML engine", () => {
+    expect(superresEngineNote({ ready: true, source: "onnx", downloading: false, downloadPct: 1, error: null })).toEqual({
+      tone: "ready",
+      text: "Real-ESRGAN 2x is ready on the photo server.",
+    });
   });
 
-  it("keeps a hard step edge monotonic without collapsing it", () => {
-    const data = new Uint8ClampedArray(16 * 1 * 4);
-    for (let x = 0; x < 16; x += 1) {
-      const v = x < 8 ? 0 : 255;
-      data[x * 4] = v;
-      data[x * 4 + 1] = v;
-      data[x * 4 + 2] = v;
-      data[x * 4 + 3] = 255;
-    }
-    const upscaled = upscaleClassic2x({ width: 16, height: 1, data });
-    expect(upscaled.width).toBe(32);
-    const row = Array.from({ length: 32 }, (_, x) => upscaled.data[x * 4]!);
-    // Far ends settle at the step levels; the middle crosses from dark to light.
-    expect(row[0]).toBeLessThan(8);
-    expect(row[31]).toBeGreaterThan(247);
-    expect(row[15]).toBeLessThan(128);
-    expect(row[16]).toBeGreaterThan(128);
+  it("shows live download progress without mentioning any fallback", () => {
+    const note = superresEngineNote({ ready: false, source: "onnx", downloading: true, downloadPct: 0.42, error: null });
+    expect(note.tone).toBe("busy");
+    expect(note.text).toContain("42%");
+    expect(note.text).not.toMatch(/classical|fallback/i);
   });
 
-  it("upscales alpha bilinearly", () => {
-    const ramp = solid(4, 1);
-    for (let x = 0; x < 4; x += 1) ramp.data[x * 4 + 3] = x === 0 ? 0 : 255;
-    const upscaled = upscaleClassic2x(ramp);
-    expect(upscaled.data[3]).toBe(0);
-    expect(upscaled.data[7 * 4 + 3]).toBe(255);
-    const mid = upscaled.data[1 * 4 + 3]!;
-    expect(mid).toBeGreaterThan(0);
-    expect(mid).toBeLessThan(255);
+  it("surfaces errors verbatim for the hard fail", () => {
+    const note = superresEngineNote({
+      ready: false,
+      source: "onnx",
+      downloading: false,
+      downloadPct: 0,
+      error: "Model download failed: HTTP 404.",
+    });
+    expect(note).toEqual({ tone: "error", text: "Model download failed: HTTP 404." });
+  });
+
+  it("points missing weights at yarn setup", () => {
+    const note = superresEngineNote({ ready: false, source: "onnx", downloading: false, downloadPct: 1, error: null });
+    expect(note.tone).toBe("missing");
+    expect(note.text).toContain("yarn setup");
+    expect(note.text).not.toMatch(/classical|fallback/i);
   });
 });

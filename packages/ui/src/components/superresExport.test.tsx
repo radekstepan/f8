@@ -37,7 +37,7 @@ const noop = () => {};
 
 const binding: SuperresExportBinding = {
   run: async (image) => ({ width: image.width * 2, height: image.height * 2, data: new Uint8ClampedArray(image.width * 2 * image.height * 2 * 4), source: 'onnx' }),
-  health: async () => ({ source: 'onnx', downloading: false, downloadPct: 1, error: null }),
+  health: async () => ({ ready: true, source: 'onnx', downloading: false, downloadPct: 1, error: null }),
 };
 
 function renderExport(photo: Photo, superres?: SuperresExportBinding | null, initialSuperres?: boolean): string {

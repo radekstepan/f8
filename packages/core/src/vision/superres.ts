@@ -12,11 +12,10 @@
 // - packSuperresInput / parseSuperresOutput: the ONNX wire contract (RGB
 //   float32 NCHW 0..1 in, 2x RGB image same layout out — verified against
 //   the npuscale export, whose output is the upscaled image directly).
-// - upscaleClassic2x: classical fallback serving when ONNX weights are
-//   absent (offline first run, download disabled) — separable Lanczos-3 on
-//   luma/chroma with bilinear alpha. Approximate by design, so results
-//   always carry the classical source.
 // - stitchSuperresTiles: halo-discard assembly of per-tile outputs.
+//
+// 2x is ML-only: with no weights the server fails the upscale with the
+// real cause (no classical fallback), so the dialog shows the error.
 //
 // Inputs are never mutated.
 
@@ -40,9 +39,9 @@ export const SUPERRES_LICENSE = "BSD-3-Clause";
 /** Override env for the weight URL (mirrors F8_DENOISE_*). */
 export const SUPERRES_URL_ENV = "F8_SUPERRES_URL";
 export const SUPERRES_DIR_ENV = "F8_SUPERRES_DIR";
-/** Set to "1" to disable weight downloads (server still serves the classical fallback). */
+/** Set to "1" to disable weight downloads (2x upscales then fail hard until weights are cached). */
 export const SUPERRES_OFFLINE_ENV = "F8_SUPERRES_OFFLINE";
-/** Fixed upscale factor of the model (and the classical fallback). */
+/** Fixed upscale factor of the model. */
 export const SUPERRES_SCALE = 2;
 /** Core tile size in input px; frames above this run tiled. */
 export const SUPERRES_TILE = 512;
@@ -268,111 +267,14 @@ export function stitchSuperresTiles(
   return { width: outW, height: outH, data };
 }
 
-/** Lanczos-3 kernel (a = 3 lobes). */
-const LANCZOS_A = 3;
-
-function sinc(value: number): number {
-  if (value === 0) return 1;
-  const x = Math.PI * value;
-  return Math.sin(x) / x;
-}
-
-function lanczos(value: number): number {
-  const abs = Math.abs(value);
-  if (abs >= LANCZOS_A) return 0;
-  return sinc(value) * sinc(value / LANCZOS_A);
-}
-
-// 2x resampling taps for one output line: each output pixel maps to
-// (o + 0.5) / 2 - 0.5 in input space, gathering 2a taps normalized to 1.
-function lanczos2xLine(length: number): Array<{ taps: Float32Array; start: number }> {
-  const lines: Array<{ taps: Float32Array; start: number }> = [];
-  for (let o = 0; o < length * SUPERRES_SCALE; o += 1) {
-    const center = (o + 0.5) / SUPERRES_SCALE - 0.5;
-    const start = Math.floor(center) - LANCZOS_A + 1;
-    const taps = new Float32Array(2 * LANCZOS_A);
-    let sum = 0;
-    for (let k = 0; k < 2 * LANCZOS_A; k += 1) {
-      const w = lanczos(center - (start + k));
-      taps[k] = w;
-      sum += w;
-    }
-    if (sum !== 0) for (let k = 0; k < taps.length; k += 1) taps[k]! /= sum;
-    lines.push({ taps, start });
-  }
-  return lines;
-}
-
-/**
- * Classical fallback upscale: separable Lanczos-3 on RGB with bilinear
- * alpha. Sharp for a classical 2x (kept edges, mild ringing on hard steps),
- * but no learned detail — results always carry the classical source so the
- * dialog never presents it as ML.
- */
-export function upscaleClassic2x(image: PixelImage): PixelImage {
-  assertValidImage(image);
-  const { width, height, data } = image;
-  const outW = width * SUPERRES_SCALE;
-  const outH = height * SUPERRES_SCALE;
-  const rows = lanczos2xLine(width);
-  const cols = lanczos2xLine(height);
-  // Horizontal pass into an outW×height float buffer (RGB only).
-  const mid = new Float32Array(outW * height * 3);
-  for (let y = 0; y < height; y += 1) {
-    for (let ox = 0; ox < outW; ox += 1) {
-      const { taps, start } = rows[ox]!;
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      for (let k = 0; k < taps.length; k += 1) {
-        const x = Math.min(width - 1, Math.max(0, start + k));
-        const i = (y * width + x) * 4;
-        const w = taps[k] ?? 0;
-        r += (data[i] ?? 0) * w;
-        g += (data[i + 1] ?? 0) * w;
-        b += (data[i + 2] ?? 0) * w;
-      }
-      const m = (y * outW + ox) * 3;
-      mid[m] = r;
-      mid[m + 1] = g;
-      mid[m + 2] = b;
-    }
-  }
-  const out = new Uint8ClampedArray(outW * outH * 4);
-  for (let oy = 0; oy < outH; oy += 1) {
-    const { taps, start } = cols[oy]!;
-    for (let ox = 0; ox < outW; ox += 1) {
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      for (let k = 0; k < taps.length; k += 1) {
-        const y = Math.min(height - 1, Math.max(0, start + k));
-        const m = (y * outW + ox) * 3;
-        const w = taps[k] ?? 0;
-        r += (mid[m] ?? 0) * w;
-        g += (mid[m + 1] ?? 0) * w;
-        b += (mid[m + 2] ?? 0) * w;
-      }
-      const o = (oy * outW + ox) * 4;
-      out[o] = Math.round(r);
-      out[o + 1] = Math.round(g);
-      out[o + 2] = Math.round(b);
-    }
-  }
-  const alpha = upscaleAlphaBilinear(image);
-  for (let p = 0; p < outW * outH; p += 1) out[p * 4 + 3] = alpha[p] ?? 255;
-  return { width: outW, height: outH, data: out };
-}
-
 /** Progress callback for the 2x run: fraction 0..1 plus a human stage. */
 export type SuperresProgress = (fraction: number, stage: string) => void;
 
 /**
  * Map a polled server tile count to client progress: tiles land in the
  * 0.15..0.95 band (the POST's upload/download own the edges). Single-tile
- * and classical runs report no tile counts, so they hold a steady
- * "Upscaling…" instead of a stalled bar. Pure so the web transport and its
- * tests share it.
+ * runs report no tile counts, so they hold a steady "Upscaling…" instead
+ * of a stalled bar. Pure so the web transport and its tests share it.
  */
 export function superresTileProgress(tile: number, totalTiles: number): { fraction: number; stage: string } {
   if (!Number.isInteger(totalTiles) || totalTiles <= 1 || !Number.isFinite(tile) || tile < 0) {
@@ -398,10 +300,40 @@ export interface SuperresRunResult {
 }
 
 export interface SuperresHealthSnapshot {
+  /** True only once the Real-ESRGAN session serves — 2x is ML-only. */
+  ready: boolean;
   source: SuperresSource;
   downloading: boolean;
   downloadPct: number;
   error: string | null;
+}
+
+/** Dialog engine note: tone picks the styling, text renders verbatim. */
+export interface SuperresEngineNote {
+  tone: "ready" | "busy" | "error" | "missing";
+  text: string;
+}
+
+/**
+ * One health snapshot → the export dialog's engine note. Errors surface
+ * verbatim (hard fail, no fallback); a quiet not-ready box means weights
+ * simply aren't cached yet — the first export downloads them once.
+ */
+export function superresEngineNote(snapshot: SuperresHealthSnapshot): SuperresEngineNote {
+  if (snapshot.ready && snapshot.source === "onnx") {
+    return { tone: "ready", text: "Real-ESRGAN 2x is ready on the photo server." };
+  }
+  if (snapshot.downloading) {
+    return {
+      tone: "busy",
+      text: `Downloading Real-ESRGAN weights… ${Math.round(snapshot.downloadPct * 100)}% — the ML upscale starts once they land.`,
+    };
+  }
+  if (snapshot.error) return { tone: "error", text: snapshot.error };
+  return {
+    tone: "missing",
+    text: "ML weights are missing — run yarn setup, or export once to download them (~64MB).",
+  };
 }
 
 /**

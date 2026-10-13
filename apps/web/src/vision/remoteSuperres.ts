@@ -6,10 +6,10 @@
 // polls GET /api/superres/progress while the POST is in flight and maps
 // tile counts to real 0..1 progress — multi-minute 2048px exports stay
 // visibly alive, and the dialog's Cancel aborts the client side (the server
-// finishes its tiles harmlessly; single-user local server). The server
-// always serves — Real-ESRGAN ONNX once weights land, the classical Lanczos
-// fallback until then — so this transport mirrors remoteDenoise's
-// warmup/health polling and stage copy.
+// finishes its tiles harmlessly; single-user local server). 2x is ML-only:
+// the server 503s with the real cause when weights are missing instead of
+// serving a silent fallback, so this transport mirrors remoteDenoise's
+// warmup/health polling and surfaces those errors verbatim.
 
 import { superresTileProgress } from "@f8/core";
 import type { SuperresHealthSnapshot, SuperresRunResult } from "@f8/core";
@@ -51,8 +51,8 @@ interface JobSnapshot {
 
 /**
  * Poll live tile progress while `running` stays true, mapping tile counts
- * into the 0.15..0.95 band. Classical runs and single tiles report no
- * server progress, so the bar holds at "Upscaling…" instead of stalling.
+ * into the 0.15..0.95 band. Single tiles report no server progress, so the
+ * bar holds at "Upscaling…" instead of stalling.
  */
 async function pollJobProgress(
   running: () => boolean,
@@ -137,12 +137,15 @@ export async function runRemoteSuperres(
     if (data.length !== (payload.width as number) * (payload.height as number) * 4) {
       throw new RemoteSuperresError("Photo server returned bad pixels.");
     }
+    if (payload.source !== "onnx") {
+      throw new RemoteSuperresError("Photo server returned an unexpected upscale engine.");
+    }
     options.onProgress?.(1, "Upscale done");
     return {
       width: payload.width as number,
       height: payload.height as number,
       data,
-      source: payload.source === "onnx" ? "onnx" : "classic",
+      source: "onnx",
     };
   } finally {
     running = false;
@@ -153,6 +156,7 @@ export async function runRemoteSuperres(
 }
 
 interface HealthSnapshot {
+  ready?: unknown;
   source?: unknown;
   downloading?: unknown;
   downloadPct?: unknown;
@@ -160,7 +164,7 @@ interface HealthSnapshot {
   serving?: unknown;
 }
 
-/** One health read for the dialog's engine note (ML vs classical). */
+/** One health read for the dialog's engine note (ready vs downloading vs error). */
 export async function fetchSuperresHealth(signal?: AbortSignal): Promise<SuperresHealthSnapshot> {
   let snapshot: HealthSnapshot;
   try {
@@ -174,8 +178,12 @@ export async function fetchSuperresHealth(signal?: AbortSignal): Promise<Superre
   if (typeof snapshot.error === "string" && snapshot.error) {
     throw new RemoteSuperresError(snapshot.error.slice(0, 220));
   }
+  if (snapshot.source !== "onnx") {
+    throw new RemoteSuperresError("Photo server returned an unexpected upscale engine.");
+  }
   return {
-    source: snapshot.source === "onnx" ? "onnx" : "classic",
+    ready: snapshot.ready === true || snapshot.serving === true,
+    source: "onnx",
     downloading: snapshot.downloading === true,
     downloadPct:
       typeof snapshot.downloadPct === "number" && Number.isFinite(snapshot.downloadPct)
@@ -187,9 +195,9 @@ export async function fetchSuperresHealth(signal?: AbortSignal): Promise<Superre
 
 /**
  * Warm the super-resolution endpoint: kick provisioning and poll health
- * until it serves, reporting real download %. Resolves quickly when the
- * classical fallback serves (no weights yet); reports download progress
- * while the ~64MB Real-ESRGAN weights fetch.
+ * until the ML session serves, reporting real download %. 2x is ML-only,
+ * so this waits out the ~64MB Real-ESRGAN fetch instead of resolving
+ * early; a failed provisioning surfaces its cause as the rejection.
  */
 export async function warmupRemoteSuperres(
   options: { onProgress?: SuperresProgress; timeoutMs?: number; signal?: AbortSignal } = {},

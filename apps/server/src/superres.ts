@@ -7,10 +7,10 @@
 // exports show real progress instead of sitting still. Inputs cap at a
 // 2048px long edge — beyond that the dialog suggests a smaller export size.
 //
-// Weights download once into the model dir on first warmup. Until they
-// land — offline, download disabled, ORT missing — the built-in classical
-// fallback (Lanczos-3) serves instead, so upscale never 503s for ML reasons;
-// the response always names its source.
+// Weights are prefetched by `yarn setup` (see fetch-models.ts) or download
+// once on first warmup. 2x is ML-only: with no weights the upscale fails
+// with the real cause (503) instead of serving a silent classical
+// fallback, so the export dialog shows the error.
 
 import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
@@ -28,7 +28,6 @@ import {
   stitchSuperresTiles,
   superresOutputSize,
   superresTilePlan,
-  upscaleClassic2x,
   type PixelImage,
   type SuperresSource,
 } from "@f8/core";
@@ -41,7 +40,7 @@ const SUPERRES_MIN_WEIGHT_BYTES = 32 * 1024 * 1024;
 
 export interface SuperresHealth {
   ok: boolean;
-  /** Always true: the classical fallback serves with no weights. */
+  /** True only once the Real-ESRGAN session serves — 2x is ML-only. */
   ready: boolean;
   serving: boolean;
   weightsReady: boolean;
@@ -49,7 +48,7 @@ export interface SuperresHealth {
   downloading: boolean;
   /** 0..1 across the pending weight file (1 when idle). */
   downloadPct: number;
-  /** "onnx" once Real-ESRGAN weights serve, else "classic". */
+  /** Always "onnx": the only 2x engine (ready gates on weights + session). */
   source: SuperresSource;
   model: { file: string; bytes: number; license: string; url: string };
   error: string | null;
@@ -67,7 +66,7 @@ export interface SuperresResult {
   imageB64: string;
   width: number;
   height: number;
-  /** Tiles the ML path ran (1 when untiled, 0 for classical). */
+  /** Tiles the ML path ran (1 when untiled). */
   tiles: number;
   source: SuperresSource;
 }
@@ -77,7 +76,7 @@ export interface SuperresJobProgress {
   active: boolean;
   /** Human stage: idle, upscale, done. */
   stage: string;
-  /** Completed ML tiles (0 until the loop starts, or for classical runs). */
+  /** Completed ML tiles (0 until the loop starts). */
   tile: number;
   totalTiles: number;
   startedAt: number | null;
@@ -283,15 +282,16 @@ export async function getSuperresHealth(dataDir: string): Promise<SuperresHealth
   const sessionsWarm = nodeSessions.has(dest);
   const progress = downloadProgress.get(dir);
   const downloading = progress?.active ?? false;
+  const ready = weightsReady && sessionsWarm;
   return {
     ok: true,
-    ready: true,
-    serving: true,
+    ready,
+    serving: ready,
     weightsReady,
     sessionsWarm,
     downloading,
     downloadPct: downloading && progress && progress.total > 0 ? Math.min(1, progress.received / progress.total) : downloading ? 0 : 1,
-    source: weightsReady && sessionsWarm ? "onnx" : "classic",
+    source: "onnx",
     model: { file: SUPERRES_FILE, bytes: SUPERRES_FILE_SIZE, license: SUPERRES_LICENSE, url: superresUrl() },
     error: readyErrors.get(dir) ?? null,
   };
@@ -341,15 +341,15 @@ async function runOnnxUpscale(
   width: number,
   height: number,
   rgba: Uint8ClampedArray,
-): Promise<SuperresResult | null> {
+): Promise<SuperresResult> {
+  const session = nodeSessions.get(modelPath);
+  if (!session) throw new Error("Super-resolution session is not warm — retry the export.");
+  const mod = require("onnxruntime-node") as {
+    Tensor: new (type: string, data: unknown, dims: number[]) => unknown;
+  };
+  const plan = superresTilePlan(width, height);
+  setJobProgress({ active: true, stage: "upscale", tile: 0, totalTiles: plan.length, startedAt: Date.now() });
   try {
-    const session = nodeSessions.get(modelPath);
-    if (!session) return null;
-    const mod = require("onnxruntime-node") as {
-      Tensor: new (type: string, data: unknown, dims: number[]) => unknown;
-    };
-    const plan = superresTilePlan(width, height);
-    setJobProgress({ active: true, stage: "upscale", tile: 0, totalTiles: plan.length, startedAt: Date.now() });
     const outputs: PixelImage[] = [];
     for (const tile of plan) {
       const input = cropRgba(rgba, width, tile.px0, tile.py0, tile.px1, tile.py1);
@@ -358,7 +358,7 @@ async function runOnnxUpscale(
         [session.inputName]: new mod.Tensor("float32", packed, [1, 3, input.height, input.width]),
       });
       const first = results[session.outputName]?.data as ArrayLike<number> | undefined;
-      if (!first) return null;
+      if (!first) throw new Error("Super-resolution model returned no output tensor.");
       outputs.push(parseSuperresOutput(first, input));
       setJobProgress({ tile: outputs.length });
       if (plan.length > 1) console.log(`[superres] tile ${outputs.length}/${plan.length} done.`);
@@ -374,28 +374,21 @@ async function runOnnxUpscale(
       source: "onnx",
     };
   } catch (error) {
-    console.warn("[superres] ONNX upscale failed, using classical fallback:", error instanceof Error ? error.message : error);
-    return null;
+    resetSuperresProgress();
+    if (error instanceof RangeError) throw error;
+    throw new Error(`Real-ESRGAN upscale failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
+/**
+ * ML-only 2x upscale: waits for weights + session (downloading once when
+ * missing), then runs Real-ESRGAN. Every provisioning or inference failure
+ * rejects with the real cause — the route answers 503 and the dialog shows
+ * the message. No classical fallback.
+ */
 export async function runSuperres(dataDir: string, body: SuperresBody): Promise<SuperresResult> {
+  await ensureSuperresReady(dataDir);
   const bytes = Buffer.from(body.imageB64, "base64");
   const rgba = new Uint8ClampedArray(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-  // Opportunistic ONNX: warmed sessions upgrade the answer; every failure
-  // falls through to the classical fallback so upscale never 503s for ML reasons.
-  const modelPath = weightsPath(dataDir);
-  if (nodeSessions.has(modelPath)) {
-    const onnx = await runOnnxUpscale(modelPath, body.width, body.height, rgba);
-    if (onnx) return onnx;
-    resetSuperresProgress();
-  }
-  const upscaled = upscaleClassic2x({ width: body.width, height: body.height, data: rgba });
-  return {
-    imageB64: Buffer.from(upscaled.data).toString("base64"),
-    width: upscaled.width,
-    height: upscaled.height,
-    tiles: 0,
-    source: "classic",
-  };
+  return runOnnxUpscale(weightsPath(dataDir), body.width, body.height, rgba);
 }

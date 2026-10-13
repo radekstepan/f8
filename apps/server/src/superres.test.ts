@@ -65,19 +65,24 @@ describe("validateSuperresBody", () => {
   });
 });
 
-describe("superres (weights absent → classical fallback)", () => {
-  it("serves health without weights and names the model", async () => {
+describe("superres (weights absent → hard fail, no fallback)", () => {
+  it("reports not-ready health without weights and names the model", async () => {
     const ctx = createTestContext();
     try {
       const health = await getSuperresHealth(ctx.dir);
-      expect(health.ready).toBe(true);
-      expect(health.serving).toBe(true);
-      expect(health.source).toBe("classic");
+      expect(health.ready).toBe(false);
+      expect(health.serving).toBe(false);
+      expect(health.weightsReady).toBe(false);
+      expect(health.sessionsWarm).toBe(false);
+      expect(health.source).toBe("onnx");
       expect(health.model.file).toBe("realesrgan_x2.onnx");
       expect(health.model.license).toBe("BSD-3-Clause");
       expect(health.model.url).toContain("npuscale");
       const viaHttp = await ctx.app.request("/api/superres/health");
       expect(viaHttp.status).toBe(200);
+      const viaHttpBody = (await viaHttp.json()) as { ready: boolean; serving: boolean };
+      expect(viaHttpBody.ready).toBe(false);
+      expect(viaHttpBody.serving).toBe(false);
     } finally {
       ctx.close();
     }
@@ -100,25 +105,26 @@ describe("superres (weights absent → classical fallback)", () => {
     }
   });
 
-  it("upscales classically at exactly 2x with the step preserved", async () => {
+  it("rejects the upscale with the real cause instead of a silent fallback", async () => {
+    // Offline provisioning fails fast with no network: the rejection must
+    // name the cause so the dialog can show it.
+    const previous = process.env["F8_SUPERRES_OFFLINE"];
+    process.env["F8_SUPERRES_OFFLINE"] = "1";
     const ctx = createTestContext();
     try {
-      const direct = await runSuperres(ctx.dir, { width: 32, height: 16, imageB64: rgbaB64(32, 16, withStep) });
-      expect(direct.source).toBe("classic");
-      expect(direct.tiles).toBe(0);
-      expect(direct.width).toBe(64);
-      expect(direct.height).toBe(32);
-      // The dark/light step survives at double resolution.
-      expect(redAt(direct.imageB64, 64, 4, 8)).toBeLessThan(16);
-      expect(redAt(direct.imageB64, 64, 59, 8)).toBeGreaterThan(239);
-      expect(redAt(direct.imageB64, 64, 31, 8)).toBeLessThan(128);
-      expect(redAt(direct.imageB64, 64, 32, 8)).toBeGreaterThan(128);
+      await expect(runSuperres(ctx.dir, { width: 32, height: 16, imageB64: rgbaB64(32, 16, withStep) })).rejects.toThrow(
+        /provisioning is disabled|onnxruntime-node is not installed/,
+      );
     } finally {
+      if (previous === undefined) delete process.env["F8_SUPERRES_OFFLINE"];
+      else process.env["F8_SUPERRES_OFFLINE"] = previous;
       ctx.close();
     }
   });
 
-  it("serves upscale over HTTP and rejects oversized and malformed bodies", async () => {
+  it("answers 503 with the cause over HTTP and still rejects bad bodies with 400", async () => {
+    const previous = process.env["F8_SUPERRES_OFFLINE"];
+    process.env["F8_SUPERRES_OFFLINE"] = "1";
     const ctx = createTestContext();
     try {
       const small = { width: 32, height: 16, imageB64: rgbaB64(32, 16, withStep) };
@@ -127,13 +133,9 @@ describe("superres (weights absent → classical fallback)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(small),
       });
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { source: string; width: number; height: number; imageB64: string; tiles: number };
-      expect(body.source).toBe("classic");
-      expect(body.width).toBe(64);
-      expect(body.height).toBe(32);
-      expect(body.tiles).toBe(0);
-      expect(Buffer.from(body.imageB64, "base64").length).toBe(64 * 32 * 4);
+      expect(response.status).toBe(503);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toMatch(/provisioning is disabled|onnxruntime-node is not installed/);
 
       const oversized = await ctx.app.request("/api/superres/upscale", {
         method: "POST",
@@ -149,6 +151,8 @@ describe("superres (weights absent → classical fallback)", () => {
       });
       expect(bad.status).toBe(400);
     } finally {
+      if (previous === undefined) delete process.env["F8_SUPERRES_OFFLINE"];
+      else process.env["F8_SUPERRES_OFFLINE"] = previous;
       ctx.close();
     }
   });

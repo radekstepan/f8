@@ -443,7 +443,7 @@ export function createApp(ctx: AppContext): Hono {
   app.post("/api/superres/warmup", async (c) => {
     // Kick provisioning into the background and return immediately: the
     // client polls health for download/session progress, like denoise.
-    // First use downloads ~64MB once; upscale serves classically until then.
+    // First use downloads ~64MB once; upscale waits for it, then runs ML.
     kickSuperresReady(config.dataDir);
     return c.json(await getSuperresHealth(config.dataDir));
   });
@@ -462,7 +462,9 @@ export function createApp(ctx: AppContext): Hono {
     } catch (error) {
       if (error instanceof RangeError) return c.json({ error: error.message }, 400);
       console.error(error);
-      return c.json({ error: "Upscale failed." }, 503);
+      // 2x is ML-only: surface the real cause (missing weights, failed
+      // download, dead session) so the dialog shows it — no silent fallback.
+      return c.json({ error: error instanceof Error ? error.message.slice(0, 300) : "Upscale failed." }, 503);
     }
   });
 

@@ -92,8 +92,8 @@ export type SelectiveMaskSource = 'onnx' | 'classic';
 /** Which denoiser served the clean pixels: neural weights or the classical fallback. */
 export type DenoiseSource = 'onnx' | 'classic';
 
-/** Which upscaler served the 2x export: neural weights or the classical fallback. */
-export type SuperresSource = 'onnx' | 'classic';
+/** Which upscaler served the 2x export: Real-ESRGAN weights, always — 2x is ML-only and fails hard without them. */
+export type SuperresSource = 'onnx';
 
 /**
  * Lightweight denoise state: strength 0..100 plus whether the Auto toggle
