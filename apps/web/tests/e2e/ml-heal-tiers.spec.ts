@@ -154,14 +154,17 @@ test("repair progress names the work and hides the bar once done", async ({ page
   await expect(page.locator('[data-testid="ml-progress"] .ml-progress-bar')).toHaveCount(0);
 });
 
-test("server-ready state shows a note without a progress bar", async ({ page }) => {
+test("warmup runs silent: ready tier, no progress bar, no cancel", async ({ page }) => {
   // Re-enter ML Heal so warmup runs again against the mocked backend.
   await selectRepairMethod(page, "heal");
   await selectRepairMethod(page, "ml-heal");
 
-  // A static ready state is a note, not progress: no bar under it.
-  await expect(page.getByTestId("ml-progress-stage")).toContainText("Server ready.", { timeout: 15_000 });
-  await expect(page.locator('[data-testid="ml-progress"] .ml-progress-bar')).toHaveCount(0);
+  // The background check earns no UI: the tier becomes ready with no
+  // progress bar and no Cancel repair along the way.
+  await waitForMlReady(page);
+  await expect(page.getByTestId("ml-progress")).toBeHidden();
+  await expect(page.getByTestId("ml-cancel")).toBeHidden();
+  await expect(page.getByTestId("heal-quality-group")).toBeVisible();
 });
 
 test("cancel heals clears progress and later strokes still heal", async ({ page }) => {

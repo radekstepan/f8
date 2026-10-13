@@ -327,6 +327,11 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
       ? 'Fast fill for tiny smooth blemishes.'
       : 'Slower fill that follows edges.';
   const progress = assist.method === 'ml-heal' ? assist.mlProgress : null;
+  // Warmup runs silent: entering Repair prefetches the tier in the
+  // background, but only a user-started heal earns the progress bar and
+  // Cancel button. Warmup failures still surface (offline line / error),
+  // and a missing job tag stays visible for backward compatibility.
+  const visibleProgress = progress && (progress.job !== 'warmup' || isMlErrorStage(progress.stage)) ? progress : null;
   // Server down hides the ML tier UI entirely: neither quality can run, so a
   // single offline line plus retry replaces quality, progress, and fallbacks.
   // Recovery is explicit — pick another method above, or retry once the
@@ -351,7 +356,7 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
       </>}
       {offline
         ? <div className="ml-offline" data-testid="ml-offline" role="alert"><p>Photo server offline.</p><button className="text-button" data-testid="ml-retry" title="Warm the ML tier again" onClick={assist.onRetry}>Retry</button></div>
-        : progress && <MlProgressView progress={progress} onCancel={assist.onCancelHeal} />}
+        : visibleProgress && <MlProgressView progress={visibleProgress} onCancel={assist.onCancelHeal} />}
       {assist.method === 'heal' && <>
       <div className="repair-toggle-row" data-testid="seamless-light-row"><span>Seamless light</span><Toggle checked={assist.seamlessLight} onChange={() => assist.onSeamlessLightChange(!assist.seamlessLight)} label="Seamless light adaptation" /></div>
       <p className="inspector-note">Adapts repairs to lighting gradients.</p>
