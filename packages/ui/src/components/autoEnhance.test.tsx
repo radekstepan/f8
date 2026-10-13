@@ -161,18 +161,21 @@ describe('auto enhance header button', () => {
     expect(wrap).toContain('aria-label="Reset auto enhance"');
   });
 
-  it('renders the reload-seeded Auto enabled with no reset and a re-apply tooltip', () => {
+  it('renders the reloaded Auto idle with no reset and an apply tooltip', () => {
     // Same reload state as the scene ML (see sceneEnhance.test.tsx): the
-    // persisted auto flag seeds the highlight, but no session snapshot
-    // exists — so no reset icon and a re-apply tooltip.
+    // persisted auto flag stays in the recipe, but no session mode exists
+    // — so the header Auto reopens idle (never enabled-without-a-reset)
+    // with the plain apply tooltip, while the stored values keep their
+    // per-section resets.
     const html = renderInspector(
       'adjust',
-      { mode: 'classic', pure: true, canRevert: false },
-      { ...DEFAULT_EDIT, autoEnhanced: true },
+      undefined,
+      { ...DEFAULT_EDIT, autoEnhanced: true, exposure: 0.22, clarity: 12 },
     );
-    expect(html).toContain('class="auto-small inspector-auto is-active" data-testid="auto-enhance-auto" aria-pressed="true"');
-    expect(html).toContain('title="Auto Enhance applied — click to re-apply"');
+    expect(html).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto" aria-pressed="false"');
+    expect(html).toContain('title="Apply auto enhance automatically"');
     expect(html).not.toContain('aria-label="Reset auto enhance"');
+    expect(html).toContain('aria-label="Reset lightness"');
   });
 
   it('keeps the header Auto adjust-only: repair and crop headers carry no enhance action', () => {

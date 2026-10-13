@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EDIT, INITIAL_EDIT, ML_CATEGORIES, ML_CATEGORY_ENABLED_KEY, computeAutoEnhance, computeColorAuto, computeLightnessAuto, computeSceneAwareEnhance, computeWhiteBalanceAuto, decodeDownsampled, enhanceModeForRecipe, isDefaultEdit, isOriginalLook, patchBreaksEnhancePure, presetForPatch, snapshotMlCategory, touchedMlCategories } from '@f8/core';
+import { DEFAULT_EDIT, INITIAL_EDIT, ML_CATEGORIES, ML_CATEGORY_ENABLED_KEY, computeAutoEnhance, computeColorAuto, computeLightnessAuto, computeSceneAwareEnhance, computeWhiteBalanceAuto, decodeDownsampled, isDefaultEdit, isOriginalLook, patchBreaksEnhancePure, presetForPatch, snapshotMlCategory, touchedMlCategories } from '@f8/core';
 import type { EditState, HistoryState, MlCategory, PixelImage, Preset } from '@f8/core';
 
 const initialHistory = (_id?: string): HistoryState => ({
@@ -11,21 +11,6 @@ const initialHistory = (_id?: string): HistoryState => ({
 /** Merge keys for heal strokes bypass the time window: one stroke id = one undo step. */
 const STICKY_MERGE_PREFIX = 'retouch-stroke:';
 const MERGE_WINDOW_MS = 700;
-
-/**
- * Restore the enhance highlight from a server seed: each persisted recipe
- * with enhance flags reopens with its mode highlighted (pure until the
- * first manual look edit). No pre-enhance snapshot exists for seeded
- * entries, so they highlight without offering a revert.
- */
-const seedEnhanceUi = (seed: Record<string, HistoryState>): Record<string, { mode: 'classic' | 'scene'; pure: boolean }> => {
-  const next: Record<string, { mode: 'classic' | 'scene'; pure: boolean }> = {};
-  for (const [id, entry] of Object.entries(seed)) {
-    const mode = enhanceModeForRecipe(entry.present);
-    if (mode) next[id] = { mode, pure: true };
-  }
-  return next;
-};
 
 export interface EditorPersistence {
   /** Seed from the server library; applied once when it arrives. */
@@ -56,10 +41,13 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
    * Whole-photo enhance UI per photo: the last mode with a stored snapshot
    * plus whether the recipe still holds exactly its values. Manual look
    * edits clear `pure` (highlight off) while `mode` stays for the revert.
-   * Seeded from persisted flags on load (highlight without a snapshot —
-   * see seedEnhanceUi), then in-session applies take over.
+   * Never seeded from persisted flags: the pre-enhance snapshot is
+   * session-only, so a reloaded recipe reopens idle — highlighting it
+   * would show an enabled Auto button with no reset next to it. The
+   * persisted flags (and the scene badge) still survive; only the
+   * highlight waits for a fresh in-session apply.
    */
-  const [enhanceUiByPhoto, setEnhanceUiByPhoto] = useState<Record<string, { mode: 'classic' | 'scene'; pure: boolean }>>(() => (persistence?.initial ? seedEnhanceUi(persistence.initial) : {}));
+  const [enhanceUiByPhoto, setEnhanceUiByPhoto] = useState<Record<string, { mode: 'classic' | 'scene'; pure: boolean }>>({});
   /** Set while applying auto-computed values so change() skips manual-edit highlight clearing for that patch. */
   const autoApplyRef = useRef(false);
   const persistRef = useRef(persistence?.onPersist);
@@ -81,9 +69,9 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     if (initial && !seeded.current) {
       seeded.current = true;
       setHistories(initial);
-      // The highlight seeds with the recipes (same wholesale replace);
-      // snapshots stay session-only, so seeded modes offer no revert.
-      setEnhanceUiByPhoto(seedEnhanceUi(initial));
+      // Only the recipes seed here: enhance highlights stay session-only
+      // (see enhanceUiByPhoto), so a reload never strands an enabled Auto
+      // button without its reset.
       setSeedApplied(true);
     }
   }, [initial]);
@@ -286,9 +274,9 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
     const geometry = { rotation, flipH, flipV, straighten, cropRatio, retouches };
     // A highlighted mode toggles back only while its pre-enhance snapshot
-    // exists. A reload-seeded highlight has none, so it falls through to a
-    // fresh apply below (snapshotting the current recipe first) instead of
-    // a flag-only revert that would leave enhanced values behind.
+    // exists; without one the click falls through to a fresh apply below
+    // (snapshotting the current recipe first) instead of a flag-only
+    // revert that would leave enhanced values behind.
     if (enhanceUi?.mode === mode && enhanceUi.pure && enhanceSnapshots.current[photoId]) {
       revertEnhance();
       return;

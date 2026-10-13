@@ -58,21 +58,6 @@ export function patchBreaksEnhancePure(patch: Partial<EditState>): boolean {
   );
 }
 
-/**
- * Whole-photo enhance mode seeded from a persisted recipe: a stored scene
- * means ML scene enhance applied it, otherwise the auto-enhanced flag
- * means classic enhance. Null when neither flag survived (never enhanced,
- * reverted, or reset). Both flags are look bookkeeping — they label the
- * recipe without changing the render — so a reload can restore the button
- * highlight from them even though the pre-enhance snapshot behind the
- * revert stays session-only and offers no revert.
- */
-export function enhanceModeForRecipe(present: EditState): 'classic' | 'scene' | null {
-  if (present.sceneEnhance != null) return 'scene';
-  if (present.autoEnhanced) return 'classic';
-  return null;
-}
-
 /** Edit keys compared when deciding whether a recipe still shows Original. */
 const ORIGINAL_LOOK_KEYS = (Object.keys(DEFAULT_EDIT) as (keyof EditState)[]).filter(
   (key) => key !== 'preset' && !PRESET_PRESERVING_KEYS.has(key),

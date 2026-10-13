@@ -189,17 +189,21 @@ describe('scene enhance reload', () => {
   const seedHtml = (seed: Record<string, HistoryState>, photoId = 'p1'): string =>
     renderToStaticMarkup(<EnhanceSeedProbe seed={seed} photoId={photoId} />);
 
-  it('seeds the scene highlight from the persisted scene, with no revert snapshot', () => {
+  it('seeds no scene highlight from the persisted scene', () => {
+    // The pre-enhance snapshot is session-only, so a reload cannot offer
+    // a revert — and must not show the enabled highlight either (an
+    // enabled button with no reset next to it). The persisted flags stay
+    // in the recipe; only the highlight waits for a fresh apply.
     const html = seedHtml(seedFor({ ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } }));
-    expect(html).toContain('data-mode="scene"');
-    expect(html).toContain('data-pure="true"');
+    expect(html).toContain('data-mode="none"');
+    expect(html).toContain('data-pure="false"');
     expect(html).toContain('data-revert="false"');
   });
 
-  it('seeds the classic highlight from the auto flag alone', () => {
+  it('seeds no classic highlight from the auto flag alone', () => {
     const html = seedHtml(seedFor({ ...DEFAULT_EDIT, autoEnhanced: true }));
-    expect(html).toContain('data-mode="classic"');
-    expect(html).toContain('data-pure="true"');
+    expect(html).toContain('data-mode="none"');
+    expect(html).toContain('data-pure="false"');
     expect(html).toContain('data-revert="false"');
   });
 
@@ -208,20 +212,31 @@ describe('scene enhance reload', () => {
     expect(seedHtml(seedFor({ ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } }), 'p2')).toContain('data-mode="none"');
   });
 
-  it('renders the seeded ML enabled with no reset and a re-apply tooltip', () => {
-    // The reload state: persisted scene + seeded highlight, but no session
-    // snapshot — so the button shows enabled while the reset icon (which
-    // promises a value restore) stays hidden, and the tooltip offers a
-    // re-apply instead of a revert.
+  it('renders the reloaded ML idle with no reset, keeping the scene badge', () => {
+    // The reload state: persisted scene, but no session mode — so the ML
+    // button reopens idle (never enabled-without-a-reset) with the plain
+    // apply tooltip, while the persisted scene badge still shows what ran.
     const html = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       noop,
-      { mode: 'scene', pure: true, canRevert: false },
     );
-    expect(html).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('title="ML scene enhance applied — click to re-apply"');
+    expect(html).toContain('class="ml-button" data-testid="scene-enhance-ml"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('title="Automatically adjust scene enhance with ML"');
     expect(html).toContain('data-testid="scene-enhance-scene"');
     expect(html).not.toContain('aria-label="Reset scene enhance"');
+  });
+
+  it('keeps per-section resets for reloaded enhance values', () => {
+    // The stored values are still undoable after a reload — just through
+    // the per-section (and toolbar) resets, not the session revert icon.
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT, autoEnhanced: true, exposure: 0.22, clarity: 12 },
+      noop,
+    );
+    expect(html).toContain('aria-label="Reset lightness"');
+    expect(html).toContain('aria-label="Reset details"');
+    expect(html).not.toContain('aria-label="Reset scene enhance"');
+    expect(html).not.toContain('aria-label="Reset auto enhance"');
   });
 });

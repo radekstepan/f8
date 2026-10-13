@@ -864,7 +864,7 @@ interface InspectorProps {
   enhanceMode?: 'classic' | 'scene' | null;
   /** True while the recipe still holds exactly the last enhance's values. */
   enhancePure?: boolean;
-  /** True while a pre-enhance snapshot exists for the last mode. False after a reload (flags persist, the snapshot does not), hiding the revert affordance while the highlight stays. Defaults to mode presence — in-session snapshots always accompany a mode. */
+  /** True while a pre-enhance snapshot exists for the last mode. Stays true after manual edits (the revert outlives the highlight); a reload clears the mode itself, so the buttons reopen idle rather than enabled-without-a-reset. Defaults to mode presence — in-session snapshots always accompany a mode. */
   enhanceCanRevert?: boolean;
   /** Restore the pre-enhance snapshot (shared by both enhance modes). */
   onRevertEnhance: () => void;
