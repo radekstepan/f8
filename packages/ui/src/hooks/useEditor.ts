@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EDIT, INITIAL_EDIT, computeAutoEnhance, computeLightnessAuto, computeSceneAwareEnhance, computeWhiteBalanceAuto, decodeDownsampled, isDefaultEdit, isOriginalLook, presetForPatch } from '@f8/core';
-import type { EditState, HistoryState, Preset } from '@f8/core';
+import { DEFAULT_EDIT, INITIAL_EDIT, ML_CATEGORIES, ML_CATEGORY_ENABLED_KEY, computeAutoEnhance, computeColorAuto, computeLightnessAuto, computeSceneAwareEnhance, computeWhiteBalanceAuto, decodeDownsampled, isDefaultEdit, isOriginalLook, presetForPatch, snapshotMlCategory } from '@f8/core';
+import type { EditState, HistoryState, MlCategory, PixelImage, Preset } from '@f8/core';
 
 const initialHistory = (_id?: string): HistoryState => ({
   past: [],
@@ -23,6 +23,12 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
   const [histories, setHistories] = useState<Record<string, HistoryState>>(() => persistence?.initial ?? {});
   const lastChange = useRef({ key: '', photoId: '', time: 0 });
   const enhanceSnapshots = useRef<Record<string, EditState>>({});
+  /** Pre-ML snapshots per photo + category: a revert restores these values. Session-only, like enhanceSnapshots. */
+  const mlSnapshots = useRef<Record<string, Partial<Record<MlCategory, Partial<EditState>>>>>({});
+  /** Monotonic run tokens per photo + category: a revert or wholesale recipe change invalidates an in-flight async apply. */
+  const mlRuns = useRef<Record<string, number>>({});
+  /** Applied flags per photo + category: set on ML click, cleared on revert or a wholesale recipe change. */
+  const [mlAppliedByPhoto, setMlAppliedByPhoto] = useState<Record<string, Partial<Record<MlCategory, boolean>>>>({});
   const persistRef = useRef(persistence?.onPersist);
   persistRef.current = persistence?.onPersist;
   const latest = useRef<Record<string, EditState>>({});
@@ -33,6 +39,7 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
   // retouches would flash over saved work on reload).
   const [seedApplied, setSeedApplied] = useState(() => persistence?.initial != null);
   const history = useMemo(() => histories[photoId] || initialHistory(photoId), [histories, photoId]);
+  const mlApplied = useMemo(() => mlAppliedByPhoto[photoId] ?? {}, [mlAppliedByPhoto, photoId]);
 
   const initial = persistence?.initial;
   useEffect(() => {
@@ -132,16 +139,37 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     });
   }, [photoId, schedulePersist]);
 
+  /**
+   * Drop a photo's per-category ML state: wholesale recipe changes (reset,
+   * preset, enhance) leave no category "applied", and any in-flight async
+   * apply is invalidated so it cannot land on the new recipe.
+   */
+  const clearMl = useCallback((id: string) => {
+    delete mlSnapshots.current[id];
+    for (const category of ML_CATEGORIES) {
+      const key = `${id}:${category}`;
+      mlRuns.current[key] = (mlRuns.current[key] ?? 0) + 1;
+    }
+    setMlAppliedByPhoto((all) => {
+      if (!all[id]) return all;
+      const next = { ...all };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
   const applyPreset = useCallback((preset: Preset) => {
     const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
+    clearMl(photoId);
     change({ ...DEFAULT_EDIT, ...preset.values, rotation, flipH, flipV, straighten, cropRatio, retouches, preset: preset.name });
-  }, [change, history.present]);
+  }, [change, clearMl, history.present, photoId]);
 
   const reset = useCallback(() => {
+    clearMl(photoId);
     if (isDefaultEdit(history.present)) return false;
     change({ ...DEFAULT_EDIT, sceneEnhance: null, faceAdjust: null, selectiveAdjust: null });
     return true;
-  }, [change, history.present]);
+  }, [change, clearMl, history.present, photoId]);
   // Classic and ML scene enhance share one toggle: each button activates its
   // own mode, and clicking the active mode's button restores the snapshot.
   // Switching modes keeps the pre-enhance snapshot, so toggling off from
@@ -149,6 +177,7 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
   const autoEnhance = useCallback((src?: string) => {
     const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
     const geometry = { rotation, flipH, flipV, straighten, cropRatio, retouches };
+    clearMl(photoId);
     if (history.present.autoEnhanced && !history.present.sceneEnhance) {
       change({ ...(enhanceSnapshots.current[photoId] || DEFAULT_EDIT), ...geometry, autoEnhanced: false, sceneEnhance: null });
       return;
@@ -162,11 +191,12 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
         change({ ...INITIAL_EDIT, ...geometry, ...patch, autoEnhanced: true, preset: 'Auto Enhance', sceneEnhance: null });
       } catch { fallback(); }
     })();
-  }, [change, history.present, photoId]);
+  }, [change, clearMl, history.present, photoId]);
 
   const autoEnhanceScene = useCallback((src?: string) => {
     const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
     const geometry = { rotation, flipH, flipV, straighten, cropRatio, retouches };
+    clearMl(photoId);
     if (history.present.autoEnhanced && history.present.sceneEnhance) {
       change({ ...(enhanceSnapshots.current[photoId] || DEFAULT_EDIT), ...geometry, autoEnhanced: false, sceneEnhance: null });
       return;
@@ -182,27 +212,55 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
         change({ ...INITIAL_EDIT, ...geometry, ...patch, autoEnhanced: true, preset: 'Auto Enhance (ML)', sceneEnhance: { scene, confidence } });
       } catch { fallback(); }
     })();
-  }, [change, history.present, photoId]);
+  }, [change, clearMl, history.present, photoId]);
+
+  // Per-category ML actions share one toggle: the first click snapshots the
+  // category and applies computed values, the next click (or the revert icon
+  // beside the ML button) restores the snapshot. The run token guards the
+  // async decode: a revert landing before the values arrive cancels the
+  // apply instead of stranding the photo in the applied state.
+  const toggleCategoryMl = useCallback((category: MlCategory, src: string | undefined, compute: (image: PixelImage) => Partial<EditState>, fallbackPatch: Partial<EditState>) => {
+    const key = `${photoId}:${category}`;
+    if (mlAppliedByPhoto[photoId]?.[category]) {
+      mlRuns.current[key] = (mlRuns.current[key] ?? 0) + 1;
+      const snapshot = mlSnapshots.current[photoId]?.[category];
+      if (snapshot) change(snapshot);
+      setMlAppliedByPhoto((all) => ({ ...all, [photoId]: { ...all[photoId], [category]: false } }));
+      return;
+    }
+    mlSnapshots.current[photoId] = { ...mlSnapshots.current[photoId], [category]: snapshotMlCategory(history.present, category) };
+    const run = (mlRuns.current[key] ?? 0) + 1;
+    mlRuns.current[key] = run;
+    setMlAppliedByPhoto((all) => ({ ...all, [photoId]: { ...all[photoId], [category]: true } }));
+    // An applied category is always visible: the ML patch re-asserts the
+    // enabled flag (legacy recipes can carry a disabled category — the
+    // header toggle used to bypass the effect).
+    const enabledKey = ML_CATEGORY_ENABLED_KEY[category];
+    const apply = (patch: Partial<EditState>) => {
+      if (mlRuns.current[key] !== run) return;
+      change({ ...patch, [enabledKey]: true });
+    };
+    if (!src) { apply(fallbackPatch); return; }
+    void (async () => {
+      try {
+        apply(compute(await decodeDownsampled(src)));
+      } catch {
+        apply(fallbackPatch);
+      }
+    })();
+  }, [change, history.present, mlAppliedByPhoto, photoId]);
 
   const autoWhiteBalance = useCallback((src?: string) => {
-    const fallback = () => change({ temperature: 5800, tint: 6, whiteBalanceEnabled: true });
-    if (!src) { fallback(); return; }
-    void (async () => {
-      try {
-        change({ ...computeWhiteBalanceAuto(await decodeDownsampled(src)), whiteBalanceEnabled: true });
-      } catch { fallback(); }
-    })();
-  }, [change]);
+    toggleCategoryMl('whiteBalance', src, computeWhiteBalanceAuto, { temperature: 5800, tint: 6 });
+  }, [toggleCategoryMl]);
 
   const autoLightness = useCallback((src?: string) => {
-    const fallback = () => change({ exposure: 0.2, contrast: 12, highlights: -28, shadows: 24, lightnessEnabled: true });
-    if (!src) { fallback(); return; }
-    void (async () => {
-      try {
-        change({ ...computeLightnessAuto(await decodeDownsampled(src)), lightnessEnabled: true });
-      } catch { fallback(); }
-    })();
-  }, [change]);
+    toggleCategoryMl('lightness', src, computeLightnessAuto, { exposure: 0.2, contrast: 12, highlights: -28, shadows: 24 });
+  }, [toggleCategoryMl]);
 
-  return { edit: history.present, ready: seedApplied, histories, change, endMerge, flushPersist, undo, redo, reset, autoEnhance, autoEnhanceScene, autoWhiteBalance, autoLightness, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
+  const autoColor = useCallback((src?: string) => {
+    toggleCategoryMl('color', src, computeColorAuto, { saturation: 8 });
+  }, [toggleCategoryMl]);
+
+  return { edit: history.present, ready: seedApplied, histories, change, endMerge, flushPersist, undo, redo, reset, autoEnhance, autoEnhanceScene, autoWhiteBalance, autoLightness, autoColor, mlApplied, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
 }

@@ -69,6 +69,7 @@ function renderRepair(removal?: ObjectRemovalAssist, dustSpots?: DustSpotsAssist
       onAuto={noop}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
+      onAutoColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}

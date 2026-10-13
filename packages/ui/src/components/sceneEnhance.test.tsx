@@ -51,6 +51,7 @@ function renderAdjust(edit: EditState, onAutoScene?: () => void): string {
       {...(onAutoScene === undefined ? {} : { onAutoScene })}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
+      onAutoColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}

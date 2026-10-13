@@ -4,6 +4,7 @@ import {
   blackWhitePoints,
   channelHistograms,
   computeAutoEnhance,
+  computeColorAuto,
   computeLightnessAuto,
   computeWhiteBalanceAuto,
   estimateExposureShift,
@@ -145,6 +146,28 @@ describe("computeLightnessAuto", () => {
       highlights: 0,
       shadows: 0,
     });
+  });
+});
+
+describe("computeColorAuto", () => {
+  it("carries only the saturation field", () => {
+    expect(Object.keys(computeColorAuto(solidColor(8, 8, 100, 100, 100)))).toEqual(["saturation"]);
+  });
+
+  it("boosts muted colors", () => {
+    expect(computeColorAuto(solidColor(32, 32, 140, 110, 100)).saturation).toBeGreaterThan(0);
+  });
+
+  it("leaves vivid colors alone", () => {
+    expect(computeColorAuto(solidColor(32, 32, 220, 40, 40)).saturation).toBe(0);
+  });
+
+  it("stays at zero for gray", () => {
+    expect(computeColorAuto(solidColor(8, 8, 100, 100, 100))).toEqual({ saturation: 0 });
+  });
+
+  it("stays at zero for a mid-gray image", () => {
+    expect(computeColorAuto(horizontalGradient(256, 4))).toEqual({ saturation: 0 });
   });
 });
 

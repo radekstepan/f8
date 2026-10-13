@@ -143,6 +143,7 @@ const TEMPERATURE_NEUTRAL = 5500;
 
 export type WhiteBalanceAutoPatch = Pick<EditState, "temperature" | "tint">;
 export type LightnessAutoPatch = Pick<EditState, "exposure" | "contrast" | "highlights" | "shadows">;
+export type ColorAutoPatch = Pick<EditState, "saturation">;
 
 /**
  * Map channel means to White Balance Auto values: warm casts cool the
@@ -209,6 +210,22 @@ export function computeLightnessAuto(image: PixelImage): LightnessAutoPatch {
 }
 
 /**
+ * Derive the Hue & Saturation section's Auto values from pixel data: muted
+ * colors gain saturation, vivid or near-gray images stay put. Shared by
+ * the per-section ML action and the whole-image auto-enhance.
+ */
+export function computeColorAuto(image: PixelImage): ColorAutoPatch {
+  assertValidImage(image);
+  const saturationRaw = meanSaturation(image);
+  let saturation = 0;
+  if (saturationRaw >= 0.05) {
+    saturation = Math.round(Math.min(30, Math.max(0, (0.35 - saturationRaw) * 60)));
+    if (saturation < 3) saturation = 0;
+  }
+  return { saturation };
+}
+
+/**
  * Derive the auto-enhance patch from pixel data. Warm casts cool the
  * temperature, green casts push tint negative (toward magenta), flat
  * tonal ranges gain contrast, and muted colors gain saturation.
@@ -217,13 +234,7 @@ export function computeAutoEnhance(image: PixelImage): AutoEnhancePatch {
   assertValidImage(image);
   const { temperature, tint } = computeWhiteBalanceAuto(image);
   const { exposure, contrast } = computeLightnessAuto(image);
-
-  const saturationRaw = meanSaturation(image);
-  let saturation = 0;
-  if (saturationRaw >= 0.05) {
-    saturation = Math.round(Math.min(30, Math.max(0, (0.35 - saturationRaw) * 60)));
-    if (saturation < 3) saturation = 0;
-  }
+  const { saturation } = computeColorAuto(image);
 
   return { exposure, contrast, temperature, tint, saturation };
 }

@@ -74,6 +74,7 @@ function renderAdjust(edit: EditState, faceAssist?: FaceEnhanceAssist): string {
       {...(faceAssist === undefined ? {} : { faceAssist })}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
+      onAutoColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}

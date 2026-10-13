@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Bandage, Brush, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Layers, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, X } from 'lucide-react';
+import { Bandage, Brush, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Layers, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Undo2, X } from 'lucide-react';
 import { CROP_RATIOS, SCENE_DISPLAY_NAMES, STRAIGHTEN_LOW_CONFIDENCE_THRESHOLD, denoiseStrengthForIso, groupRetouchStrokes, shouldAutoDenoise, strokeIdForPoint } from '@f8/core';
-import type { ChangeEdit, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
+import type { ChangeEdit, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, MlCategory, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { IconButton, MenuItem, RangeControl, SelectField, Toggle } from './EditorUI.js';
+
+export interface AdjustmentMl {
+  /** Testid prefix: `${id}-ml` for the button, `${id}-ml-revert` for the revert icon. */
+  id: string;
+  /** True after ML applied: the button highlights and the revert icon appears beside it. */
+  applied: boolean;
+  /** Apply when idle, revert when applied — the ML button and the revert icon share it. */
+  onToggle: () => void;
+}
 
 interface AdjustmentSectionProps {
   title: string;
@@ -14,13 +23,25 @@ interface AdjustmentSectionProps {
   /** Small heading adornment after the title, e.g. an ML badge. */
   badge?: ReactNode;
   onToggle?: () => void;
-  onAuto?: () => void;
+  /** Accessibility label for the header toggle; defaults to "Show {title}". */
+  toggleLabel?: string;
+  /** Per-category ML action; omit for sections with no automatic action. */
+  ml?: AdjustmentMl;
+  /** Controlled visibility; omit for the self-managed disclosure default. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   onReset?: () => void;
 }
 
-function AdjustmentSection({ title, icon, children, initiallyOpen = true, enabled, badge, onToggle, onAuto, onReset }: AdjustmentSectionProps) {
-  const [open, setOpen] = useState(initiallyOpen);
-  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onAuto && open && <button className="auto-small" title={`Automatically adjust ${title.toLowerCase()}`} onClick={onAuto}>Auto</button>}{onReset && <IconButton className="section-reset" label={`Reset ${title.toLowerCase()}`} onClick={onReset}><RotateCcw size={11} /></IconButton>}{onToggle && <Toggle checked={Boolean(enabled)} onChange={onToggle} label={`Enable ${title.toLowerCase()}`} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
+export function AdjustmentSection({ title, icon, children, initiallyOpen = true, enabled, badge, onToggle, toggleLabel, ml, open: controlledOpen, onOpenChange, onReset }: AdjustmentSectionProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(initiallyOpen);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
+  const lower = title.toLowerCase();
+  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{ml && open && <button className={`ml-button${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-ml`} aria-pressed={ml.applied} title={ml.applied ? `ML ${lower} applied — click to revert` : `Automatically adjust ${lower} with ML`} onClick={ml.onToggle}>ML</button>}{ml && ml.applied && open && <IconButton className="ml-revert" data-testid={`${ml.id}-ml-revert`} label={`Revert ML ${lower}`} onClick={ml.onToggle}><Undo2 size={11} /></IconButton>}{onReset && <IconButton className="section-reset" label={`Reset ${lower}`} onClick={onReset}><RotateCcw size={11} /></IconButton>}{onToggle && <Toggle checked={Boolean(enabled)} onChange={onToggle} label={toggleLabel ?? `Show ${lower}`} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
 }
 
 function Histogram({ data, photo }: { data: HistogramData | null; photo: Photo }) {
@@ -767,6 +788,9 @@ interface InspectorProps {
   denoiseAssist?: DenoiseAssist;
   onAutoWhiteBalance: () => void;
   onAutoLightness: () => void;
+  onAutoColor: () => void;
+  /** Per-category ML applied flags; a set flag highlights the ML button and shows the revert icon. */
+  mlApplied?: Partial<Record<MlCategory, boolean>>;
   onCopy: () => void;
   onPaste: () => void;
   onSavePreset: () => void;
@@ -775,9 +799,13 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, mlApplied, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
+  // Header toggles show/hide their category (the disclosure chevron drives
+  // the same state). Details starts collapsed, as before.
+  const [visibleSections, setVisibleSections] = useState({ whiteBalance: true, lightness: true, color: true, details: false });
+  const setSectionVisible = (section: keyof typeof visibleSections, visible: boolean) => setVisibleSections((current) => ({ ...current, [section]: visible }));
   const [extraSections, setExtraSections] = useState<string[]>([]);
   const [openedExtra, setOpenedExtra] = useState('');
   const [extraRevision, setExtraRevision] = useState(0);
@@ -795,6 +823,10 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   }, []);
 
   const range = (key: NumericAdjustment, label: string, options: Partial<React.ComponentProps<typeof RangeControl>> = {}) => <RangeControl key={key} label={label} value={edit[key]} signed onChange={(value) => onChange({ [key]: value }, key)} {...options} />;
+  // Legacy recipes can carry a disabled category (the header toggle used to
+  // bypass the effect); the first manual slider move re-enables it so the
+  // edit shows on the photo. ML applies always enable their category.
+  const rangeEnabled = (enabledKey: 'whiteBalanceEnabled' | 'lightnessEnabled' | 'colorEnabled' | 'detailsEnabled', key: NumericAdjustment, label: string, options: Partial<React.ComponentProps<typeof RangeControl>> = {}) => <RangeControl key={key} label={label} value={edit[key]} signed onChange={(value) => onChange({ [key]: value, [enabledKey]: true }, key)} {...options} />;
   const title = tool === 'crop' ? 'Crop & Straighten' : tool === 'repair' ? 'Repair' : 'Color Adjustments';
   const TitleIcon = tool === 'crop' ? Crop : tool === 'repair' ? Bandage : SlidersHorizontal;
   const closeAction = (callback: () => void) => { callback(); setMenu(false); };
@@ -823,33 +855,33 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
     <div className="inspector-scroll">{tool === 'adjust' ? <><div className="classic-enhance" data-testid="auto-enhance"><button className={`slim-button full-width${edit.autoEnhanced && !edit.sceneEnhance ? ' is-active' : ''}`} data-testid="auto-enhance-apply" aria-pressed={edit.autoEnhanced && !edit.sceneEnhance} title="Automatically enhance exposure, contrast, and color; click again to revert" onClick={onAuto}><Sparkles size={13} /><span>Auto Enhance</span></button></div>{(onAutoScene || faceAssist || selectiveAssist || denoiseAssist) && <AdjustmentSection title="ML Enhance" icon={<Sparkles size={14} />} badge={<span className="ml-badge" title="Each action below is powered by a machine-learning model">ML</span>}><div className="ml-enhance" data-testid="ml-enhance">{onAutoScene && <SceneEnhanceControl edit={edit} onAutoScene={onAutoScene} />}{faceAssist && <FaceEnhanceControl assist={faceAssist} />}{selectiveAssist && <SelectiveMaskControl assist={selectiveAssist} />}{denoiseAssist && <DenoiseControl assist={denoiseAssist} photo={photo} />}</div></AdjustmentSection>}<Histogram data={histogram} photo={photo} />
-      <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} enabled={edit.whiteBalanceEnabled} onToggle={() => onChange({ whiteBalanceEnabled: !edit.whiteBalanceEnabled })} onAuto={onAutoWhiteBalance} onReset={() => onChange({ temperature: 5500, tint: 0 })}>
-        {range('temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false, disabled: !edit.whiteBalanceEnabled })}
-        {range('tint', 'Tint', { color: 'tint', disabled: !edit.whiteBalanceEnabled })}
+      <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} enabled={visibleSections.whiteBalance} onToggle={() => setSectionVisible('whiteBalance', !visibleSections.whiteBalance)} open={visibleSections.whiteBalance} onOpenChange={(open) => setSectionVisible('whiteBalance', open)} ml={{ id: 'white-balance', applied: Boolean(mlApplied?.whiteBalance), onToggle: onAutoWhiteBalance }} onReset={() => onChange({ temperature: 5500, tint: 0 })}>
+        {rangeEnabled('whiteBalanceEnabled', 'temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false })}
+        {rangeEnabled('whiteBalanceEnabled', 'tint', 'Tint', { color: 'tint' })}
       </AdjustmentSection>
-      <AdjustmentSection title="Lightness" icon={<Sun size={15} />} enabled={edit.lightnessEnabled} onToggle={() => onChange({ lightnessEnabled: !edit.lightnessEnabled })} onAuto={onAutoLightness} onReset={() => onChange({ exposure: 0, brightness: 0, contrast: 0, highlights: 0, shadows: 0, blacks: 0 })}>
-        {range('exposure', 'Exposure', { min: -3, max: 3, step: 0.01, disabled: !edit.lightnessEnabled })}
-        {range('brightness', 'Brightness', { disabled: !edit.lightnessEnabled })}
-        {range('contrast', 'Contrast', { disabled: !edit.lightnessEnabled })}
-        {range('highlights', 'Highlights', { disabled: !edit.lightnessEnabled })}
-        {range('shadows', 'Shadows', { disabled: !edit.lightnessEnabled })}
-        {range('blacks', 'Black Point', { disabled: !edit.lightnessEnabled })}
+      <AdjustmentSection title="Lightness" icon={<Sun size={15} />} enabled={visibleSections.lightness} onToggle={() => setSectionVisible('lightness', !visibleSections.lightness)} open={visibleSections.lightness} onOpenChange={(open) => setSectionVisible('lightness', open)} ml={{ id: 'lightness', applied: Boolean(mlApplied?.lightness), onToggle: onAutoLightness }} onReset={() => onChange({ exposure: 0, brightness: 0, contrast: 0, highlights: 0, shadows: 0, blacks: 0 })}>
+        {rangeEnabled('lightnessEnabled', 'exposure', 'Exposure', { min: -3, max: 3, step: 0.01 })}
+        {rangeEnabled('lightnessEnabled', 'brightness', 'Brightness')}
+        {rangeEnabled('lightnessEnabled', 'contrast', 'Contrast')}
+        {rangeEnabled('lightnessEnabled', 'highlights', 'Highlights')}
+        {rangeEnabled('lightnessEnabled', 'shadows', 'Shadows')}
+        {rangeEnabled('lightnessEnabled', 'blacks', 'Black Point')}
       </AdjustmentSection>
-      <AdjustmentSection title="Hue & Saturation" icon={<Palette size={14} />} enabled={edit.colorEnabled} onToggle={() => onChange({ colorEnabled: !edit.colorEnabled })} onReset={() => onChange({ hue: 0, saturation: 0, vibrance: 0 })}>
-        {range('saturation', 'Saturation', { disabled: !edit.colorEnabled })}
-        {range('vibrance', 'Vibrance', { disabled: !edit.colorEnabled })}
-        {range('hue', 'Hue', { min: -180, max: 180, color: 'hue', disabled: !edit.colorEnabled })}
+      <AdjustmentSection title="Hue & Saturation" icon={<Palette size={14} />} enabled={visibleSections.color} onToggle={() => setSectionVisible('color', !visibleSections.color)} open={visibleSections.color} onOpenChange={(open) => setSectionVisible('color', open)} ml={{ id: 'color', applied: Boolean(mlApplied?.color), onToggle: onAutoColor }} onReset={() => onChange({ hue: 0, saturation: 0, vibrance: 0 })}>
+        {rangeEnabled('colorEnabled', 'saturation', 'Saturation')}
+        {rangeEnabled('colorEnabled', 'vibrance', 'Vibrance')}
+        {rangeEnabled('colorEnabled', 'hue', 'Hue', { min: -180, max: 180, color: 'hue' })}
       </AdjustmentSection>
       <AdjustmentSection key={`curves-${openedExtra === 'Curves' ? extraRevision : 0}`} title="Curves" icon={<Spline size={14} />} initiallyOpen={openedExtra === 'Curves'} onReset={() => onChange({ curve: 0 })}>
         <div className="curve-graph"><span>RGB</span><svg viewBox="0 0 240 160" aria-label="Interactive tone curve" role="slider" tabIndex={0} aria-valuemin={-100} aria-valuemax={100} aria-valuenow={edit.curve} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const rect = event.currentTarget.getBoundingClientRect(); onChange({ curve: Math.max(-100, Math.min(100, (0.5 - (event.clientY - rect.top) / rect.height) * 200)) }, 'curve'); }} onPointerMove={(event) => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; const rect = event.currentTarget.getBoundingClientRect(); onChange({ curve: Math.max(-100, Math.min(100, (0.5 - (event.clientY - rect.top) / rect.height) * 200)) }, 'curve'); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); event.stopPropagation(); onChange({ curve: Math.max(-100, Math.min(100, edit.curve + (event.key === 'ArrowUp' ? 5 : -5))) }, 'curve'); } }}><g className="curve-grid">{[60, 120, 180].map((x) => <path key={x} d={`M${x} 0V160`} />)}{[40, 80, 120].map((y) => <path key={y} d={`M0 ${y}H240`} />)}</g><path d="M0 160L240 0" stroke="#555" strokeDasharray="3 4" /><path d={`M0 160Q120 ${80 - edit.curve * 0.8} 240 0`} fill="none" stroke="#e4c67d" strokeWidth="2" /><circle cx="120" cy={80 - edit.curve * 0.4} r="4" fill="#f3d492" /></svg></div>{range('curve', 'Midtones')}
       </AdjustmentSection>
-      <AdjustmentSection key={`details-${openedExtra === 'Details' ? extraRevision : 0}`} title="Details" icon={<Focus size={14} />} initiallyOpen={openedExtra === 'Details'} enabled={edit.detailsEnabled} onToggle={() => onChange({ detailsEnabled: !edit.detailsEnabled })}>
-        {range('clarity', 'Clarity', { disabled: !edit.detailsEnabled })}{range('sharpness', 'Sharpness', { min: 0, disabled: !edit.detailsEnabled })}{range('grain', 'Grain', { min: 0, disabled: !edit.detailsEnabled })}
+      <AdjustmentSection key={`details-${openedExtra === 'Details' ? extraRevision : 0}`} title="Details" icon={<Focus size={14} />} enabled={visibleSections.details} onToggle={() => setSectionVisible('details', !visibleSections.details)} open={visibleSections.details} onOpenChange={(open) => setSectionVisible('details', open)}>
+        {rangeEnabled('detailsEnabled', 'clarity', 'Clarity')}{rangeEnabled('detailsEnabled', 'sharpness', 'Sharpness', { min: 0 })}{rangeEnabled('detailsEnabled', 'grain', 'Grain', { min: 0 })}
       </AdjustmentSection>
       <AdjustmentSection key={`effects-${openedExtra === 'Effects' ? extraRevision : 0}`} title="Effects" icon={<CircleDashed size={14} />} initiallyOpen={openedExtra === 'Effects'} onReset={() => onChange({ vignette: 0, fade: 0 })}>
         {range('vignette', 'Vignette', { min: 0 })}{range('fade', 'Fade', { min: 0 })}
       </AdjustmentSection>
-      {extraSections.includes('Black & White') && <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} enabled={edit.blackAndWhite} onToggle={() => onChange({ blackAndWhite: !edit.blackAndWhite })}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>}
+      {extraSections.includes('Black & White') && <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} enabled={edit.blackAndWhite} toggleLabel="Enable black & white" onToggle={() => onChange({ blackAndWhite: !edit.blackAndWhite })}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>}
       <div className="inspector-end-note"><Circle size={10} />Every change. Always reversible.</div>
     </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button title="Rotate left 90 degrees" onClick={() => onRotate(-1)}><RotateCcw size={18} /><span>Left</span></button><button title="Rotate right 90 degrees" onClick={() => onRotate(1)}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} title="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} title="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onStraighten={onStraighten} onDraggingChange={onStraightenDragging} /> : <RangeControl label="Straighten" value={edit.straighten} min={-15} max={15} step={0.1} suffix="deg" signed onDraggingChange={onStraightenDragging} onChange={(next) => onStraighten(next, 'straighten')} />}<p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <><div className="tool-inspector"><div className="tool-intro"><Bandage size={30} strokeWidth={1.3} /><h3>Less distraction. More photo.</h3><p>Rebuild small distractions from the surrounding photo.</p></div></div><AdjustmentSection title="Brush" icon={<Brush size={14} />}><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} /></AdjustmentSection>{repairAssist && <AdjustmentSection title="Reconstruction" icon={<Layers size={14} />}><RepairMethodControl assist={repairAssist} /></AdjustmentSection>}{repairAssist?.removal && <AdjustmentSection title="One-Click Removal" icon={<Eraser size={14} />} badge={<span className="ml-badge" title="Detected by a machine-learning model on the photo server">ML</span>}><ObjectRemovalControl assist={repairAssist.removal} /></AdjustmentSection>}{repairAssist?.dustSpots && <AdjustmentSection title="Dust Spots" icon={<Sparkles size={14} />} badge={<span className="ml-badge" title="Filtered by a machine-learning model on the photo server">ML</span>}><DustSpotsControl assist={repairAssist.dustSpots} /></AdjustmentSection>}<AdjustmentSection title="Repairs" icon={<Bandage size={14} />}><RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></AdjustmentSection></>}</div>
     {tool === 'adjust' && <div className="inspector-footer"><button className="add-adjustment" onClick={() => setAddMenu(!addMenu)} aria-expanded={addMenu}><Plus size={15} />Add Adjustment<ChevronDown size={12} /></button>{addMenu && <div className="dropdown-menu add-adjustment-menu" role="menu">{['Black & White'].filter((name) => !extraSections.includes(name)).map((name) => <MenuItem key={name} onClick={() => addSection(name)}>{name}</MenuItem>)}{!extraSections.includes('Black & White') && <div className="menu-separator" />}<MenuItem onClick={() => { onSavePreset(); setAddMenu(false); }}>Save as Preset...</MenuItem></div>}</div>}

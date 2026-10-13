@@ -74,6 +74,7 @@ function renderAdjust(edit: EditState, photo: Photo, denoiseAssist?: DenoiseAssi
       {...(denoiseAssist === undefined ? {} : { denoiseAssist })}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
+      onAutoColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}

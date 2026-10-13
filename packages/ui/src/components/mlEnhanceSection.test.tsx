@@ -109,6 +109,7 @@ function renderAdjust(edit: EditState, ml?: { scene?: boolean; face?: boolean; s
       {...(ml?.denoise ? { denoiseAssist: denoiseAssist() } : {})}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
+      onAutoColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
