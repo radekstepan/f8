@@ -283,14 +283,13 @@ describe('single reset icon', () => {
       'Lightness',
       'Hue &amp; Saturation',
       'Curves',
+      'Details',
       'Effects',
     ]);
     // Only the last-used enhance mode carries the shared icon.
     expect(headers.find((header) => header.title === 'Scene Enhance')).toMatchObject({ resets: 0, reverts: 0 });
-    // Details has no header reset yet (Task 12); until then, zero — never two.
-    expect(headers.find((header) => header.title === 'Details')).toMatchObject({ resets: 0, reverts: 0 });
     // Collapsed sections keep exactly their one icon (the ML button hides, the reset stays).
-    for (const title of ['Curves', 'Effects']) {
+    for (const title of ['Curves', 'Details', 'Effects']) {
       expect(headers.find((header) => header.title === title)).toMatchObject({ collapsed: true, resets: 1, reverts: 0 });
     }
   });

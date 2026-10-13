@@ -122,7 +122,7 @@ describe('reset per adjustment', () => {
   it('renders no reset on any slider section at defaults — not even hover-only', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
     expect(html).not.toContain('section-reset');
-    for (const label of ['Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation', 'Reset curves', 'Reset effects']) {
+    for (const label of ['Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation', 'Reset curves', 'Reset details', 'Reset effects']) {
       expect(html).not.toContain(`aria-label="${label}"`);
     }
   });
@@ -141,10 +141,13 @@ describe('reset per adjustment', () => {
       [{ vibrance: 16 }, 'Reset hue &amp; saturation'],
       [{ hue: -30 }, 'Reset hue &amp; saturation'],
       [{ curve: 25 }, 'Reset curves'],
+      [{ clarity: 20 }, 'Reset details'],
+      [{ sharpness: 30 }, 'Reset details'],
+      [{ grain: 10 }, 'Reset details'],
       [{ vignette: 40 }, 'Reset effects'],
       [{ fade: 15 }, 'Reset effects'],
     ];
-    const labels = ['Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation', 'Reset curves', 'Reset effects'];
+    const labels = ['Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation', 'Reset curves', 'Reset details', 'Reset effects'];
     for (const [patch, label] of cases) {
       const html = renderAdjust({ ...DEFAULT_EDIT, ...patch });
       expect(html).toContain(`section-reset is-dirty" title="${label}"`);
@@ -195,10 +198,10 @@ describe('reset per adjustment', () => {
     }
   });
 
-  it('gives Details no header reset yet, and Denoise one exactly while applied', () => {
-    // Details gains its reset in Task 12.
+  it('gives Details a header reset exactly while dirty, and Denoise one exactly while applied', () => {
+    // Details (reset added in Task 12): dirty values persist the reset.
     const details = renderAdjust({ ...DEFAULT_EDIT, clarity: 20, sharpness: 30 }, { assists: true });
-    expect(details).not.toContain('aria-label="Reset details"');
+    expect(details).toContain('section-reset is-dirty" title="Reset details"');
     // Denoise (header rework, Task 4): no stored denoise, no reset.
     const idle = renderAdjust({ ...DEFAULT_EDIT }, { assists: true });
     expect(idle).not.toContain('aria-label="Reset denoise"');

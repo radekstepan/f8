@@ -109,7 +109,7 @@ describe('Details without a header toggle', () => {
     expect(html).not.toContain('>Grain</label>');
   });
 
-  it('keeps Details toggle-free with dirty sliders (reset arrives in Task 12)', () => {
+  it('keeps Details toggle-free with dirty sliders (the header carries a reset, not a toggle)', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT, clarity: 20, sharpness: 30, grain: 10 });
     expect(html).not.toContain('Show details');
     const details = sectionSlice(html, 'Details', 'Effects');
