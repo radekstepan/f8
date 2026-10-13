@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDownWideNarrow, Check, ChevronDown, ChevronUp, Grid2X2, Heart, MoreHorizontal, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { ALBUM_SORT_KEYS, ALBUM_SORT_LABELS, DEFAULT_ALBUM_SORT_DIR, DEFAULT_ALBUM_SORT_KEY, DEFAULT_EDIT } from '@f8/core';
-import { MOVE_PHOTOS_MIME, SEMANTIC_SEARCH_NOTE_HINT, computeGridWindow, encodeMovePayload, extendPhotoRange, filmstripArrowIndex, filmstripCenteredScrollOffset, filmstripOverflows, filmstripWheelShift, getPhotoFilter, isBuiltInCollection, isPortraitPhoto, marqueeSelectedIds, resolveMoveTargets, thumbnailFilterForPhoto, togglePhotoSelection } from '@f8/core';
+import { MOVE_PHOTOS_MIME, SEMANTIC_SEARCH_NOTE_HINT, anchorMenuAtCursor, computeGridWindow, encodeMovePayload, extendPhotoRange, filmstripArrowIndex, filmstripCenteredScrollOffset, filmstripOverflows, filmstripWheelShift, getPhotoFilter, isBuiltInCollection, isPortraitPhoto, marqueeSelectedIds, resolveMoveTargets, thumbnailFilterForPhoto, togglePhotoSelection } from '@f8/core';
 import type { Rect } from '@f8/core';
 import type { Album, AlbumSortDir, AlbumSortKey, EditState, Photo, Preset } from '@f8/core';
 
@@ -16,27 +16,51 @@ export interface PhotoContextMenuState {
   y: number;
 }
 
+// The open menu is measured before paint so its first frame already sits at
+// the anchored position; on the server (test renders) this degrades to a
+// plain effect.
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
 // Right-click menu state shared by the library grid and the filmstrip.
 // Dismisses on outside pointer-down and Escape, like the album menus.
 // `initial` only seeds the first render (a test seam for the open markup).
 function usePhotoContextMenu(initial?: PhotoContextMenuState | null) {
   const [menu, setMenu] = useState<PhotoContextMenuState | null>(initial ?? null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Cursor anchor for the open menu: the measure pass flips the menu above
+  // or left of this point when opening below/right would clip. Null for the
+  // seeded test seam, which keeps its pinned coordinates untouched.
+  const anchorRef = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
     if (!menu) return;
-    const onPointer = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenu(null); };
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setMenu(null); };
+    const onPointer = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) { anchorRef.current = null; setMenu(null); } };
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') { anchorRef.current = null; setMenu(null); } };
     document.addEventListener('pointerdown', onPointer);
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('pointerdown', onPointer); document.removeEventListener('keydown', onKey); };
   }, [menu]);
+  // Measure-then-anchor: the open estimate assumes a fixed menu size, so once
+  // the real menu mounts its measured size re-anchors it into the viewport —
+  // flipping above the cursor near the bottom edge (the filmstrip case). The
+  // guard skips unmeasurable renders and re-runs settle on the same coords.
+  useIsomorphicLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    const el = menuRef.current;
+    if (!menu || !anchor || !el || typeof window === 'undefined') return;
+    const size = el.getBoundingClientRect();
+    if (!(size.width > 0 && size.height > 0)) return;
+    const pos = anchorMenuAtCursor(anchor, { width: size.width, height: size.height }, { width: window.innerWidth, height: window.innerHeight });
+    if (pos.x !== menu.x || pos.y !== menu.y) setMenu({ ...menu, x: pos.x, y: pos.y });
+  }, [menu]);
   const open = (photoId: string) => (event: { preventDefault(): void; clientX: number; clientY: number }) => {
     event.preventDefault();
+    anchorRef.current = { x: event.clientX, y: event.clientY };
     const viewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth;
     const viewportHeight = typeof window === 'undefined' ? 768 : window.innerHeight;
     setMenu({ photoId, x: Math.max(0, Math.min(event.clientX, viewportWidth - 240)), y: Math.max(0, Math.min(event.clientY, viewportHeight - 160)) });
   };
-  return { menu, menuRef, open, close: () => setMenu(null) };
+  const close = () => { anchorRef.current = null; setMenu(null); };
+  return { menu, menuRef, open, close };
 }
 
 function PhotoContextMenu({ state, photoName, favorite, showRemove, menuRef, onSceneEnhance, onFaceEnhance, onExport2x, onFavorite, onRemove, moveCount, moveAlbums, onMoveToAlbum, onClose }: {
@@ -98,7 +122,7 @@ function filmstripSortLabel(sortKey: AlbumSortKey, reversed: boolean): string {
   return reversed ? 'Sort photos oldest first' : 'Sort photos newest first';
 }
 
-export function Filmstrip({ photos, selectedId, collectionName, edits, onSelect, onGrid, onSort, reversed, sortKey = DEFAULT_ALBUM_SORT_KEY, showPresets, onShowPresets, onSceneEnhance, onFaceEnhance, onExport2x, onFavorite, onRemove, initialContextMenu }: { photos: PhotoWithEdit[]; selectedId: string; collectionName: string; edits?: Record<string, EditState>; onSelect: (id: string) => void; onGrid: () => void; onSort: () => void; reversed: boolean; sortKey?: AlbumSortKey; showPresets: boolean; onShowPresets: () => void; /** ML scene enhance from the right-click menu; omit to disable the menu. */ onSceneEnhance?: (id: string) => void; /** ML face enhance from the right-click menu. */ onFaceEnhance?: (id: string) => void; /** ML 2x export from the right-click menu. */ onExport2x?: (id: string) => void; onFavorite?: (id: string) => void; /** Confirmed remove from the right-click menu; omit to hide the entry. */ onRemove?: (id: string) => void; /** Seeds an open context menu (a test seam for the open markup). */ initialContextMenu?: PhotoContextMenuState | null }) {
+export function Filmstrip({ photos, selectedId, collectionName, edits, onSelect, onGrid, onSort, reversed, sortKey = DEFAULT_ALBUM_SORT_KEY, showPresets, onShowPresets, onExport2x, onFavorite, onRemove, initialContextMenu }: { photos: PhotoWithEdit[]; selectedId: string; collectionName: string; edits?: Record<string, EditState>; onSelect: (id: string) => void; onGrid: () => void; onSort: () => void; reversed: boolean; sortKey?: AlbumSortKey; showPresets: boolean; onShowPresets: () => void; /** ML 2x export from the right-click menu; omit to disable the menu. (Scene/Face enhance live in the inspector and the library grid menu only.) */ onExport2x?: (id: string) => void; onFavorite?: (id: string) => void; /** Confirmed remove from the right-click menu; omit to hide the entry. */ onRemove?: (id: string) => void; /** Seeds an open context menu (a test seam for the open markup). */ initialContextMenu?: PhotoContextMenuState | null }) {
   const listRef = useRef<HTMLDivElement>(null);
   const contextMenu = usePhotoContextMenu(initialContextMenu);
   const menuPhoto = contextMenu.menu ? photos.find((photo) => photo.id === contextMenu.menu!.photoId) ?? null : null;
@@ -158,8 +182,8 @@ export function Filmstrip({ photos, selectedId, collectionName, edits, onSelect,
   };
   return <section className="filmstrip" aria-label="Photos in this collection"><div className="filmstrip-heading"><div><h2>{collectionName}</h2><span>{photos.length} photos</span></div><div className="filmstrip-actions">{!showPresets && <button className="show-presets" onClick={onShowPresets}>Presets<ChevronUp size={12} /></button>}<IconButton label={filmstripSortLabel(sortKey, reversed)} active={reversed} onClick={onSort}><ArrowDownWideNarrow size={14} /></IconButton><IconButton label="Show photo browser (G)" onClick={onGrid}><Grid2X2 size={13} /></IconButton></div></div><div className="filmstrip-list" ref={listRef} onKeyDown={onListKeyDown}>{photos.map((photo) => {
     const filter = thumbnailFilterForPhoto(photo, edits?.[photo.id]);
-    return <button data-photo-id={photo.id} className={`filmstrip-item ${selectedId === photo.id ? 'is-selected' : ''} ${photo.missing ? 'is-missing' : ''}${isPortraitPhoto(photo) ? ' is-portrait' : ''}`} key={photo.id} onClick={() => onSelect(photo.id)} {...((onSceneEnhance || onFaceEnhance || onExport2x) ? { onContextMenu: contextMenu.open(photo.id) } : {})} title={`${photo.name} - ${photo.title}`} aria-label={`Open ${photo.title}`} aria-pressed={selectedId === photo.id}><span className="filmstrip-image"><img src={photo.thumbnail} alt={photo.title} loading="lazy" style={filter ? { filter } : undefined} />{photo.raw && <span className="thumb-raw">RAW</span>}{photo.missing && <span className="thumb-missing">Missing</span>}{photo.favorite && <Heart className="thumb-heart" size={10} fill="currentColor" />}</span><span className="filmstrip-filename">{photo.name.split('.')[0]}</span></button>;
-  })}</div>{contextMenu.menu && menuPhoto && (onSceneEnhance || onFaceEnhance || onExport2x) && <PhotoContextMenu state={contextMenu.menu} photoName={menuPhoto.name} favorite={menuPhoto.favorite} showRemove={Boolean(onRemove)} menuRef={contextMenu.menuRef} onSceneEnhance={onSceneEnhance ? () => onSceneEnhance(menuPhoto.id) : undefined} onFaceEnhance={onFaceEnhance ? () => onFaceEnhance(menuPhoto.id) : undefined} onExport2x={onExport2x ? () => onExport2x(menuPhoto.id) : undefined} onFavorite={() => onFavorite?.(menuPhoto.id)} onRemove={onRemove ? () => onRemove(menuPhoto.id) : undefined} onClose={contextMenu.close} />}</section>;
+    return <button data-photo-id={photo.id} className={`filmstrip-item ${selectedId === photo.id ? 'is-selected' : ''} ${photo.missing ? 'is-missing' : ''}${isPortraitPhoto(photo) ? ' is-portrait' : ''}`} key={photo.id} onClick={() => onSelect(photo.id)} {...(onExport2x ? { onContextMenu: contextMenu.open(photo.id) } : {})} title={`${photo.name} - ${photo.title}`} aria-label={`Open ${photo.title}`} aria-pressed={selectedId === photo.id}><span className="filmstrip-image"><img src={photo.thumbnail} alt={photo.title} loading="lazy" style={filter ? { filter } : undefined} />{photo.raw && <span className="thumb-raw">RAW</span>}{photo.missing && <span className="thumb-missing">Missing</span>}{photo.favorite && <Heart className="thumb-heart" size={10} fill="currentColor" />}</span><span className="filmstrip-filename">{photo.name.split('.')[0]}</span></button>;
+  })}</div>{contextMenu.menu && menuPhoto && onExport2x && <PhotoContextMenu state={contextMenu.menu} photoName={menuPhoto.name} favorite={menuPhoto.favorite} showRemove={Boolean(onRemove)} menuRef={contextMenu.menuRef} onExport2x={onExport2x ? () => onExport2x(menuPhoto.id) : undefined} onFavorite={() => onFavorite?.(menuPhoto.id)} onRemove={onRemove ? () => onRemove(menuPhoto.id) : undefined} onClose={contextMenu.close} />}</section>;
 }
 
 export type EditedFilter = 'all' | 'edited' | 'unedited';

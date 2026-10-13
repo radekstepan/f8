@@ -98,7 +98,7 @@ describe('photo context menu', () => {
     expect(html).not.toContain('data-testid="photo-context-menu"');
   });
 
-  it('offers ML scene enhance in the filmstrip without a remove entry', () => {
+  it('omits scene and face enhance in the filmstrip without a remove entry', () => {
     const html = renderToStaticMarkup(
       <Filmstrip
         photos={photos}
@@ -110,14 +110,16 @@ describe('photo context menu', () => {
         reversed={false}
         showPresets={false}
         onShowPresets={noop}
-        onSceneEnhance={noop}
+        onExport2x={noop}
         onFavorite={noop}
         initialContextMenu={{ photoId: 'p1', x: 50, y: 60 }}
       />,
     );
     expect(html).toContain('data-testid="photo-context-menu"');
-    expect(html).toContain('Scene Enhance');
-    expect(html).toContain('>ML<');
+    expect(html).not.toContain('Scene Enhance');
+    expect(html).not.toContain('Enhance Faces');
+    expect(html).toContain('Export 2x');
+    expect(html).toContain('Add Favorite');
     expect(html).not.toContain('Remove from Library…');
   });
 
@@ -133,7 +135,7 @@ describe('photo context menu', () => {
         reversed={false}
         showPresets={false}
         onShowPresets={noop}
-        onSceneEnhance={noop}
+        onExport2x={noop}
         onFavorite={noop}
         onRemove={noop}
         initialContextMenu={{ photoId: 'p1', x: 50, y: 60 }}
@@ -209,7 +211,6 @@ describe('photo context menu', () => {
         reversed={false}
         showPresets={false}
         onShowPresets={noop}
-        onSceneEnhance={noop}
         onExport2x={noop}
         onFavorite={noop}
         initialContextMenu={{ photoId: 'p1', x: 50, y: 60 }}

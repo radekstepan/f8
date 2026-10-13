@@ -1159,7 +1159,7 @@ export default function App() {
               onSelect={selectPhoto} onGrid={() => setView('library')}
               onSort={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')} reversed={sortDir === 'desc'} sortKey={sortKey}
               showPresets={presetsOpen} onShowPresets={() => setPresetsOpen(true)}
-              onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} onFavorite={toggleFavorite} onRemove={requestRemove}
+              onExport2x={requestExport2x} onFavorite={toggleFavorite} onRemove={requestRemove}
             />}
           </>
         )}

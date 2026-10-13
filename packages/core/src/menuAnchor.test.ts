@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MENU_ANCHOR_EDGE_PX, MENU_ANCHOR_GAP_PX, anchorMenuBelowTrigger, type MenuAnchorBox, type MenuAnchorTrigger } from "./menuAnchor.js";
+import { MENU_ANCHOR_EDGE_PX, MENU_ANCHOR_GAP_PX, anchorMenuAtCursor, anchorMenuBelowTrigger, type MenuAnchorBox, type MenuAnchorTrigger } from "./menuAnchor.js";
 
 const viewport: MenuAnchorBox = { width: 1280, height: 800 };
 const menu: MenuAnchorBox = { width: 190, height: 120 };
@@ -37,5 +37,37 @@ describe("anchorMenuBelowTrigger", () => {
     expect(pos.y).toBe(MENU_ANCHOR_EDGE_PX);
     const wide: MenuAnchorBox = { width: 1400, height: 120 };
     expect(anchorMenuBelowTrigger(trigger(200, 180, 226), wide, viewport).x).toBe(MENU_ANCHOR_EDGE_PX);
+  });
+});
+
+describe("anchorMenuAtCursor", () => {
+  it("opens below/right of the cursor when there is room", () => {
+    expect(anchorMenuAtCursor({ x: 100, y: 120 }, menu, viewport)).toEqual({ x: 100, y: 120 });
+  });
+
+  it("flips above the cursor when below would clip the bottom edge", () => {
+    // Filmstrip right-click near the viewport bottom: below ends at 780 + 120.
+    expect(anchorMenuAtCursor({ x: 100, y: 780 }, menu, viewport)).toEqual({ x: 100, y: 780 - 120 });
+  });
+
+  it("flips left of the cursor when right would clip the right edge", () => {
+    expect(anchorMenuAtCursor({ x: 1200, y: 120 }, menu, viewport)).toEqual({ x: 1200 - 190, y: 120 });
+  });
+
+  it("flips both axes in the bottom-right corner", () => {
+    expect(anchorMenuAtCursor({ x: 1200, y: 780 }, menu, viewport)).toEqual({ x: 1200 - 190, y: 780 - 120 });
+  });
+
+  it("clamps into the viewport instead of flipping past an edge", () => {
+    // Near the left edge with no room to flip left: pinned to the edge gap.
+    expect(anchorMenuAtCursor({ x: 2, y: 120 }, menu, viewport)).toEqual({ x: MENU_ANCHOR_EDGE_PX, y: 120 });
+    // Near the top edge with no room to flip above: pinned to the edge gap.
+    const tall: MenuAnchorBox = { width: 190, height: 700 };
+    expect(anchorMenuAtCursor({ x: 1200, y: 100 }, tall, viewport)).toEqual({ x: 1200 - 190, y: MENU_ANCHOR_EDGE_PX });
+  });
+
+  it("pins an oversized menu inside the viewport", () => {
+    const huge: MenuAnchorBox = { width: 1400, height: 900 };
+    expect(anchorMenuAtCursor({ x: 640, y: 400 }, huge, viewport)).toEqual({ x: MENU_ANCHOR_EDGE_PX, y: MENU_ANCHOR_EDGE_PX });
   });
 });
