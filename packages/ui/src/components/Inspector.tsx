@@ -1,48 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Bandage, Brush, ChevronDown, ChevronRight, Circle, CircleDashed, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Layers, MoreHorizontal, Palette, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Undo2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Bandage, Brush, ChevronDown, Circle, CircleDashed, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Layers, MoreHorizontal, Palette, RotateCcw, RotateCw, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, X } from 'lucide-react';
 import { CROP_RATIOS, SCENE_DISPLAY_NAMES, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, shouldAutoDenoise, strokeIdForPoint } from '@f8/core';
 import type { ChangeEdit, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, MlCategory, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
+import { AdjustmentSection } from './AdjustmentSection.js';
 import { IconButton, MenuItem, RangeControl, SelectField, Toggle } from './EditorUI.js';
-
-export interface AdjustmentMl {
-  /** Testid prefix: `${id}-ml` for the button, `${id}-ml-revert` for the revert icon. */
-  id: string;
-  /** True after ML applied: the button highlights and the revert icon appears beside it. */
-  applied: boolean;
-  /** Apply when idle, revert when applied — the ML button and the revert icon share it. */
-  onToggle: () => void;
-}
-
-interface AdjustmentSectionProps {
-  title: string;
-  icon: ReactNode;
-  children: ReactNode;
-  initiallyOpen?: boolean;
-  enabled?: boolean;
-  /** Small heading adornment after the title, e.g. an ML badge. */
-  badge?: ReactNode;
-  onToggle?: () => void;
-  /** Accessibility label for the header toggle; defaults to "Show {title}". */
-  toggleLabel?: string;
-  /** Per-category ML action; omit for sections with no automatic action. */
-  ml?: AdjustmentMl;
-  /** Controlled visibility; omit for the self-managed disclosure default. */
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-  onReset?: () => void;
-}
-
-export function AdjustmentSection({ title, icon, children, initiallyOpen = true, enabled, badge, onToggle, toggleLabel, ml, open: controlledOpen, onOpenChange, onReset }: AdjustmentSectionProps) {
-  const [uncontrolledOpen, setUncontrolledOpen] = useState(initiallyOpen);
-  const open = controlledOpen ?? uncontrolledOpen;
-  const setOpen = (next: boolean) => {
-    if (controlledOpen === undefined) setUncontrolledOpen(next);
-    onOpenChange?.(next);
-  };
-  const lower = title.toLowerCase();
-  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{ml && open && <button className={`ml-button${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-ml`} aria-pressed={ml.applied} title={ml.applied ? `ML ${lower} applied — click to revert` : `Automatically adjust ${lower} with ML`} onClick={ml.onToggle}>ML</button>}{ml && ml.applied && open && <IconButton className="ml-revert" data-testid={`${ml.id}-ml-revert`} label={`Revert ML ${lower}`} onClick={ml.onToggle}><Undo2 size={11} /></IconButton>}{onReset && <IconButton className="section-reset" label={`Reset ${lower}`} onClick={onReset}><RotateCcw size={11} /></IconButton>}{onToggle && <Toggle checked={Boolean(enabled)} onChange={onToggle} label={toggleLabel ?? `Show ${lower}`} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
-}
 
 function Histogram({ data, photo }: { data: HistogramData | null; photo: Photo }) {
   const [channel, setChannel] = useState('RGB');

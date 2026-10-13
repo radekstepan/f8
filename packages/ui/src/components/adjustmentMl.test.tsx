@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
 import type { EditState, MlCategory, Photo } from '@f8/core';
-import { AdjustmentSection, Inspector } from './Inspector.js';
+import { AdjustmentSection } from './AdjustmentSection.js';
+import { Inspector } from './Inspector.js';
 
 // Per-category ML buttons + visibility toggles, rendered on the server (no
 // jsdom): effects never run, so this pins the markup + prop wiring — ML

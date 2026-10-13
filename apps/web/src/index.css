@@ -245,7 +245,7 @@ img { display: block; }
 .inspector-menu-anchor { margin-left: auto; position: relative; }
 .inspector-close { display: none; }
 .inspector-options { left: auto; right: -4px; min-width: 252px; }
-.inspector-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.inspector-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
 .auto-enhance-row { display: flex; align-items: center; gap: 12px; padding: 0 19px; height: 44px; border-bottom: 1px solid #3a3a3e; }
 .auto-enhance-row > button:first-child { display: flex; align-items: center; gap: 8px; flex: 1; text-align: left; color: #d2d2d9; font-size: 10.5px; }
 .auto-enhance-row > button:first-child > svg { color: #d6bd85; }
@@ -284,7 +284,6 @@ img { display: block; }
 .section-actions .toggle > span { width: 9px; height: 9px; }
 .section-actions .toggle.is-on > span { transform: translateX(10px); }
 .adjustment-content { padding: 0 20px 9px; animation: section-in 180ms ease-out; }
-.adjustment-section.is-collapsed .adjustment-heading { min-height: 40px; }
 .adjustment-section.is-collapsed .adjustment-heading:hover { background: #ffffff03; }
 .range-control { height: 39px; min-width: 0; }
 .range-label { height: 19px; display: flex; align-items: center; justify-content: space-between; gap: 9px; color: #bdbdc7; font-size: 10px; }

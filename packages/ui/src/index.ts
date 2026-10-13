@@ -1,3 +1,4 @@
+export * from "./components/AdjustmentSection.js";
 export * from "./components/EditorDialogs.js";
 export * from "./components/EditorUI.js";
 export * from "./components/Inspector.js";
