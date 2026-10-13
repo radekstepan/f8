@@ -10,13 +10,18 @@
 
 import type { PixelImage } from "./analyze.js";
 import type { HealProgress } from "./heal.js";
-import { healSingleGroup, type CachedHealPatch } from "./heal-cache.js";
+import { healSingleGroup, pasteHealPatches, type CachedHealPatch } from "./heal-cache.js";
 import type { RetouchStrokeGroup } from "../retouch.js";
 import type { InpaintMethod } from "./inpaint.js";
 import type { RunInpaint, RunInpaintOptions } from "../image.js";
 
 export interface HealQueueJob {
-  /** Clean (repair-free) base the groups heal against. */
+  /**
+   * Starting base the groups heal against — callers composite finished
+   * patches over the clean base (see repairedBaseForHealJob), so a touch-up
+   * overlapping an older repair sources from repaired pixels. Within the
+   * job, each group additionally sees every earlier group's finished patch.
+   */
   source: PixelImage;
   /** Fixed group list for this job; later strokes form later jobs. */
   groups: RetouchStrokeGroup[];
@@ -97,6 +102,11 @@ export function createHealQueue(
       return;
     }
     const base = job.options ?? {};
+    // Stacked sourcing within the job: each group heals against the
+    // repaired-so-far image — the starting base plus every patch this job
+    // already finished — so overlapping groups in one job see each other's
+    // work instead of the pristine base. Failed groups contribute nothing.
+    let working = job.source;
     for (let index = 0; index < job.groups.length; index += 1) {
       if (job.shouldAbort?.()) return;
       const group = job.groups[index]!;
@@ -125,7 +135,7 @@ export function createHealQueue(
       };
       let patch: CachedHealPatch | null;
       try {
-        patch = await healGroup(job.source, group, job.method, job.runInpaint, options);
+        patch = await healGroup(working, group, job.method, job.runInpaint, options);
       } catch {
         // Keep the blur fallback for this group; others still upgrade.
         // Progress still advances so the bar never stalls on one group.
@@ -137,6 +147,9 @@ export function createHealQueue(
       }
       if (job.shouldAbort?.()) return;
       if (patch) {
+        // Valid healed output for this job's geometry: later groups heal
+        // against it even if the cache/persist hook below fails.
+        working = pasteHealPatches(working, [patch]);
         try {
           await job.onGroupDone?.(patch, group);
         } catch {

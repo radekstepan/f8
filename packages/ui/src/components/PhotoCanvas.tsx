@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
-import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
+import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
 import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 import { ToolHint } from './ToolHint.js';
@@ -745,6 +745,13 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
                   const cleanCtx = clean.getContext('2d')!;
                   const cleanPixels = cleanCtx.getImageData(0, 0, width, height);
                   const source = { width, height, data: new Uint8ClampedArray(cleanPixels.data) };
+                  // Stacked sourcing: dirty groups heal against the
+                  // repaired-so-far image — finished patches over the clean
+                  // base — so a touch-up overlapping an older repair sees
+                  // repaired pixels, not the original blemish. Display
+                  // compositing (renderPatches) still pastes over the clean
+                  // base; only the inference input changes.
+                  const healSource = repairedBaseForHealJob(source, validPatches);
                   const renderPatches = (patches: CachedHealPatch[]) => {
                     if (healEpoch.current !== myEpoch || photoIdRef.current !== myPhotoId || !canvasRef.current) return;
                     if (!patches.length) return;
@@ -768,7 +775,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
                   // first new group lands.
                   renderPatches(validPatches);
                   return {
-                    source,
+                    source: healSource,
                     groups: dirty,
                     method: methodAtEnqueue,
                     runInpaint: latest.run,

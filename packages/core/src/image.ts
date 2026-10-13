@@ -13,6 +13,7 @@ import {
   healSingleGroup,
   partitionHealGroups,
   pasteHealPatches,
+  repairedBaseForHealJob,
   reusableOverlayForGroup,
   signatureForHealGroup,
   type CachedHealPatch,
@@ -368,8 +369,9 @@ async function geometryForExport(
     maxSize,
   );
   // Group-overlay path (heal + ml-heal): reusable saved patches composite
-  // directly and only missing groups hit the transport — the same pixels as
-  // the preview, and reopened photos export without rehealing. Reuse ignores
+  // directly and only missing groups hit the transport — against the
+  // repaired-so-far base, the same pixels as the preview — and reopened
+  // photos export without rehealing. Reuse ignores
   // the current method/quality/feather so mixed-method photos export their
   // saved pixels verbatim; only groups with no overlay heal now. Other
   // methods keep the single full-pass path below.
@@ -397,26 +399,34 @@ async function geometryForExport(
         const ctx = clean.getContext('2d')!;
         const pixels = ctx.getImageData(0, 0, width, height);
         const source = { width, height, data: new Uint8ClampedArray(pixels.data) };
+        const validPatches = valid.flatMap((group) => {
+          const entry = cache.get(group.id);
+          return entry ? [entry] : [];
+        });
+        // Stacked sourcing, mirroring the preview queue: dirty groups heal
+        // against the repaired-so-far image — saved patches plus each group
+        // this loop already finished — never the pristine base alone.
+        let healSource = repairedBaseForHealJob(source, validPatches);
         const fresh: CachedHealPatch[] = [];
         for (let dirtyIndex = 0; dirtyIndex < dirty.length; dirtyIndex += 1) {
           const group = dirty[dirtyIndex]!;
           try {
-            const patch = await healSingleGroup(source, group, method, runInpaint, {
+            const patch = await healSingleGroup(healSource, group, method, runInpaint, {
               quality: repair.quality,
               seamlessLight: repair.seamlessLight,
               featherPx: repair.featherPx,
               areas: dirty.length,
               aggregate: { index: dirtyIndex, total: dirty.length },
             });
-            if (patch) fresh.push(patch);
+            if (patch) {
+              fresh.push(patch);
+              healSource = pasteHealPatches(healSource, [patch]);
+            }
           } catch {
             // This group keeps the blur fallback; others still upgrade.
           }
         }
-        const patches = [...valid.flatMap((group) => {
-          const entry = cache.get(group.id);
-          return entry ? [entry] : [];
-        }), ...fresh];
+        const patches = [...validPatches, ...fresh];
         if (patches.length) {
           const composited = pasteHealPatches(source, patches);
           ctx.putImageData(new ImageData(new Uint8ClampedArray(composited.data), width, height), 0, 0);

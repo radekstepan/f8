@@ -14,6 +14,7 @@ import {
   partitionHealGroups,
   pointsHashForGroup,
   pointsKeyForGroup,
+  repairedBaseForHealJob,
   resampleHealPatchForStraighten,
   reusableOverlayForGroup,
   rotateHealPatch,
@@ -286,6 +287,36 @@ describe("pasteHealPatches", () => {
     expect(out.data[8]).toBe(1);
     expect(out.data[(7 * 8 + 7) * 4]).toBe(1);
     expect(base.data[0]).toBe(1);
+  });
+});
+
+describe("repairedBaseForHealJob", () => {
+  it("returns the clean base itself when nothing is finished", () => {
+    const clean: PixelImage = solidColor(8, 8, 1, 2, 3);
+    expect(repairedBaseForHealJob(clean, [])).toBe(clean);
+  });
+
+  it("composites finished patches newest-on-top without mutating the base", () => {
+    const clean: PixelImage = solidColor(8, 8, 1, 2, 3);
+    const red = new Uint8ClampedArray(2 * 2 * 4);
+    const blue = new Uint8ClampedArray(2 * 2 * 4);
+    for (let i = 0; i < 4; i += 1) {
+      red.set([255, 0, 0, 255], i * 4);
+      blue.set([0, 0, 255, 255], i * 4);
+    }
+    const out = repairedBaseForHealJob(clean, [
+      { signature: "a", x0: 0, y0: 0, width: 2, height: 2, data: red, resampleDeg: 0 },
+      { signature: "b", x0: 1, y0: 1, width: 2, height: 2, data: blue, resampleDeg: 0 },
+    ]);
+    expect(out).not.toBe(clean);
+    // Older patch shows where the newer one does not cover it…
+    expect(out.data[0]).toBe(255);
+    // …the newer patch wins the overlap…
+    expect(out.data[(1 * 8 + 1) * 4 + 2]).toBe(255);
+    // …untouched pixels pass through, and the base is never mutated.
+    expect(out.data[(7 * 8 + 7) * 4]).toBe(1);
+    expect(clean.data[0]).toBe(1);
+    expect(clean.data[(1 * 8 + 1) * 4 + 2]).toBe(3);
   });
 });
 

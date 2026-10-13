@@ -11,9 +11,11 @@
 //
 // A patch is the final blended RGBA cropped to the feathered mask bbox of
 // its group, composited over the clean (repair-free) base. Dirty groups
-// always run against the clean base — never over other patches. Overlapping
-// groups are healed independently and composited with the newest on top;
-// saved work is never re-healed to match a joint run.
+// heal against the repaired-so-far image — finished patches composited over
+// the clean base — never the pristine base alone, so a touch-up stroke
+// overlapping an older repair sees repaired pixels as context instead of
+// the original blemish. Overlapping groups composite with the newest on
+// top; finished work is immutable and never re-healed to match a joint run.
 
 import type { RetouchPoint } from "../types.js";
 import { groupRetouchStrokes, straightenZoom, type RetouchStrokeGroup } from "../retouch.js";
@@ -643,9 +645,26 @@ export function resampleHealPatchForStraighten(
 }
 
 /**
- * Heal one stroke group against the clean base and return its cropped patch.
- * Returns null when the group rasterizes empty. Transport errors propagate
- * so the caller can keep the blur fallback for this group and continue.
+ * Compose the inference input for a heal job: finished patches over the
+ * clean base. Callers heal dirty groups against this — never the pristine
+ * base alone — so stacked repairs source from repaired pixels. Returns the
+ * clean base itself when there is nothing finished (no full-image copy on
+ * the first stroke); otherwise returns a fresh image and never mutates in.
+ */
+export function repairedBaseForHealJob(
+  clean: PixelImage,
+  finishedPatches: readonly CachedHealPatch[],
+): PixelImage {
+  if (!finishedPatches.length) return clean;
+  return pasteHealPatches(clean, finishedPatches);
+}
+
+/**
+ * Heal one stroke group against the given base and return its cropped patch.
+ * Callers pass the repaired-so-far image (see repairedBaseForHealJob), so a
+ * group overlapping an older repair heals against repaired pixels. Returns
+ * null when the group rasterizes empty. Transport errors propagate so the
+ * caller can keep the blur fallback for this group and continue.
  */
 export async function healSingleGroup(
   source: PixelImage,
