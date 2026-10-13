@@ -98,6 +98,9 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(start.photoId);
   const [collection, setCollection] = useState(start.collectionId);
   const [search, setSearch] = useState('');
+  // Grid multi-selection (Ctrl/Cmd-click, Shift-click, marquee): photo ids in
+  // selection order. Cleared below whenever the list identity changes.
+  const [selection, setSelection] = useState<string[]>([]);
   const [editedFilter, setEditedFilter] = useState<EditedFilter>('all');
   const [favoriteFilter, setFavoriteFilter] = useState<FavoriteFilter>('all');
   const [cullFilter, setCullFilter] = useState<CullFilter>('all');
@@ -372,6 +375,34 @@ export default function App() {
     setFavoriteFilter('all');
     setCullFilter('all');
   };
+
+  // A selection names photos in one list; navigating or narrowing the list
+  // (or opening a photo, which clears the search) invalidates it.
+  useEffect(() => {
+    setSelection([]);
+  }, [collection, search, editedFilter, favoriteFilter, cullFilter]);
+
+  // Move grid photos into an album (context menu or sidebar drop). Photos
+  // already home are skipped so a drop onto the current album is a no-op
+  // with a note, not an error; the selection clears either way.
+  const movePhotosToAlbum = useCallback((photoIds: string[], albumId: string) => {
+    const target = albums.find((entry) => entry.id === albumId);
+    if (!target) return;
+    const moving = photoIds.filter((id) => photos.some((item) => item.id === id && item.albumId !== albumId));
+    setSelection([]);
+    if (!moving.length) {
+      notify(`Already in "${target.name}".`);
+      return;
+    }
+    void (async () => {
+      try {
+        await Promise.all(moving.map((id) => library.updatePhoto(id, { albumId })));
+        notify(`Moved ${moving.length} ${moving.length === 1 ? 'photo' : 'photos'} to "${target.name}".`);
+      } catch (reason) {
+        notifyError(reason, 'Could not move the photos.');
+      }
+    })();
+  }, [albums, photos, library, notify, notifyError]);
 
   const toggleFavorite = useCallback((id?: string) => {
     const target = id ?? photo?.id;
@@ -1009,10 +1040,10 @@ export default function App() {
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
     <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} enhanced={editor.edit.autoEnhanced} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} libraryView={view === 'library'} presetsOpen={presetsOpen} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
-      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onCullAlbum={cullAlbumPhotos} />}
+      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onCullAlbum={cullAlbumPhotos} onMoveToAlbum={movePhotosToAlbum} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onCullAlbum={cullAlbumPhotos} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} albums={albums} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onLabelAlbum={labelAlbumPhotos} onCullAlbum={cullAlbumPhotos} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} selectedIds={selection} onSelectionChange={setSelection} onMoveToAlbum={movePhotosToAlbum} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (

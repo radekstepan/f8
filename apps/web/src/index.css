@@ -445,6 +445,12 @@ img { display: block; }
 .browser-remove { position: absolute; right: 6px; bottom: 6px; background: #1e1e2460; backdrop-filter: blur(6px); color: #dedee2; opacity: 0; transition: opacity 150ms; }
 .browser-photo:hover .browser-remove, .browser-remove:focus-visible { opacity: 1; }
 .browser-remove:hover { color: #f29c97; }
+.browser-photo.is-selected .browser-photo-image { border-color: var(--accent); box-shadow: 0 0 0 2px #e2c28255; }
+.browser-selected-check { position: absolute; left: 6px; top: 6px; z-index: 2; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--accent); color: #2b2415; box-shadow: 0 1px 4px #0006; pointer-events: none; }
+.selection-marquee { position: fixed; z-index: 200; border: 1px solid var(--accent); background: #e2c28226; pointer-events: none; }
+.menu-section-label { padding: 7px 9px 3px; font-size: 9px; letter-spacing: .6px; text-transform: uppercase; color: #98989e; }
+.move-album-list { max-height: 216px; overflow-y: auto; }
+.album-row.is-drop-target .sidebar-item { background: #49402f; color: #e7c98a; box-shadow: inset 0 0 0 1px var(--accent); }
 .empty-library { min-height: 300px; height: 65%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; }
 .empty-library > svg { color: #8e7c5a; margin-bottom: 8px; }
 .empty-library h2 { font-size: 19px; font-weight: 450; color: #dedce1; letter-spacing: -.5px; }

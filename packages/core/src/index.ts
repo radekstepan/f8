@@ -11,6 +11,7 @@ export * from "./inspectorVisibility.js";
 export * from "./jpeg.js";
 export * from "./library.js";
 export * from "./libraryUrl.js";
+export * from "./photoSelection.js";
 export * from "./raw.js";
 export * from "./retouch.js";
 export * from "./tiffThumb.js";

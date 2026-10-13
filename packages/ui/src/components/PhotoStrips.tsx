@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownWideNarrow, Check, ChevronDown, ChevronUp, Grid2X2, Heart, MoreHorizontal, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { ALBUM_SORT_KEYS, ALBUM_SORT_LABELS, DEFAULT_ALBUM_SORT_DIR, DEFAULT_ALBUM_SORT_KEY, DEFAULT_EDIT } from '@f8/core';
-import { computeGridWindow, filmstripArrowIndex, filmstripCenteredScrollOffset, filmstripOverflows, filmstripWheelShift, getPhotoFilter, isBuiltInCollection, isPortraitPhoto, thumbnailFilterForPhoto } from '@f8/core';
+import { MOVE_PHOTOS_MIME, computeGridWindow, encodeMovePayload, extendPhotoRange, filmstripArrowIndex, filmstripCenteredScrollOffset, filmstripOverflows, filmstripWheelShift, getPhotoFilter, isBuiltInCollection, isPortraitPhoto, marqueeSelectedIds, resolveMoveTargets, thumbnailFilterForPhoto, togglePhotoSelection } from '@f8/core';
+import type { Rect } from '@f8/core';
 import type { Album, AlbumSortDir, AlbumSortKey, EditState, Photo, Preset } from '@f8/core';
 
 /** A grid/filmstrip photo with its edit recipe attached when known (library photos carry `edit`). */
@@ -38,7 +39,7 @@ function usePhotoContextMenu(initial?: PhotoContextMenuState | null) {
   return { menu, menuRef, open, close: () => setMenu(null) };
 }
 
-function PhotoContextMenu({ state, photoName, favorite, showRemove, menuRef, onSceneEnhance, onFaceEnhance, onExport2x, onFavorite, onRemove, onClose }: {
+function PhotoContextMenu({ state, photoName, favorite, showRemove, menuRef, onSceneEnhance, onFaceEnhance, onExport2x, onFavorite, onRemove, moveCount, moveAlbums, onMoveToAlbum, onClose }: {
   state: PhotoContextMenuState;
   photoName: string;
   favorite: boolean;
@@ -49,6 +50,10 @@ function PhotoContextMenu({ state, photoName, favorite, showRemove, menuRef, onS
   onExport2x?: () => void;
   onFavorite: () => void;
   onRemove?: () => void;
+  /** Photos the move section acts on; the section renders only with albums to move to. */
+  moveCount?: number;
+  moveAlbums?: Album[];
+  onMoveToAlbum?: (albumId: string) => void;
   onClose: () => void;
 }) {
   return <div className="dropdown-menu photo-context-menu" role="menu" aria-label={`Actions for ${photoName}`} ref={menuRef} style={{ left: state.x, top: state.y }} data-testid="photo-context-menu">
@@ -56,6 +61,7 @@ function PhotoContextMenu({ state, photoName, favorite, showRemove, menuRef, onS
     {onFaceEnhance && <MenuItem onClick={() => { onClose(); onFaceEnhance(); }}><span>Enhance Faces <span className="ml-badge" title="Faces are detected by a machine-learning model on the photo server">ML</span></span></MenuItem>}
     {onExport2x && <MenuItem onClick={() => { onClose(); onExport2x(); }}><span>Export 2x <span className="ml-badge" title="Doubled by a machine-learning model on the photo server">ML</span></span></MenuItem>}
     <MenuItem onClick={() => { onClose(); onFavorite(); }}>{favorite ? 'Remove Favorite' : 'Add Favorite'}</MenuItem>
+    {onMoveToAlbum && moveAlbums && moveAlbums.length > 0 && <><div className="menu-separator" role="separator" /><div className="menu-section-label" role="presentation">Move {moveCount === 1 ? '1 photo' : `${moveCount ?? 0} photos`} to…</div><div className="move-album-list" role="group" aria-label="Move to album">{moveAlbums.map((album) => <MenuItem key={album.id} onClick={() => { onClose(); onMoveToAlbum(album.id); }}>{album.name}</MenuItem>)}</div></>}
     {showRemove && onRemove && <><div className="menu-separator" role="separator" /><MenuItem danger onClick={() => { onClose(); onRemove(); }}>Remove from Library…</MenuItem></>}
   </div>;
 }
@@ -247,13 +253,20 @@ function sameMetrics(a: GridMetrics | null, b: GridMetrics | null): boolean {
     a.viewportHeight === b.viewportHeight && a.scrollTop === b.scrollTop;
 }
 
-export function PhotoBrowser({ photos, title, search, searchNote, edits, album, editedFilter, favoriteFilter, onEditedFilter, onFavoriteFilter, onClearFilters, cullFilter, onCullFilter, onSelect, onFavorite, onRemove, onRemoveAlbum, onLabelAlbum, onCullAlbum, onImport, scrollKey, sortKey = DEFAULT_ALBUM_SORT_KEY, sortDir = DEFAULT_ALBUM_SORT_DIR, onSortChange, activeId, onSceneEnhance, onFaceEnhance, onExport2x, initialContextMenu }: {
+export function PhotoBrowser({ photos, title, search, searchNote, edits, album, albums, editedFilter, favoriteFilter, onEditedFilter, onFavoriteFilter, onClearFilters, cullFilter, onCullFilter, onSelect, onFavorite, onRemove, onRemoveAlbum, onLabelAlbum, onCullAlbum, onImport, scrollKey, sortKey = DEFAULT_ALBUM_SORT_KEY, sortDir = DEFAULT_ALBUM_SORT_DIR, onSortChange, activeId, onSceneEnhance, onFaceEnhance, onExport2x, selectedIds, onSelectionChange, onMoveToAlbum, initialContextMenu, initialMarquee }: {
   photos: PhotoWithEdit[]; title: string; search: string;
   /** Result note under a search heading (match mode, ML badge text). */
   searchNote?: string | null;
   edits?: Record<string, EditState>;
   /** The open album, when the grid shows one; built-ins never carry a menu. */
   album?: Album | null;
+  /** User albums offered by the "Move to album" menu; omit to disable moving. */
+  albums?: Album[];
+  /** Controlled multi-selection (Ctrl/Cmd-click, Shift-click, marquee). */
+  selectedIds?: string[];
+  onSelectionChange?: (ids: string[]) => void;
+  /** Move photos into an album (context menu + sidebar drop target). */
+  onMoveToAlbum?: (photoIds: string[], albumId: string) => void;
   onSelect: (id: string) => void; onFavorite: (id: string) => void; onRemove?: (id: string) => void;
   /** Request album deletion (confirmed by the caller). */
   onRemoveAlbum?: (id: string) => void;
@@ -270,6 +283,8 @@ export function PhotoBrowser({ photos, title, search, searchNote, edits, album, 
   onExport2x?: (id: string) => void;
   /** Seeds an open context menu (a test seam for the open markup). */
   initialContextMenu?: PhotoContextMenuState | null;
+  /** Seeds a visible marquee (a test seam for the rubber-band markup). */
+  initialMarquee?: Rect | null;
   /** List identity for scroll memory (collection + filters + search). */
   scrollKey?: string;
   /** Album sort; the control renders only when onSortChange is provided. */
@@ -290,6 +305,81 @@ export function PhotoBrowser({ photos, title, search, searchNote, edits, album, 
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const contextMenu = usePhotoContextMenu(initialContextMenu);
   const menuPhoto = contextMenu.menu ? photos.find((photo) => photo.id === contextMenu.menu!.photoId) ?? null : null;
+  // Multi-selection is controlled (the caller clears it on list changes and
+  // moves); without a change handler the grid keeps single-click behavior.
+  const selection = selectedIds ?? [];
+  const anchorRef = useRef<string | null>(null);
+  const [marquee, setMarquee] = useState<Rect | null>(initialMarquee ?? null);
+  const moveSupported = Boolean(onMoveToAlbum && albums && albums.length > 0);
+  const contextMenuEnabled = Boolean(onSceneEnhance || onFaceEnhance || onExport2x || moveSupported);
+  // The menu acts on the whole selection when the target belongs to it, else
+  // the target alone; the open album is never a move destination (a no-op).
+  const moveTargets = menuPhoto ? resolveMoveTargets(selection, menuPhoto.id) : [];
+  const moveAlbums = moveSupported ? (albums ?? []).filter((entry) => entry.id !== album?.id) : [];
+  const openContextMenu = (photoId: string) => (event: { preventDefault(): void; clientX: number; clientY: number }) => {
+    if (onSelectionChange && !selection.includes(photoId)) {
+      anchorRef.current = photoId;
+      onSelectionChange([photoId]);
+    }
+    contextMenu.open(photoId)(event);
+  };
+  // Plain click opens; Ctrl/Cmd toggles one photo, Shift extends from the
+  // anchor. Plain clicks still move the anchor, so a later Shift-click after
+  // a trip to the editor ranges from the last opened photo.
+  const onCardClick = (event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }, id: string) => {
+    if (!onSelectionChange) { onSelect(id); return; }
+    if (event.ctrlKey || event.metaKey) {
+      anchorRef.current = id;
+      onSelectionChange(togglePhotoSelection(selection, id));
+      return;
+    }
+    if (event.shiftKey) {
+      const next = extendPhotoRange(photos.map((photo) => photo.id), selection, anchorRef.current, id);
+      anchorRef.current = next.anchor;
+      onSelectionChange(next.selected);
+      return;
+    }
+    anchorRef.current = id;
+    onSelect(id);
+  };
+  const onCardDragStart = (event: React.DragEvent, id: string) => {
+    if (!onMoveToAlbum) return;
+    event.dataTransfer.setData(MOVE_PHOTOS_MIME, encodeMovePayload(resolveMoveTargets(selection, id)));
+    event.dataTransfer.effectAllowed = 'move';
+  };
+  // Rubber-band marquee: a mouse press on the grid background (not on a
+  // photo) sweeps a band that selects every intersecting card live; the
+  // band is fixed-positioned in client coords, so no scroll math is needed.
+  // Touch stays on native scroll (mouse only). Ctrl adds to the selection,
+  // a plain sweep replaces it, and a click with no sweep clears it.
+  const onGridPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!onSelectionChange || event.button !== 0 || event.pointerType !== 'mouse') return;
+    if ((event.target as HTMLElement).closest('.browser-photo')) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const base = event.ctrlKey || event.metaKey ? selection : [];
+    const commit = (clientX: number, clientY: number) => {
+      const rect: Rect = { x: Math.min(startX, clientX), y: Math.min(startY, clientY), width: Math.abs(clientX - startX), height: Math.abs(clientY - startY) };
+      setMarquee(rect);
+      const gridEl = gridRef.current;
+      if (!gridEl) return;
+      const entries = Array.from(gridEl.querySelectorAll<HTMLElement>('.browser-photo[data-photo-id]')).map((el) => {
+        const bounds = el.getBoundingClientRect();
+        return { id: el.dataset.photoId ?? '', rect: { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height } };
+      }).filter((entry) => entry.id !== '');
+      const hits = marqueeSelectedIds(entries, rect);
+      onSelectionChange([...base.filter((id) => !hits.includes(id)), ...hits]);
+    };
+    const onMove = (moveEvent: PointerEvent) => commit(moveEvent.clientX, moveEvent.clientY);
+    const onUp = (upEvent: PointerEvent) => {
+      commit(upEvent.clientX, upEvent.clientY);
+      window.removeEventListener('pointermove', onMove);
+      setMarquee(null);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+  };
   // The header menu only exists on a real user album: built-in collections
   // (All Photos, Favorites, Recently Edited) have no album row to act on, so
   // the trigger never renders there.
@@ -377,7 +467,8 @@ export function PhotoBrowser({ photos, title, search, searchNote, edits, album, 
     })
     : null;
   const visible = gridWindow ? photos.slice(gridWindow.startIndex, gridWindow.endIndex) : photos;
-  return <section className="photo-browser" ref={scrollRef}><div className="browser-heading"><div><span className="browser-eyebrow">YOUR LIBRARY</span><h1>{search ? `Results for "${search}"` : title}</h1><p>{photos.length} {photos.length === 1 ? 'photo' : 'photos'}<span />A little inspiration, ready to develop.</p>{search && searchNote && <p className="browser-search-note" role="status">{searchNote}</p>}</div><div className="browser-heading-actions">{onSortChange && <div className="browser-sort-menu" ref={sortMenuRef}><IconButton label={`Sort album: ${ALBUM_SORT_LABELS[sortKey]}, ${sortDir === 'asc' ? 'ascending' : 'descending'}`} aria-haspopup="menu" aria-expanded={sortMenu} onClick={() => setSortMenu((current) => !current)}><ArrowDownWideNarrow size={16} /></IconButton>{sortMenu && <div className="dropdown-menu album-menu" role="menu" aria-label="Sort album">{ALBUM_SORT_KEYS.map((key) => <MenuItem key={key} checked={sortKey === key} onClick={() => { setSortMenu(false); onSortChange(key, sortDir); }}>{ALBUM_SORT_LABELS[key]}</MenuItem>)}<div className="menu-separator" role="separator" /><MenuItem checked={sortDir === 'asc'} onClick={() => { setSortMenu(false); onSortChange(sortKey, 'asc'); }}>Ascending</MenuItem><MenuItem checked={sortDir === 'desc'} onClick={() => { setSortMenu(false); onSortChange(sortKey, 'desc'); }}>Descending</MenuItem></div>}</div>}<div className="browser-view-control"><Grid2X2 size={14} /><input type="range" aria-label="Photo grid size" min={2} max={5} value={size} onChange={(event) => setSize(Number(event.target.value))} /></div>{showAlbumMenu && <div className="browser-album-menu" ref={albumMenuRef}><IconButton label={`Album actions for ${album?.name ?? title}`} aria-haspopup="menu" aria-expanded={albumMenu} onClick={() => setAlbumMenu((current) => !current)}><MoreHorizontal size={16} /></IconButton>{albumMenu && <div className="dropdown-menu album-menu" role="menu" aria-label={`Album actions for ${album?.name ?? title}`}>{onLabelAlbum && <MenuItem onClick={() => { setAlbumMenu(false); onLabelAlbum?.(album!.id); }}><span>Label unlabeled photos <span className="ml-badge" title="Photos are labeled by a machine-learning model on the photo server">ML</span></span></MenuItem>}{onCullAlbum && <MenuItem onClick={() => { setAlbumMenu(false); onCullAlbum?.(album!.id); }}><span>Find blurry photos <span className="ml-badge" title="Blurry photos and near-duplicates are flagged by ML cull assist on the photo server">ML</span></span></MenuItem>}{(onLabelAlbum || onCullAlbum) && onRemoveAlbum && <div className="menu-separator" role="separator" />}{onRemoveAlbum && <MenuItem danger onClick={() => { setAlbumMenu(false); onRemoveAlbum?.(album!.id); }}>Delete album…</MenuItem>}</div>}</div>}</div></div>{showFilters && <div className="browser-filters" role="group" aria-label="Filter photos"><div className="filter-group" role="group" aria-label="Edited status">{chip(editedFilter === 'all', 'All', 'Show edited and unedited photos', () => onEditedFilter?.('all'))}{chip(editedFilter === 'edited', 'Edited', 'Show only photos you have edited', () => onEditedFilter?.('edited'))}{chip(editedFilter === 'unedited', 'Unedited', 'Show only photos with no edits', () => onEditedFilter?.('unedited'))}</div><div className="filter-group" role="group" aria-label="Favorite status">{chip(favoriteFilter === 'all', 'All', 'Show favorited and other photos', () => onFavoriteFilter?.('all'))}{chip(favoriteFilter === 'favorited', 'Favorited', 'Show only favorited photos', () => onFavoriteFilter?.('favorited'))}{chip(favoriteFilter === 'not', 'Not favorited', 'Show only photos that are not favorited', () => onFavoriteFilter?.('not'))}</div>{showCullFilters && <div className="filter-group" role="group" aria-label="Cull status">{chip(cullFilter === 'all', 'All', 'Show every photo regardless of cull flags', () => onCullFilter?.('all'))}{chip(cullFilter === 'blurry', 'Blurry', 'Show only photos flagged blurry by ML cull assist', () => onCullFilter?.('blurry'))}</div>}{filtersActive && <button type="button" className="filter-clear" onClick={onClearFilters}>Clear</button>}</div>}{photos.length ? <div className="photo-grid" ref={gridRef} style={{ '--grid-columns': size } as React.CSSProperties}>{gridWindow && gridWindow.topSpacerHeight > 0 && <div className="grid-spacer" aria-hidden="true" style={{ height: gridWindow.topSpacerHeight }} />}{visible.map((photo) => {
+  return <section className="photo-browser" ref={scrollRef}><div className="browser-heading"><div><span className="browser-eyebrow">YOUR LIBRARY</span><h1>{search ? `Results for "${search}"` : title}</h1><p>{photos.length} {photos.length === 1 ? 'photo' : 'photos'}<span />A little inspiration, ready to develop.</p>{search && searchNote && <p className="browser-search-note" role="status">{searchNote}</p>}</div><div className="browser-heading-actions">{onSortChange && <div className="browser-sort-menu" ref={sortMenuRef}><IconButton label={`Sort album: ${ALBUM_SORT_LABELS[sortKey]}, ${sortDir === 'asc' ? 'ascending' : 'descending'}`} aria-haspopup="menu" aria-expanded={sortMenu} onClick={() => setSortMenu((current) => !current)}><ArrowDownWideNarrow size={16} /></IconButton>{sortMenu && <div className="dropdown-menu album-menu" role="menu" aria-label="Sort album">{ALBUM_SORT_KEYS.map((key) => <MenuItem key={key} checked={sortKey === key} onClick={() => { setSortMenu(false); onSortChange(key, sortDir); }}>{ALBUM_SORT_LABELS[key]}</MenuItem>)}<div className="menu-separator" role="separator" /><MenuItem checked={sortDir === 'asc'} onClick={() => { setSortMenu(false); onSortChange(sortKey, 'asc'); }}>Ascending</MenuItem><MenuItem checked={sortDir === 'desc'} onClick={() => { setSortMenu(false); onSortChange(sortKey, 'desc'); }}>Descending</MenuItem></div>}</div>}<div className="browser-view-control"><Grid2X2 size={14} /><input type="range" aria-label="Photo grid size" min={2} max={5} value={size} onChange={(event) => setSize(Number(event.target.value))} /></div>{showAlbumMenu && <div className="browser-album-menu" ref={albumMenuRef}><IconButton label={`Album actions for ${album?.name ?? title}`} aria-haspopup="menu" aria-expanded={albumMenu} onClick={() => setAlbumMenu((current) => !current)}><MoreHorizontal size={16} /></IconButton>{albumMenu && <div className="dropdown-menu album-menu" role="menu" aria-label={`Album actions for ${album?.name ?? title}`}>{onLabelAlbum && <MenuItem onClick={() => { setAlbumMenu(false); onLabelAlbum?.(album!.id); }}><span>Label unlabeled photos <span className="ml-badge" title="Photos are labeled by a machine-learning model on the photo server">ML</span></span></MenuItem>}{onCullAlbum && <MenuItem onClick={() => { setAlbumMenu(false); onCullAlbum?.(album!.id); }}><span>Find blurry photos <span className="ml-badge" title="Blurry photos and near-duplicates are flagged by ML cull assist on the photo server">ML</span></span></MenuItem>}{(onLabelAlbum || onCullAlbum) && onRemoveAlbum && <div className="menu-separator" role="separator" />}{onRemoveAlbum && <MenuItem danger onClick={() => { setAlbumMenu(false); onRemoveAlbum?.(album!.id); }}>Delete album…</MenuItem>}</div>}</div>}</div></div>{showFilters && <div className="browser-filters" role="group" aria-label="Filter photos"><div className="filter-group" role="group" aria-label="Edited status">{chip(editedFilter === 'all', 'All', 'Show edited and unedited photos', () => onEditedFilter?.('all'))}{chip(editedFilter === 'edited', 'Edited', 'Show only photos you have edited', () => onEditedFilter?.('edited'))}{chip(editedFilter === 'unedited', 'Unedited', 'Show only photos with no edits', () => onEditedFilter?.('unedited'))}</div><div className="filter-group" role="group" aria-label="Favorite status">{chip(favoriteFilter === 'all', 'All', 'Show favorited and other photos', () => onFavoriteFilter?.('all'))}{chip(favoriteFilter === 'favorited', 'Favorited', 'Show only favorited photos', () => onFavoriteFilter?.('favorited'))}{chip(favoriteFilter === 'not', 'Not favorited', 'Show only photos that are not favorited', () => onFavoriteFilter?.('not'))}</div>{showCullFilters && <div className="filter-group" role="group" aria-label="Cull status">{chip(cullFilter === 'all', 'All', 'Show every photo regardless of cull flags', () => onCullFilter?.('all'))}{chip(cullFilter === 'blurry', 'Blurry', 'Show only photos flagged blurry by ML cull assist', () => onCullFilter?.('blurry'))}</div>}{filtersActive && <button type="button" className="filter-clear" onClick={onClearFilters}>Clear</button>}</div>}{photos.length ? <div className="photo-grid" ref={gridRef} style={{ '--grid-columns': size } as React.CSSProperties} onPointerDown={onGridPointerDown}>{gridWindow && gridWindow.topSpacerHeight > 0 && <div className="grid-spacer" aria-hidden="true" style={{ height: gridWindow.topSpacerHeight }} />}{visible.map((photo) => {
   const filter = thumbnailFilterForPhoto(photo, edits?.[photo.id]);
-  return <div className={`browser-photo ${photo.missing ? 'is-missing' : ''}`} key={photo.id} data-photo-id={photo.id} {...((onSceneEnhance || onFaceEnhance || onExport2x) ? { onContextMenu: contextMenu.open(photo.id) } : {})}><div className="browser-photo-frame"><button className="browser-photo-open" onClick={() => onSelect(photo.id)} aria-label={`Edit ${photo.title}`}><div className={`browser-photo-image${isPortraitPhoto(photo) ? ' is-portrait' : ''}`}><img src={photo.thumbnail} alt={photo.title} loading="lazy" decoding="async" style={filter ? { filter } : undefined} />{photo.raw && <span className="thumb-raw">RAW</span>}{photo.missing && <span className="thumb-missing">Missing</span>}{(hasCullLabel(photo, 'blurry') || hasCullLabel(photo, 'duplicate')) && <span className="thumb-cull-badges">{hasCullLabel(photo, 'blurry') && <span className="thumb-cull is-blurry" title="Flagged blurry by ML cull assist">Blurry · ML</span>}{hasCullLabel(photo, 'duplicate') && <span className="thumb-cull is-duplicate" title="Flagged as a near-duplicate by ML cull assist">Duplicate · ML</span>}</span>}<span className="browser-edit-label">Open in editor</span></div></button><IconButton label={photo.favorite ? 'Remove favorite' : 'Add favorite'} className="browser-favorite" active={photo.favorite} onClick={() => onFavorite(photo.id)}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} /></IconButton>{onRemove && <IconButton label={`Remove ${photo.name} from library`} className="browser-remove" onClick={() => onRemove(photo.id)}><Trash2 size={15} /></IconButton>}</div><div className="browser-photo-caption"><span>{photo.name}</span>{photo.location && <small>{photo.location}</small>}</div></div>;})}{gridWindow && gridWindow.bottomSpacerHeight > 0 && <div className="grid-spacer" aria-hidden="true" style={{ height: gridWindow.bottomSpacerHeight }} />}</div> : <div className="empty-library"><Grid2X2 size={32} /><h2>{search ? 'No matching photos' : filtersActive ? 'No photos match these filters' : 'A fresh perspective starts here.'}</h2><p>{search ? 'Try a filename, location, or another search.' : filtersActive ? 'Try a different combination, or clear the filters.' : 'Import a few photos to make this space your own.'}</p>{filtersActive && !search ? <button className="secondary-button" onClick={onClearFilters}>Clear filters</button> : <button className="primary-button" onClick={onImport}>Import Photos</button>}</div>}{contextMenu.menu && menuPhoto && (onSceneEnhance || onFaceEnhance || onExport2x) && <PhotoContextMenu state={contextMenu.menu} photoName={menuPhoto.name} favorite={menuPhoto.favorite} showRemove={Boolean(onRemove)} menuRef={contextMenu.menuRef} onSceneEnhance={onSceneEnhance ? () => onSceneEnhance(menuPhoto.id) : undefined} onFaceEnhance={onFaceEnhance ? () => onFaceEnhance(menuPhoto.id) : undefined} onExport2x={onExport2x ? () => onExport2x(menuPhoto.id) : undefined} onFavorite={() => onFavorite(menuPhoto.id)} onRemove={onRemove ? () => onRemove(menuPhoto.id) : undefined} onClose={contextMenu.close} />}</section>;
+  const isSelected = selection.includes(photo.id);
+  return <div className={`browser-photo ${photo.missing ? 'is-missing' : ''}${isSelected ? ' is-selected' : ''}`} key={photo.id} data-photo-id={photo.id} aria-selected={onSelectionChange ? isSelected : undefined} {...(contextMenuEnabled ? { onContextMenu: openContextMenu(photo.id) } : {})}><div className="browser-photo-frame" {...(onMoveToAlbum ? { draggable: true, onDragStart: (event: React.DragEvent) => onCardDragStart(event, photo.id) } : {})}><button className="browser-photo-open" onClick={(event) => onCardClick(event, photo.id)} aria-label={`Edit ${photo.title}`}>{isSelected && <span className="browser-selected-check" aria-hidden="true"><Check size={12} strokeWidth={3} /></span>}<div className={`browser-photo-image${isPortraitPhoto(photo) ? ' is-portrait' : ''}`}><img src={photo.thumbnail} alt={photo.title} loading="lazy" decoding="async" style={filter ? { filter } : undefined} />{photo.raw && <span className="thumb-raw">RAW</span>}{photo.missing && <span className="thumb-missing">Missing</span>}{(hasCullLabel(photo, 'blurry') || hasCullLabel(photo, 'duplicate')) && <span className="thumb-cull-badges">{hasCullLabel(photo, 'blurry') && <span className="thumb-cull is-blurry" title="Flagged blurry by ML cull assist">Blurry · ML</span>}{hasCullLabel(photo, 'duplicate') && <span className="thumb-cull is-duplicate" title="Flagged as a near-duplicate by ML cull assist">Duplicate · ML</span>}</span>}<span className="browser-edit-label">Open in editor</span></div></button><IconButton label={photo.favorite ? 'Remove favorite' : 'Add favorite'} className="browser-favorite" active={photo.favorite} onClick={() => onFavorite(photo.id)}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} /></IconButton>{onRemove && <IconButton label={`Remove ${photo.name} from library`} className="browser-remove" onClick={() => onRemove(photo.id)}><Trash2 size={15} /></IconButton>}</div><div className="browser-photo-caption"><span>{photo.name}</span>{photo.location && <small>{photo.location}</small>}</div></div>;})}{gridWindow && gridWindow.bottomSpacerHeight > 0 && <div className="grid-spacer" aria-hidden="true" style={{ height: gridWindow.bottomSpacerHeight }} />}</div> : <div className="empty-library"><Grid2X2 size={32} /><h2>{search ? 'No matching photos' : filtersActive ? 'No photos match these filters' : 'A fresh perspective starts here.'}</h2><p>{search ? 'Try a filename, location, or another search.' : filtersActive ? 'Try a different combination, or clear the filters.' : 'Import a few photos to make this space your own.'}</p>{filtersActive && !search ? <button className="secondary-button" onClick={onClearFilters}>Clear filters</button> : <button className="primary-button" onClick={onImport}>Import Photos</button>}</div>}{contextMenu.menu && menuPhoto && contextMenuEnabled && <PhotoContextMenu state={contextMenu.menu} photoName={menuPhoto.name} favorite={menuPhoto.favorite} showRemove={Boolean(onRemove)} menuRef={contextMenu.menuRef} onSceneEnhance={onSceneEnhance ? () => onSceneEnhance(menuPhoto.id) : undefined} onFaceEnhance={onFaceEnhance ? () => onFaceEnhance(menuPhoto.id) : undefined} onExport2x={onExport2x ? () => onExport2x(menuPhoto.id) : undefined} onFavorite={() => onFavorite(menuPhoto.id)} onRemove={onRemove ? () => onRemove(menuPhoto.id) : undefined} moveCount={moveTargets.length} moveAlbums={moveAlbums} onMoveToAlbum={onMoveToAlbum ? (albumId) => onMoveToAlbum(moveTargets, albumId) : undefined} onClose={contextMenu.close} />}{marquee && <div className="selection-marquee" aria-hidden="true" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height }} />}</section>;
 }
