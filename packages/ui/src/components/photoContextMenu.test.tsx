@@ -98,7 +98,7 @@ describe('photo context menu', () => {
     expect(html).not.toContain('data-testid="photo-context-menu"');
   });
 
-  it('omits scene and face enhance in the filmstrip without a remove entry', () => {
+  it('omits ML entries in the filmstrip without a remove entry', () => {
     const html = renderToStaticMarkup(
       <Filmstrip
         photos={photos}
@@ -110,7 +110,6 @@ describe('photo context menu', () => {
         reversed={false}
         showPresets={false}
         onShowPresets={noop}
-        onExport2x={noop}
         onFavorite={noop}
         initialContextMenu={{ photoId: 'p1', x: 50, y: 60 }}
       />,
@@ -118,7 +117,7 @@ describe('photo context menu', () => {
     expect(html).toContain('data-testid="photo-context-menu"');
     expect(html).not.toContain('Scene Enhance');
     expect(html).not.toContain('Enhance Faces');
-    expect(html).toContain('Export 2x');
+    expect(html).not.toContain('Export 2x');
     expect(html).toContain('Add Favorite');
     expect(html).not.toContain('Remove from Library…');
   });
@@ -135,7 +134,6 @@ describe('photo context menu', () => {
         reversed={false}
         showPresets={false}
         onShowPresets={noop}
-        onExport2x={noop}
         onFavorite={noop}
         onRemove={noop}
         initialContextMenu={{ photoId: 'p1', x: 50, y: 60 }}
@@ -199,7 +197,10 @@ describe('photo context menu', () => {
     expect(html).toContain('Doubled by a machine-learning model on the photo server');
   });
 
-  it('offers ML 2x export in the filmstrip without a remove entry', () => {
+  it('never offers 2x export in the filmstrip', () => {
+    // Regression: the filmstrip's Export 2x parked a pending request that
+    // only fired on the next unrelated render (e.g. switching tools), so the
+    // entry was removed — 2x lives in the export dialog + library menu.
     const html = renderToStaticMarkup(
       <Filmstrip
         photos={photos}
@@ -211,14 +212,16 @@ describe('photo context menu', () => {
         reversed={false}
         showPresets={false}
         onShowPresets={noop}
-        onExport2x={noop}
         onFavorite={noop}
+        onRemove={noop}
         initialContextMenu={{ photoId: 'p1', x: 50, y: 60 }}
       />,
     );
-    expect(html).toContain('Export 2x');
-    expect(html).toContain('>ML<');
-    expect(html).not.toContain('Remove from Library…');
+    expect(html).toContain('data-testid="photo-context-menu"');
+    expect(html).not.toContain('Export 2x');
+    expect(html).not.toContain('>ML<');
+    expect(html).toContain('Add Favorite');
+    expect(html).toContain('Remove from Library…');
   });
 
   it('omits 2x export without the handler', () => {

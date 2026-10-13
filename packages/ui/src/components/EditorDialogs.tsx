@@ -19,7 +19,7 @@ interface EditorDialogsProps {
   inpaintRepair?: RepairInpaintBinding | null;
   /** Server 2x upscale transport; omit to hide the super-resolution option. */
   superres?: SuperresExportBinding | null;
-  /** Pre-check super-resolution (the photo context menu's "Export 2x" arms this). */
+  /** Pre-check super-resolution (the library grid's "Export 2x" arms this). */
   initialSuperres?: boolean;
   onClose: () => void;
   onToast: (message: string) => void;

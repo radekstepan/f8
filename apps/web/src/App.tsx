@@ -1027,10 +1027,10 @@ export default function App() {
     editor.autoEnhanceScene(photo.src);
   });
 
-  // ML 2x export requested from a library-grid or filmstrip context menu:
-  // like scene enhance the request parks until the photo is open and seeded
-  // (the export dialog reads the editor's recipe), then opens the export
-  // dialog with super-resolution pre-checked.
+  // ML 2x export requested from the library-grid context menu (the filmstrip
+  // has no 2x entry): like scene enhance the request parks until the photo
+  // is open and seeded (the export dialog reads the editor's recipe), then
+  // opens the export dialog with super-resolution pre-checked.
   const pendingExport2x = useRef<string | null>(null);
   const [export2xArmed, setExport2xArmed] = useState(false);
   const requestExport2x = (id: string) => {
@@ -1201,7 +1201,7 @@ export default function App() {
               onSelect={selectPhoto} onGrid={() => setView('library')}
               onSort={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')} reversed={sortDir === 'desc'} sortKey={sortKey}
               showPresets={presetsOpen} onShowPresets={() => setPresetsOpen(true)}
-              onExport2x={requestExport2x} onFavorite={toggleFavorite} onRemove={requestRemove}
+              onFavorite={toggleFavorite} onRemove={requestRemove}
             />}
           </>
         )}
