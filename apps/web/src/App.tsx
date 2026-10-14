@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools } from '@f8/core';
+import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode } from '@f8/core';
@@ -97,6 +97,13 @@ export default function App() {
   const [start] = useState(initialUrl);
   const [selectedId, setSelectedId] = useState(start.photoId);
   const [collection, setCollection] = useState(start.collectionId);
+  // False until the photo-driven collection inference below has run once.
+  // On a photo deep-link the collection starts at the 'all' placeholder and
+  // adopting the photo's album happens after the first paint — until then
+  // the backlink renders a pending placeholder instead of flashing the
+  // wrong "All Photos" name. Grid loads start settled: the URL names the
+  // collection and there is no photo to wait for.
+  const [collectionSettled, setCollectionSettled] = useState(start.view === 'library');
   const [search, setSearch] = useState('');
   // Grid multi-selection (Ctrl/Cmd-click, Shift-click, marquee): photo ids in
   // selection order. Cleared below whenever the list identity changes.
@@ -223,6 +230,7 @@ export default function App() {
     if (lastPhotoId.current === photo.id) return;
     lastPhotoId.current = photo.id;
     if (view !== 'editor') return;
+    setCollectionSettled(true);
     if (firstPhoto || !photoInCollection(photo, collection)) setCollection(collectionForPhoto(photo));
   }, [photo, collection, view]);
   // A deep-linked album may not exist (removed, or a hand-typed URL):
@@ -259,6 +267,12 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
   const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
+  // What the toolbar backlink names: null while the photo's collection is
+  // not yet known (hard reload of a photo URL), so the toolbar shows an
+  // empty placeholder instead of flashing the wrong category. In the grid
+  // this always equals the collection — only the backlink can be pending.
+  const backlinkCollection = resolveBacklinkCollection(view, photo ?? null, collection, collectionSettled);
+  const backlinkName = backlinkCollection === null ? null : (albums.find((album) => album.id === backlinkCollection)?.name || collectionTitles[backlinkCollection] || 'Your Photos');
   const removeAlbumRow = dialog === 'remove-album' ? albums.find((album) => album.id === removeAlbumTargetId) ?? null : null;
   const removeAlbumTarget = removeAlbumRow ? { id: removeAlbumRow.id, name: removeAlbumRow.name, count: photos.filter((item) => item.albumId === removeAlbumRow.id).length } : null;
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
@@ -1179,7 +1193,7 @@ export default function App() {
   return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importDrop(event.dataTransfer); }}>
     <TooltipHost />
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
-    <Toolbar collectionName={collectionName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
+    <Toolbar collectionName={backlinkName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
       {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onMoveToAlbum={movePhotosToAlbum} />}
       <main className="editor-column">
