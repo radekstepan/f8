@@ -14,24 +14,24 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-Which version of the app are we showing in the top right corner? Is it any one being moved by changesets? I want to make sure we keep updating this version number.
+Not sure if it's a bad antialising but I see dark black semitransparent border around a photo. Including rounded corners. Is it just a drop shadow gone havoc? Make it beautiful and subtle. This was supposedly fixed, but it isn't. I see banding and I see rounded corner in top right background of the photo.
 
-Clicking on "Zoom in view" in the dropdown (not one of the 4x 8x 16x) is how you clear the zoom in view.
+Changing Curves should show a toggled button just like the other controls. Same with Effects and Details possibly. No more "reset" button un the adjustments side-panel.
 
-Not sure if it's a bad antialising but I see dark black semitransparent border around a photo. Including rounded corners. Is it just a drop shadow gone havoc? Make it beautiful and subtle.
+Curves point right click to remove doesn't work, just opens browser right click menu. Double click to remove instead.
 
-I am noticing with some tools (like Vignette, Fade, but possibly others), that we make calls to DELETE /api/photos/7c4ab7f0-5e85-4dae-9ca2-36d2c9aef3c3/heal-overlays/1 -> while dragging sliders in Vignette tool etc? First of all, we should have a debounce I believe. And second, why is it calling a delete on a heal overlay? Seems odd. Explain or fix.
+Subject & Background have double toggles, keep the one in the header.
 
-Curves shouldn't use "double click to reset", but instzead have a reset button like other tools. Also, the curve line with one dot - how useful is it? The slider does the same thing. Are we supposed to be able to add a new dot as well?
+Remove the "Show photo browser" button from the film strip at the bottom
 
-The algo for White balance and Lightness (possibly others), would they benefit from ML functions? Do a writeup.
+Move "Focus Mode" from Window to "View" as the first option in its own section. And remove "Photo Browser" from Window. Then remove the Window drom the menu at the top since it's empty.
 
-For subject and background, find an icon for each subtitle (avatar plus a picture? up to you to decide), so that each subsection is easier to see.
+Move the presets icon from the menu at the top in photo mode to be between compare and info.
 
-If "Enhance Faces" finds no faces, why is the Reset button showing and "ML" highlighted. It should only do that if we actually apply any change.
+Move the delete icon from photo canvas to be an action right to the left of the info icon.
 
-Scene Enhance and Subject & Background. Are they actually ML driven? If not they should have an "Auto" icon and not "ML" icon. Be consistent throughout the tools.
+Add an option in the context menu (...) of an album to find/generate/crop a representative thumbnail for the album to show int he sidebar.
 
-There is a bug where on a photo if I click the global Auto button next to Color Adjustments, adjustments like White Balance, Lightness etc show a reset icon (correct), but the "Auto" button is not highlighted. We turned these on, so show them highlighted.
+Make sure the albums in the sidebar show sorted by name with the ones that have a thumbnail showing ahead of the ones without.
 
-Switch the Auto and ML icons in Color Adjustments to a toggle (we should have it in history or still use it somewhere, it's pretty). Turning the toggle on will apply suggested changes, toggling off will reset to defaults. This means we can remove the reset button. Manually tweaking sliders will turn the toggle on as well. For ML derived tools, just add a little ML icon/label next to the name of the tool to say it's an "ML" tool.
+When I undo an action like Denoise, it doesn't seem to immedaitely apply on the photo.
