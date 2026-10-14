@@ -5,7 +5,7 @@
 // collection (sidebar, toolbar, and filmstrip always agree with what's on
 // screen — see libraryUrl.ts), so this predicate is the single source of
 // truth for both listing and inference; the album grid itself deep-links
-// via ?album=.
+// via /album/<id>.
 
 import type { Photo, ViewMode } from "./types.js";
 

@@ -15,7 +15,10 @@ export default defineConfig({
   // inlineDynamicImports, so the main bundle still inlines into dist/index.html
   // while the vision worker (and its lazy OpenCV chunk) emit as separate files.
   // See README "Build Notes".
-  base: "./",
+  // Absolute base: the app uses path-based routes (/album/<id>,
+  // /photo/<id>/<tool>), and a relative base would resolve the favicon
+  // and lazy worker chunks against the nested path on deep-link reloads.
+  base: "/",
   plugins: [
     react(),
     tailwindcss(),

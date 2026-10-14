@@ -72,6 +72,7 @@ The `@techstark/opencv-js` build is single-file (its WASM is embedded as base64)
 | `packages/core/src/data.ts` | Sample library, default adjustments, built-in presets, and crop ratios. |
 | `packages/core/src/image.ts` | Shared image loading, geometry, filter mapping, retouching, effects, and export. |
 | `packages/core/src/library.ts` | Library API contract and framework-free HTTP client. |
+| `packages/core/src/libraryUrl.ts` | Shareable URL scheme: path parsing/building for album and photo deep-links. |
 | `packages/core/src/actionStack.ts` | Persisted auto-action stack: applied Autos with their revert snapshots, plus stack transitions and sanitizing. |
 | `packages/ui/src/hooks/useEditor.ts` | Non-destructive per-photo edits, grouped history, server persistence, and preset application. |
 | `packages/ui/src/hooks/useLibrary.ts` | Server library state: loading, uploads, folder import, and metadata. |
@@ -161,6 +162,8 @@ The primary tokens are at the top of `apps/web/src/index.css`: `--accent`, `--ac
 ## Persistence and Privacy
 
 Photos, edits, favorites, ratings, albums, and custom presets live in the server's SQLite database, as does each photo's auto-action stack (every applied Auto plus its revert snapshot); only undo/redo history is session-only. The browser keeps no photo state — everything survives reloads, and edits reapply to the referenced originals every time.
+
+Views are deep-linkable path URLs: `/album/<id>` opens an album grid and `/photo/<id>/<tool>` opens a photo in an editing tool (`adjust`, `crop`, or `repair`), so any view survives a reload and can be shared as a link. Legacy `?photo=` / `?album=` links still open and are rewritten to the path form.
 
 Everything stays on your machine: the server binds to localhost, originals stay in your folders, and nothing is uploaded anywhere. Remote sample images and the optional Inter font require an internet connection.
 

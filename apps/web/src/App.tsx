@@ -36,13 +36,14 @@ interface InitialUrl {
   tool: Tool;
 }
 
-// The deep-link decides the starting view: ?photo= opens the editor (the
-// album is inferred from the photo), ?album= opens that album's grid.
+// The deep-link decides the starting view: /photo/<id> opens the editor
+// (the album is inferred from the photo), /album/<id> opens that album's
+// grid. Legacy ?photo=/?album= links still parse (see libraryUrl.ts).
 // Bare or malformed URLs open the editor on the seed photo, as before.
 function initialUrl(): InitialUrl {
   const fallback: InitialUrl = { view: 'editor', photoId: 'photo-1', collectionId: 'all', tool: 'adjust' };
   try {
-    const parsed = parseLibraryUrl(window.location.search);
+    const parsed = parseLibraryUrl(window.location.pathname, window.location.search);
     if (parsed.photoId) {
       return { view: 'editor', photoId: parsed.photoId, collectionId: 'all', tool: parsed.tool ?? 'adjust' };
     }
@@ -181,22 +182,22 @@ export default function App() {
   }, [brushSize, brushStrength, presetsOpen, filmstripOpen, sortKey, sortDir]);
   // Deep-link the view so a reload or shared URL restores it. View-only
   // pointer: edits still live on the server. Inside a photo the URL names
-  // the photo (?photo=&tool=) and the album is inferred from it below, so
-  // sidebar, toolbar, and filmstrip can never disagree with the photo. In
-  // an album the URL names the collection (?album=) instead: there is no
-  // open photo to infer from, so a stale photo id would lie about what's
-  // on screen. Same-view updates replaceState (no history spam on every
-  // filmstrip click); view switches pushState so Back returns to the
-  // previous view with its URL. Writing fresh params also strips stale
-  // mixed ?photo=&album= pairs and legacy ?collection= links.
+  // the photo (/photo/<id>/<tool>) and the album is inferred from it
+  // below, so sidebar, toolbar, and filmstrip can never disagree with the
+  // photo. In an album the URL names the collection (/album/<id>)
+  // instead: there is no open photo to infer from, so a stale photo id
+  // would lie about what's on screen. Same-view updates replaceState (no
+  // history spam on every filmstrip click); view switches pushState so
+  // Back returns to the previous view with its URL. Writing the canonical
+  // path also normalizes legacy ?photo=/?album=/?collection= links and
+  // strips foreign query params.
   const photoIdForUrl = photo?.id ?? selectedId;
   const lastUrlView = useRef(start.view);
   useEffect(() => {
     try {
-      const query = view === 'library'
+      const url = view === 'library'
         ? buildLibraryUrl({ view: 'library', collectionId: collection })
         : buildLibraryUrl({ view: 'editor', photoId: photoIdForUrl, tool });
-      const url = `${window.location.pathname}${query}`;
       // Back/forward already landed on this URL: the popstate handler set
       // the state, so there is nothing to write (and pushing would fork
       // the history stack the user is walking).
@@ -221,7 +222,7 @@ export default function App() {
   // album: the 'all' default contains everything, so the outside-check alone
   // would never fire on load. Editor-only: in the grid the collection is
   // user- or URL-driven, and adopting here would clobber a deep-linked
-  // ?album= on load. The photo id is still recorded, so opening a photo
+  // /album/<id> on load. The photo id is still recorded, so opening a photo
   // from the grid infers normally once the view flips to editor.
   const lastPhotoId = useRef<string | null>(null);
   useEffect(() => {
@@ -244,10 +245,10 @@ export default function App() {
   useEffect(() => {
     const onPopState = () => {
       try {
-        const parsed = parseLibraryUrl(window.location.search);
+        const parsed = parseLibraryUrl(window.location.pathname, window.location.search);
         if (parsed.photoId) {
-          // The photo wins over any album param (stale pairs resolve to
-          // the photo); the collection follows via the inference effect.
+          // The photo wins over any album (stale pairs resolve to the
+          // photo); the collection follows via the inference effect.
           setSelectedId(parsed.photoId);
           if (parsed.tool) setTool(parsed.tool);
           setView('editor');
