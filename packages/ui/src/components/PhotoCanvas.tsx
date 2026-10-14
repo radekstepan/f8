@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Check, ChevronsLeftRight, Columns2, Copy, Heart, ImageOff, Info, Maximize, Minus, Plus, Star, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
-import { LibraryError, ZOOM_LENS_MAGNIFICATION, ZOOM_LENS_SIZE_PX, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, frameAspectForPhoto, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, shouldDockZoomLensOutside, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint, zoomLensBrushRadius, zoomLensDestPoint, zoomLensOriginalOverlay, zoomLensSourceRect } from '@f8/core';
+import { LibraryError, ZOOM_LENS_MAGNIFICATION, ZOOM_LENS_SIZE_PX, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, frameAspectForPhoto, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, mergeFetchedHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, planHealOrphanSweep, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, shouldDockZoomLensOutside, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint, zoomLensBrushRadius, zoomLensDestPoint, zoomLensOriginalOverlay, zoomLensSourceRect } from '@f8/core';
 import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool, ZoomLensMagnification } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 import { ToolHint } from './ToolHint.js';
@@ -112,6 +112,14 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   if (!healQueue.current) healQueue.current = createHealQueue();
   /** Persisted overlays fetched at photo open, plus every group saved since. */
   const overlayStore = useRef<StoredHealPatch[]>([]);
+  /**
+   * Overlay group ids already purged (DELETE fired) for the open photo.
+   * Merges skip these so the stale shared fetch can never resurrect them,
+   * and sweeps never re-delete them — steady-state slider drags then issue
+   * zero heal-overlay requests. Cleared on photo change; a fresh PUT for
+   * the id re-arms it (undo can restore a swept stroke).
+   */
+  const purgedOverlayIds = useRef<Set<number>>(new Set());
   /** Latest committed edit + repair binding, read by deferred jobs at start time. */
   const latestHealState = useRef<LatestHealState | null>(null);
   latestHealState.current = {
@@ -210,7 +218,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => { setLoading(true); setError(''); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; healGeometry.current = null; healStraightenAnchor.current.clear(); paintLog.current = []; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src, retry]);
+  useEffect(() => { setLoading(true); setError(''); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; healGeometry.current = null; healStraightenAnchor.current.clear(); paintLog.current = []; overlayStore.current = []; purgedOverlayIds.current = new Set(); healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src, retry]);
 
   // A new photo clears any stale "Copied" flash; unmount clears the timer.
   useEffect(() => { setFilenameCopied(false); }, [photo.id]);
@@ -281,12 +289,17 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
         } catch { trueOriginal = null; }
       }
       // Best-effort: drop server overlays for deleted strokes. Safe to call
-      // from any branch — only entries with no live stroke are deleted.
+      // from any branch — only entries with no live stroke are deleted, and
+      // each id is deleted at most once per photo (the planner evicts
+      // already-purged ids locally without re-firing DELETE).
       const sweepOrphanOverlays = (live: Set<number>) => {
-        const orphans = overlayStore.current.filter((entry) => !live.has(entry.groupId));
-        if (!orphans.length) return;
-        overlayStore.current = overlayStore.current.filter((entry) => live.has(entry.groupId));
-        for (const orphan of orphans) void overlayClient.deleteHealOverlay(photo.id, orphan.groupId).catch(() => undefined);
+        const planned = planHealOrphanSweep(overlayStore.current, live, purgedOverlayIds.current);
+        if (planned.keep.length === overlayStore.current.length) return;
+        overlayStore.current = planned.keep;
+        for (const groupId of planned.deleteIds) {
+          purgedOverlayIds.current.add(groupId);
+          void overlayClient.deleteHealOverlay(photo.id, groupId).catch(() => undefined);
+        }
       };
       // Heal-then-rotate reuses pixels: a pure quarter-turn rotates the
       // in-memory patches and persisted overlays (bbox + pixels + signatures)
@@ -482,18 +495,30 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
           fetched = (await overlayPromise.current) ?? [];
         } catch { fetched = []; }
         // Session-saved groups win over the fetch (a PUT may have landed
-        // after the GET started).
+        // after the GET started); purged ids stay dead so overlapping runs
+        // sharing this fetch never resurrect them.
         if (fetched.length || overlayStore.current.length) {
-          const merged = new Map<number, StoredHealPatch>();
-          for (const entry of fetched) merged.set(entry.groupId, entry);
-          for (const entry of overlayStore.current) merged.set(entry.groupId, entry);
-          overlayStore.current = [...merged.values()];
+          overlayStore.current = mergeFetchedHealOverlays(fetched, overlayStore.current, purgedOverlayIds.current);
         }
-        sweepOrphanOverlays(new Set(repairsAtStart.map((point) => strokeIdForPoint(point))));
+        // Current generation only: a stale run's live set predates newer
+        // strokes, so sweeping with it could purge work that is live again.
+        if (!cancelled && repairGeneration.current === generation) {
+          sweepOrphanOverlays(new Set(repairsAtStart.map((point) => strokeIdForPoint(point))));
+        }
       } else if (overlayPromise.current) {
-        void overlayPromise.current.then((patches) => {
-          if (!cancelled && patches.length && !overlayStore.current.length) overlayStore.current = patches;
-          if (!cancelled) sweepOrphanOverlays(new Set());
+        // One shot per photo: the ref clears when the fetch settles, so
+        // later slider ticks don't reseed the store from the stale list and
+        // re-delete the same orphans. The promise object is captured, so a
+        // run cancelled before settle still leaves every waiter holding the
+        // data — clearing the ref only stops future schedulers.
+        const pending = overlayPromise.current;
+        void pending.then((patches) => {
+          if (overlayPromise.current === pending) overlayPromise.current = null;
+          if (cancelled) return;
+          if (patches.length && !overlayStore.current.length) {
+            overlayStore.current = mergeFetchedHealOverlays(patches, overlayStore.current, purgedOverlayIds.current);
+          }
+          sweepOrphanOverlays(new Set());
         }).catch(() => undefined);
       }
       if (cancelled || repairGeneration.current !== generation || !canvasRef.current || !originalRef.current) return;
@@ -651,6 +676,9 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
                 if (storedSync.has(group.id)) continue;
                 const patch = healCache.current.get(group.id);
                 if (!patch) continue;
+                // A fresh save re-arms the id (undo can restore a swept
+                // stroke): a later delete must DELETE it again.
+                purgedOverlayIds.current.delete(group.id);
                 overlayStore.current.push({ ...patch, data: patch.data.slice(), groupId: group.id, geometryKey: syncParams.geometryKey, canvasWidth: syncWidth, canvasHeight: syncHeight });
                 storedSync.add(group.id);
                 await overlayClient.saveHealOverlay(photo.id, group.id, overlayBodyFromPatch(patch, { geometryKey: syncParams.geometryKey, canvasWidth: syncWidth, canvasHeight: syncHeight, method, quality: syncParams.quality, featherPx: syncParams.featherPx })).catch((reason: unknown) => {
@@ -762,11 +790,15 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
                     if (seeded) snapshotAnchor(group.id, baseEdit.straighten, seeded);
                   }
                   // Best-effort: drop server overlays for deleted strokes.
-                  const live = new Set(groups.map((group) => group.id));
-                  const orphans = overlayStore.current.filter((entry) => !live.has(entry.groupId));
-                  if (orphans.length) {
-                    overlayStore.current = overlayStore.current.filter((entry) => live.has(entry.groupId));
-                    for (const orphan of orphans) void overlayClient.deleteHealOverlay(myPhotoId, orphan.groupId).catch(() => undefined);
+                  // Each id is deleted at most once per photo, like the
+                  // effect sweep above.
+                  const planned = planHealOrphanSweep(overlayStore.current, new Set(groups.map((group) => group.id)), purgedOverlayIds.current);
+                  if (planned.keep.length !== overlayStore.current.length) {
+                    overlayStore.current = planned.keep;
+                    for (const groupId of planned.deleteIds) {
+                      purgedOverlayIds.current.add(groupId);
+                      void overlayClient.deleteHealOverlay(myPhotoId, groupId).catch(() => undefined);
+                    }
                   }
                   const { valid, dirty } = partitionHealGroups(currentRepairs, healCache.current, cacheParams, width, height);
                   const validPatches = valid.flatMap((group) => {
@@ -858,6 +890,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
                                 snapshotAnchor(group.id, curEdit.straighten, turned);
                                 enforceHealCacheLimit(healCache.current);
                                 overlayStore.current = overlayStore.current.filter((entry) => entry.groupId !== group.id && healCache.current.has(entry.groupId));
+                                purgedOverlayIds.current.delete(group.id);
                                 overlayStore.current.push({ ...turned, data: turned.data.slice(), groupId: group.id, geometryKey: curKey, canvasWidth: curClean.width, canvasHeight: curClean.height });
                                 await overlayClient.saveHealOverlay(myPhotoId, group.id, overlayBodyFromPatch(turned, { geometryKey: curKey, canvasWidth: curClean.width, canvasHeight: curClean.height, method: methodAtEnqueue, quality: latest.quality, featherPx: latest.featherPx })).catch((reason: unknown) => {
                                   if (reason instanceof LibraryError && reason.status >= 400 && reason.status < 500) {
@@ -878,6 +911,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
                       setPendingRepairIds((prev) => (prev.includes(group.id) ? prev.filter((id) => id !== group.id) : prev));
                       enforceHealCacheLimit(healCache.current);
                       overlayStore.current = overlayStore.current.filter((entry) => entry.groupId !== group.id && healCache.current.has(entry.groupId));
+                      purgedOverlayIds.current.delete(group.id);
                       overlayStore.current.push({ ...patch, data: patch.data.slice(), groupId: group.id, geometryKey: cacheParams.geometryKey, canvasWidth: width, canvasHeight: height });
                       // Persist before the next group starts: reopening can
                       // never lose a finished group. Transient failures keep

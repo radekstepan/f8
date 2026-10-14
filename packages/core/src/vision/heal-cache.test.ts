@@ -10,7 +10,9 @@ import {
   geometryPrefixForKey,
   HEAL_RESAMPLE_DEG_BUDGET,
   healSingleGroup,
+  mergeFetchedHealOverlays,
   pasteHealPatches,
+  planHealOrphanSweep,
   partitionHealGroups,
   pointsHashForGroup,
   pointsKeyForGroup,
@@ -73,6 +75,24 @@ function patch(
     });
   }
   return { cache, groups };
+}
+
+// Minimal persisted overlay: the orphan-sweep planner and fetch merge only
+// read groupId (marker distinguishes session pixels from fetched ones).
+function overlayEntry(groupId: number, marker = 0): StoredHealPatch {
+  return {
+    groupId,
+    signature: `sig-${groupId}`,
+    x0: 0,
+    y0: 0,
+    width: 1,
+    height: 1,
+    geometryKey: "photo|4/3|0|0|0|0|10x10",
+    canvasWidth: 10,
+    canvasHeight: 10,
+    data: new Uint8ClampedArray([marker, 0, 0, 255]),
+    resampleDeg: 0,
+  };
 }
 
 describe("geometryKeyForHealCache", () => {
@@ -914,5 +934,56 @@ describe("pasteHealPatches alpha", () => {
     expect(out.data[32]).toBeLessThanOrEqual(54);
     expect(out.data[35]).toBe(255);
     expect(base.data[4]).toBe(1);
+  });
+});
+
+describe("mergeFetchedHealOverlays", () => {
+  it("prefers session entries and drops ids purged earlier in the session", () => {
+    const merged = mergeFetchedHealOverlays(
+      [overlayEntry(1, 1), overlayEntry(2, 2)],
+      [overlayEntry(2, 9)],
+      new Set([1]),
+    );
+    // Group 1 was purged: the stale fetch must not resurrect it.
+    expect(merged.map((entry) => entry.groupId).sort()).toEqual([2]);
+    // Session-saved pixels win over the fetch.
+    expect(merged[0]!.data[0]).toBe(9);
+  });
+
+  it("keeps fetched entries for groups never purged", () => {
+    const merged = mergeFetchedHealOverlays([overlayEntry(1, 1)], [], new Set());
+    expect(merged.map((entry) => entry.groupId)).toEqual([1]);
+  });
+});
+
+describe("planHealOrphanSweep", () => {
+  it("keeps every entry when all groups are live", () => {
+    const planned = planHealOrphanSweep([overlayEntry(1), overlayEntry(2)], new Set([1, 2]), new Set());
+    expect(planned.deleteIds).toEqual([]);
+    expect(planned.keep.map((entry) => entry.groupId)).toEqual([1, 2]);
+  });
+
+  it("evicts already-purged entries locally without re-deleting them", () => {
+    const planned = planHealOrphanSweep([overlayEntry(1)], new Set(), new Set([1]));
+    expect(planned.keep).toEqual([]);
+    expect(planned.deleteIds).toEqual([]);
+  });
+
+  it("deletes orphans once, then goes quiet on repeat sweeps", () => {
+    const purged = new Set<number>();
+    // First sweep with only stroke 2 live: group 1 is orphaned.
+    const first = planHealOrphanSweep([overlayEntry(1), overlayEntry(2)], new Set([2]), purged);
+    expect(first.keep.map((entry) => entry.groupId)).toEqual([2]);
+    expect(first.deleteIds).toEqual([1]);
+    for (const id of first.deleteIds) purged.add(id);
+    // A later tick replays the same stale fetch (overlapping pipeline runs
+    // resolve one shared list): the merge drops the purged id, so the
+    // second sweep has nothing to delete — no repeat DELETE while dragging
+    // unrelated sliders.
+    const resurrected = mergeFetchedHealOverlays([overlayEntry(1)], first.keep, purged);
+    expect(resurrected.map((entry) => entry.groupId)).toEqual([2]);
+    const second = planHealOrphanSweep(resurrected, new Set([2]), purged);
+    expect(second.deleteIds).toEqual([]);
+    expect(second.keep.map((entry) => entry.groupId)).toEqual([2]);
   });
 });

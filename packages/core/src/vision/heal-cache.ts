@@ -872,6 +872,52 @@ export function overlayBodyFromPatch(patch: CachedHealPatch, meta: HealOverlayMe
 }
 
 /**
+ * Merge the one-time server overlay fetch with session-saved entries.
+ * Session entries win per group; ids already purged this session are
+ * dropped so a stale shared fetch can never resurrect them. Overlapping
+ * pipeline runs all resolve the same fetched list, so without the filter
+ * each run would re-add and re-delete the same orphans — one DELETE per
+ * slider tick while dragging unrelated adjustments.
+ */
+export function mergeFetchedHealOverlays(
+  fetched: readonly StoredHealPatch[],
+  session: readonly StoredHealPatch[],
+  purged: ReadonlySet<number>,
+): StoredHealPatch[] {
+  const merged = new Map<number, StoredHealPatch>();
+  for (const entry of fetched) {
+    if (purged.has(entry.groupId)) continue;
+    merged.set(entry.groupId, entry);
+  }
+  for (const entry of session) merged.set(entry.groupId, entry);
+  return [...merged.values()];
+}
+
+/**
+ * Split the overlay store into entries to keep vs orphan group ids to
+ * DELETE (live = current repair stroke ids). Ids already purged are still
+ * evicted locally but never re-deleted, so the sweep is idempotent across
+ * overlapping runs and repeated paints: steady-state slider drags issue
+ * zero heal-overlay requests.
+ */
+export function planHealOrphanSweep(
+  store: readonly StoredHealPatch[],
+  live: ReadonlySet<number>,
+  purged: ReadonlySet<number>,
+): { keep: StoredHealPatch[]; deleteIds: number[] } {
+  const keep: StoredHealPatch[] = [];
+  const deleteIds: number[] = [];
+  for (const entry of store) {
+    if (live.has(entry.groupId)) {
+      keep.push(entry);
+      continue;
+    }
+    if (!purged.has(entry.groupId)) deleteIds.push(entry.groupId);
+  }
+  return { keep, deleteIds };
+}
+
+/**
  * Load persisted overlays for a photo as binary patches. Never throws:
  * missing photos, offline servers, and corrupt records all yield [].
  */
