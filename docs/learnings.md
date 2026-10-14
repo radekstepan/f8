@@ -1,6 +1,6 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across eight
+Distilled from per-task writeups and subagent learnings across nine
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, or library UI so we don't repeat the same mistakes.
 
@@ -25,6 +25,8 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   running log).
 - **R8** = eighth run, 2026-10-13 (3 tasks). Writeups continue the
   running log in `docs/tasks/13-*.md`–`15-*.md`.
+- **R9** = ninth run, 2026-10-14 (3 tasks). Writeups continue the
+  running log in `docs/tasks/16-*.md`–`18-*.md`.
 
 ## 1. Honest labels and naming
 
@@ -224,6 +226,27 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   requirement so the pane shows immediately on toggle, and the pane
   carries `role="img"` with an "8x magnification" label: it is a
   stable panel now, not cursor-following decoration. (R8-3)
+- **A submenu parent is a checked toggle with keyboard in/out.**
+  The Zoom-in-View parent carries the check, hover opens, click
+  toggles for touch, and ArrowRight/ArrowLeft move in and out; only
+  the default (8x) option carries the shortcut. (R9-1)
+- **Derived views mirror their source's visibility conditions.**
+  The zoom pane's repair circle uses the same gates as the frame
+  cursor (hidden under Compare / Show Original, unwarmed tier) plus
+  its own fit rule — a magnified view never shows what the frame
+  hides. (R9-1)
+- **Computed collections live in Library, user collections in
+  Albums.** Star-rating smart albums are computed rows (no
+  create/delete menu, cover, drops, or server storage) like
+  Favorites and Recently Edited — group membership follows
+  mutability, not content. (R9-2)
+- **Smart-album matching is exact, not "at least".** `rating-3`
+  lists 3-star photos only — one photo, one smart album — so the
+  sidebar counts add up. (R9-2)
+- **Menu-bar identity labels render the app version, not an edition
+  name.** Both render sites (menu-bar indicator, About brand line)
+  show `v<APP_VERSION>`; descriptive "local-first" wording elsewhere
+  stays — it describes the architecture, not the label. (R9-3)
 
 ## 3. Spacing, layout, and motion
 
@@ -612,6 +635,36 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   for Zoom, free in the Preview domain) never collides with
   Ctrl/Cmd+Z. New shortcuts get listed in the menu item and the
   shortcuts dialog in the same commit. (R8-3)
+- **Menu options toggle; the shortcut is just the default
+  option.** Re-picking the active magnification turns the zoom pane
+  off; Z fires the 8x action, so Z with 4x active switches to 8x
+  rather than turning off — one rule, no special cases. (R9-1)
+- **Fit means magnified diameter vs pane size, boundary
+  inclusive.** A brush whose diameter × factor exceeds 180px stays
+  out of the zoom pane; exactly 180px still draws — "same size or
+  smaller" pins the boundary. (R9-1)
+- **New computed routes must register in every collection
+  guard.** `/album/rating-5` deep-links survive only because the
+  unknown-collection guard, grid filter, and titles resolve through
+  the shared `photoInCollection` / `isBuiltInCollection` /
+  `titleForCollection` helpers — the inline duplicate in App was
+  the bug shape, per the R2-11 seam. (R9-2)
+- **Shared entry-exit helpers keep cross-view behavior
+  uniform.** Touching a filter chip inside a smart album drops back
+  to All Photos with that filter via the shared `dropEntryPreset`,
+  like Favorites and Recently Edited. (R9-2)
+- **Mirror the version as a literal with a drift-failing test, not
+  a build-time import.** Importing `package.json` into core needs
+  `resolveJsonModule` plus import-attribute handling across `tsc
+  -b`, vitest, Vite, and the server's type-stripped dev mode; a
+  mirrored `APP_VERSION` literal with a test that fails on drift
+  plus a sync script chained into the version command has zero
+  build risk and the same guarantee. (R9-3)
+- **Fixed-group versioning for a single app number.** All four
+  workspaces move in lockstep via one changesets `fixed` group;
+  private packages need `version: true` or changesets won't move
+  them at all; the command is `version-packages` because Yarn 4's
+  built-in `version` would shadow a script of that name. (R9-3)
 
 ## 5. Testing practices (repo-specific)
 
@@ -804,6 +857,17 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   denoise button were updated to the shared row and recorded in
   the writeup as the intended change — not worked around, not
   silently rewritten. (R8-2)
+- **Strict parsers pin both acceptance and fallthrough.**
+  `ratingForCollection` accepts only integers 1..5, and everything
+  else falls through to album matching — pinned with invalid-id
+  tests plus a grid-URL round-trip, so a bad smart-album id can
+  never strand the grid. (R9-2)
+- **Version mirrors get executable drift pins.** `APP_VERSION` is
+  semver, equals all four workspace `package.json` versions, and
+  the retired wording is gone from user-visible copy — while the
+  sync script's three paths (in-sync no-op, cross-workspace drift
+  failure, stale rewrite) get hand-verified exit-code coverage.
+  (R9-3)
 
 ## 6. Tooling gotchas
 
@@ -830,7 +894,8 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   signature of a stale `dist` (unit tests resolve source). Never
   commit `dist/`.
   (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6,
-  R4-4, R4-5, R4-6, R4-7, R4-8, R5-1, R6-6, R7-4, R8-2, R8-3)
+  R4-4, R4-5, R4-6, R4-7, R4-8, R5-1, R6-6, R7-4, R8-2, R8-3,
+  R9-1, R9-2, R9-3)
 - **Commit by explicit paths, never `git add -A`.** Stray files
   (e.g. `.DS_Store` under `docs/`) get swept in otherwise. (R1)
 - **No CI, no configured linter** — both packages' `lint` scripts
@@ -987,6 +1052,24 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   untouched as documented boundaries — churning pinned,
   intentional treatments the task never named would be scope
   creep, not consistency. (R8-2)
+- **"Show under X" is placement, not renaming.** The Zoom-in-View
+  move kept the label, the shortcuts-dialog entry, and the Z
+  shortcut stable — only the position (with the Show toggles,
+  above the separator) changed. (R9-1)
+- **Reshaping a feature means auditing sibling docs, not just the
+  README.** `features.md` still described the old 16x loupe after
+  the R8 pane reshapes — grep `docs/` for the old description in
+  the same commit. (R9-1)
+- **Read "counts we have saved" as distinct values present.**
+  Star smart albums appear per rating present (3- and 5-star ⇒
+  two rows, highest first), never for empty ratings — no row ever
+  shows zero. Record the alternative reading in the writeup.
+  (R9-2)
+- **Install gaps ship as writeup caveats with the recovery
+  command.** `@changesets/cli` was declared but uninstallable
+  here (no registry access), so the writeup names the exact gap
+  (`yarn.lock` doesn't cover it) and the fix (`yarn install`
+  with network) instead of leaving a mystery failure. (R9-3)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -1093,3 +1176,11 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 | 1 | `0b79e5f` | `13-preset-names-no-truncate.md` | Portrait preset items back to 72px names, 43px thumbnails only |
 | 2 | `72e9e73` | `14-denoise-cancel-align.md` | Denoise Cancel dismisses every transient phase; actions share `.suggestion-actions` |
 | 3 | `315bc9a` | `15-zoom-preview-8x.md` | Fixed 8x corner preview pane with Z shortcut |
+
+## Per-task index, R9 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `776cc83` | `16-zoom-view-submenu.md` | Zoom in View submenu under Show (4x/8x/16x), compare-aware pane, repair circle |
+| 2 | `5d47e70` | `17-star-smart-albums.md` | Star-rating smart albums in the sidebar Library group |
+| 3 | `7540661` | `18-app-version-changesets.md` | App version replaces edition label; changesets set up at 0.1.0 |

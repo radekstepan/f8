@@ -10,11 +10,12 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 6. If a task changes architecture or introduces a complex feature, update the app documentation (README.md) in the same commit.
 7. If a task is blocked or fails, stop the loop and report — do not skip ahead to the next item.
 8. Keep track of learnings from each task. Then once done with all of the tasks summarize the learnings into a markdown document so that we do not repeat the same mistakes over and over (in `docs/learnings.md`).
+9. Each subagent must add a changeset (`yarn changeset`) describing its change and include it in the same commit, so versions keep moving. See `.changeset/README.md` and the "Versioning" section in `docs/development.md` for the workflow.
 
 ## List
 
-The zoom in View should show under "Show", not at the bottom of the dropdown. And it should respect if we have the compare with original on. If we have Repair on, we should see the circle inthe zoom in view IF it's the same size or smaller than the preview. The zoom in view in the dropdown should also be a submenu where the 8x is the default but we also have 4x and 16x. Only the 8x, the default, has the keyboard shortcut.
+Align "Zoom in View" in the dropdown beautifully with the other items. ANd put it in its own section. Same with the 4x 8x and 16x. 8x is to the left, the other to the right.
 
-If we star some photos, create "smart albums" in the sidebar library group for the star "counts" we have saved. 
+Show the zoom in view square to the right of the image canvas (if there is space). Right now it shows in the right bottom corner of the image even though (on a portrait photo) there is space to the right of it.
 
-Instead of "Local-first edition", show the app's overall version in its place. Use changesets and start bumping versions of the packages and the app overall.
+Don't name smart "star" albums based on how many stars they have. Show that many stars instead!
