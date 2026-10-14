@@ -13,16 +13,16 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-"All Photos" flashes on hard reload of photo view before the correct category shows in a backlink. Show nothing rather than wrong category. And nicely animate the histogram when loading too.
+Remove the "Updating preview" text from the Export modal. I don't want the modal to resize at all.
 
-Undo Redo and Reset to Original buttons show on album view - wrong.
+The histogram animation on initial load is weird. It animates from individual bars (10 or so) to the beautiful histogram. Start histogram as "flat" (no lines/areas) and then when we have the data animate them in to rise from the horizontal 0.
 
-Reset to Original button should be highlighted if the image has been edited. 
+Clicking filename in photo view should copy the filename.
 
-Remove "Double click to reset quality", it's not needed.
+DSC06323.ARW the Reset to orginal button is highlighted even after I click it. The image should be reset now no? Why keep highlighting the reset button.
 
-Export Photo Quality preview I should be able to drag the square and when I click the square shows elsewhere from where I actually clicked.
+Export button keeps showing on album view, remove it, only shows on photo view.
 
-When I change Quality preset on export we should NOT close the preview. Transition to the new setting for preview.
+Switch URL structure to use / and not query strings.
 
-Remove Download settings button, not needed.
+When animating the photo backlink don't show this weird horizontal "bar", show nothing and fade in the backlink with album name.
