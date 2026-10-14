@@ -17,7 +17,7 @@ interface MenuBarProps {
   inspector: boolean;
   presets: boolean;
   filmstrip: boolean;
-  /** True while the zoom-in-view loupe is toggled on (photo view only). Defaults to false. */
+  /** True while the zoom-in-view preview is toggled on (photo view only). Defaults to false. */
   zoomLens?: boolean;
 }
 
@@ -31,7 +31,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
     File: <>{item('Import Photos...', 'import', 'Ctrl O')}{item('Import Folder as Album...', 'import-local-folder')}{item('Import from Folder...', 'import-folder', 'Ctrl Shift O')}{item('New Album...', 'album')}<MenuSeparator />{item('Export Photo...', 'export', 'Ctrl Shift E')}</>,
     Edit: <>{item('Undo', 'undo', 'Ctrl Z', !canUndo)}{item('Redo', 'redo', 'Ctrl Shift Z', !canRedo)}<MenuSeparator />{item('Copy Adjustments', 'copy', 'Ctrl Shift C')}{item('Paste Adjustments', 'paste', 'Ctrl Shift V', !canPaste)}<MenuSeparator />{item('Reset All Adjustments', 'reset')}</>,
     Image: <>{item('Auto Enhance', 'enhance', 'A')}<MenuItem key="enhance-scene" onClick={() => action('enhance-scene')} shortcut="Shift A"><span>Scene Enhance <MlBadge hint="The scene is classified by a machine-learning model on your device" /></span></MenuItem><MenuItem key="enhance-faces" onClick={() => action('enhance-faces')} shortcut="Shift E"><span>Enhance Faces <MlBadge hint="Faces are detected by a machine-learning model on the photo server" /></span></MenuItem>{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<MenuSeparator />{item('Compare with Original', 'compare', 'B', compareDisabled)}<MenuSeparator />{item('Remove from Library…', 'remove', 'Del', false, undefined, true)}</>,
-    View: <>{item('Show Library', 'sidebar', undefined, false, sidebar)}{item('Show Adjustments', 'inspector', undefined, false, inspector)}{item('Show Presets', 'presets', undefined, false, presets)}{item('Show Filmstrip', 'filmstrip', undefined, false, filmstrip)}<MenuSeparator />{item('Photo Browser', 'grid', 'G')}{item('Zoom to Fit', 'fit', '0')}{item('Zoom in View', 'zoom-lens', undefined, false, zoomLens)}</>,
+    View: <>{item('Show Library', 'sidebar', undefined, false, sidebar)}{item('Show Adjustments', 'inspector', undefined, false, inspector)}{item('Show Presets', 'presets', undefined, false, presets)}{item('Show Filmstrip', 'filmstrip', undefined, false, filmstrip)}<MenuSeparator />{item('Photo Browser', 'grid', 'G')}{item('Zoom to Fit', 'fit', '0')}{item('Zoom in View', 'zoom-lens', 'Z', false, zoomLens)}</>,
     Window: <>{item('Focus Mode', 'fullscreen', 'Shift F')}{item('Photo Browser', 'grid')}</>,
     Help: <>{item('Keyboard Shortcuts', 'shortcuts', '?')}{item(`About ${APP_NAME}`, 'about')}</>,
   };

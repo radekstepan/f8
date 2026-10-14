@@ -8,13 +8,14 @@ import type { Photo } from '@f8/core';
 import { MenuBar } from './Topbar.js';
 import { PhotoCanvas } from './PhotoCanvas.js';
 
-// Zoom in View: a View-menu toggle that shows a 16x loupe following the
-// cursor over the photo in photo (editor) view only. The loupe paints from
-// the edited canvas in an effect (unreachable from server rendering, like
-// the minimap mirror), so the paint math is unit-tested in
-// packages/core/src/zoomLens.test.ts and this file pins the wiring: the
-// menu item with its checked state, the App state/action/props plumbing,
-// the loupe markup gate, and the stylesheet.
+// Zoom in View: a View-menu toggle (shortcut Z) that shows a fixed 8x
+// square preview in the photo's bottom-right corner in photo (editor)
+// view only. The pane paints from the edited canvas in an effect
+// (unreachable from server rendering, like the minimap mirror), so the
+// paint math is unit-tested in packages/core/src/zoomLens.test.ts and
+// this file pins the wiring: the menu item with its checked state and
+// shortcut, the App state/action/shortcut/props plumbing, the pane
+// markup gate, and the stylesheet.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cssPath = resolve(here, '../../../../apps/web/src/index.css');
@@ -23,6 +24,7 @@ const fullCss = () => readFileSync(cssPath, 'utf8');
 const appSource = () => readFileSync(appPath, 'utf8');
 const topbarSource = () => readFileSync(resolve(here, 'Topbar.tsx'), 'utf8');
 const canvasSource = () => readFileSync(resolve(here, 'PhotoCanvas.tsx'), 'utf8');
+const dialogsSource = () => readFileSync(resolve(here, 'EditorDialogs.tsx'), 'utf8');
 
 const cssRule = (selector: string): string => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -101,20 +103,23 @@ function menuBarBlock(): string {
 }
 
 describe('zoom-in-view menu toggle', () => {
-  it('lives under the View menu next to Zoom to Fit, with a checked state', () => {
+  it('lives under the View menu next to Zoom to Fit, with a checked state and the Z shortcut', () => {
     const line = viewMenuLine();
-    expect(line).toContain("'Zoom in View', 'zoom-lens'");
+    expect(line).toContain("'Zoom in View', 'zoom-lens', 'Z'");
     expect(line).toContain('zoomLens');
     expect(line.indexOf("'fit'")).toBeLessThan(line.indexOf("'zoom-lens'"));
   });
 
-  it('adds no top-level menu and no shortcut (View toggles have none)', () => {
+  it('adds no top-level menu', () => {
     const html = renderToStaticMarkup(
       <MenuBar onAction={noop} canUndo canRedo={false} canPaste sidebar inspector presets={false} filmstrip zoomLens />,
     );
     const labels = Array.from(html.matchAll(/class="menu-trigger[^"]*"[^>]*>([^<]+)</g)).map((match) => match[1] ?? '');
     expect(labels).toEqual(['File', 'Edit', 'Image', 'View', 'Window', 'Help']);
-    expect(viewMenuLine()).toContain("'Zoom in View', 'zoom-lens', undefined");
+  });
+
+  it('is listed in the keyboard shortcuts dialog', () => {
+    expect(dialogsSource()).toContain("['Zoom in view', 'Z']");
   });
 });
 
@@ -123,49 +128,54 @@ describe('zoom-in-view app wiring', () => {
     expect(appSource()).toContain("case 'zoom-lens': setZoomLens((current) => !current); break;");
   });
 
+  it('toggles the mode from the Z shortcut', () => {
+    expect(appSource()).toContain("z: 'zoom-lens'");
+  });
+
   it('shows the checked state in the menu bar', () => {
     expect(menuBarBlock()).toContain('zoomLens={zoomLens}');
   });
 
-  it('gates the loupe on photo view', () => {
+  it('gates the preview on photo view', () => {
     expect(photoCanvasBlock()).toContain('zoomLens={shouldShowZoomLens(view, zoomLens)}');
   });
 });
 
-describe('zoom-in-view loupe', () => {
-  it('renders no loupe by default', () => {
+describe('zoom-in-view preview pane', () => {
+  it('renders no preview by default', () => {
     expect(renderCanvas()).not.toContain('data-testid="zoom-lens"');
     expect(renderCanvas(false)).not.toContain('data-testid="zoom-lens"');
   });
 
-  it('renders no loupe before the cursor enters the photo', () => {
-    // The loupe follows the cursor, and server rendering never moves one:
-    // with no cursor position there is nothing to magnify yet.
-    expect(renderCanvas(true)).not.toContain('data-testid="zoom-lens"');
-  });
-
-  it('gates the loupe markup on the toggle and the clamped cursor center', () => {
+  it('gates the preview markup on the toggle alone (fixed pane, no cursor needed)', () => {
     const source = canvasSource();
-    expect(source).toContain('{showLens && lensCenter && <div className="zoom-lens" data-testid="zoom-lens"');
-    expect(source).toContain('clampZoomLensCenter(cursor,');
+    expect(source).toContain('{showLens && <div className="zoom-lens" data-testid="zoom-lens"');
+    expect(source).not.toContain('lensCenter');
   });
 
-  it('paints the loupe from the edited canvas at the 16x source rect', () => {
+  it('previews the frame center before the cursor enters the photo', () => {
+    expect(canvasSource()).toContain('cursor ?? { x: frameWidth / 2, y: frameHeight / 2 }');
+  });
+
+  it('paints the preview from the edited canvas at the 8x source rect', () => {
     const source = canvasSource();
     expect(source).toContain('zoomLensSourceRect(');
     expect(source).toContain('drawImage(source, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, lens.width, lens.height)');
     expect(source).toContain('{ZOOM_LENS_MAGNIFICATION}×');
   });
 
-  it('tracks the cursor over the photo while the loupe is on', () => {
+  it('tracks the cursor over the photo while the preview is on', () => {
     expect(canvasSource()).toContain('if (isBrush || showLens) { const point = position(event); setCursor(');
   });
 
-  it('styles the loupe as a circular cursor-following overlay with a factor badge', () => {
-    expect(cssRule('.zoom-lens')).toMatch(/border-radius\s*:\s*50%/);
-    expect(cssRule('.zoom-lens')).toMatch(/pointer-events\s*:\s*none/);
-    expect(cssRule('.zoom-lens')).toMatch(/transform\s*:\s*translate\(-50%,\s*-50%\)/);
-    expect(cssRule('.zoom-lens')).toMatch(/overflow\s*:\s*hidden/);
+  it('styles the preview as a fixed square in the bottom-right corner with a factor badge', () => {
+    const rule = cssRule('.zoom-lens');
+    expect(rule).toMatch(/right\s*:\s*12px/);
+    expect(rule).toMatch(/bottom\s*:\s*12px/);
+    expect(rule).not.toMatch(/border-radius\s*:\s*50%/);
+    expect(rule).not.toMatch(/translate\(-50%,\s*-50%\)/);
+    expect(rule).toMatch(/pointer-events\s*:\s*none/);
+    expect(rule).toMatch(/overflow\s*:\s*hidden/);
     expect(cssRule('.zoom-lens canvas')).toMatch(/width\s*:\s*100%/);
     expect(cssRule('.zoom-lens-label')).toMatch(/position\s*:\s*absolute/);
   });

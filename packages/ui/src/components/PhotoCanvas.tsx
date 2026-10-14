@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Check, ChevronsLeftRight, Columns2, Copy, Heart, ImageOff, Info, Maximize, Minus, Plus, Star, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
-import { LibraryError, ZOOM_LENS_MAGNIFICATION, ZOOM_LENS_SIZE_PX, applyInpaintRepair, clampZoomLensCenter, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, frameAspectForPhoto, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint, zoomLensSourceRect } from '@f8/core';
+import { LibraryError, ZOOM_LENS_MAGNIFICATION, ZOOM_LENS_SIZE_PX, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, frameAspectForPhoto, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint, zoomLensSourceRect } from '@f8/core';
 import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 import { ToolHint } from './ToolHint.js';
@@ -51,7 +51,7 @@ interface PhotoCanvasProps {
   fineGrid?: boolean;
   /** Transient no-horizon notice: flashed over the photo through the shared tool-hint overlay. */
   straightenFlash?: { runId: number; message: string } | null;
-  /** Zoom-in-view loupe: while true a 16x magnifier follows the cursor over the photo. Defaults to false. */
+  /** Zoom-in-view preview: while true a fixed 8x square shows the region under the cursor in the photo's bottom-right corner. Defaults to false. */
   zoomLens?: boolean;
   onHighlightStroke?: (stroke: number | null) => void;
   onZoom: (zoom: number) => void;
@@ -1251,11 +1251,13 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   // Compare and healing are mutually exclusive on canvas: comparing shows
   // the before/after slider with no heal cursor and no painting.
   const showBrushCursor = isBrush && cursor && !compare && !showOriginal && !mlRepairBlocked;
-  // Zoom-in-view loupe: follows the cursor while toggled on (nothing to
-  // magnify until the photo has painted). The center clamps so the whole
-  // loupe stays over the photo near the frame edges.
+  // Zoom-in-view preview: a fixed square in the photo's bottom-right
+  // corner shows the region under the cursor at 8x while toggled on
+  // (nothing to magnify until the photo has painted). Before the cursor
+  // enters the photo the pane previews the frame center, so toggling on
+  // always shows a live preview immediately.
   const showLens = zoomLens && !loading && !error;
-  const lensCenter = showLens && cursor ? clampZoomLensCenter(cursor, { width: frameWidth, height: frameHeight }) : null;
+  const lensCursor = cursor ?? { x: frameWidth / 2, y: frameHeight / 2 };
   const draggingRepair = showOverlay && isLiveRepairDrag(tool, activeStroke);
   // While dragging, every repair area shows red — not just the new stroke —
   // so the single worker pass over all areas is visible. While healing,
@@ -1291,19 +1293,20 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   const miniWidth = Math.round(Math.min(148, 104 * displayAspect));
   const miniHeight = Math.round(Math.min(104, 148 / displayAspect));
 
-  // The loupe mirrors the edited canvas (not the thumbnail), so adjustments,
-  // crop, and rotation match the frame. Runs after every render like the
-  // minimap mirror, so the loupe stays in sync with repaints and follows the
-  // cursor. Backing store is 2x the CSS size for a crisp loupe on retina.
+  // The preview pane mirrors the edited canvas (not the thumbnail), so
+  // adjustments, crop, and rotation match the frame. Runs after every
+  // render like the minimap mirror, so the pane stays in sync with
+  // repaints and follows the cursor. Backing store is 2x the CSS size
+  // for a crisp pane on retina.
   useEffect(() => {
-    if (!showLens || !cursor) return;
+    if (!showLens) return;
     const lens = lensCanvasRef.current;
     const source = canvasRef.current;
     if (!lens || !source || !source.width || !source.height) return;
     const ctx = lens.getContext('2d');
     if (!ctx) return;
     const rect = zoomLensSourceRect(
-      { fx: cursor.x / frameWidth, fy: cursor.y / frameHeight },
+      { fx: lensCursor.x / frameWidth, fy: lensCursor.y / frameHeight },
       { width: source.width, height: source.height },
       { width: frameWidth, height: frameHeight },
     );
@@ -1332,7 +1335,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
         ? <div className="crop-grid is-fine" aria-hidden="true" data-testid="crop-grid-fine">{Array.from({ length: 8 }, (_, index) => <i key={`v${index}`} className={(index + 1) % 3 === 0 ? 'is-major' : ''} style={{ left: `${((index + 1) * 100) / 9}%`, top: 0, height: '100%', width: '1px' }} />)}{Array.from({ length: 8 }, (_, index) => <i key={`h${index}`} className={(index + 1) % 3 === 0 ? 'is-major' : ''} style={{ top: `${((index + 1) * 100) / 9}%`, left: 0, width: '100%', height: '1px' }} />)}</div>
         : <div className="crop-grid" aria-hidden="true"><i /><i /><i /><i /></div>)}
       {showBrushCursor && <div className="brush-cursor" style={{ left: cursor!.x, top: cursor!.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
-      {showLens && lensCenter && <div className="zoom-lens" data-testid="zoom-lens" aria-hidden="true" style={{ left: lensCenter.x, top: lensCenter.y, width: ZOOM_LENS_SIZE_PX, height: ZOOM_LENS_SIZE_PX }}><canvas ref={lensCanvasRef} width={ZOOM_LENS_SIZE_PX * 2} height={ZOOM_LENS_SIZE_PX * 2} /><span className="zoom-lens-label">{ZOOM_LENS_MAGNIFICATION}×</span></div>}
+      {showLens && <div className="zoom-lens" data-testid="zoom-lens" role="img" aria-label={`Zoomed preview at ${ZOOM_LENS_MAGNIFICATION}x magnification`} style={{ width: ZOOM_LENS_SIZE_PX, height: ZOOM_LENS_SIZE_PX }}><canvas ref={lensCanvasRef} width={ZOOM_LENS_SIZE_PX * 2} height={ZOOM_LENS_SIZE_PX * 2} /><span className="zoom-lens-label">{ZOOM_LENS_MAGNIFICATION}×</span></div>}
       {(activePoints.length > 0 || hoverPoints.length > 0 || previewGeometry !== null) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}{previewGeometry && <g className="retouch-preview-group" data-testid="removal-preview">{previewGeometry.kind === 'rect' ? <rect x={previewGeometry.x} y={previewGeometry.y} width={previewGeometry.width} height={previewGeometry.height} rx={3} /> : <circle cx={previewGeometry.cx} cy={previewGeometry.cy} r={previewGeometry.r} />}</g>}</svg>}
     </div></div>
     </div>

@@ -122,7 +122,8 @@ export default function App() {
   const [compare, setCompare] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [zoom, setZoom] = useState(1);
-  // View-menu "Zoom in View" toggle: a 16x loupe follows the cursor in photo
+  // View-menu "Zoom in View" toggle (shortcut Z): a fixed 8x square in the
+  // photo's bottom-right corner shows the region under the cursor in photo
   // view only (PhotoCanvas receives it gated on the editor view, so toggling
   // off — or leaving the photo — restores the normal view). A persistent
   // mode like Compare, not per-photo state: switching photos keeps it.
@@ -1026,7 +1027,7 @@ export default function App() {
       }
       if (key === 'a' && event.shiftKey) { event.preventDefault(); actionRef.current('enhance-scene'); return; }
       if (key === 'e' && event.shiftKey) { event.preventDefault(); actionRef.current('enhance-faces'); return; }
-      const actions: Record<string, MenuAction> = { a: 'enhance', f: 'favorite', b: 'compare', g: 'grid', r: 'rotate' };
+      const actions: Record<string, MenuAction> = { a: 'enhance', f: 'favorite', b: 'compare', g: 'grid', r: 'rotate', z: 'zoom-lens' };
       const tools: Record<string, Tool> = { v: 'adjust', c: 'crop', j: 'repair' };
       if (actions[key]) actionRef.current(actions[key]);
       if (tools[key]) toolRef.current(tools[key]);
