@@ -842,7 +842,7 @@ function RetouchGroups({ edit, highlightStroke, onHighlightStroke, onChange }: {
  * The interactive RGB tone-curve graph. The drawn line is the real render
  * mapping (anchor spline over the Midtones bend); the dots are the recipe's
  * anchors: press on the line to drop a new one and keep dragging it in the
- * same gesture, drag a dot to reshape, Delete (or right-click) removes the
+ * same gesture, drag a dot to reshape, Delete (or double-click) removes the
  * focused dot. The header toggle clears dots and Midtones together, so the
  * Midtones slider carries no double-click reset of its own.
  */
@@ -875,7 +875,7 @@ export function ToneCurveEditor({ points, midtone, onChange }: { points: CurvePo
   };
   // The tooltip lives on the wrapper div: TooltipHost only reads HTML
   // elements, so svg/circle nodes could never trigger it themselves.
-  return <div className="curve-graph" data-tooltip="Click the line to add a point — drag points to reshape, right-click one to remove"><span>RGB</span><svg ref={svgRef} viewBox={`0 0 ${TONE_CURVE_WIDTH} ${TONE_CURVE_HEIGHT}`} role="group" aria-label="Tone curve graph. Click the line to add a point, drag points to reshape, Delete removes the focused point." onPointerDown={(event) => {
+  return <div className="curve-graph" data-tooltip="Click the line to add a point — drag points to reshape, double-click one to remove"><span>RGB</span><svg ref={svgRef} viewBox={`0 0 ${TONE_CURVE_WIDTH} ${TONE_CURVE_HEIGHT}`} role="group" aria-label="Tone curve graph. Click the line to add a point, drag points to reshape, double-click or Delete removes the focused point." onPointerDown={(event) => {
     const at = toCurve(event.clientX, event.clientY);
     if (!at) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -907,7 +907,7 @@ export function ToneCurveEditor({ points, midtone, onChange }: { points: CurvePo
     if (!delta) return;
     event.preventDefault(); event.stopPropagation();
     onChange({ curvePoints: moveCurvePoint(anchors, index, anchor.x + (delta[0] ?? 0), anchor.y + (delta[1] ?? 0)) }, 'curve-points');
-  }} onContextMenu={(event) => { event.preventDefault(); onChange({ curvePoints: removeCurvePoint(anchors, index) }); }} />)}</svg></div>;
+  }} onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); dragIndex.current = null; onChange({ curvePoints: removeCurvePoint(anchors, index) }); }} onContextMenu={(event) => { event.preventDefault(); }} />)}</svg></div>;
 }
 
 interface InspectorProps {

@@ -114,7 +114,7 @@ describe('Curves toggle and points', () => {
     const graph = renderGraph({ ...DEFAULT_EDIT });
     expect(graph).not.toContain('curve-point');
     expect(graph).toContain('Tone curve graph. Click the line to add a point');
-    expect(graph).toContain('data-tooltip="Click the line to add a point — drag points to reshape, right-click one to remove"');
+    expect(graph).toContain('data-tooltip="Click the line to add a point — drag points to reshape, double-click one to remove"');
     // Default line is the pinned diagonal (see toneCurveDisplayPath tests
     // for the bend/anchor shapes; here only the shell is pinned).
     expect(graph).toContain('M0 160');
@@ -165,6 +165,18 @@ describe('Curves toggle and points', () => {
     const inspector = source('Inspector.tsx');
     expect(inspector).toContain('onToggle: () => onChange({ curve: 0, curvePoints: [] })');
     expect(inspector).toContain('const curvesDirty = edit.curve !== 0 || edit.curvePoints.length !== 0;');
+  });
+
+  it('removes dots on double-click, not right-click', () => {
+    // Static markup cannot observe the dot gestures, so pin the wiring at
+    // the source (the detailsReset.test.tsx precedent): double-click calls
+    // the removeCurvePoint reducer and clears the in-flight drag index so a
+    // pointer that keeps moving after the removal cannot grab a neighbor.
+    // Right-click only suppresses the browser menu now — it never removed
+    // reliably (the menu opened instead), which is why the gesture moved.
+    const inspector = source('Inspector.tsx');
+    expect(inspector).toContain('onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); dragIndex.current = null; onChange({ curvePoints: removeCurvePoint(anchors, index) }); }}');
+    expect(inspector).not.toContain('onContextMenu={(event) => { event.preventDefault(); onChange({ curvePoints: removeCurvePoint');
   });
 
   it('styles the dots as grabbable points on the line', () => {
