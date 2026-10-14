@@ -198,9 +198,12 @@ describe('face enhance control', () => {
     expect(html).toContain('data-testid="face-enhance-redetect"');
     expect(html).toContain('data-testid="face-enhance-clear"');
     expect(html).toContain('Remove the recorded no-face scan');
-    // Stored info highlights the header ML button, like a stored adjust.
-    expect(html).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
-    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset enhance faces"');
+    // No change was applied, so the header stays quiet: no ML highlight,
+    // no section reset — the button is back to offering a fresh scan.
+    expect(html).toContain('class="ml-button" data-testid="face-enhance-ml"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('data-tooltip="Automatically adjust enhance faces with ML"');
+    expect(html).not.toContain('aria-label="Reset enhance faces"');
   });
 
   it('labels a recorded classical no-face scan without the ML tag', () => {

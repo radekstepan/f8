@@ -152,7 +152,7 @@ export interface FaceEnhanceAssist {
   note: string | null;
   /** Human-readable error; set only when state is error. */
   message: string | null;
-  /** Stored face adjust from the recipe; shown with a toggle + Clear while idle (faces is 0 for a recorded no-face scan, shown without the toggle). */
+  /** Stored face adjust from the recipe; shown with a toggle + Clear while idle (faces is 0 for a recorded no-face scan, shown without the toggle — and without the header ML highlight or reset, since nothing changed). */
   applied: { faces: number; source: FaceDetectSource; enabled: boolean; liftAmount: number; redEyeCount: number } | null;
   onDetect: () => void;
   /** Apply WB + masked lift + red-eye fixes as one undo step. */
@@ -1015,6 +1015,11 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   const classicRevert = enhanceMode === 'classic' && enhanceSnapshot;
   const sceneActive = enhanceMode === 'scene' && enhancePure;
   const sceneRevert = enhanceMode === 'scene' && enhanceSnapshot;
+  // A recorded no-face scan (faces 0) is information, not an applied
+  // change: it keeps its content row with Rescan/Clear, but the header ML
+  // highlight and the section reset light only when faces were found and
+  // the enhancement was actually applied.
+  const faceChanged = Boolean(faceAssist?.applied && faceAssist.applied.faces > 0);
   // The Color Adjustments header carries the classic enhance as an Auto
   // pill (same toggle contract + tooltips the retired standalone section
   // got from AdjustmentSection kind 'auto'), with the shared-snapshot
@@ -1040,7 +1045,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><Histogram data={histogram} photo={photo} />{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} ml={{ id: 'scene-enhance', applied: sceneActive, canRevert: sceneRevert, onToggle: onAutoScene, onRevert: onRevertEnhance }} onReset={sceneRevert ? onRevertEnhance : undefined} dirty={sceneRevert}><SceneEnhanceControl edit={edit} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} ml={{ id: 'face-enhance', applied: Boolean(faceAssist.applied), canRevert: Boolean(faceAssist.applied), onToggle: faceAssist.applied ? faceAssist.onClear : faceAssist.onDetect, onRevert: faceAssist.onClear }} onReset={faceAssist.applied ? faceAssist.onClear : undefined} dirty={Boolean(faceAssist.applied)}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} ml={{ id: 'selective-mask', applied: Boolean(selectiveAssist.applied), canRevert: Boolean(selectiveAssist.applied), onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect, onRevert: selectiveAssist.onClear }} onReset={selectiveAssist.applied ? selectiveAssist.onClear : undefined} dirty={Boolean(selectiveAssist.applied)}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <DenoiseSection assist={denoiseAssist} photo={photo} />}
+    <div className="inspector-scroll">{tool === 'adjust' ? <><Histogram data={histogram} photo={photo} />{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} ml={{ id: 'scene-enhance', applied: sceneActive, canRevert: sceneRevert, onToggle: onAutoScene, onRevert: onRevertEnhance }} onReset={sceneRevert ? onRevertEnhance : undefined} dirty={sceneRevert}><SceneEnhanceControl edit={edit} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} ml={{ id: 'face-enhance', applied: faceChanged, canRevert: faceChanged, onToggle: faceChanged ? faceAssist.onClear : faceAssist.onDetect, onRevert: faceAssist.onClear }} onReset={faceChanged ? faceAssist.onClear : undefined} dirty={faceChanged}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} ml={{ id: 'selective-mask', applied: Boolean(selectiveAssist.applied), canRevert: Boolean(selectiveAssist.applied), onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect, onRevert: selectiveAssist.onClear }} onReset={selectiveAssist.applied ? selectiveAssist.onClear : undefined} dirty={Boolean(selectiveAssist.applied)}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <DenoiseSection assist={denoiseAssist} photo={photo} />}
       <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} ml={{ id: 'white-balance', kind: 'auto', applied: Boolean(mlApplied?.whiteBalance), canRevert: Boolean(mlRevert?.whiteBalance), onToggle: onAutoWhiteBalance, onRevert: onRevertWhiteBalance }} onReset={() => onChange({ temperature: 5500, tint: 0 })} dirty={edit.temperature !== 5500 || edit.tint !== 0}>
         {rangeEnabled('whiteBalanceEnabled', 'temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false })}
         {rangeEnabled('whiteBalanceEnabled', 'tint', 'Tint', { color: 'tint' })}
