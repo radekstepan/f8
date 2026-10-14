@@ -243,12 +243,15 @@ its chevron glyph off the toggle edge. */
 .preset-thumbnail { height: 55px; display: block; position: relative; padding: 2px; border: 1.5px solid transparent; border-radius: 4px; transition: transform 160ms ease, border-color 160ms ease; }
 .preset-thumbnail > img { width: 100%; height: 100%; object-fit: cover; border-radius: 2px; }
 .presets-list.is-portrait .preset-thumbnail > img { object-fit: contain; }
-/* Portrait photos letterbox a narrow thumb inside the landscape box, so the
-   item shrinks to the portrait width (same 43px as the filmstrip's
-   .is-portrait items): just the preview plus the truncated name below.
+/* Portrait photos letterbox a narrow thumb, but the name below still needs
+   room: the item stays at the 72px name width (fits "Teal & Orange", the
+   longest built-in, with headroom) while only the thumbnail shrinks to
+   the 43px portrait width, centered — the tight preview of the filmstrip's
+   .is-portrait items without truncating "Golden Hour" / "Soft Light".
    The 3-class specificity beats the responsive .preset-item flex overrides,
-   so portrait stays narrow at every breakpoint. */
-.presets-list.is-portrait .preset-item { flex: 0 0 43px; max-width: 43px; }
+   so portrait sizing holds at every breakpoint. */
+.presets-list.is-portrait .preset-item { flex: 0 0 72px; max-width: 72px; }
+.presets-list.is-portrait .preset-thumbnail { width: 43px; margin-inline: auto; }
 .preset-item > span:last-child { display: block; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .preset-item:hover .preset-thumbnail { transform: translateY(-2px); border-color: #66616b; }
 .preset-item.is-selected .preset-thumbnail { border-color: #e1c183; }

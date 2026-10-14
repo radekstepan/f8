@@ -4,16 +4,15 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { Photo, Preset } from '@f8/core';
+import { PRESETS } from '@f8/core';
 import { PresetStrip } from './PhotoStrips.js';
 
-// Portrait preset box width: every preset thumb shows the same photo, so on
-// a portrait photo the strip flips to .is-portrait — but the rule only
-// switched the image to object-fit: contain while keeping the landscape
-// item width (flex-basis 66px, growing to 118px). The narrow portrait
-// preview letterboxed inside the wide box, reading as ~3x too wide. The
-// fix shrinks the item to the 43px portrait width (the filmstrip's
-// .is-portrait precedent): just the preview plus the name below.
-// Rendered on the server (no jsdom): pins markup + stylesheet, not pixels.
+// Portrait preset names must show in full: an earlier fix shrank the whole
+// portrait item to the 43px filmstrip width, which truncated "Golden Hour",
+// "Soft Light" (and any other long name) to ellipsis. The item is now back
+// at a 72px name width while only the thumbnail keeps the narrow 43px
+// portrait preview, centered. Rendered on the server (no jsdom): pins
+// markup + stylesheet, not pixels.
 
 const noop = () => {};
 
@@ -45,6 +44,7 @@ function makePresets(): Preset[] {
   return [
     { id: 'original', name: 'Original', category: 'Essentials', values: {} },
     { id: 'golden', name: 'Golden Hour', category: 'Essentials', values: { exposure: 0.12 } },
+    { id: 'soft', name: 'Soft Light', category: 'Essentials', values: { exposure: 0.18 } },
   ];
 }
 
@@ -66,6 +66,25 @@ const pxValue = (rule: string, property: string): number | null => {
   return match ? Number(match[1]) : null;
 };
 
+// Conservative per-glyph advances at the 9px preset-label size —
+// deliberately above typical system-font metrics, so a passing fit
+// assertion carries real margin. No font engine in unit tests (and no
+// Playwright per task rules), so the stylesheet pin plus this overestimate
+// is the seam: it must fail for the old 43px box and pass for the new one.
+function estimateNameWidthPx(name: string): number {
+  let width = 0;
+  for (const ch of name) {
+    if (ch === ' ') width += 3;
+    else if (ch === '&') width += 6.5;
+    else if ('il.,\'!|:;'.includes(ch)) width += 3;
+    else if ('WM'.includes(ch)) width += 8;
+    else if (ch === ch.toUpperCase() && ch !== ch.toLowerCase()) width += 6.5;
+    else if ('mw'.includes(ch)) width += 6.5;
+    else width += 5;
+  }
+  return width;
+}
+
 describe('portrait preset box width', () => {
   it('marks the strip portrait only for portrait photos', () => {
     expect(renderStrip(true)).toContain('class="presets-list is-portrait"');
@@ -73,24 +92,36 @@ describe('portrait preset box width', () => {
     expect(renderStrip(false)).not.toContain('is-portrait');
   });
 
-  it('shrinks portrait items to a fixed narrow width', () => {
+  it('keeps the portrait item at the full name width', () => {
     const rule = cssRule('.presets-list.is-portrait .preset-item');
     expect(rule).not.toBe('');
-    // Fixed flex-basis (no grow) at the filmstrip portrait width.
-    expect(rule).toMatch(/flex\s*:\s*0\s+0\s+43px/);
-    expect(rule).toMatch(/max-width\s*:\s*43px/);
+    // Fixed flex-basis (no grow) at the name width, not the thumbnail width.
+    expect(rule).toMatch(/flex\s*:\s*0\s+0\s+72px/);
+    expect(rule).toMatch(/max-width\s*:\s*72px/);
   });
 
-  it('keeps the portrait width well under the landscape width', () => {
+  it('keeps the portrait thumbnail narrow and centered', () => {
+    const rule = cssRule('.presets-list.is-portrait .preset-thumbnail');
+    expect(rule).not.toBe('');
+    expect(rule).toMatch(/width\s*:\s*43px/);
+    expect(rule).toMatch(/margin-inline\s*:\s*auto/);
+  });
+
+  it('fits every built-in preset name in the portrait box', () => {
     const portrait = pxValue(cssRule('.presets-list.is-portrait .preset-item'), 'flex');
-    const landscapeBasis = pxValue(cssRule('.preset-item'), 'flex');
-    const landscapeMax = pxValue(cssRule('.preset-item'), 'max-width');
     expect(portrait).not.toBeNull();
-    expect(landscapeBasis).not.toBeNull();
-    expect(landscapeMax).not.toBeNull();
-    // ~1/3 of the grown landscape box, and under its starting basis.
-    expect(portrait! / landscapeMax!).toBeLessThan(0.5);
-    expect(portrait!).toBeLessThan(landscapeBasis!);
+    for (const preset of PRESETS) {
+      // +8px on top of advances that already run ~13% over real 9px
+      // system-font metrics, so the true margin is roughly twice that.
+      expect(
+        estimateNameWidthPx(preset.name) + 8,
+        `"${preset.name}" fits in the portrait box with headroom`,
+      ).toBeLessThanOrEqual(portrait!);
+    }
+    // The longest built-in exceeds the old 43px item: this fit check would
+    // have caught the truncation it replaces.
+    const longest = Math.max(...PRESETS.map((preset) => estimateNameWidthPx(preset.name)));
+    expect(longest).toBeGreaterThan(43);
   });
 
   it('leaves the landscape item sizing untouched', () => {
@@ -99,15 +130,36 @@ describe('portrait preset box width', () => {
     expect(rule).toMatch(/max-width\s*:\s*118px/);
   });
 
+  it('fits every built-in name at the tightest landscape width too', () => {
+    // The ≤1180px breakpoint drops the landscape basis to 64px (items still
+    // grow from there); even there the longest name fits without ellipsis.
+    const cssPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/web/src/index.css');
+    const css = readFileSync(cssPath, 'utf8');
+    const block = css.match(/@media\s*\(max-width:\s*1180px\)\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const basis = block.match(/\.preset-item\s*\{\s*flex-basis:\s*(\d+(?:\.\d+)?)px/)?.[1];
+    expect(basis).toBe('64');
+    const longest = Math.max(...PRESETS.map((preset) => estimateNameWidthPx(preset.name)));
+    expect(longest).toBeLessThanOrEqual(Number(basis));
+  });
+
   it('still letterboxes (never crops) the portrait preview', () => {
     expect(cssRule('.presets-list.is-portrait .preset-thumbnail > img')).toMatch(/object-fit\s*:\s*contain/);
   });
 
   it('still renders every preset name with its full-name tooltip', () => {
-    const html = renderStrip(true);
-    expect(html).toContain('>Original</span>');
-    expect(html).toContain('>Golden Hour</span>');
-    // Long names truncate in the narrow box; the tooltip keeps the full name.
-    expect(html).toContain('Apply Golden Hour');
+    for (const portrait of [true, false]) {
+      const html = renderStrip(portrait);
+      expect(html).toContain('>Original</span>');
+      expect(html).toContain('>Golden Hour</span>');
+      expect(html).toContain('>Soft Light</span>');
+      expect(html).toContain('Apply Golden Hour');
+      expect(html).toContain('Apply Soft Light');
+    }
+  });
+
+  it('keeps ellipsis as the fallback for extra-long custom names', () => {
+    // User-saved preset names are unbounded, so the label rule keeps its
+    // truncation fallback; the tooltip still carries the full custom name.
+    expect(cssRule('.preset-item > span:last-child')).toMatch(/text-overflow\s*:\s*ellipsis/);
   });
 });
