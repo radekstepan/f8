@@ -15,7 +15,7 @@
  */
 
 import { DEFAULT_EDIT, patchBreaksEnhancePure } from "./data.js";
-import { ML_CATEGORIES, touchedMlCategories } from "./mlCategories.js";
+import { ML_CATEGORIES, snapshotMlCategory, touchedMlCategories } from "./mlCategories.js";
 import type { MlCategory } from "./mlCategories.js";
 import type { EditState } from "./types.js";
 
@@ -83,6 +83,28 @@ export function clearEnhanceAction(stack: ActionStack): ActionStack {
 /** Drop the per-category auto entries (enhance applies, resets, presets). */
 export function clearCategoryActions(stack: ActionStack): ActionStack {
   return stack.some((entry) => entry.kind !== "enhance") ? stack.filter((entry) => entry.kind === "enhance") : stack;
+}
+
+/**
+ * Whole-photo enhance stack transition: drop stale per-category entries
+ * (the enhance overwrites their values, so those snapshots predate the
+ * enhance), then push the enhance entry plus one pure per-category entry
+ * for every auto the enhance turns on — white balance, lightness, and
+ * color, which both the classic and the scene patch write. All four
+ * entries snapshot the same pre-enhance recipe, so each section highlights
+ * its Auto and offers its own revert back to the pre-enhance values while
+ * the whole-photo revert still restores the full look. Re-applying an
+ * enhance mode refreshes its entry in place (earliest snapshot wins, via
+ * pushAction); the category entries always snapshot the latest enhance, so
+ * a per-section revert undoes the latest enhance only.
+ */
+export function pushEnhanceAction(stack: ActionStack, mode: EnhanceMode, edit: EditState, appliedAt: string): ActionStack {
+  let next = clearCategoryActions(stack);
+  next = pushAction(next, { kind: "enhance", mode, pure: true, snapshot: snapshotForEnhance(edit), appliedAt });
+  for (const category of ML_CATEGORIES) {
+    next = pushAction(next, { kind: category, pure: true, snapshot: snapshotMlCategory(edit, category), appliedAt });
+  }
+  return next;
 }
 
 /**
