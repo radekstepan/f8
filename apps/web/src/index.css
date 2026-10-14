@@ -266,7 +266,7 @@ its chevron glyph off the toggle edge. */
 .preset-check { position: absolute; bottom: 5px; right: 5px; width: 13px; height: 13px; border-radius: 50%; color: #342f23; background: #e8cd91; display: grid; place-items: center; border: 1px solid #29231933; }
 .filmstrip { min-height: 112px; flex-shrink: 0; display: flex; flex-direction: column; border-top: 1px solid #36363c; background: #1c1c1f; padding: 0 18px 7px; overflow: hidden; }
 .filmstrip-heading { display: flex; align-items: center; justify-content: space-between; height: 32px; flex-shrink: 0; }
-.filmstrip-heading > div:first-child { display: flex; align-items: center; gap: 11px; }
+.filmstrip-heading > div:first-child { display: flex; align-items: baseline; gap: 11px; }
 .filmstrip-heading h2 { font-size: 9px; font-weight: 500; color: #b1b1bc; }
 .filmstrip-heading > div:first-child > span { color: #747480; font-size: 8.5px; }
 .filmstrip-actions { display: flex; align-items: center; gap: 4px; }
