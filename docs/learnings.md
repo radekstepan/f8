@@ -1,6 +1,6 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across twelve
+Distilled from per-task writeups and subagent learnings across thirteen
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, menus, zoom, or library UI so we don't repeat the
 same mistakes.
@@ -35,6 +35,8 @@ same mistakes.
   `docs/tasks/22-*.md`–`31-*.md`.
 - **R12** = twelfth run, 2026-10-14 (11 tasks). Writeups continue
   the running log in `docs/tasks/32-*.md`–`42-*.md`.
+- **R13** = thirteenth run, 2026-10-14 (6 tasks). Writeups continue
+  the running log in `docs/tasks/43-*.md`–`48-*.md`.
 
 ## 1. Honest labels and naming
 
@@ -372,6 +374,16 @@ same mistakes.
   Generate disables on empty albums; the grid header's copy
   never disables (a filtered-empty grid is not an empty
   album) — same items, honestly different gates. (R12-9)
+- **A mode that unmounts the toolbar ships its own exit.**
+  Focus mode hides MenuBar/Toolbar/Sidebar/Inspector/
+  PresetStrip/status, so a floating `.focus-exit` button
+  (shared `IconButton`, `Minimize2` glyph, `Exit focus mode
+  (Shift F)` label) parks fixed top-right at z-index 90 —
+  above canvas chrome, below dialogs (100) and toasts
+  (150), half-opacity until hover/keyboard focus. Esc
+  leaves the mode before compare/tool/album exits; Shift F
+  toggles, and `grid` (G) plus browser Back/forward leave
+  it too. (R13-5)
 
 ## 3. Spacing, layout, and motion
 
@@ -583,6 +595,23 @@ same mistakes.
   hiding the 5th menu at ≤460px was removed outright —
   re-pointing it would have stranded About + Shortcuts with
   no alternative route. (R12-6; cf. R2-9)
+- **Mixed-size inline text aligns on `baseline`, never
+  `center`.** The filmstrip name (9px) + count (8.5px)
+  centered their unequal boxes, lifting the smaller
+  count's baseline — the reported "count shows higher".
+  Equalizing sizes would erase the intended quieter
+  count; `line-height` hacks only narrow the gap.
+  `baseline` holds for any future size tweak. (R13-4)
+- **A third identical complaint means remove, not soften
+  again** (qualifies the R12-1 "soften, don't remove"
+  rule). Two softening passes both kept the 1px keyline
+  and both were followed by the same "rigid border +
+  oval" report: only an unblurred ring can draw a hard
+  edge, and negative spread shrinks the source rect so
+  blur dominates into a detached halo. The frame now
+  carries a plain two-layer drop shadow (contact + short
+  downward falloff); dark edges melting slightly into
+  the stage is the accepted trade. (R13-2)
 
 ## 4. Navigation and state
 
@@ -948,6 +977,49 @@ same mistakes.
   gesture (dot pointerdown stops propagation), and a
   `preventDefault`-only `onContextMenu` stays for habitual
   right-clicks. (R12-3)
+- **Pointer capture retargets follow-up mouse events to the
+  capture element.** While the tone-curve dot holds capture
+  on the svg, `dblclick`/`contextmenu` never reach the dot
+  — which is why both the original right-click removal and
+  the R12-3 double-click removal silently never fired.
+  Removal now runs at `pointerdown` (always hits the dot
+  before capture exists) and returns before
+  `setPointerCapture`, so `contextmenu` targeting stays
+  natural and dual-level `preventDefault` suppression
+  lands. `onDoubleClick` stays only as an unadvertised
+  fallback. (R13-3; supersedes the R12-3 gesture)
+- **Right press on empty graph is a no-op, never an
+  add.** Any-button add-on-press turned a missed
+  right-click into a duplicate point plus a menu; the
+  `button === 2` branch now returns without adding (the
+  `PhotoCanvas` minimap `event.button !== 0` precedent),
+  and svg near-misses within the 12-unit grab radius
+  remove via `hitAnchor`. (R13-3)
+- **Gate view modes at render time instead of flipping
+  prefs.** The old focus toggle set
+  `sidebarOpen`/`inspectorOpen` false, clobbering the
+  user's layout; hiding panels behind `!focusMode` mounts
+  restores the exact previous layout on exit for free,
+  including presets and filmstrip prefs. (R13-5)
+- **Force the mode's view through a predicate, not just
+  entry state.** Entering focus mode sets the editor
+  view, but state can still name the grid mid-mode
+  (popstate, `/` search parking) —
+  `resolveFocusView`/`isFilmstripVisible` pure core
+  predicates (the `isInspectorVisible`/
+  `shouldShowPhotoTools` seam) keep a photo-less grid
+  from ever rendering under the mode. (R13-5)
+- **Variety without losing the ranking means random
+  within the top tier.** Generate-thumbnail picks
+  uniformly inside the tier sharing the head's favorite
+  flag + rating (filename orders the tier so injected
+  randoms map stably); lower tiers are never picked while
+  the top tier is non-empty. Excluding the current cover
+  — stateless, the caller already knows it — beats
+  cycling by stored index, falling through to the next
+  tier when the cover was the whole top tier and to the
+  lone photo when every candidate shares one URL.
+  (R13-6)
 
 ## 5. Testing practices (repo-specific)
 
@@ -1221,6 +1293,37 @@ same mistakes.
   `initialOpenMenu`/`initialAlbumMenu` mirror
   `initialDropTarget`/`initialContextMenu` — the next
   reader finds the pattern, not a one-off. (R12-9)
+- **`expect.poll` does not retry a throwing callback**
+  (verified in Playwright 1.64.0 `invokePollMatcher`:
+  only matcher failures retry) — one tick with
+  `window.__f8Test` unreachable (HMR reload window; the
+  app never deletes the hook) failed the spec with an
+  immediate `TypeError`, not a timeout. Every `__f8Test`
+  poll now reads null-safely and treats missing-hook as
+  "not yet" via pure core classifiers
+  (`healWaitStarted`/`healWaitSettled`, 12-case truth
+  table), while one-shot assertion reads stay strict so
+  a dead page fails loudly instead of passing
+  vacuously. (R13-1)
+- **Injectable randomness keeps randomized picks
+  deterministic under test.** `pickAlbumCover` takes
+  `random: () => number` (default `Math.random`, clamped
+  so out-of-range sources still land in the tier);
+  `random: () => 0` without exclude reproduces the legacy
+  winner — keep the legacy outcome reachable as one
+  injected input so the change stays reviewable as "same
+  ranking, randomized selection". (R13-6)
+- **Pin event-handler ordering at source level.** The
+  curves removal-before-capture order is pinned in the
+  source-pin test so a future refactor cannot silently
+  re-capture first and re-break both gestures — ordering
+  assertions belong with the wiring pins. (R13-3)
+- **Shadow guards assert shape absence, not just pinned
+  values.** Beyond the exact layers, the suite rejects
+  any `#ffffff` layer and any negative spread, so a
+  future "richer shadow" cannot silently reintroduce the
+  rigid ring or the oval halo; the banding guard
+  tightened (max blur 24→18px). (R13-2; extends R12-1)
 
 ## 6. Tooling gotchas
 
@@ -1248,7 +1351,9 @@ same mistakes.
   commit `dist/`.
   (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6,
   R4-4, R4-5, R4-6, R4-7, R4-8, R5-1, R6-6, R7-4, R8-2, R8-3,
-  R9-1, R9-2, R9-3, R10-1, R10-2, R10-3, R12)
+  R9-1, R9-2, R9-3, R10-1, R10-2, R10-3, R12, R13-1, R13-5,
+  R13-6 — and e2e resolves core from `dist` too, so a core
+  build is needed before the next e2e run sees new exports)
 - **Commit by explicit paths, never `git add -A`.** Stray files
   (e.g. `.DS_Store` under `docs/`) get swept in otherwise. (R1)
 - **No CI, no configured linter** — both packages' `lint` scripts
@@ -1273,6 +1378,14 @@ same mistakes.
   `patch`.** The Curves editor and the toggle conversion
   shipped minor; the writeup and label audits shipped patch.
   (R11-5, R11-6, R11-9, R11-11)
+- **`apps/web/tsconfig.json` does not include `tests/`** —
+  e2e edits need an ad-hoc strict `tsc --noEmit`
+  (mirroring `tsconfig.base.json`: strict +
+  `noUncheckedIndexedAccess` +
+  `noUnusedLocals/Parameters`) over the changed
+  spec/helper files, plus a scratch check of constructed
+  `evaluate` strings against present/missing hook
+  states. (R13-1)
 
 ## 7. Scope and ambiguity discipline
 
@@ -1514,6 +1627,35 @@ same mistakes.
   fix needed no doc change — no behavior or architecture
   shift, per the R11-5 one-question-per-file rule.
   (R12-4–R12-8, R12-11)
+- **When the task names a primary and a fallback and
+  browser behavior can't be verified, ship both on one
+  branch.** Right-click and Shift-click removal share one
+  pointerdown condition (one `shiftKey` check plus test
+  pins), guaranteeing a working gesture either way with
+  no Playwright to decide between them. (R13-3)
+- **Read the complaint's own clarification to pick the
+  fix.** "Not horizontally centered — the count shows
+  higher" points at the relative vertical offset (fixed
+  with `baseline`), not bar-centering the title group,
+  which would collide with the right-side Presets/sort
+  actions. (R13-4)
+- **Unreachable exit paths are dead code.** Focus mode's
+  `back` case keeps its exact statement (dispatched only
+  from the unmounted backlink; `photoBacklink.test.tsx`
+  pins it) while `grid` gains an exit because the G
+  shortcut stays reachable in the mode — verify
+  reachability before adding, per the R2-8 rule.
+  (R13-5)
+- **Answer both halves of a "randomize but keep order"
+  ask.** The thumbnail task's "still should have an
+  order" became the exported `rankAlbumCoverCandidates`
+  ranking the random tier is drawn from — the order is
+  now explicit API, not just an internal sort. (R13-6)
+- **Same shape, different hazard class stays out of
+  scope.** Server-API polls share the throw-doesn't-
+  retry shape but fail for API reasons, not a missing
+  test hook — left alone and recorded, not swept into
+  the hook-tolerance fix. (R13-1)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -1668,3 +1810,14 @@ same mistakes.
 | 9 | `a5610e8` | `40-album-thumbnail.md` | Album (...) menus gain Generate/Remove thumbnail |
 | 10 | `063a0e6` | `41-album-sidebar-sort.md` | Sidebar albums sort covered-first, then by name |
 | 11 | `55f3f4b` | `42-undo-denoise-immediate.md` | Undo of Denoise clears the recipe via sync-once-per-base |
+
+## Per-task index, R13 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `b282d2c` | `43-playwright-heal-brush.md` | Heal e2e waits tolerate a transiently missing test hook |
+| 2 | `24afa04` | `44-canvas-shadow.md` | Canvas shadow becomes a plain two-layer drop (keyline + halo removed) |
+| 3 | `e80487d` | `45-curve-point-remove.md` | Curves points remove on Shift-click/right-click at pointerdown |
+| 4 | `7daaea8` | `46-filmstrip-heading-centering.md` | Filmstrip name + count share one baseline |
+| 5 | `2b81dfe` | `47-focus-mode.md` | Focus mode keeps only the photo and the filmstrip |
+| 6 | `dd1ea05` | `48-album-thumbnail-random.md` | Generate thumbnail randomizes within the most interesting tier |
