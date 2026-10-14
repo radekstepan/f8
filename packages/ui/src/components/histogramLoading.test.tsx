@@ -10,10 +10,11 @@ import type { DenoiseAssist, FaceEnhanceAssist, SelectiveMaskAssist } from './In
 import type { HistogramData } from './PhotoCanvas.js';
 
 // Histogram loading: before the canvas computes the distribution the panel
-// used to render flat zero-lines that popped into shape. Now a null
-// histogram renders an animated skeleton wave, and the real curves bloom in
-// when the data lands. Rendered on the server (no jsdom): pins the markup
-// switch, with the animation pinned from the stylesheet (the
+// starts flat — the svg shell (grid + zero baseline + axis) renders with no
+// curve paths at all, so there is no skeleton-bar placeholder morphing into
+// curves. When the data lands the curves mount inside .histogram-live and
+// rise from the zero baseline. Rendered on the server (no jsdom): pins the
+// markup switch, with the animation pinned from the stylesheet (the
 // photoBacklink.test.tsx precedent).
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -122,21 +123,25 @@ function histogramSection(html: string): string {
 }
 
 describe('histogram loading', () => {
-  it('renders an animated skeleton wave while the data is missing', () => {
+  it('starts flat: grid shell with no curve paths while the data is missing', () => {
     const section = histogramSection(renderAdjust(null));
     expect(section).toContain('histogram-section is-loading');
-    expect(section).toContain('histogram-skeleton');
-    expect(section).toMatch(/role="status"/);
-    expect(section).toContain('Loading histogram');
-    // A full bar field with staggered delays (the travelling wave), not a
-    // single pulsing block.
-    const bars = section.match(/<span style="height:[^"]*animation-delay:[^"]*"><\/span>/g) ?? [];
-    expect(bars.length).toBe(28);
-    expect(new Set(bars).size).toBeGreaterThan(8);
-    // No flat zero-lines and no curves behind the skeleton.
-    expect(section).not.toContain('<svg');
-    expect(section).not.toContain('histogram-curves');
-    expect(section).not.toContain('color distribution');
+    expect(section).toContain('aria-busy="true"');
+    // The svg shell renders immediately (same slot as the live curves, so no
+    // layout jump), labelled as loading.
+    expect(section).toContain('<svg class="histogram-curves"');
+    expect(section).toContain('Loading color distribution');
+    expect(section).toContain('histogram-grid');
+    // Flat means flat: no live group, no colored areas (fill-opacity only
+    // exists on curve paths; grid + markers carry none), and no skeleton
+    // bars left behind.
+    expect(section).not.toContain('histogram-live');
+    expect(section).not.toContain('fill-opacity');
+    expect(section).not.toContain('mix-blend-mode');
+    expect(section).not.toContain('histogram-skeleton');
+    expect(section).not.toContain('RGB color distribution');
+    // Only the 6 grid lines + 2 range markers — no curve geometry.
+    expect(section.match(/<path/g)?.length ?? 0).toBe(8);
   });
 
   it('keeps the heading, axis, and camera settings visible while loading', () => {
@@ -146,31 +151,51 @@ describe('histogram loading', () => {
     expect(section).toContain('ISO 100');
   });
 
-  it('swaps the skeleton for blooming curves once the data lands', () => {
+  it('mounts the curves inside the rising group once the data lands', () => {
     const section = histogramSection(renderAdjust(makeHistogram()));
     expect(section).not.toContain('is-loading');
+    expect(section).not.toContain('aria-busy');
     expect(section).not.toContain('histogram-skeleton');
-    expect(section).not.toContain('Loading histogram');
-    expect(section).toContain('histogram-curves');
+    expect(section).not.toContain('Loading color distribution');
+    expect(section).toContain('<svg class="histogram-curves"');
     expect(section).toContain('RGB color distribution');
+    expect(section).toContain('<g class="histogram-live">');
+    // All three channel areas, each with the translucent screen-blended fill.
+    for (const color of ['#df7a72', '#93b67b', '#779db9']) {
+      expect(section).toContain(`fill="${color}"`);
+    }
+    expect(section.match(/fill-opacity="\.55"/g)?.length ?? 0).toBe(3);
   });
 
-  it('animates the wave bars and the curve entrance, frozen under reduced motion', () => {
-    const skeleton = cssRule('.histogram-skeleton');
-    expect(skeleton).toMatch(/display:\s*flex/);
-    expect(skeleton).toMatch(/align-items:\s*flex-end/);
-    // The skeleton occupies the curves' exact slot (no layout jump on swap).
-    expect(skeleton).toMatch(/height:\s*68px/);
-    const bars = cssRule('.histogram-skeleton > span');
-    expect(bars).toMatch(/histogram-wave/);
-    expect(bars).toMatch(/transform-origin/);
-    expect(css()).toContain('@keyframes histogram-wave');
-    expect(css()).toMatch(/@keyframes histogram-wave \{[^@]*opacity[^@]*scaleY/);
-    const curves = cssRule('.histogram-curves');
-    expect(curves).toMatch(/histogram-bloom/);
-    expect(curves).toMatch(/transform-origin/);
+  it('adds only the live curve group when the data lands, swapping no shell markup', () => {
+    const loading = histogramSection(renderAdjust(null));
+    const loaded = histogramSection(renderAdjust(makeHistogram()));
+    const stripLive = (markup: string) => markup.replace(/<g class="histogram-live">[\s\S]*?<\/g>/, '');
+    const normalize = (markup: string) => stripLive(markup)
+      .replace('histogram-section is-loading', 'histogram-section')
+      .replace(' aria-busy="true"', '')
+      .replace('Loading color distribution', 'CHANNEL')
+      .replace('RGB color distribution', 'CHANNEL');
+    expect(normalize(loaded)).toBe(normalize(loading));
+  });
+
+  it('rises the curves from the zero baseline, frozen under reduced motion', () => {
+    // No skeleton or wave remnants anywhere in the stylesheet.
+    expect(css()).not.toContain('histogram-skeleton');
+    expect(css()).not.toContain('histogram-wave');
+    // The entrance animation lives on the live curve group only: bottom
+    // origin so scaleY grows upward from the zero baseline, while the grid
+    // shell above it stays static (no animation on .histogram-curves).
+    const live = cssRule('.histogram-live');
+    expect(live).toMatch(/histogram-bloom/);
+    expect(live).toMatch(/transform-box:\s*fill-box/);
+    expect(live).toMatch(/transform-origin:\s*50% 100%/);
+    expect(cssRule('.histogram-curves')).not.toMatch(/animation/);
+    // Bloom starts fully collapsed at the baseline, not mid-height.
     expect(css()).toContain('@keyframes histogram-bloom');
-    expect(css()).toMatch(/prefers-reduced-motion[^{]*\{[\s\S]*?\.histogram-skeleton > span[\s\S]*?animation:\s*none/);
-    expect(css()).toMatch(/prefers-reduced-motion[^{]*\{[\s\S]*?\.histogram-curves[\s\S]*?animation:\s*none/);
+    expect(css()).toMatch(/@keyframes histogram-bloom \{ from \{ opacity: 0; transform: scaleY\(0\); \}/);
+    // The shell occupies the fixed curves slot in both states.
+    expect(cssRule('.histogram-graph > svg')).toMatch(/height:\s*68px/);
+    expect(css()).toMatch(/prefers-reduced-motion[^{]*\{[\s\S]*?\.histogram-live[\s\S]*?animation:\s*none/);
   });
 });

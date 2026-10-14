@@ -7,29 +7,23 @@ import { AdjustmentSection } from './AdjustmentSection.js';
 import { CheckField, IconButton, MenuItem, MenuSeparator, RangeControl, RevertButton, SegmentedControl, SelectField, Toggle } from './EditorUI.js';
 import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
 
-const HISTOGRAM_SKELETON_BARS = 28;
-
-/** Animated placeholder while the canvas has not computed the histogram yet. */
-function HistogramSkeleton() {
-  return <div className="histogram-skeleton" role="status" aria-label="Loading histogram">{Array.from({ length: HISTOGRAM_SKELETON_BARS }, (_, i) => {
-    // Deterministic bell of bar heights so the skeleton reads as a
-    // distribution at rest; the wave keyframes animate around it.
-    const height = 22 + 62 * Math.sin((i / (HISTOGRAM_SKELETON_BARS - 1)) * Math.PI);
-    return <span key={i} style={{ height: `${height.toFixed(1)}%`, animationDelay: `${(i * 55) % 880}ms` }} />;
-  })}</div>;
-}
-
 function Histogram({ data, photo }: { data: HistogramData | null; photo: Photo }) {
   const [channel, setChannel] = useState('RGB');
-  const defaultData: number[] = Array(64).fill(0);
   const channels = [
     { key: 'red' as const, color: '#df7a72', label: 'Red' },
     { key: 'green' as const, color: '#93b67b', label: 'Green' },
     { key: 'blue' as const, color: '#779db9', label: 'Blue' },
   ];
-  const max = Math.max(1, ...channels.flatMap(({ key }) => data?.[key] || defaultData));
+  const max = Math.max(1, ...channels.flatMap(({ key }) => data?.[key] ?? [0]));
   const path = (values: number[]) => `M0,78 ${values.map((value, i) => `L${(i / 63 * 264).toFixed(1)},${(78 - Math.sqrt(value / max) * 71).toFixed(1)}`).join(' ')} L264,78Z`;
-  return <section className={`histogram-section${data ? '' : ' is-loading'}`} aria-label="Live photo histogram"><div className="histogram-heading"><span>Histogram</span><select aria-label="Histogram color channel" value={channel} onChange={(event) => setChannel(event.target.value)}><option>RGB</option><option>Red</option><option>Green</option><option>Blue</option></select></div><div className="histogram-graph">{data ? <svg className="histogram-curves" viewBox="0 0 264 83" preserveAspectRatio="none" role="img" aria-label={`${channel} color distribution`}><g className="histogram-grid">{[66, 132, 198].map((x) => <path key={x} d={`M${x} 3V78`} />)}{[26, 52, 78].map((y) => <path key={y} d={`M0 ${y}H264`} />)}</g>{channels.filter(({ label }) => channel === 'RGB' || label === channel).map(({ key, color }) => <path key={key} d={path(data?.[key] || defaultData)} fill={color} fillOpacity=".55" stroke={color} strokeWidth=".7" style={{ mixBlendMode: 'screen' }} />)}<path d="M1 8L5 1L9 8Z" fill="#818185" /><path d="M255 8L259 1L263 8Z" fill="#818185" /></svg> : <HistogramSkeleton />}<div className="histogram-axis"><span>0</span><span>64</span><span>128</span><span>192</span><span>255</span></div></div><div className="camera-settings"><span>ISO {photo.iso}</span><span>{photo.focalLength}</span><span>{photo.aperture}</span><span>{photo.shutter}</span></div></section>;
+  const visible = channels.filter(({ label }) => channel === 'RGB' || label === channel);
+  // Flat start: the svg shell (grid + baseline + axis) always renders, with
+  // no curve paths until the canvas computes the distribution — the previous
+  // skeleton-bar placeholder read as a morph from bars into curves. When the
+  // data lands the curves mount inside .histogram-live, whose bloom
+  // keyframes rise them from the zero baseline; the grid stays static, and
+  // later data updates only change the d attributes without re-animating.
+  return <section className={`histogram-section${data ? '' : ' is-loading'}`} aria-label="Live photo histogram" aria-busy={data ? undefined : true}><div className="histogram-heading"><span>Histogram</span><select aria-label="Histogram color channel" value={channel} onChange={(event) => setChannel(event.target.value)}><option>RGB</option><option>Red</option><option>Green</option><option>Blue</option></select></div><div className="histogram-graph"><svg className="histogram-curves" viewBox="0 0 264 83" preserveAspectRatio="none" role="img" aria-label={data ? `${channel} color distribution` : 'Loading color distribution'}><g className="histogram-grid">{[66, 132, 198].map((x) => <path key={x} d={`M${x} 3V78`} />)}{[26, 52, 78].map((y) => <path key={y} d={`M0 ${y}H264`} />)}</g>{data ? <g className="histogram-live">{visible.map(({ key, color }) => <path key={key} d={path(data[key])} fill={color} fillOpacity=".55" stroke={color} strokeWidth=".7" style={{ mixBlendMode: 'screen' }} />)}</g> : null}<path d="M1 8L5 1L9 8Z" fill="#818185" /><path d="M255 8L259 1L263 8Z" fill="#818185" /></svg><div className="histogram-axis"><span>0</span><span>64</span><span>128</span><span>192</span><span>255</span></div></div><div className="camera-settings"><span>ISO {photo.iso}</span><span>{photo.focalLength}</span><span>{photo.aperture}</span><span>{photo.shutter}</span></div></section>;
 }
 
 export type StraightenAssistState = 'idle' | 'loading' | 'detecting' | 'ready' | 'error';
