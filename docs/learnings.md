@@ -1,8 +1,9 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across nine
+Distilled from per-task writeups and subagent learnings across ten
 `tasks.md` runs. Read this before touching the inspector, repair,
-toolbar, export, or library UI so we don't repeat the same mistakes.
+toolbar, export, menus, zoom, or library UI so we don't repeat the
+same mistakes.
 
 - **R1** = first run (16 tasks). Its `docs/tasks/` writeups were removed
   during the task reset; the index below is preserved for archaeology.
@@ -27,6 +28,8 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   running log in `docs/tasks/13-*.md`–`15-*.md`.
 - **R9** = ninth run, 2026-10-14 (3 tasks). Writeups continue the
   running log in `docs/tasks/16-*.md`–`18-*.md`.
+- **R10** = tenth run, 2026-10-14 (3 tasks). Writeups continue the
+  running log in `docs/tasks/19-*.md`–`21-*.md`.
 
 ## 1. Honest labels and naming
 
@@ -79,6 +82,12 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   only the factor, shape, and placement changed — renaming
   `zoomLens`/`ZOOM_LENS_*` would churn every call site for no
   behavioral gain. (R8-3)
+- **Counts render as repeated text glyphs, not words or emoji.**
+  Star smart albums show ★ per rating point (U+2605 BLACK STAR
+  renders as plain sidebar text — no emoji presentation, no new
+  icon component), and one shared label helper covers the sidebar
+  rows and the grid titles, so both surfaces changed together.
+  (R10-3)
 
 ## 2. Header and component contracts
 
@@ -247,6 +256,14 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   name.** Both render sites (menu-bar indicator, About brand line)
   show `v<APP_VERSION>`; descriptive "local-first" wording elsewhere
   stays — it describes the architecture, not the label. (R9-3)
+- **A submenu parent with its own concern gets its own menu
+  section.** Zoom in View sits between separators (Show toggles /
+  Zoom in View / Photo Browser + Zoom to Fit) — but the flyout
+  holding only 4x/8x/16x takes no inner separators: separators
+  divide groups, they never frame a container's edges. (R10-1)
+- **Row icons mark the type; labels carry the count.** Star-album
+  rows keep the single Lucide `Star` while the label shows ★×N —
+  the icon says what the row is, the text says how many. (R10-3)
 
 ## 3. Spacing, layout, and motion
 
@@ -412,6 +429,20 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   `.preset-item` flex rules, so the narrow box holds at every
   breakpoint — verify the override wins, per the R1-5 rule. (R7-1,
   R8-1)
+- **Leading content aligns with `flex-start` + trailing
+  `margin-left: auto`, never `space-between`.** With space-between,
+  two-child `[check, label]` items pushed the label flush right
+  while three-child `[check, label, kbd/chevron]` items centered
+  it — one rule misaligning the Zoom parent, the 4x/8x/16x flyout,
+  and the sort menu at once. Fixing the shared rule covered all
+  three; shortcuts stay right via their existing auto margin.
+  (R10-1)
+- **Dock beside content by offsetting inside the existing
+  positioned ancestor.** The zoom pane reaches past the frame's
+  right edge as an absolutely positioned child (`left: calc(100% +
+  12px)`, flush `bottom: 0`), so it scrolls with the photo and
+  needs no layout changes — moving it to the stage wrap would
+  have bought nothing. (R10-2)
 
 ## 4. Navigation and state
 
@@ -665,6 +696,11 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   private packages need `version: true` or changesets won't move
   them at all; the command is `version-packages` because Yarn 4's
   built-in `version` would shadow a script of that name. (R9-3)
+- **Derive placement synchronously from render state, not from
+  DOM-measured effects.** Docking the zoom pane from `stageSize` +
+  frame dims in the same render means zooming can never flash the
+  wrong placement; the effect-updated `viewport` state lags zoom
+  changes by a frame. (R10-2)
 
 ## 5. Testing practices (repo-specific)
 
@@ -724,7 +760,7 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   lands, making the update checklist self-evident. (R1-12)
 - **Rewriting pinned tests is correct when the task overturns them**,
   but each rewrite needs a comment recording *why* the old pin was
-  wrong, or the next reader will "fix" it back. (R2-1)
+  wrong, or the next reader will "fix" it back. (R2-1, R10-1)
 - **Keep old testids through relocations** — same testid + tooltip
   strings collapse most churn to class-name updates. (R2-2)
 - **`noUncheckedIndexedAccess` is on**: regex `match[1]` in tests needs
@@ -750,7 +786,7 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 - **Verify new tests fail on old code** (`git stash` + rerun — R3-6:
   4 fail / 2 pass) to prove the test pins the fix, not incidental
   markup. SSR-rendered layout assertions are a cheap, jsdom-free way
-  to do this. (R3-6)
+  to do this. (R3-6, R10-1, R10-2, R10-3)
 - **Substring traps in markup assertions.** `'</button>'`-style closers
   and a target attribute inside its own opening tag break naive
   `slice(a, b).not.toContain('<button')` checks on the boundary tags
@@ -868,6 +904,10 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   sync script's three paths (in-sync no-op, cross-workspace drift
   failure, stale rewrite) get hand-verified exit-code coverage.
   (R9-3)
+- **Nested labels need full-span matches.** `★★★` is a substring
+  of `★★★★★`, so bare-substring assertions pass vacuously — pin
+  whole labels (full-span matches, highest-first) instead.
+  (R10-3)
 
 ## 6. Tooling gotchas
 
@@ -895,7 +935,7 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   commit `dist/`.
   (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6,
   R4-4, R4-5, R4-6, R4-7, R4-8, R5-1, R6-6, R7-4, R8-2, R8-3,
-  R9-1, R9-2, R9-3)
+  R9-1, R9-2, R9-3, R10-1, R10-2, R10-3)
 - **Commit by explicit paths, never `git add -A`.** Stray files
   (e.g. `.DS_Store` under `docs/`) get swept in otherwise. (R1)
 - **No CI, no configured linter** — both packages' `lint` scripts
@@ -917,8 +957,10 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   (or has zero remaining usages) is what makes deletion safe. One
   stray-visual report means auditing all consumers of the shared
   logic — the same tick root cause covered four sliders, and fixing
-  only the reported one would have re-filed the bug twice.
-  (R1-5, R1-13, R2-5)
+  only the reported one would have re-filed the bug twice; the
+  `.menu-item` flex fix likewise covered the Zoom parent, the
+  flyout, and the sort menu at once.
+  (R1-5, R1-13, R2-5, R10-1)
 - **Icon reuse audit before picking a glyph.** The obvious `Palette`
   pick was already taken by Hue & Saturation; `SwatchBook` had zero
   uses. And change the color-related surface, not the generic chrome.
@@ -1041,11 +1083,12 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   as a partial implementation to reshape, not a greenfield
   feature — assuming a blank slate would have duplicated the
   toggle and menu wiring. (R8-1, R8-3)
-- **A presentation change deletes the geometry it obsoletes.** The
+- **A presentation change deletes what it obsoletes.** The
   cursor-clamp helper became dead the moment the magnifier pane
   stopped following the cursor; leaving it would confuse the next
-  reader. Same instinct as the R1-10/R2-1 retire-both-halves
-  rule. (R8-3)
+  reader — and the singular/plural label branch went the moment
+  ★ repetition removed plurality. Same instinct as the
+  R1-10/R2-1 retire-both-halves rule. (R8-3, R10-3)
 - **Scope a convention to what the task names.** R8-2 converged
   in-content tool actions onto `.suggestion-actions` but left
   header chrome, the straighten status row, and the B&W toggle
@@ -1070,6 +1113,12 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   here (no registry access), so the writeup names the exact gap
   (`yarn.lock` doesn't cover it) and the fix (`yarn install`
   with network) instead of leaving a mystery failure. (R9-3)
+- **A rare overlap beats a constant flicker.** The docked zoom
+  pane can overlap the minimap at some scroll positions when a
+  tall zoomed frame meets a very wide stage — accepted, because
+  gating on measured viewport state would flicker the placement
+  on every zoom-out. When two defects trade, ship the rare one
+  and record it. (R10-2)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -1184,3 +1233,11 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 | 1 | `776cc83` | `16-zoom-view-submenu.md` | Zoom in View submenu under Show (4x/8x/16x), compare-aware pane, repair circle |
 | 2 | `5d47e70` | `17-star-smart-albums.md` | Star-rating smart albums in the sidebar Library group |
 | 3 | `7540661` | `18-app-version-changesets.md` | App version replaces edition label; changesets set up at 0.1.0 |
+
+## Per-task index, R10 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `516f80f` | `19-zoom-dropdown-alignment.md` | Zoom in View in own menu section; `flex-start` label alignment |
+| 2 | `76f4bec` | `20-zoom-lens-outside-dock.md` | Zoom pane docks beside photo when stage has room |
+| 3 | `84bec18` | `21-star-album-glyph-labels.md` | Star smart albums labeled ★×N instead of "N Stars" |
