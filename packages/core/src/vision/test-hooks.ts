@@ -42,3 +42,48 @@ export function readTestHealCalls(): TestHealCall[] {
 export function clearTestHealCalls(): void {
   calls.length = 0;
 }
+
+/**
+ * One e2e poll tick's view of the heal pipeline. A null field means the
+ * `window.__f8Test` hook was unreachable that tick (the document reloaded
+ * or PhotoCanvas has not published yet) — never a settled pipeline, so
+ * waits keep polling instead of throwing. This matters because
+ * `expect.poll` does not retry a throwing callback: one missing-hook tick
+ * fails the spec immediately with a `TypeError`, not a timeout.
+ */
+export interface HealWaitSnapshot {
+  pendingIds: number[] | null;
+  queue: { active: boolean; pendingJobs: number } | null;
+  healCallCount: number | null;
+}
+
+/**
+ * True once a stroke's work is observable: a pending group, an active or
+ * non-empty queue, or a NEW transport call past the snapshot count.
+ * Missing fields read as "not started yet" so the wait survives a tick
+ * where the hook is unreachable.
+ */
+export function healWaitStarted(snapshot: HealWaitSnapshot, callsBefore: number): boolean {
+  return (
+    (snapshot.pendingIds?.length ?? 0) > 0 ||
+    snapshot.queue?.active === true ||
+    (snapshot.queue?.pendingJobs ?? 0) > 0 ||
+    (snapshot.healCallCount !== null && snapshot.healCallCount > callsBefore)
+  );
+}
+
+/**
+ * True once every heal settled: no pending groups and an idle, empty
+ * queue — all three observed. Any missing field reads as "still working",
+ * so the wait keeps polling across a reload/remount instead of either
+ * throwing (strict read) or passing vacuously (treating missing as done).
+ */
+export function healWaitSettled(snapshot: HealWaitSnapshot): boolean {
+  return (
+    snapshot.pendingIds !== null &&
+    snapshot.pendingIds.length === 0 &&
+    snapshot.queue !== null &&
+    !snapshot.queue.active &&
+    snapshot.queue.pendingJobs === 0
+  );
+}

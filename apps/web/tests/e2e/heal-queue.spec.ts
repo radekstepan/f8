@@ -15,6 +15,7 @@ import {
   PHOTO_ID,
   clearHealCalls,
   getHealCalls,
+  getHealCallsOrNull,
   getOverlayGroupIds,
   gotoEditor,
   healStroke,
@@ -60,8 +61,10 @@ test("group 1 finishes before a batch of follow-up heals starts", async ({ page 
   // deferred job instead of coalescing (pending flags alone are not enough:
   // the queue debounces ~600ms after the last edit).
   await paintStroke(page, { x: 0.15, y: 0.3 }, { x: 0.2, y: 0.35 });
+  // Null-safe read: expect.poll does not retry a throwing callback, so a
+  // reload tick with the hook unreachable must poll on, not TypeError.
   await expect
-    .poll(async () => (await getHealCalls(page)).length, { timeout: 60_000 })
+    .poll(async () => (await getHealCallsOrNull(page) ?? []).length, { timeout: 60_000 })
     .toBeGreaterThanOrEqual(1);
 
   // Batch of three while group 1 is still healing (2s mocked latency).

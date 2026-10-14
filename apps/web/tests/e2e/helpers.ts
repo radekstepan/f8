@@ -7,7 +7,13 @@
 // only).
 
 import { expect, type Page } from "@playwright/test";
-import { DEFAULT_EDIT, type EditState } from "@f8/core";
+import {
+  DEFAULT_EDIT,
+  healWaitSettled,
+  healWaitStarted,
+  type EditState,
+  type HealWaitSnapshot,
+} from "@f8/core";
 
 export const PHOTO_ID = "photo-1";
 
@@ -58,7 +64,22 @@ async function hook<T>(page: Page, expr: string): Promise<T> {
   return page.evaluate(`window.__f8Test.${expr}`) as Promise<T>;
 }
 
+/**
+ * Null-safe hook read for expect.poll callbacks only. The hook is published
+ * by PhotoCanvas on mount, so any document reload (dev HMR, navigation)
+ * leaves ticks where `window.__f8Test` is undefined — and expect.poll does
+ * NOT retry a throwing callback, so one such tick fails the spec with a
+ * TypeError instead of timing out. Polls read through here and treat null
+ * as "not yet"; one-shot assertion reads keep the strict getters below so
+ * a missing hook fails loudly instead of passing vacuously.
+ */
+async function hookOrNull<T>(page: Page, expr: string): Promise<T | null> {
+  return page.evaluate(`window.__f8Test ? window.__f8Test.${expr} : null`) as Promise<T | null>;
+}
+
 export const getHealCalls = (page: Page) => hook<TestHealCall[]>(page, "healCalls()");
+/** Null-safe transport-call log for expect.poll callbacks (see hookOrNull). */
+export const getHealCallsOrNull = (page: Page) => hookOrNull<TestHealCall[]>(page, "healCalls()");
 export const clearHealCalls = (page: Page) => hook<void>(page, "clearHealCalls()");
 export const getMlReady = (page: Page) => hook<MlReadiness>(page, "mlReady()");
 
@@ -69,7 +90,10 @@ export const getMlReady = (page: Page) => hook<MlReadiness>(page, "mlReady()");
  */
 export async function waitForMlReady(page: Page, timeout = 30_000): Promise<void> {
   await expect
-    .poll(async () => (await getMlReady(page)).ready, { timeout, intervals: [250, 500] })
+    .poll(async () => (await hookOrNull<MlReadiness>(page, "mlReady()"))?.ready ?? null, {
+      timeout,
+      intervals: [250, 500],
+    })
     .toBe(true);
 }
 export const getQueue = (page: Page) => hook<{ active: boolean; pendingJobs: number }>(page, "queue()");
@@ -208,18 +232,23 @@ export async function paintStroke(
  * after release plus a full-res paint — a wide false-"done" window).
  */
 export async function waitForHealingStart(page: Page, timeout = 30_000): Promise<void> {
-  const callsBefore = (await getHealCalls(page)).length;
+  // Null-safe like the poll below: a reload leaves the hook unreachable,
+  // and a fresh document starts with an empty call log, so 0 is exact.
+  const callsBefore = (await getHealCallsOrNull(page) ?? []).length;
   await expect
     .poll(
       async () => {
-        const [pending, queue, calls] = await Promise.all([
-          getPendingIds(page),
-          getQueue(page),
-          getHealCalls(page),
+        const [pendingIds, queue, calls] = await Promise.all([
+          hookOrNull<number[]>(page, "pendingRepairIds()"),
+          hookOrNull<{ active: boolean; pendingJobs: number }>(page, "queue()"),
+          getHealCallsOrNull(page),
         ]);
-        return pending.length > 0 || queue.active || queue.pendingJobs > 0 || calls.length > callsBefore
-          ? "started"
-          : "idle";
+        const snapshot: HealWaitSnapshot = {
+          pendingIds,
+          queue,
+          healCallCount: calls === null ? null : calls.length,
+        };
+        return healWaitStarted(snapshot, callsBefore) ? "started" : "idle";
       },
       { timeout, intervals: [200, 400] },
     )
@@ -247,8 +276,14 @@ export async function waitForHealingDone(page: Page, timeout = 90_000): Promise<
   await expect
     .poll(
       async () => {
-        const [pending, queue] = await Promise.all([getPendingIds(page), getQueue(page)]);
-        return pending.length === 0 && !queue.active && queue.pendingJobs === 0 ? "done" : "working";
+        const [pendingIds, queue] = await Promise.all([
+          hookOrNull<number[]>(page, "pendingRepairIds()"),
+          hookOrNull<{ active: boolean; pendingJobs: number }>(page, "queue()"),
+        ]);
+        // A missing hook reads as "still working" (healWaitSettled), so a
+        // reload tick keeps polling instead of throwing a TypeError.
+        const snapshot: HealWaitSnapshot = { pendingIds, queue, healCallCount: null };
+        return healWaitSettled(snapshot) ? "done" : "working";
       },
       { timeout, intervals: [250, 500, 1000] },
     )
