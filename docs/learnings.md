@@ -1,6 +1,6 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across ten
+Distilled from per-task writeups and subagent learnings across eleven
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, menus, zoom, or library UI so we don't repeat the
 same mistakes.
@@ -30,6 +30,9 @@ same mistakes.
   running log in `docs/tasks/16-*.md`–`18-*.md`.
 - **R10** = tenth run, 2026-10-14 (3 tasks). Writeups continue the
   running log in `docs/tasks/19-*.md`–`21-*.md`.
+- **R11** = eleventh run, 2026-10-14 (11 tasks). Writeups continue
+  the running log in `docs/tasks/01-version-top-right.md` and
+  `docs/tasks/22-*.md`–`31-*.md`.
 
 ## 1. Honest labels and naming
 
@@ -88,6 +91,23 @@ same mistakes.
   icon component), and one shared label helper covers the sidebar
   rows and the grid titles, so both surfaces changed together.
   (R10-3)
+- **"ML" means trained weights run on the primary path.** A
+  logistic-regression form whose coefficients were typed in by hand
+  after eyeballing fixtures — "set by inspection, not fitted on
+  labeled photos" — is a heuristic with extra steps, not ML. That
+  tell demoted Scene Enhance and Dust Spots to Auto; U²-Net,
+  YuNet, YOLOv8n, DnCNN, Real-ESRGAN, LaMa, and CLIP keep the
+  badge. (R11-9)
+- **Headers report applied change, never a recorded check.** A
+  no-face Enhance Faces scan is pixel-neutral and
+  `isNeutralEdit`-clean, so its recorded recipe entry must not
+  light ML or the reset — a semantic `faces > 0` flag replaced
+  bare `Boolean(applied)`. (R11-8)
+- **When the action moves, the ML credit collapses to a
+  name-adjacent badge.** The toggle conversion removed every
+  header Auto/ML button; the little `MlBadge` by the tool name is
+  now the only ML marking on Enhance Faces and Subject &
+  Background. (R11-11)
 
 ## 2. Header and component contracts
 
@@ -264,6 +284,49 @@ same mistakes.
 - **Row icons mark the type; labels carry the count.** Star-album
   rows keep the single Lucide `Star` while the label shows ★×N —
   the icon says what the row is, the text says how many. (R10-3)
+- **Automatic sections carry one header switch, not a button plus
+  a reset** (supersedes the R2-1 reset+action contract for tools
+  with an automatic action): off→on applies the suggestion, on→off
+  resets to defaults, and hand tweaks light it via dirtiness.
+  Sections with no automatic action (Curves, Details, Effects,
+  B&W) keep their header resets — there is no suggestion for a
+  toggle to apply. (R11-11)
+- **Converge onto the existing pretty control.** The toggle is the
+  shared `Toggle` from `EditorUI.tsx` with generically-extended
+  `testId`/`hint`/`disabled` passthroughs — the R1-4
+  generic-optional instinct applied to the conversion target.
+  (R11-11)
+- **Whole-photo and other-tool actions stay out of a per-tool
+  conversion.** The panel Auto Enhance pill keeps its
+  pill-plus-revert (it restores the pre-enhance look, not
+  defaults), and Repair/straighten buttons are different tools
+  outside the "in Color Adjustments" scope. (R11-11)
+- **A submenu parent with a state-dependent click must open by
+  keyboard without clicking.** ArrowRight routes via `setSubmenu`
+  directly — clicking the parent would fire the new clear action;
+  off-click keeps the flyout toggle so touch users can still
+  reach the 4x/8x/16x options. (R11-2)
+- **Clearing through the parent still dismisses the menu.** The
+  parent re-picks the active factor through `action()`, matching
+  every other View-menu item — and reuses the existing re-pick
+  toggle-off rule, so no new `MenuAction` and no `App.tsx`
+  change. (R11-2)
+- **Decorative subgroup icons are aria-hidden glyphs in an
+  inline-flex label.** Subject gets the avatar, Background the
+  picture (11px against 9.5px caps, centered, 4px gap); tests pin
+  each group to its glyph scoped by group testid, so a swap
+  fails. (R11-7)
+- **A toggle that can't apply yet must say why by being
+  disabled.** Denoise toggle-on only drafts the ISO suggestion
+  (Preview/Apply still own the photo change), and the switch is
+  disabled while working or suggestion-less-and-empty — but
+  stays clickable while anything is stored, so it can clear.
+  (R11-11)
+- **Curves reset clears Midtones plus anchors together**
+  (`{ curve: 0, curvePoints: [] }`) with matching dirty, and the
+  Midtones slider takes `disableReset` — the R1-3
+  dirty-mirrors-reset invariant extended to the new keys, and
+  the only slider in the inspector with the opt-out. (R11-5)
 
 ## 3. Spacing, layout, and motion
 
@@ -443,6 +506,18 @@ same mistakes.
   12px)`, flush `bottom: 0`), so it scrolls with the photo and
   needs no layout changes — moving it to the stage wrap would
   have bought nothing. (R10-2)
+- **A big blurred shadow is densest at the box edge — it reads
+  as a dirty border, not a lift.** The fix is a keyline-first
+  stack: a light hairline ring (topmost, ~8% white) for crisp
+  separation from the dark stage, a tight contact shadow to
+  ground the frame, and a negative-spread ambient whose dense
+  core pulls away from the edge. On a near-black stage a
+  black-only shadow either bands or vanishes. (R11-3)
+- **Don't reshape geometry to fix a shadow artifact.** The
+  "rounded corners" were the blur rounding the shadow band, not
+  the frame — the canvas stays square (compare divider and crop
+  grid assume it) with no `overflow: hidden`, which would also
+  clip the outside-docked zoom lens. (R11-3)
 
 ## 4. Navigation and state
 
@@ -701,6 +776,74 @@ same mistakes.
   frame dims in the same render means zooming can never flash the
   wrong placement; the effect-updated `viewport` state lags zoom
   changes by a frame. (R10-2)
+- **Reseed-then-sweep is the slider-spam shape.** A never-cleared
+  shared fetch promise re-seeded the overlay store on every
+  slider tick while the orphan sweep immediately evicted the
+  re-seeded entries — one DELETE per tick, forever. The fix is
+  idempotence (each orphan purged once, purged-id set,
+  filtered merge), not a timer: persistence was already
+  debounced, so the requested debounce existed and the bug was
+  elsewhere. Verify before adding timers. (R11-4)
+- **One-shot fetches are consumed one-shot per photo; sweeps
+  are generation-guarded.** The photo-open fetch ref clears on
+  settle, stale runs can't purge with a predated live set, and
+  fresh PUT paths re-arm their id because undo can restore a
+  swept stroke. (R11-4)
+- **Deserialized collections compare by length, never by
+  reference.** A server recipe's fresh `curvePoints: []` must
+  still read as default/Original (the retouches convention) or
+  every loaded photo opens Edited/Custom. (R11-5)
+- **Curve math lives in core as pure reducers.** Normalize
+  (sort/clamp/dedupe/cap), add/move/remove, a Fritsch–Carlson
+  monotone spline (smooth like a real curve tool, slope-limited
+  so it never overshoots a placed anchor), and a 256-entry table
+  that is null while identity so the pipeline skips the lookup.
+  The graph draws the exact render mapping — WYSIWYG by
+  construction. (R11-5)
+- **Make overlapping controls additive, not rival.** The
+  Midtones slider keeps its parametric bend while the graph
+  gains real control points (Lightroom-style): existing recipes
+  render identically and the "slider does the same thing"
+  overlap is gone because the graph no longer bends from a bare
+  drag. (R11-5)
+- **Tooltip hosts read `HTMLElement` only.** Tooltips on SVG
+  scenes go on the wrapper div — svg/circle nodes can never
+  trigger `TooltipHost`. (R11-5)
+- **A global apply pushes per-section entries, not a derived
+  highlight.** Global Auto moved section sliders (resets showed)
+  but pushed only its own stack entry (pills stayed dark);
+  deriving `mlApplied` from enhance state would have lit
+  buttons whose revert contract had no snapshot to honor.
+  Highlight ⟺ entry ⟺ revert, one mechanism. (R11-10;
+  superseded by the R11-11 toggle conversion, which lights
+  sections via dirtiness with no entries of their own.)
+- **Fresh snapshots per enhance for section reverts,
+  earliest-wins for the whole-photo revert.** A pre-enhance
+  category auto snapshots older values than the enhance base,
+  so reusing it would make a section revert undo more than the
+  enhance did. (R11-10)
+- **A snapshot's presence retargets the section reset.**
+  After an enhance, section reset restores the pre-enhance
+  values rather than the slider defaults — the established
+  `AdjustmentSection` contract, and the more useful target.
+  (R11-10)
+- **Retired stack entries get a load-time sanitizer.** The
+  toggle conversion deleted the per-category machinery its
+  buttons served; legacy persisted category entries drop on
+  load with the server round-trip covered. (R11-11)
+- **Toggle-off bumps the run token before resetting** so an
+  in-flight auto cannot land on the reset recipe — the R1-16
+  sequence-number instinct at the new seam. (R11-11)
+- **Gray-world's dominant-color failure is the textbook ML
+  win; exposure targeting is taste.** Learned illuminant
+  estimation (CCC/FC4 on thumbnails, ONNX + classical
+  fallback) heads the WB/Lightness assessment, while
+  Lightness's mid-gray pull is already covered by the scene
+  classifier's night cap — and the cheapest real win is
+  neither: running the existing estimators per U²-Net mask
+  turns two global autos local with no new model. Model
+  outputs never bypass the caps and dead zones — they are
+  load-bearing UX. (R11-6)
 
 ## 5. Testing practices (repo-specific)
 
@@ -908,6 +1051,38 @@ same mistakes.
   of `★★★★★`, so bare-substring assertions pass vacuously — pin
   whole labels (full-span matches, highest-first) instead.
   (R10-3)
+- **Hand-verified release paths get fixture-tree tests after
+  the fact.** The `version-packages` sync script was verified by
+  hand in R9; R11-1 copies the real script into a temp fixture
+  tree (four `package.json`s + a `branding.ts`) and runs it
+  with `node` — the actual release script under test with zero
+  test-only hooks. (R11-1)
+- **Conversions ship a full-panel sweep.** One suite pins all
+  seven header switches (each the sole header control),
+  switch-free manual sections with resets on dirt, exact ML
+  badge counts, hand-only keys lighting the toggle, source
+  pins for every toggle branch, and source pins proving the
+  old stack surface is gone. (R11-11)
+- **Pin both sides of a semantic gate.** The faces-0 test pins
+  the quiet header (plain button, `aria-pressed="false"`,
+  run-ML tooltip, no reset) while the faces-1 test pins the
+  highlight — neither side passes vacuously. (R11-8)
+- **Audits pin the audited table.** The ML-vs-Auto suite pins
+  heuristic→Auto / model-run→ML across menus, dialogs, and
+  preset labels, so the next tool gets classified by a
+  failing test. (R11-9)
+- **Spline tests pin mathematical properties, not just
+  outputs.** Monotonicity, no-overshoot, pinned extremes, the
+  display bend against the pipeline bell, and display-path
+  corners together prove the editor is WYSIWYG. (R11-5)
+- **Shadow pins assert layer order and absence.** The
+  keyline must be the topmost shadow layer, the old blur and
+  faint ring must be gone, and the frame carries no
+  border/radius of its own — via the `cssRule` pin, per the
+  R1-4 SSR convention. (R11-3)
+- **Docs-only changes still run the closest suite.** No new
+  tests for the ML writeup, but the full core suite confirms
+  the analyzed code is untouched and green. (R11-6)
 
 ## 6. Tooling gotchas
 
@@ -949,6 +1124,17 @@ same mistakes.
   `"/"` base, verified in the built `dist/index.html`. Any routing
   change must re-check the base + lazy-chunk URLs in a production
   build. (R6-6)
+- **`yarn changeset` needs an interactive TTY for package
+  selection.** In headless sessions, hand-write the changeset
+  in the CLI's exact format instead — every R11 commit did.
+  (R11)
+- **Never run `yarn version-packages` to verify.** It is a
+  release action that would consume other tasks' pending
+  changesets; it stays a maintainer step. (R11-1)
+- **New capability is `minor`, fixes and docs-only are
+  `patch`.** The Curves editor and the toggle conversion
+  shipped minor; the writeup and label audits shipped patch.
+  (R11-5, R11-6, R11-9, R11-11)
 
 ## 7. Scope and ambiguity discipline
 
@@ -1119,6 +1305,39 @@ same mistakes.
   gating on measured viewport state would flicker the placement
   on every zoom-out. When two defects trade, ship the rare one
   and record it. (R10-2)
+- **Check whether the task is already built before building
+  it.** R11-1's version task was fully implemented in R9-3 —
+  verified intact (four workspaces at 0.1.0, `APP_VERSION`
+  matches, sync no-ops) and extended only with the missing
+  piece (sync-script tests) instead of a rework. The R8-1
+  read-the-prior-doc rule, applied to the task itself. (R11-1)
+- **Defer internal renames to the task that rewrites the
+  surface.** `MlCategory`/`mlApplied`/`mlRevert` stayed known
+  misnomers through the writeup and the audit, then died in
+  the toggle conversion that removed their UI; the server
+  wire value (`DustSpotsSource "ml"`) stays, because renaming
+  churns the API for no user-visible gain. (R11-6, R11-9,
+  R11-11; cf. R2-1)
+- **Persisted-label follow-ups get flagged, not fixed.**
+  Cull-assist's classical `Blurry · ML` / `Duplicate · ML`
+  catalog badges are a migration-flavored change outside a
+  tool-icon audit's scope — recorded in the writeup, left
+  untouched. (R11-9)
+- **Control-level changes document in `features.md` /
+  `architecture.md`, not the README.** The README lists no
+  per-section controls, and `readme.test.ts` pins its shape —
+  the R7-5 one-question-per-file rule deciding the target.
+  (R11-5, R11-11)
+- **Analysis tasks conclude with explicit
+  non-recommendations.** The ML writeup names what it rejects
+  (server-side neural enhancement, unclamped model outputs)
+  and frames the two real upgrades as standalone projects
+  with model-license and offline questions — not drive-by
+  edits. (R11-6)
+- **Every task commit carries a changeset, even test-only
+  and docs-only.** The task rule holds at `patch` with no
+  user-visible effect; the `fixed` group moves all four
+  workspaces together anyway. (R11-1, R11-6)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -1241,3 +1460,19 @@ same mistakes.
 | 1 | `516f80f` | `19-zoom-dropdown-alignment.md` | Zoom in View in own menu section; `flex-start` label alignment |
 | 2 | `76f4bec` | `20-zoom-lens-outside-dock.md` | Zoom pane docks beside photo when stage has room |
 | 3 | `84bec18` | `21-star-album-glyph-labels.md` | Star smart albums labeled ★×N instead of "N Stars" |
+
+## Per-task index, R11 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `ea6aaef` | `01-version-top-right.md` | Top-right version pinned to changesets sync with script tests |
+| 2 | `4756a59` | `22-zoom-parent-clears.md` | Zoom in View parent click clears the preview |
+| 3 | `5032c3b` | `23-photo-frame-shadow.md` | Photo frame shadow becomes a subtle keyline lift |
+| 4 | `7e18b04` | `24-heal-overlay-delete.md` | Orphaned heal overlays purged once, not per slider tick |
+| 5 | `3ab8494` | `25-curves-reset-points.md` | Curves header reset + addable tone-curve points |
+| 6 | `ab08f7a` | `26-ml-white-balance-lightness.md` | ML prospects writeup for White Balance and Lightness |
+| 7 | `e6deb8b` | `27-subject-background-icons.md` | Avatar/picture icons for Subject/Background subgroups |
+| 8 | `5a4ec31` | `28-enhance-faces-no-faces.md` | Enhance Faces header quiet on no-face scans |
+| 9 | `5fdb64a` | `29-ml-auto-icon-audit.md` | Scene Enhance + Dust Spots demoted to Auto; S&B keeps ML |
+| 10 | `6f4b990` | `30-global-auto-highlight.md` | Global Auto lights the per-section Autos it drove |
+| 11 | `c18753e` | `31-auto-ml-toggle.md` | Color Adjustments Auto/ML buttons become header toggles |
