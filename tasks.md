@@ -13,13 +13,8 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-In the PResets on a portrait photo the preset box is too wide. Should be smaller to be just big enough to show the preview (of course) and the name of the preset. That's it. Right now it's about 3x the width.
+In the PResets on a portrait photo the preset box not wide enough. All the preset names need to show and right now Golden Hour and Soft Light (and potentially others) are truncated.
 
-"The library server is not running" is weird to say. Say that the application or server is not running. It's not a library server only anymore.
+Clciking "Cancel" under Denoise does nothing. Also the alignment of the actions is suspicious. Left align, some right aligned. PReview denoise is center aligned. Align (sic) across this tool and others in the app.
 
-DSC06322.ARW why is the Denoise "Auto" button turned on?
-
-Under View be able to toggle a "zoom in view" when in photo view so wherever the cursor goes we see a 16x magnification.
-
-Rewrite the README.md by extracting learnings/architecture into relevant separate md files, then keep the readme light, using ASD-STE100 lanbguage saying what all the functions of the app are and that the original design is GPT 6 Astra with followup work by Muse Spark 1.3 (both in italics). It nees to have init instructions and of couese include a screenshot as well.
-
+Zoom in view is something with a toggle (checkbox) in the dropdown, has a shortcut and show (like on Photoshop) a square in the bottom right corner and be 8x zoom.

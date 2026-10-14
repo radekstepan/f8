@@ -1,6 +1,6 @@
 # f/8
 
-f/8 is a photo editor. It runs on your computer. Your photos stay on your computer. Your original files never change.
+f/8 is a photo editor for macOS with ML functions.
 
 ![The f/8 editor with a photo open](docs/screenshots/app.png)
 
