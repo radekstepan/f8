@@ -748,7 +748,7 @@ export default function App() {
   // overlays for the new geometry are PUT right away, and a restart in the
   // debounce window must not find a stale edit that mismatches them.
   const rotateImage = useCallback((direction: 1 | -1) => {
-    // A manual rotate after an ML straighten clears the Auto highlight: the
+    // A manual rotate after an auto straighten clears the Auto highlight: the
     // photo was edited after the detection, so the button no longer claims
     // the value. The rotation itself stays undoable as before.
     straighten.dismiss();
@@ -1062,7 +1062,7 @@ export default function App() {
     return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur); };
   }, [dialog, filteredPhotos, selectedId, selectPhoto, view]);
 
-  // ML scene enhance requested from a library-grid or filmstrip context
+  // Auto scene enhance requested from a library-grid or filmstrip context
   // menu: the editor hook is bound to the selected photo, so the request
   // parks until the newly selected photo is open and seeded, then runs once.
   const pendingSceneEnhance = useRef<string | null>(null);

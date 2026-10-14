@@ -240,7 +240,7 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     change({ ...RESET_PATCH });
     return true;
   }, [change, clearMl, clearEnhance, history.present, photoId, schedulePersist]);
-  // Classic and ML scene enhance share one stack slot and one revert: each
+  // Classic and scene enhance share one stack slot and one revert: each
   // button highlights only its own pure mode. Clicking the highlighted
   // mode's button (or its revert icon) restores the pre-enhance snapshot;
   // clicking any other enhance button applies fresh values while keeping
@@ -290,7 +290,7 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
       }
     };
     // Decode failure falls back to the classic fixed patch and claims no
-    // scene: a fallback result is never presented as ML.
+    // scene: a fallback result never claims a detected scene.
     const fallback = () => apply({ exposure: 0.22, clarity: 12 }, null, 'Auto Enhance');
     if (!src) { fallback(); return; }
     void (async () => {
@@ -306,7 +306,7 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
   }, [runEnhance]);
 
   const autoEnhanceScene = useCallback((src?: string) => {
-    runEnhance('scene', src, 'Auto Enhance (ML)', (pixels) => {
+    runEnhance('scene', src, 'Auto Enhance (Scene)', (pixels) => {
       const { scene, confidence, patch } = computeSceneAwareEnhance(pixels);
       return { patch, sceneEnhance: { scene, confidence } };
     });

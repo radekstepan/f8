@@ -42,7 +42,7 @@ describe('photo context menu', () => {
     expect(html).not.toContain('data-testid="photo-context-menu"');
   });
 
-  it('offers ML scene enhance plus favorite and remove in the library grid', () => {
+  it('offers auto scene enhance plus favorite and remove in the library grid', () => {
     const html = renderToStaticMarkup(
       <PhotoBrowser
         photos={photos}
@@ -58,8 +58,10 @@ describe('photo context menu', () => {
     );
     expect(html).toContain('data-testid="photo-context-menu"');
     expect(html).toContain('Scene Enhance');
-    expect(html).toContain('ml-badge');
-    expect(html).toContain('>ML<');
+    // Scene enhance is a heuristic auto — no trained weights run — so the
+    // entry carries no ML badge.
+    expect(html).not.toContain('ml-badge');
+    expect(html).not.toContain('>ML<');
     expect(html).toContain('Add Favorite');
     expect(html).toContain('Remove from Library…');
     expect(html).toContain('Actions for p1.ARW');

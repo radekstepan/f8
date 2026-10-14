@@ -79,7 +79,7 @@ export interface RepairAssist {
   onFeatherChange: (value: number) => void;
   /** One-click ML removal; absent when the app does not offer it. */
   removal?: ObjectRemovalAssist;
-  /** Auto ML dust-spot detection; absent when the app does not offer it. */
+  /** Auto dust-spot detection; absent when the app does not offer it. */
   dustSpots?: DustSpotsAssist;
 }
 
@@ -107,7 +107,7 @@ export interface ObjectRemovalAssist {
   onDismiss: () => void;
 }
 
-/** View model for ML auto dust/spot detection, driven by the app's vision hook. */
+/** View model for auto dust/spot detection, driven by the app's vision hook. */
 export interface DustSpotsAssist {
   state: 'idle' | 'detecting' | 'ready' | 'error';
   /** Spots with accept flags; set when state is ready. */
@@ -116,7 +116,7 @@ export interface DustSpotsAssist {
   source: DustSpotsSource | null;
   /** Live server progress (warmup + scan); same shape as ML-heal progress. */
   progress: { fraction: number; stage: string; updatedAt?: number } | null;
-  /** Note when the classical fallback served instead of ML. */
+  /** Note when the classical fallback served instead of the filtered scan. */
   note: string | null;
   /** Human-readable error; set only when state is error. */
   message: string | null;
@@ -273,7 +273,7 @@ function MlProgressView({ progress, onCancel }: { progress: { fraction: number; 
 function StraightenControl({ value, assist, onStraighten, onDraggingChange }: { value: number; assist: StraightenAssist; onStraighten: (next: number, mergeKey?: string) => void; onDraggingChange?: (dragging: boolean) => void }) {
   const working = assist.state === 'loading' || assist.state === 'detecting';
   const mlActive = Boolean(working && assist.mlProgress);
-  // One Auto button plus a revert icon, like the per-category ML actions:
+  // One Auto button plus a revert icon, like the per-category auto actions:
   // applied derives from the assist result alone, so a manual slider move
   // or 90° rotate (both dismiss the assist) untoggles the button while the
   // value stays — and the snapshot-backed revert icon stays available.
@@ -431,7 +431,7 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
     .sort((a, b) => b.spot.score - a.spot.score);
   return <div className="object-removal dust-spots" data-testid="dust-spots">
     {assist.state === 'idle' &&
-      <p className="inspector-note">Scans for dust and spots with ML, then repairs each accepted one like a brush stroke. Nothing is repaired until you apply.</p>
+      <p className="inspector-note">Scans for dust and spots automatically, then repairs each accepted one like a brush stroke. Nothing is repaired until you apply.</p>
     }
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
     {working && <div className="suggestion-actions"><button className="text-button" data-testid="dust-spots-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
@@ -450,7 +450,7 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
             onFocus={() => assist.onHighlight?.(index)}
             onBlur={() => assist.onHighlight?.(null)}
           >
-            <CheckField testId={`dust-spots-check-${display}`} checked={spot.checked} onChange={() => assist.onToggle(index)}>Spot {display + 1} · {Math.round(spot.score * 100)}%{assist.source === 'ml' ? ' · ML' : ''}</CheckField>
+            <CheckField testId={`dust-spots-check-${display}`} checked={spot.checked} onChange={() => assist.onToggle(index)}>Spot {display + 1} · {Math.round(spot.score * 100)}%</CheckField>
           </li>
         ))}
       </ul>
@@ -471,13 +471,13 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
 }
 
 function SceneEnhanceControl({ edit }: { edit: EditState }) {
-  // Enhancement runs from the section header's ML button (White Balance
+  // Enhancement runs from the section header's Auto button (White Balance
   // pattern), so there is no apply bar in the content in any state — just
   // the persisted scene label, or the explanatory note before the first run.
   return <div className="scene-enhance" data-testid="scene-enhance">
     {edit.sceneEnhance
       ? <span className="scene-enhance-scene" data-testid="scene-enhance-scene" data-tooltip={`Detected scene: ${SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]}, ${Math.round(edit.sceneEnhance.confidence * 100)}% confidence`}>{SCENE_DISPLAY_NAMES[edit.sceneEnhance.scene]} · {Math.round(edit.sceneEnhance.confidence * 100)}%</span>
-      : <p className="inspector-note">Classify the scene with ML (portrait, landscape, night, document) and enhance with per-scene settings.</p>}
+      : <p className="inspector-note">Classify the scene automatically (portrait, landscape, night, document) and enhance with per-scene settings.</p>}
   </div>;
 }
 
@@ -640,7 +640,7 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
   // The draft moved past what the on-screen preview shows.
   const previewStale = assist.preview !== null && slider !== assist.preview.strength;
   // No inner heading and no Auto pill: the control lives in its own
-  // "Denoise" section whose header already carries the title and the ML
+  // "Denoise" section whose header already carries the title and the Auto
   // action (the auto suggestion moved there like everywhere else). The
   // slider stays always editable — any manual move clears the auto mark
   // (White Balance pattern: manual edits clear the highlight, the value
@@ -790,7 +790,7 @@ function RemovalSection({ assist }: { assist: ObjectRemovalAssist }) {
 
 /**
  * The Dust Spots section: the same shared-header convergence as
- * RemovalSection — the header ML button runs the scan, the content keeps
+ * RemovalSection — the header Auto button runs the scan, the content keeps
  * the review list with no detect bar, and the ephemeral assist means no
  * highlight and no reset.
  */
@@ -799,11 +799,12 @@ function DustSpotsSection({ assist }: { assist: DustSpotsAssist }) {
   const hint = working
     ? 'Detecting dust spots…'
     : assist.state === 'idle'
-      ? 'Find dust spots with ML, then review before repairing'
+      ? 'Find dust spots automatically, then review before repairing'
       : 'Detect dust spots again';
   return <AdjustmentSection title="Dust Spots" icon={<Sparkles size={14} />}
     ml={{
       id: 'dust-spots',
+      kind: 'auto',
       applied: false,
       canRevert: false,
       onToggle: assist.onDetect,
@@ -943,7 +944,7 @@ interface InspectorProps {
   onStraighten: (next: number, mergeKey?: string) => void;
   onReset: () => void;
   onAuto: () => void;
-  /** ML subject-aware enhance; omit to hide the scene row. */
+  /** Auto subject-aware enhance; omit to hide the scene row. */
   onAutoScene?: () => void;
   /** Last enhance mode with a stored snapshot; null when no enhance revert is available. */
   enhanceMode?: 'classic' | 'scene' | null;
@@ -1045,7 +1046,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><Histogram data={histogram} photo={photo} />{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} ml={{ id: 'scene-enhance', applied: sceneActive, canRevert: sceneRevert, onToggle: onAutoScene, onRevert: onRevertEnhance }} onReset={sceneRevert ? onRevertEnhance : undefined} dirty={sceneRevert}><SceneEnhanceControl edit={edit} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} ml={{ id: 'face-enhance', applied: faceChanged, canRevert: faceChanged, onToggle: faceChanged ? faceAssist.onClear : faceAssist.onDetect, onRevert: faceAssist.onClear }} onReset={faceChanged ? faceAssist.onClear : undefined} dirty={faceChanged}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} ml={{ id: 'selective-mask', applied: Boolean(selectiveAssist.applied), canRevert: Boolean(selectiveAssist.applied), onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect, onRevert: selectiveAssist.onClear }} onReset={selectiveAssist.applied ? selectiveAssist.onClear : undefined} dirty={Boolean(selectiveAssist.applied)}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <DenoiseSection assist={denoiseAssist} photo={photo} />}
+    <div className="inspector-scroll">{tool === 'adjust' ? <><Histogram data={histogram} photo={photo} />{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} ml={{ id: 'scene-enhance', kind: 'auto', applied: sceneActive, canRevert: sceneRevert, onToggle: onAutoScene, onRevert: onRevertEnhance }} onReset={sceneRevert ? onRevertEnhance : undefined} dirty={sceneRevert}><SceneEnhanceControl edit={edit} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} ml={{ id: 'face-enhance', applied: faceChanged, canRevert: faceChanged, onToggle: faceChanged ? faceAssist.onClear : faceAssist.onDetect, onRevert: faceAssist.onClear }} onReset={faceChanged ? faceAssist.onClear : undefined} dirty={faceChanged}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} ml={{ id: 'selective-mask', applied: Boolean(selectiveAssist.applied), canRevert: Boolean(selectiveAssist.applied), onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect, onRevert: selectiveAssist.onClear }} onReset={selectiveAssist.applied ? selectiveAssist.onClear : undefined} dirty={Boolean(selectiveAssist.applied)}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <DenoiseSection assist={denoiseAssist} photo={photo} />}
       <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} ml={{ id: 'white-balance', kind: 'auto', applied: Boolean(mlApplied?.whiteBalance), canRevert: Boolean(mlRevert?.whiteBalance), onToggle: onAutoWhiteBalance, onRevert: onRevertWhiteBalance }} onReset={() => onChange({ temperature: 5500, tint: 0 })} dirty={edit.temperature !== 5500 || edit.tint !== 0}>
         {rangeEnabled('whiteBalanceEnabled', 'temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false })}
         {rangeEnabled('whiteBalanceEnabled', 'tint', 'Tint', { color: 'tint' })}

@@ -181,23 +181,25 @@ function actionsRows(html: string): string[] {
 
 describe('adjustment styling consistency', () => {
   it('labels heuristic header actions Auto and model runs ML', () => {
-    // The header Auto, the slider autos, and the denoise suggestion are
-    // heuristics (no model runs when clicked); scene, faces, and subject
-    // run a model. The header label names the engine, honestly either way.
+    // The header Auto, the slider autos, the denoise suggestion, scene
+    // enhance, and dust spots are heuristics (no trained weights run when
+    // clicked); faces, subject, and people removal run a model. The header
+    // label names the engine, honestly either way.
     const html = renderAdjust({ ...DEFAULT_EDIT }, { scene: true, denoise: true, faceApplied: null, selectiveApplied: null });
-    for (const id of ['auto-enhance', 'white-balance', 'lightness', 'color', 'denoise'] as const) {
+    for (const id of ['auto-enhance', 'white-balance', 'lightness', 'color', 'denoise', 'scene-enhance'] as const) {
       expect(html).toContain(`data-testid="${id}-auto"`);
       expect(html).not.toContain(`data-testid="${id}-ml"`);
     }
-    for (const id of ['scene-enhance', 'face-enhance', 'selective-mask'] as const) {
+    for (const id of ['face-enhance', 'selective-mask'] as const) {
       expect(html).toContain(`data-testid="${id}-ml"`);
       expect(html).not.toContain(`data-testid="${id}-auto"`);
     }
-    // The repair tool's detection runs are models too.
+    // The repair tool's people removal runs a model; dust spots are a
+    // classical proposer plus a hand-tuned filter, so they carry Auto.
     const repair = renderRepair('heal');
     expect(repair).toContain('data-testid="object-removal-ml"');
-    expect(repair).toContain('data-testid="dust-spots-ml"');
-    expect(repair).not.toContain('-auto"');
+    expect(repair).toContain('data-testid="dust-spots-auto"');
+    expect(repair).not.toContain('data-testid="dust-spots-ml"');
   });
 
   it('keeps the header action and reset rendered while collapsed', () => {

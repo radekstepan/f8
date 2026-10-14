@@ -9,7 +9,7 @@ import { Inspector } from './Inspector.js';
 import { useEditor } from '../hooks/useEditor.js';
 import type { EditorSeed } from '../hooks/useEditor.js';
 
-// ML scene-enhance row, rendered on the server (no jsdom): effects never
+// Auto scene-enhance row, rendered on the server (no jsdom): effects never
 // run, so this pins the markup + prop wiring, not click behavior.
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -87,15 +87,16 @@ describe('scene enhance row', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT })).not.toContain('data-testid="scene-enhance"');
   });
 
-  it('runs scene enhance from a header ML button, never a repeated bar', () => {
+  it('runs scene enhance from a header Auto button, never a repeated bar', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, noop);
     expect(html).toContain('data-testid="scene-enhance"');
-    expect(html).toContain('data-testid="scene-enhance-ml"');
-    expect(html).toContain('class="ml-button" data-testid="scene-enhance-ml"');
+    expect(html).toContain('data-testid="scene-enhance-auto"');
+    expect(html).not.toContain('data-testid="scene-enhance-ml"');
+    expect(html).toContain('class="auto-small" data-testid="scene-enhance-auto"');
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('data-tooltip="Automatically adjust scene enhance with ML"');
-    expect(html).toContain('>ML<');
-    expect(html).toContain('Classify the scene with ML');
+    expect(html).toContain('data-tooltip="Apply scene enhance automatically"');
+    expect(html).toMatch(/data-testid="scene-enhance-auto"[^>]*>Auto<\/button>/);
+    expect(html).toContain('Classify the scene automatically');
     // No apply bar repeating the section title, and no badge doubling the
     // header button.
     expect(html).not.toContain('data-testid="scene-enhance-apply"');
@@ -103,33 +104,33 @@ describe('scene enhance row', () => {
     expect(html).not.toContain('aria-label="Reset scene enhance"');
   });
 
-  it('highlights the header ML button and offers reset while applied', () => {
+  it('highlights the header Auto button and offers reset while applied', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       noop,
       { mode: 'scene', pure: true },
     );
-    expect(html).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
+    expect(html).toContain('class="auto-small is-active" data-testid="scene-enhance-auto"');
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('data-tooltip="ML scene enhance applied — click to revert"');
+    expect(html).toContain('data-tooltip="Scene Enhance applied — click to revert"');
     expect(html).toContain('section-reset is-dirty" data-tooltip="Reset scene enhance"');
   });
 
   it('keeps the section title visible before and after applying', () => {
     const idle = renderAdjust({ ...DEFAULT_EDIT }, noop);
     expect(idle).toContain('<h3>Scene Enhance</h3>');
-    expect(idle).toContain('data-testid="scene-enhance-ml"');
+    expect(idle).toContain('data-testid="scene-enhance-auto"');
     const applied = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       noop,
       { mode: 'scene', pure: true },
     );
     expect(applied).toContain('<h3>Scene Enhance</h3>');
-    expect(applied).toContain('data-testid="scene-enhance-ml"');
+    expect(applied).toContain('data-testid="scene-enhance-auto"');
     expect(applied).not.toContain('data-testid="scene-enhance-apply"');
   });
 
-  it('labels the detected scene with confidence once ML enhance is applied', () => {
+  it('labels the detected scene with confidence once auto enhance is applied', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'portrait', confidence: 0.86 } },
       noop,
@@ -168,7 +169,7 @@ describe('scene enhance row', () => {
     expect(html).toContain('>Night · 90%<');
   });
 
-  it('keeps the header Auto alongside the ML section', () => {
+  it('keeps the header Auto alongside the scene section', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, noop);
     expect(html).toContain('data-testid="auto-enhance-auto"');
     expect(html).toContain('Scene Enhance');
@@ -242,7 +243,7 @@ describe('scene enhance reload', () => {
   }];
 
   it('restores the scene highlight and revert from the persisted stack', () => {
-    // The reload state: recipe plus its action stack — the ML button keeps
+    // The reload state: recipe plus its action stack — the Auto button keeps
     // its highlight AND its revert instead of reopening idle.
     const html = seedHtml(seedFor(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
@@ -293,17 +294,17 @@ describe('scene enhance reload', () => {
     ), 'p2')).toContain('data-mode="none"');
   });
 
-  it('renders the reloaded ML applied with its reset and scene badge', () => {
+  it('renders the reloaded auto applied with its reset and scene badge', () => {
     // The full reload wiring in one render: the seeded editor drives the
-    // Inspector, so the ML button highlights, the reset restores the
+    // Inspector, so the Auto button highlights, the reset restores the
     // persisted snapshot, and the scene badge still shows what ran.
     const html = renderToStaticMarkup(<ReloadProbe seed={seedFor(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       sceneStack,
     )} />);
-    expect(html).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
+    expect(html).toContain('class="auto-small is-active" data-testid="scene-enhance-auto"');
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('data-tooltip="ML scene enhance applied — click to revert"');
+    expect(html).toContain('data-tooltip="Scene Enhance applied — click to revert"');
     expect(html).toContain('aria-label="Reset scene enhance"');
     expect(html).toContain('data-testid="scene-enhance-scene"');
   });
@@ -313,9 +314,9 @@ describe('scene enhance reload', () => {
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       noop,
     );
-    expect(html).toContain('class="ml-button" data-testid="scene-enhance-ml"');
+    expect(html).toContain('class="auto-small" data-testid="scene-enhance-auto"');
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('data-tooltip="Automatically adjust scene enhance with ML"');
+    expect(html).toContain('data-tooltip="Apply scene enhance automatically"');
     expect(html).toContain('data-testid="scene-enhance-scene"');
     expect(html).not.toContain('aria-label="Reset scene enhance"');
   });

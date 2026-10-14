@@ -71,7 +71,7 @@ function PhotoContextMenu({ state, photoName, favorite, showRemove, menuRef, onS
   onClose: () => void;
 }) {
   return <div className="dropdown-menu photo-context-menu" role="menu" aria-label={`Actions for ${photoName}`} ref={menuRef} style={{ left: state.x, top: state.y }} data-testid="photo-context-menu">
-    {onSceneEnhance && <MenuItem onClick={() => { onClose(); onSceneEnhance(); }}><span>Scene Enhance <MlBadge hint="The scene is classified by a machine-learning model on your device" /></span></MenuItem>}
+    {onSceneEnhance && <MenuItem onClick={() => { onClose(); onSceneEnhance(); }}>Scene Enhance</MenuItem>}
     {onFaceEnhance && <MenuItem onClick={() => { onClose(); onFaceEnhance(); }}><span>Enhance Faces <MlBadge hint="Faces are detected by a machine-learning model on the photo server" /></span></MenuItem>}
     {onExport2x && <MenuItem onClick={() => { onClose(); onExport2x(); }}><span>Export 2x <MlBadge hint="Doubled by a machine-learning model on the photo server" /></span></MenuItem>}
     <MenuItem onClick={() => { onClose(); onFavorite(); }}>{favorite ? 'Remove Favorite' : 'Add Favorite'}</MenuItem>
@@ -297,7 +297,7 @@ export function PhotoBrowser({ photos, title, search, searchNote, edits, album, 
   /** Request album deletion (confirmed by the caller). */
   onRemoveAlbum?: (id: string) => void;
   onImport: () => void;
-  /** ML scene enhance from the right-click menu; omit to disable the menu. */
+  /** Auto scene enhance from the right-click menu; omit to disable the menu. */
   onSceneEnhance?: (id: string) => void;
   /** ML face enhance from the right-click menu. */
   onFaceEnhance?: (id: string) => void;

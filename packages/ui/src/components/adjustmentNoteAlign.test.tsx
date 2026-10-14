@@ -9,7 +9,7 @@ import { Inspector } from './Inspector.js';
 import type { DustSpotsAssist, FaceEnhanceAssist, ObjectRemovalAssist, RepairAssist, SelectiveMaskAssist } from './Inspector.js';
 
 // Section-leading description alignment, rendered on the server (no
-// jsdom): the ML descriptions (Classify the scene, Finds faces, …) used
+// jsdom): the assist descriptions (Classify the scene, Finds faces, …) used
 // to sit 8px below the section header while the first slider label
 // (Temperature, Exposure) starts flush — so every description-led
 // section looked sunken next to its slider siblings. Leading notes now
@@ -204,7 +204,7 @@ describe('adjustment description alignment', () => {
     // matching. Pin the order, not just the text.
     const html = renderAdjust({ ...DEFAULT_EDIT });
     expect(html).toContain(
-      '<div class="scene-enhance" data-testid="scene-enhance"><p class="inspector-note">Classify the scene with ML',
+      '<div class="scene-enhance" data-testid="scene-enhance"><p class="inspector-note">Classify the scene automatically',
     );
     expect(html).toContain(
       '<div class="face-enhance" data-testid="face-enhance"><p class="inspector-note">Finds faces with ML',
@@ -220,7 +220,7 @@ describe('adjustment description alignment', () => {
       '<div class="object-removal" data-testid="object-removal"><p class="inspector-note">Finds people with ML',
     );
     expect(html).toContain(
-      '<div class="object-removal dust-spots" data-testid="dust-spots"><p class="inspector-note">Scans for dust and spots with ML',
+      '<div class="object-removal dust-spots" data-testid="dust-spots"><p class="inspector-note">Scans for dust and spots automatically',
     );
   });
 });

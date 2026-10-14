@@ -171,9 +171,12 @@ describe('ml enhance sections', () => {
 
   it('marks every model section header with a header ML button, never a badge', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
-    // Scene, faces, and subject run a model from their header ML button,
-    // so they carry the button instead of a badge.
-    for (const [title, button] of [['Scene Enhance', 'scene-enhance-ml'], ['Enhance Faces', 'face-enhance-ml'], ['Subject &amp; Background', 'selective-mask-ml']] as const) {
+    // Faces and subject run a model from their header ML button, so they
+    // carry the button instead of a badge. Scene enhance is a heuristic
+    // auto (no trained weights run), so it carries the Auto pill instead.
+    expect(html).toContain('data-testid="scene-enhance-auto"');
+    expect(html).not.toContain('data-testid="scene-enhance-ml"');
+    for (const [title, button] of [['Enhance Faces', 'face-enhance-ml'], ['Subject &amp; Background', 'selective-mask-ml']] as const) {
       expect(html).toContain(`data-testid="${button}"`);
       expect(html.match(new RegExp(`<h3>${title}</h3><span class="ml-badge"`)), `${title} header carries no badge`).toBeNull();
     }
@@ -223,7 +226,7 @@ describe('ml enhance sections', () => {
   it('marks exactly the pure enhance mode as pressed', () => {
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: true });
     expect(classic).toContain('class="auto-small inspector-auto is-active" data-testid="auto-enhance-auto"');
-    expect(classic).toContain('class="ml-button" data-testid="scene-enhance-ml"');
+    expect(classic).toContain('class="auto-small" data-testid="scene-enhance-auto"');
     expect(classic).toContain('data-tooltip="Auto Enhance applied — click to revert"');
     const scene = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
@@ -231,8 +234,8 @@ describe('ml enhance sections', () => {
       { mode: 'scene', pure: true },
     );
     expect(scene).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto"');
-    expect(scene).toContain('class="ml-button is-active" data-testid="scene-enhance-ml"');
-    expect(scene).toContain('data-tooltip="ML scene enhance applied — click to revert"');
+    expect(scene).toContain('class="auto-small is-active" data-testid="scene-enhance-auto"');
+    expect(scene).toContain('data-tooltip="Scene Enhance applied — click to revert"');
     expect(scene).toContain('data-testid="scene-enhance-scene"');
     expect(scene).toContain('Night · 90%');
     expect(scene).not.toContain('· ML');
@@ -260,7 +263,7 @@ describe('ml enhance sections', () => {
     // the last-used mode keeps its persistent reset with a re-apply title.
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: false });
     expect(classic).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto"');
-    expect(classic).toContain('class="ml-button" data-testid="scene-enhance-ml"');
+    expect(classic).toContain('class="auto-small" data-testid="scene-enhance-auto"');
     expect(classic).toContain('data-tooltip="Re-apply auto enhance"');
     expect(classic).toContain('section-reset is-dirty" data-tooltip="Reset auto enhance"');
     const scene = renderAdjust(
@@ -268,8 +271,8 @@ describe('ml enhance sections', () => {
       ALL_ML,
       { mode: 'scene', pure: false },
     );
-    expect(scene).toContain('class="ml-button" data-testid="scene-enhance-ml"');
-    expect(scene).toContain('data-tooltip="Re-apply automatic scene enhance with ML"');
+    expect(scene).toContain('class="auto-small" data-testid="scene-enhance-auto"');
+    expect(scene).toContain('data-tooltip="Re-apply scene enhance"');
     expect(scene).toContain('section-reset is-dirty" data-tooltip="Reset scene enhance"');
     // The persisted scene badge survives the highlight loss.
     expect(scene).toContain('Night · 90%');
@@ -278,7 +281,7 @@ describe('ml enhance sections', () => {
   it('runs classic enhance from the panel header row, with no content bar', () => {
     // The old full-width content bar and its CSS are gone: the Auto button
     // and header reset live in the panel header's own action row (the
-    // section-actions row still serves every ML section the same way).
+    // section-actions row still serves every section the same way).
     // Scene enhance's old content row is gone too.
     expect(css()).not.toMatch(/\.classic-enhance/);
     expect(cssRule('.section-actions')).toMatch(/display\s*:\s*flex/);
@@ -288,9 +291,9 @@ describe('ml enhance sections', () => {
     expect(css()).not.toMatch(/\.scene-enhance-row/);
   });
 
-  it('runs scene, faces, and subject from header ML buttons, never content bars', () => {
+  it('runs faces and subject from header ML buttons and scene from Auto, never content bars', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
-    expect(html).toContain('class="ml-button" data-testid="scene-enhance-ml"');
+    expect(html).toContain('class="auto-small" data-testid="scene-enhance-auto"');
     expect(html).toContain('class="ml-button" data-testid="face-enhance-ml"');
     expect(html).toContain('class="ml-button" data-testid="selective-mask-ml"');
     expect(html).not.toContain('data-testid="scene-enhance-apply"');

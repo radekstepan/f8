@@ -1,4 +1,4 @@
-// React binding for ML auto dust/spot detection: scan the photo server for
+// React binding for auto dust/spot detection: scan the photo server for
 // dust spots, let the user accept each spot, then apply the checked ones as
 // repair strokes (one stroke id per spot) that the existing ROI→inpaint
 // pipeline heals — overlays, undo, and per-spot delete come free.
@@ -133,7 +133,7 @@ export function useDustSpots(photoId: string): DustSpotsResult {
           setNote(
             remote.source === "ml"
               ? null
-              : "Classical scan — the ML filter is disabled or its custom weights are unreadable, so this is approximate.",
+              : "Classical scan — the false-positive filter is disabled or its custom weights are unreadable, so this is approximate.",
           );
           setState("ready");
         } catch (error) {
