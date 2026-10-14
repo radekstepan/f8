@@ -1150,7 +1150,7 @@ export default function App() {
     return <div className="library-gate">
       <TooltipHost />
       <CloudOff size={40} strokeWidth={1.25} />
-      <h2>The library server is not running.</h2>
+      <h2>The application server is not running.</h2>
       <p>{library.error || 'Start it with yarn dev, then try again.'}</p>
       <button className="primary-button" onClick={() => void library.retry()}><RefreshCw size={14} />Try again</button>
     </div>;

@@ -40,6 +40,17 @@ describe("library client deletePhoto", () => {
     expect(failure).toBeInstanceOf(LibraryError);
     expect((failure as LibraryError).status).toBe(0);
   });
+
+  it("words the unreachable-server error as the application server", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    }));
+    const failure = await createLibraryClient().deletePhoto("photo-1").catch((error: unknown) => error);
+    expect((failure as LibraryError).message).toBe(
+      "The application server is not reachable. Start it with yarn dev and try again.",
+    );
+    expect((failure as LibraryError).message).not.toMatch(/library server/i);
+  });
 });
 
 describe("library client semantic search", () => {

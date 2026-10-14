@@ -1,7 +1,7 @@
 import type { ActionStack } from "./actionStack.js";
 import type { Album, EditState, Photo, PhotoLabel, Preset } from "./types.js";
 
-// A photo record served by the library server: the shared Photo shape plus
+// A photo record served by the application server: the shared Photo shape plus
 // the stored edit recipe and library bookkeeping. `src`/`thumbnail` are
 // display URLs (server file endpoints for referenced originals, remote URLs
 // for seeded samples); the original bytes are never modified.
@@ -164,7 +164,7 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(input, init);
   } catch {
-    throw new LibraryError(0, "The photo library server is not reachable. Start it with yarn dev and try again.");
+    throw new LibraryError(0, "The application server is not reachable. Start it with yarn dev and try again.");
   }
   if (!response.ok) {
     const body = (await response.json().catch((): null => null)) as { error?: string } | null;
@@ -197,7 +197,7 @@ export interface LibraryClient {
   browse: (path?: string) => Promise<BrowseListing>;
 }
 
-// Framework-free HTTP client for the library server. `baseUrl` is empty in
+// Framework-free HTTP client for the application server. `baseUrl` is empty in
 // the app (same-origin via the Vite proxy); scripts and tests can point it
 // at a running server.
 export function createLibraryClient(baseUrl = ""): LibraryClient {

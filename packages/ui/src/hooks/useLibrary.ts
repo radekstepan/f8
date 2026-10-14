@@ -95,7 +95,7 @@ export function useLibrary() {
       setStatus("ready");
     } catch (reason) {
       if (generation.current !== ticket) return;
-      setError(reason instanceof Error ? reason.message : "Could not reach the library server.");
+      setError(reason instanceof Error ? reason.message : "Could not reach the application server.");
       setStatus("offline");
     }
   }, [client]);
