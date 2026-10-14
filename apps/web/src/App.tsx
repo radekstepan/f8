@@ -29,7 +29,7 @@ const collectionTitles: Record<string, string> = { all: 'All Photos', favorites:
 
 // Grid/backlink title for a collection id: user albums by name, the
 // static Library entries from the table, star smart albums from their
-// rating ("5 Stars") — anything else is an unknown id ("Your Photos").
+// rating ("★★★★★") — anything else is an unknown id ("Your Photos").
 const titleForCollection = (albums: Array<{ id: string; name: string }>, id: string): string => {
   const rating = ratingForCollection(id);
   return albums.find((album) => album.id === id)?.name || collectionTitles[id] || (rating === null ? 'Your Photos' : ratingCollectionLabel(rating));

@@ -77,9 +77,9 @@ export function ratingForCollection(collection: string): number | null {
   return rating;
 }
 
-/** Sidebar/grid title for a star rating's smart album ("5 Stars", "1 Star"). */
+/** Sidebar/grid title for a star rating's smart album: that many ★ glyphs ("★★★★★", "★"). */
 export function ratingCollectionLabel(rating: number): string {
-  return `${rating} Star${rating === 1 ? "" : "s"}`;
+  return "★".repeat(rating);
 }
 
 /**

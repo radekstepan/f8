@@ -47,11 +47,11 @@ describe('star smart albums', () => {
   it('shows one Library row per saved rating, highest first', () => {
     const photos = [makePhoto({ id: 'p1', rating: 3 }), makePhoto({ id: 'p2', rating: 5 }), makePhoto({ id: 'p3', rating: 3 })];
     const html = renderSidebar(photos);
-    expect(html).toContain('5 Stars');
-    expect(html).toContain('3 Stars');
-    expect(html.indexOf('5 Stars')).toBeLessThan(html.indexOf('3 Stars'));
-    expect(html).not.toContain('4 Stars');
-    expect(html).not.toContain('1 Star');
+    expect(html).toContain('>★★★★★</span>');
+    expect(html).toContain('>★★★</span>');
+    expect(html.indexOf('>★★★★★</span>')).toBeLessThan(html.indexOf('>★★★</span>'));
+    expect(html).not.toContain('>★★★★</span>');
+    expect(html).not.toContain('Stars');
   });
 
   it('shows nothing extra when no photo is starred', () => {
@@ -67,18 +67,19 @@ describe('star smart albums', () => {
     const photos = [makePhoto({ id: 'p1', rating: 5 }), makePhoto({ id: 'p2', rating: 5 }), makePhoto({ id: 'p3', rating: 0 })];
     const html = renderSidebar(photos);
     // The 5-star row carries its own count (2 of 3 photos).
-    expect(html).toMatch(/5 Stars<\/span><span class="item-count">2<\/span>/);
+    expect(html).toMatch(/★★★★★<\/span><span class="item-count">2<\/span>/);
   });
 
   it('highlights the selected smart album', () => {
     const photos = [makePhoto({ id: 'p1', rating: 5 })];
     const html = renderSidebar(photos, 'rating-5');
-    expect(html).toMatch(/sidebar-item is-selected"><svg[^>]*>.*5 Stars/s);
+    expect(html).toMatch(/sidebar-item is-selected"><svg[^>]*>.*★★★★★/s);
   });
 
-  it('labels a single star without the plural', () => {
+  it('labels a single star with one glyph', () => {
     const html = renderSidebar([makePhoto({ rating: 1 })]);
-    expect(html).toContain('1 Star');
-    expect(html).not.toContain('1 Stars');
+    expect(html).toContain('>★</span>');
+    expect(html).not.toContain('Stars');
+    expect(html).not.toContain('1 Star');
   });
 });

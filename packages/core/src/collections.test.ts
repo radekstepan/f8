@@ -151,9 +151,10 @@ describe("star-rating smart albums", () => {
     }
   });
 
-  it("labels ratings with a singular one-star form", () => {
-    expect(ratingCollectionLabel(1)).toBe("1 Star");
-    expect(ratingCollectionLabel(5)).toBe("5 Stars");
+  it("labels ratings with that many star glyphs", () => {
+    expect(ratingCollectionLabel(1)).toBe("★");
+    expect(ratingCollectionLabel(3)).toBe("★★★");
+    expect(ratingCollectionLabel(5)).toBe("★★★★★");
   });
 
   it("lists the distinct saved ratings, highest first", () => {
