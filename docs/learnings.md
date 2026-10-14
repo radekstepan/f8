@@ -1,6 +1,6 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across seven
+Distilled from per-task writeups and subagent learnings across eight
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, or library UI so we don't repeat the same mistakes.
 
@@ -23,6 +23,8 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 - **R7** = seventh run, 2026-10-13 (5 tasks). Writeups continue the
   R6 numbering sequence in `docs/tasks/08-*.md`–`12-*.md` (one
   running log).
+- **R8** = eighth run, 2026-10-13 (3 tasks). Writeups continue the
+  running log in `docs/tasks/13-*.md`–`15-*.md`.
 
 ## 1. Honest labels and naming
 
@@ -70,6 +72,11 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   renaming the API for no user-visible benefit is churn, per the R2-1
   rule. Prefer a real term ("application server") over a slash
   ("application/server") in headings. (R7-2)
+- **Reshaped features keep module names when only the presentation
+  changed.** The 16x cursor loupe became a fixed 8x corner pane, but
+  only the factor, shape, and placement changed — renaming
+  `zoomLens`/`ZOOM_LENS_*` would churn every call site for no
+  behavioral gain. (R8-3)
 
 ## 2. Header and component contracts
 
@@ -191,6 +198,32 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   Like Compare, the zoom lens survives photo switches;
   `selectPhoto` does not reset it, and the editor-view gate means it
   simply has no effect in the grid. (R7-4)
+- **Every in-content tool action is a golden `.text-button` inside a
+  shared `.suggestion-actions` row.** Block rows stretch full-width
+  with centered labels; compact inline rows (actions sharing a status
+  line) stay right-pushed with `flex: none` buttons, mirroring the
+  face/subject applied rows. The row was already the near-universal
+  pattern with pinned spacing/weight semantics, so converging the two
+  bare-button outliers (idle "Preview denoise", offline "Retry")
+  deleted one-off rules instead of inventing a third style. Header
+  `.section-actions` chrome, the straighten status row, the B&W grey
+  toggle, and modal footers are deliberate boundaries, not
+  inconsistencies. (R8-2)
+- **Dismiss returns transient phases to the state the pixels are
+  in.** Denoise's applied base drives the canvas/export, so dismiss
+  keeps applied pixels and returns to `applied` (not a full reset
+  like the other vision hooks) — resetting the base while the recipe
+  stays stored would show the noisy original as if denoised. The
+  pure `dismissDenoiseStatus(state, hasBase)` helper encodes
+  "transient → surrounding state" for every phase. (R8-2)
+- **A fixed magnifier pane tracks content, not position.** The 8x
+  square never moves (bottom-right corner, Photoshop-style), but its
+  content follows the cursor — frame center before first entry —
+  reusing the existing cursor tracking and edited-canvas mirror with
+  no new plumbing. The markup gate drops the cursor-center
+  requirement so the pane shows immediately on toggle, and the pane
+  carries `role="img"` with an "8x magnification" label: it is a
+  stable panel now, not cursor-following decoration. (R8-3)
 
 ## 3. Spacing, layout, and motion
 
@@ -334,15 +367,28 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   The portrait preset box (3x too wide: landscape `flex: 1 0 66px`
   sizing with only an `object-fit: contain` portrait rule) took its
   43px width from the filmstrip's `.is-portrait` item directly below
-  it — same photo, same constraint, consistent behavior. Long names
-  truncate with ellipsis and keep the full name in the existing
-  `Apply <name>` tooltip, so nothing is lost; one uniform box keeps
-  the strip aligned across all portrait aspects. (R7-1)
+  it — same photo, same constraint, consistent behavior. R8-1
+  refined the truncation half of this rule (see next): the 43px box
+  is now the thumbnail only. (R7-1)
+- **Size each child of a compound component independently.** The
+  43px portrait item held ~7 characters at the 9px label size, so
+  "Golden Hour" / "Soft Light" clipped — a fix optimizing thumbnail
+  compactness silently broke label legibility. The split keeps the
+  72px name width on the item (fits the longest built-in, "Teal &
+  Orange", with margin; the 8-preset strip still fits typical
+  editor widths) while only the thumbnail stays 43px and centered,
+  preserving the R7-1 no-letterbox intent with no markup change.
+  Built-in names now show in full; ellipsis survives only as the
+  graceful fallback for unbounded user-saved names, with the full
+  text in the `Apply <name>` tooltip. When sizing a compound
+  component, check every child element, not just the one in the
+  report. (R8-1)
 - **A narrower state must outrank every responsive override.**
   The 3-class portrait selector (`.presets-list.is-portrait
   .preset-item`) deliberately beats the single-class responsive
   `.preset-item` flex rules, so the narrow box holds at every
-  breakpoint — verify the override wins, per the R1-5 rule. (R7-1)
+  breakpoint — verify the override wins, per the R1-5 rule. (R7-1,
+  R8-1)
 
 ## 4. Navigation and state
 
@@ -549,7 +595,23 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   and rotation exactly as framed at one `drawImage` per frame —
   zero extra render cost, consistent by construction (the R4-7/R4-8
   shared-run rule). Magnification is relative to the displayed
-  photo, matching the existing zoom-percentage convention. (R7-4)
+  photo, matching the existing zoom-percentage convention. (R7-4;
+  reshaped to a fixed 8x corner pane in R8-3 with the same mirror.)
+- **A `dismiss` with a fallthrough `return current` is a no-op
+  trap.** Preview-ready denoise compiled and rendered fine but
+  Cancel did literally nothing because that phase fell through
+  unchanged. Enumerate every phase in a pure transition helper
+  with exhaustive per-state tests, and trace each dismiss target
+  against every render branch: the old code could also land on
+  `idle` + stored recipe + live base, a combination the UI renders
+  with zero actions (a re-preview dead end). Test the transition
+  matrix, not just the reported state. (R8-2)
+- **Verify shortcut availability across modifier branches.** Plain
+  `Z` looked taken by undo until the keyboard map confirmed the
+  Ctrl/Cmd branch returns before the plain-key map — `Z` (mnemonic
+  for Zoom, free in the Preview domain) never collides with
+  Ctrl/Cmd+Z. New shortcuts get listed in the menu item and the
+  shortcuts dialog in the same commit. (R8-3)
 
 ## 5. Testing practices (repo-specific)
 
@@ -718,6 +780,30 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   markers), every `docs/*.md` reference and embedded image exists,
   italics attributions and init commands are present, and each
   extracted doc holds its expected content. (R7-5)
+- **Let the data drive fit assertions, not hand-picked examples.**
+  The portrait test asserts every name in `PRESETS` fits the box
+  under a deliberately conservative (~13%-over) glyph-width
+  estimator plus 8px headroom — and the test caught the author's
+  own miscount ("Teal & Orange" is 13 chars, not 12). Adding a
+  longer preset later fails loudly. Calibrate the assertion's
+  headroom honestly instead of inflating the design value to
+  satisfy the estimator; document the real margin. (R8-1)
+- **A rewritten pin keeps a guard proving it would catch the old
+  bug.** R8-1 rewrote the six R7-1 tests that pinned the
+  truncating 43px item (correct per the R2-1 overturn rule), and
+  the new suite asserts the longest-name estimate exceeds 43px —
+  proving the check fails on the old sizing. (R8-1)
+- **Hook logic needing unit tests goes to core as pure
+  functions.** `apps/web` has no unit-test harness (Playwright
+  only, and these runs forbid it), so `dismissDenoiseStatus` lives
+  in `@f8/core` with a node-runnable truth table covering every
+  transient/settled phase × base/no-base — the same seam as R3-5
+  and R4-6. (R8-2)
+- **Tests pinning the old markup are the contract change when the
+  task demands realignment.** The two pins of the bare centered
+  denoise button were updated to the shared row and recorded in
+  the writeup as the intended change — not worked around, not
+  silently rewritten. (R8-2)
 
 ## 6. Tooling gotchas
 
@@ -744,7 +830,7 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   signature of a stale `dist` (unit tests resolve source). Never
   commit `dist/`.
   (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6,
-  R4-4, R4-5, R4-6, R4-7, R4-8, R5-1, R6-6, R7-4)
+  R4-4, R4-5, R4-6, R4-7, R4-8, R5-1, R6-6, R7-4, R8-2, R8-3)
 - **Commit by explicit paths, never `git add -A`.** Stray files
   (e.g. `.DS_Store` under `docs/`) get swept in otherwise. (R1)
 - **No CI, no configured linter** — both packages' `lint` scripts
@@ -883,6 +969,24 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 - **Same tier, same message.** The app-server gate reword left
   "Photo server offline." (the ML-tier line in `Inspector.tsx`)
   untouched — it names a different tier, not this gate. (R7-2)
+- **Read the prior task doc before touching an area.** The R7-1
+  writeup explained *why* 43px existed, which led to the split
+  solution (wide item, narrow thumbnail) instead of a blunt
+  revert; `docs/tasks/11` plus `git log` revealed the zoom loupe
+  as a partial implementation to reshape, not a greenfield
+  feature — assuming a blank slate would have duplicated the
+  toggle and menu wiring. (R8-1, R8-3)
+- **A presentation change deletes the geometry it obsoletes.** The
+  cursor-clamp helper became dead the moment the magnifier pane
+  stopped following the cursor; leaving it would confuse the next
+  reader. Same instinct as the R1-10/R2-1 retire-both-halves
+  rule. (R8-3)
+- **Scope a convention to what the task names.** R8-2 converged
+  in-content tool actions onto `.suggestion-actions` but left
+  header chrome, the straighten status row, and the B&W toggle
+  untouched as documented boundaries — churning pinned,
+  intentional treatments the task never named would be scope
+  creep, not consistency. (R8-2)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -981,3 +1085,11 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 | 3 | `6a708c2` | `10-denoise-auto-state.md` | Denoise Auto highlights only for stored auto |
 | 4 | `b09ca22` | `11-zoom-in-view.md` | View-menu 16× cursor loupe in photo view |
 | 5 | `82d5918` | `12-readme-rewrite.md` | ASD-STE100 README + architecture/features/development docs |
+
+## Per-task index, R8 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `0b79e5f` | `13-preset-names-no-truncate.md` | Portrait preset items back to 72px names, 43px thumbnails only |
+| 2 | `72e9e73` | `14-denoise-cancel-align.md` | Denoise Cancel dismisses every transient phase; actions share `.suggestion-actions` |
+| 3 | `315bc9a` | `15-zoom-preview-8x.md` | Fixed 8x corner preview pane with Z shortcut |
