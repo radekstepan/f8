@@ -13,18 +13,16 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-If I apply Auto adjustments and reload the UI, the button is enabled, but there is no reset button anymore. We need to be remembering a stack of actions and have a way to revert for all of them, even after a hard reload.
+"All Photos" flashes on hard reload of photo view before the correct category shows in a backlink. Show nothing rather than wrong category. And nicely animate the histogram when loading too.
 
-The dropdowns in the menu at the top are flush with the dropdown triggers, but we shouldn't have rounded borders on the button or dropdown where they meet (meaning bottom of the button onhover and top of the dropdown when opened).
+Undo Redo and Reset to Original buttons show on album view - wrong.
 
-The backling to all photos when the sidebar is collapsed is not flush with the library sidebar button (that expands it).
+Reset to Original button should be highlighted if the image has been edited. 
 
-We need to use custom tooltips throughout the app, always showing such that they are not cutoff but the viewport. Use a custom lib for this. Make it match the theme.
+Remove "Double click to reset quality", it's not needed.
 
-Why is the hide presets button showing on library view? Same for compare with original and info button at the top. Adjust, Repair, Crop are the same. These only show on the photo view.
+Export Photo Quality preview I should be able to drag the square and when I click the square shows elsewhere from where I actually clicked.
 
-When i try to superresolution export the UI says "ML weights are missing — run yarn setup, or export once to download them (~64MB).". I ran "yarn setup" already and there were no errors.
+When I change Quality preset on export we should NOT close the preview. Transition to the new setting for preview.
 
-When exporting, show estimated file size when we select a preset and before exporting. If this is not possible/not accurate, don't do it.
-
-When exporting JPEG (lossy formats), show a zoom in preview of a picture showing 16x zoom of an area like we do on the preview denoise view. I also want to see a full view with a box of where we focus and then next to it a 16x zoom of the area I am looking at. If I switch the preset, still remember where I was focused at.
+Remove Download settings button, not needed.
