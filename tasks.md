@@ -14,24 +14,35 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-Not sure if it's a bad antialising but I see dark black semitransparent border around a photo. Including rounded corners. Is it just a drop shadow gone havoc? Make it beautiful and subtle. This was supposedly fixed, but it isn't. I see banding and I see rounded corner in top right background of the photo.
+Fix failing playwright - @f8/web:e2e:   1) [chromium] › tests/e2e/heal-brush-types.spec.ts:46:1 › heal, smooth, and detail each reconstruct differently 
+@f8/web:e2e: 
+@f8/web:e2e:     Error: page.evaluate: TypeError: Cannot read properties of undefined (reading 'pendingRepairIds')
+@f8/web:e2e:         at eval (eval at evaluate (:370:30), <anonymous>:1:17)
+@f8/web:e2e:         at eval (<anonymous>)
+@f8/web:e2e:         at UtilityScript.evaluate (<anonymous>:370:30)
+@f8/web:e2e:         at UtilityScript.<anonymous> (<anonymous>:1:44)
+@f8/web:e2e:         at eval (eval at evaluate (:370:30), <anonymous>:1:17)
+@f8/web:e2e:         at UtilityScript.evaluate (<anonymous>:370:30)
+@f8/web:e2e:         at UtilityScript.<anonymous> (<anonymous>:1:44)
+@f8/web:e2e:         at hook (/Users/radekstepan/dev/photomator/apps/web/tests/e2e/helpers.ts:58:15)
+@f8/web:e2e:         at getPendingIds (/Users/radekstepan/dev/photomator/apps/web/tests/e2e/helpers.ts:77:46)
+@f8/web:e2e:         at expect.poll.timeout.timeout (/Users/radekstepan/dev/photomator/apps/web/tests/e2e/helpers.ts:250:53)
+@f8/web:e2e:         at waitForHealingDone (/Users/radekstepan/dev/photomator/apps/web/tests/e2e/helpers.ts:247:3)
+@f8/web:e2e:         at healStroke (/Users/radekstepan/dev/photomator/apps/web/tests/e2e/helpers.ts:237:3)
+@f8/web:e2e:         at healCenterWith (/Users/radekstepan/dev/photomator/apps/web/tests/e2e/heal-brush-types.spec.ts:42:3)
+@f8/web:e2e:         at /Users/radekstepan/dev/photomator/apps/web/tests/e2e/heal-brush-types.spec.ts:47:18
+@f8/web:e2e: 
+@f8/web:e2e:     Error Context: test-results/heal-brush-types-heal-smoo-aa5b8-ach-reconstruct-differently-chromium/error-context.md
+@f8/web:e2e: 
+@f8/web:e2e:   1 failed
+@f8/web:e2e:     [chromium] › tests/e2e/heal-brush-types.spec.ts:46:1 › heal, smooth, and detail each reconstruct differently 
 
-Changing Curves should show a toggled button just like the other controls. Same with Effects and Details possibly. No more "reset" button un the adjustments side-panel.
+have a subtle drop shadow around the photo canvas, right now it still looks like a semi-transparent oval with a rigid border
 
-Curves point right click to remove doesn't work, just opens browser right click menu. Double click to remove instead.
+Double click on a point on a curve doesn't remove it. Try with right click overriding the browser right click menu. If it doesn't work then let's go with Shift click to remove.
 
-Subject & Background have double toggles, keep the one in the header.
+In the filmstrip at the bottom name of the album and count of photos is not horizontally centered, count shows higher.
 
-Remove the "Show photo browser" button from the film strip at the bottom
+Focus mode should remove all but the photo and the film strip at the bottom of the album.
 
-Move "Focus Mode" from Window to "View" as the first option in its own section. And remove "Photo Browser" from Window. Then remove the Window drom the menu at the top since it's empty.
-
-Move the presets icon from the menu at the top in photo mode to be between compare and info.
-
-Move the delete icon from photo canvas to be an action right to the left of the info icon.
-
-Add an option in the context menu (...) of an album to find/generate/crop a representative thumbnail for the album to show int he sidebar.
-
-Make sure the albums in the sidebar show sorted by name with the ones that have a thumbnail showing ahead of the ones without.
-
-When I undo an action like Denoise, it doesn't seem to immedaitely apply on the photo.
+The generate thumbnail action keeps picking the same photo. Not sure how we decide which photo to pick but randomize it. If we pick the most "interesting", we still should have an order and pick from these.
