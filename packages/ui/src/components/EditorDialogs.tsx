@@ -100,9 +100,9 @@ export interface ExportQualityPreviewProps {
  * settings — the same run that feeds the size estimate — so what you see
  * is what the download holds. PNG renders nothing (lossless, nothing to
  * judge); a failed run hides the section like the size line. While the
- * next settings render, the previous pixels stay on screen dimmed with
- * an updating status — preset switches transition, never close, the
- * preview.
+ * next settings render, the previous pixels stay on screen dimmed —
+ * preset switches transition, never close, the preview, and add no
+ * status line so the modal never resizes.
  */
 export function ExportQualityPreview({ format, quality, previewUrl, estimating, focus, onFocus }: ExportQualityPreviewProps) {
   if (!isLossyExportFormat(format)) return null;
@@ -124,7 +124,6 @@ export function ExportQualityPreview({ format, quality, previewUrl, estimating, 
       <figure className="export-quality-full" data-testid="export-quality-full"><div className="export-quality-full-wrap" data-testid="export-quality-full-wrap" data-tooltip="Click or drag to move the 16× closeup" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveFocus(event); }} onPointerMove={(event) => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; moveFocus(event); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} onPointerCancel={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}><img src={previewUrl} alt="Full export preview" draggable={false} data-testid="export-quality-full-img" /><div className="export-quality-focus" data-testid="export-quality-focus" aria-hidden="true" style={{ left: `${clampExportFocus(focus.x)}%`, top: `${clampExportFocus(focus.y)}%` }} /></div><figcaption>Full export</figcaption></figure>
       <figure><div className="export-quality-zoom" role="img" aria-label="Export closeup at 16x magnification" data-testid="export-quality-zoom" style={{ backgroundImage: `url("${previewUrl}")`, backgroundPosition: position }} /><figcaption>16×</figcaption></figure>
     </div>
-    {estimating && <p className="inspector-note" role="status" data-testid="export-quality-updating">Updating preview…</p>}
     <p className="inspector-note" data-testid="export-quality-note">Actual {format.toUpperCase()} output at {quality}% — click or drag the full view to move the closeup.</p>
   </section>;
 }
@@ -177,10 +176,11 @@ function ExportDialog({ photo, edit, inpaintRepair, superres, initialSuperres, o
   // exportEstimate.ts), debounced so slider drags settle first. Lossy
   // formats also show the encoded blob as the quality preview, so the
   // on-screen pixels are the actual output. While the next run is
-  // pending the previous preview stays on screen (dimmed, with an
-  // updating status) so preset switches transition instead of closing
-  // the preview; only the new pixels swap it. 2x upscales have no
-  // accurate pre-export pixels (they only exist after the ML run), so
+  // pending the previous preview stays on screen (dimmed) so preset
+  // switches transition instead of closing the preview, with no added
+  // status line so the modal never resizes; only the new pixels swap it.
+  // 2x upscales have no accurate pre-export pixels (they only exist after
+  // the ML run), so
   // the line yields to an "unavailable" note and the preview hides
   // instead of a misleading figure; a failed run hides both rather than
   // showing stale numbers or pixels.

@@ -127,15 +127,15 @@ describe('export quality preview', () => {
 
   it('keeps the previous preview on screen while the next settings render', () => {
     // Preset switches (format, size, quality) transition, never close:
-    // a stale URL plus estimating keeps the views with an updating
-    // status instead of collapsing to the loading placeholder.
+    // a stale URL plus estimating keeps the views (dimmed via
+    // is-updating) instead of collapsing to the loading placeholder,
+    // with no added status line so the modal never resizes.
     const html = renderPreview({ previewUrl: 'blob:stale', estimating: true });
     expect(html).toContain('data-testid="export-quality-views"');
     expect(html).toContain('src="blob:stale"');
     expect(html).toContain('data-testid="export-quality-zoom"');
     expect(html).not.toContain('data-testid="export-quality-loading"');
-    expect(html).toContain('data-testid="export-quality-updating"');
-    expect(html).toContain('Updating preview…');
+    expect(html).not.toContain('Updating preview');
     const sectionTag = html.match(/<section[^>]*data-testid="export-quality-preview"[^>]*>/)?.[0] ?? '';
     expect(sectionTag).toContain('is-updating');
   });
@@ -144,7 +144,22 @@ describe('export quality preview', () => {
     const html = renderPreview({ previewUrl: 'blob:fresh', estimating: false });
     const sectionTag = html.match(/<section[^>]*data-testid="export-quality-preview"[^>]*>/)?.[0] ?? '';
     expect(sectionTag).not.toContain('is-updating');
-    expect(html).not.toContain('data-testid="export-quality-updating"');
+    expect(html).not.toContain('Updating preview');
+  });
+
+  it('renders identical markup while updating and settled, so the modal never resizes', () => {
+    // The updating and settled states differ only by the is-updating
+    // class (an opacity-only dim, pinned below): no element appears or
+    // disappears, so no layout shift is possible mid-update.
+    const updating = renderPreview({ previewUrl: 'blob:same', estimating: true });
+    const settled = renderPreview({ previewUrl: 'blob:same', estimating: false });
+    expect(updating.replace('export-quality-preview is-updating', 'export-quality-preview')).toBe(settled);
+  });
+
+  it('dims via opacity only, never via layout-affecting styles', () => {
+    const rule = cssRule('.export-quality-preview.is-updating .export-quality-views');
+    expect(rule).toMatch(/opacity\s*:\s*0\.45/);
+    expect(rule).not.toMatch(/display|height|width|margin|padding/);
   });
 
   it('never clears the preview URL while the next run is pending (source pin)', () => {
