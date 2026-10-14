@@ -1,6 +1,6 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across six
+Distilled from per-task writeups and subagent learnings across seven
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, or library UI so we don't repeat the same mistakes.
 
@@ -20,6 +20,9 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   preserved for archaeology.
 - **R6** = sixth run, 2026-10-13 (7 tasks). Writeups live in
   `docs/tasks/<slug>.md`.
+- **R7** = seventh run, 2026-10-13 (5 tasks). Writeups continue the
+  R6 numbering sequence in `docs/tasks/08-*.md`–`12-*.md` (one
+  running log).
 
 ## 1. Honest labels and naming
 
@@ -60,6 +63,13 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   off native `title` (`SegmentedOption.title` → `hint`) so `title=` in
   the codebase means headings only and the no-native-title sweep stays
   exact. (R4-4)
+- **Copy-only changes keep internal identifiers.** The "library server"
+  → "application server" reword touched 3 user-facing strings (plus 2
+  comments) and left `LibraryError`, `LibraryStatus`,
+  `createLibraryClient`, and the `library-gate` CSS class untouched —
+  renaming the API for no user-visible benefit is churn, per the R2-1
+  rule. Prefer a real term ("application server") over a slash
+  ("application/server") in headings. (R7-2)
 
 ## 2. Header and component contracts
 
@@ -160,6 +170,27 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   is a silent no-op with no error UI. No toast system was built for
   a one-word action — the `data-tooltip` host plus an inline glyph
   is enough confirmation. (R6-3)
+- **A lit toggle reports stored state, never draft provenance.**
+  Denoise was the only section whose header Auto highlighted for a
+  *draft* (the ISO≥1600 seed) instead of a stored effect — every
+  high-ISO photo opened with Auto lit while nothing was previewed,
+  applied, or stored, violating the shared `AdjustmentMl.applied`
+  "recipe holds exactly the auto values" contract. The highlight now
+  keys off the stored denoise being the untouched suggestion; an
+  idle click fills the suggestion into the draft, and clicking the
+  highlighted button clears (revert == clear when there is no
+  pre-apply snapshot), mirroring the generic revert-when-highlighted
+  toggle contract. Draft-provenance hints (slider origin) stay
+  draft-based — they describe the value, not a toggle state.
+  (R7-3; cf. R1-7 snapshot-keying, R4-1 no-snapshot-no-highlight.)
+- **New menu items ride optional props.** The View-menu zoom-lens
+  item added `'zoom-lens'` to `MenuAction` plus an optional `MenuBar`
+  prop (optional like the other later-added props), so every
+  existing render keeps working with no call-site churn. (R7-4)
+- **Persistent view modes gate on the view instead of resetting.**
+  Like Compare, the zoom lens survives photo switches;
+  `selectPhoto` does not reset it, and the editor-view gate means it
+  simply has no effect in the grid. (R7-4)
 
 ## 3. Spacing, layout, and motion
 
@@ -299,6 +330,19 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   curve path still strokes a colored hairline over the baseline —
   the flat histogram mounts no curve paths at all until the data
   lands. (R6-2)
+- **Orientation fixes mirror the sibling that already solved it.**
+  The portrait preset box (3x too wide: landscape `flex: 1 0 66px`
+  sizing with only an `object-fit: contain` portrait rule) took its
+  43px width from the filmstrip's `.is-portrait` item directly below
+  it — same photo, same constraint, consistent behavior. Long names
+  truncate with ellipsis and keep the full name in the existing
+  `Apply <name>` tooltip, so nothing is lost; one uniform box keeps
+  the strip aligned across all portrait aspects. (R7-1)
+- **A narrower state must outrank every responsive override.**
+  The 3-class portrait selector (`.presets-list.is-portrait
+  .preset-item`) deliberately beats the single-class responsive
+  `.preset-item` flex rules, so the narrow box holds at every
+  breakpoint — verify the override wins, per the R1-5 rule. (R7-1)
 
 ## 4. Navigation and state
 
@@ -487,6 +531,25 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   the path carries no route (path wins on conflict), and the
   unchanged URL-sync effect rewrites them to canonical paths via
   `replaceState` — the redirect needed no new code. (R6-6)
+- **Single-file reports get ground-truth verification first.**
+  "Denoise Auto is on for DSC06322.ARW" started in `f8.db`: the
+  ISO 6400 value was genuine, state resets per `photo.id` (no leak),
+  and no ARW-specific handling exists — systematic elimination that
+  named the real defect (draft-keyed highlight) instead of one file.
+  The R6-4 repro-script instinct, applied to a data question. (R7-3)
+- **Comments must track contract changes.** When Denoise stopped
+  highlighting for drafts, `shouldAutoDenoise` ("seeds the draft",
+  no longer "engages the toggle") and the stale "applied without a
+  snapshot is a draft state" note were rewritten in the same commit
+  — a comment describing the old contract invites reintroduction.
+  (R7-3)
+- **Magnifiers paint from the edited canvas, not the source.**
+  The 16x loupe reuses the brush cursor tracking and the minimap's
+  every-render `drawImage` mirror, so it shows adjustments, crop,
+  and rotation exactly as framed at one `drawImage` per frame —
+  zero extra render cost, consistent by construction (the R4-7/R4-8
+  shared-run rule). Magnification is relative to the displayed
+  photo, matching the existing zoom-percentage convention. (R7-4)
 
 ## 5. Testing practices (repo-specific)
 
@@ -639,6 +702,22 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   class="collection-breadcrumb"></div>` — no button, no span, no
   text — which is stronger than one absence check and fails on any
   future placeholder. (R6-7)
+- **Stylesheet pins can assert size relationships.** The portrait
+  preset test pins the 43px rule against the landscape sizing
+  (under half the grown 118px max, under the 66px basis) — the
+  R3-7 relational-pin instinct applied to a "too wide" report.
+  (R7-1)
+- **Effect-driven paint keeps the minimap seam.** The loupe's paint
+  runs in an effect unreachable from server rendering, so UI tests
+  pin the View-menu placement/checked state, the App wiring, the
+  cursor-tracking gate, and the stylesheet — while the pure core
+  geometry (`ZOOM_LENS_MAGNIFICATION = 16`, source-rect math, edge
+  clamps) carries node-runnable unit tests. (R7-4)
+- **Docs tasks get executable pins too.** The README rewrite ships
+  `readme.test.ts`: README stays light (<150 lines, no deep-dive
+  markers), every `docs/*.md` reference and embedded image exists,
+  italics attributions and init commands are present, and each
+  extracted doc holds its expected content. (R7-5)
 
 ## 6. Tooling gotchas
 
@@ -665,7 +744,7 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   signature of a stale `dist` (unit tests resolve source). Never
   commit `dist/`.
   (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6,
-  R4-4, R4-5, R4-6, R4-7, R4-8, R5-1, R6-6)
+  R4-4, R4-5, R4-6, R4-7, R4-8, R5-1, R6-6, R7-4)
 - **Commit by explicit paths, never `git add -A`.** Stray files
   (e.g. `.DS_Store` under `docs/`) get swept in otherwise. (R1)
 - **No CI, no configured linter** — both packages' `lint` scripts
@@ -785,6 +864,25 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   back non-`/api` GETs to `index.html`) and no redirect code (the
   URL-sync effect already rewrites). Verify first, then build only
   what's missing — the R2-8 instinct. (R6-6)
+- **In multi-task batches, leave files owned by a later task
+  alone.** Task 2 left the README's "library server" mentions for
+  Task 5's rewrite instead of creating a conflict; Task 5 left
+  `docs/learnings.md` for the parent synthesis. Record the deferral
+  in the writeup so it reads as deliberate, not missed. (R7-2, R7-5)
+- **Doc extraction moves content verbatim into one-question-per-file
+  docs.** The README split into architecture (how it is built),
+  features (what it does), and development (how to change it) with
+  zero rewording; the ASD-STE100 simplification applied to the new
+  README only — simplifying extracted detail loses information.
+  (R7-5)
+- **Reuse the only screenshot via `git mv`, staleness and all.**
+  The 10MB root asset moved to `docs/screenshots/app.png` with
+  history kept instead of duplicating; its staleness (old title
+  bar) is noted in the writeup, and retaking was out of scope
+  without browser automation. (R7-5)
+- **Same tier, same message.** The app-server gate reword left
+  "Photo server offline." (the ML-tier line in `Inspector.tsx`)
+  untouched — it names a different tier, not this gate. (R7-2)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -873,3 +971,13 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 | 5 | `1245b9d` | `05-export-button-photo-only.md` | Export gated on `showPhotoTools` |
 | 6 | `2cded86` | `06-path-urls.md` | `/photo/<id>/<tool>` + `/album/<id>` routes, legacy queries redirect |
 | 7 | `1697df2` | `07-backlink-fade.md` | Pending backlink renders null, fades in on arrival |
+
+## Per-task index, R7 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `85ff3a5` | `08-preset-box-width.md` | Preset boxes narrow to 43px on portrait photos |
+| 2 | `8941d8d` | `09-server-not-running-wording.md` | "library server" → "application server" copy |
+| 3 | `6a708c2` | `10-denoise-auto-state.md` | Denoise Auto highlights only for stored auto |
+| 4 | `b09ca22` | `11-zoom-in-view.md` | View-menu 16× cursor loupe in photo view |
+| 5 | `82d5918` | `12-readme-rewrite.md` | ASD-STE100 README + architecture/features/development docs |
