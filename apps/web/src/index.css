@@ -218,6 +218,12 @@ its chevron glyph off the toggle edge. */
 .zoom-lens-label { position: absolute; right: 9px; bottom: 9px; font-size: 9px; font-weight: 600; color: #ececef; background: #16161a9c; padding: 2px 6px; border-radius: 999px; backdrop-filter: blur(10px); }
 .tool-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); width: fit-content; max-width: 90%; font-size: 10px; color: #d4d0c7; background: #292824ed; border: 1px solid #4b463a; padding: 6px 10px; border-radius: 4px; z-index: 6; opacity: 1; transition: opacity 0.5s ease; pointer-events: none; }
 .tool-hint.is-fading { opacity: 0; }
+/* Focus-mode exit: the menu bar and toolbar are unmounted in focus mode,
+   so a floating button offers the way out (Shift F and Esc still work).
+   Subtle until hovered or keyboard-focused; below dialogs (100) and
+   toasts (150) so they cover it. */
+.focus-exit { position: fixed; top: 12px; right: 12px; z-index: 90; display: flex; padding: 3px; border-radius: 8px; background: #292824ed; border: 1px solid #4b463a; opacity: 0.55; transition: opacity 150ms ease; }
+.focus-exit:hover, .focus-exit:focus-within { opacity: 1; }
 .canvas-status { height: 34px; flex-shrink: 0; padding: 0 14px 0 20px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #252528; background: #1a1a1c; font-size: 9px; color: #898992; }
 .canvas-dimensions { display: flex; align-items: center; gap: 7px; font-size: 8.5px; white-space: nowrap; }
 .canvas-dimensions:hover { color: #c2c2ca; }

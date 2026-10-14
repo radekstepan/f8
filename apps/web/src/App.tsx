@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
+import { Check, CloudOff, FolderSearch, ImagePlus, Minimize2, RefreshCw, X } from 'lucide-react';
+import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isFilmstripVisible, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, resolveFocusView, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, pickAlbumCover, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
 import { Sidebar } from '@f8/ui';
-import { AppStatus, MenuBar, Toolbar, type MenuAction } from '@f8/ui';
+import { AppStatus, IconButton, MenuBar, Toolbar, type MenuAction } from '@f8/ui';
 import { PhotoCanvas, type HistogramData } from '@f8/ui';
 import { Filmstrip, PhotoBrowser, PresetStrip } from '@f8/ui';
 import { Inspector } from '@f8/ui';
@@ -127,6 +127,11 @@ export default function App() {
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth > 760);
   const [presetsOpen, setPresetsOpen] = useState(() => readToolPrefs().presetsOpen);
   const [filmstripOpen, setFilmstripOpen] = useState(() => readToolPrefs().filmstripOpen);
+  // Focus mode (View → Focus Mode, Shift F): only the open photo and the
+  // album filmstrip stay mounted. The panel preferences above are left
+  // alone — the render gates hide them — so leaving the mode restores the
+  // exact previous layout instead of clobbering it.
+  const [focusMode, setFocusMode] = useState(false);
   const [compare, setCompare] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -261,6 +266,9 @@ export default function App() {
   }, [view, collection, albums, library.status]);
   useEffect(() => {
     const onPopState = () => {
+      // Browser Back/forward always leaves focus mode: the navigation names
+      // a new view, and the focused photo must not linger over it.
+      setFocusMode(false);
       try {
         const parsed = parseLibraryUrl(window.location.pathname, window.location.search);
         if (parsed.photoId) {
@@ -1028,7 +1036,7 @@ export default function App() {
       case 'presets': setPresetsOpen((current) => !current); break;
       case 'filmstrip': setFilmstripOpen((current) => !current); break;
       case 'compare': if (tool === 'crop') break; setCompare((current) => !current); setView('editor'); break;
-      case 'grid': setView((current) => current === 'editor' ? 'library' : 'editor'); break;
+      case 'grid': setFocusMode(false); setView((current) => current === 'editor' ? 'library' : 'editor'); break;
       case 'back': setView('library'); break;
       case 'fit': setZoom(1); break;
       case 'zoom-lens-4':
@@ -1041,7 +1049,7 @@ export default function App() {
         else { setZoomLensMag(mag); setZoomLens(true); }
         break;
       }
-      case 'fullscreen': { const showing = sidebarOpen || inspectorOpen; setSidebarOpen(!showing); setInspectorOpen(!showing); break; }
+      case 'fullscreen': { if (focusMode) setFocusMode(false); else { setFocusMode(true); setView('editor'); } break; }
       case 'shortcuts': setDialog('shortcuts'); break;
       case 'about': setDialog('about'); break;
     }
@@ -1086,7 +1094,7 @@ export default function App() {
       const tools: Record<string, Tool> = { v: 'adjust', c: 'crop', j: 'repair' };
       if (actions[key]) actionRef.current(actions[key]);
       if (tools[key]) toolRef.current(tools[key]);
-      if (key === 'escape') { setCompare(false); setTool('adjust'); if (shouldEscapeToLibrary(view)) setView('library'); return; }
+      if (key === 'escape') { if (focusMode) { setFocusMode(false); return; } setCompare(false); setTool('adjust'); if (shouldEscapeToLibrary(view)) setView('library'); return; }
     };
     const onKeyUp = (event: KeyboardEvent) => { if (event.key === '\\') setShowOriginal(false); };
     const onBlur = () => setShowOriginal(false);
@@ -1094,7 +1102,7 @@ export default function App() {
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
     return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur); };
-  }, [dialog, filteredPhotos, selectedId, selectPhoto, view]);
+  }, [dialog, filteredPhotos, selectedId, selectPhoto, view, focusMode]);
 
   // Auto scene enhance requested from a library-grid or filmstrip context
   // menu: the editor hook is bound to the selected photo, so the request
@@ -1240,7 +1248,13 @@ export default function App() {
   // editor view: in the library no photo is in focus and the same shell
   // class + mount gate keeps the grid full-width. The open/closed
   // preference itself is untouched, so returning to a photo restores it.
-  const showInspector = isInspectorVisible(view, inspectorOpen);
+  // Focus mode unmounts it the same way (preference untouched).
+  const showInspector = isInspectorVisible(view, inspectorOpen) && !focusMode;
+  // Focus mode renders the open photo and the album filmstrip only: the
+  // view is forced to the photo (state can still name the grid), and the
+  // filmstrip is forced on (the preference can still be closed).
+  const effectiveView = resolveFocusView(view, focusMode);
+  const showFilmstrip = isFilmstripVisible(filmstripOpen, focusMode);
   // The photo backlink only exists on an open photo: in the library grid
   // the breadcrumb is static text, so the link can never carry the user
   // from the grid into a single photo.
@@ -1255,14 +1269,15 @@ export default function App() {
   const straightenFlash = straighten.state === 'ready' && !hasStraightenHorizon(straighten.confidence)
     ? { runId: straighten.runId, message: 'No clear horizon found — adjust Straighten manually.' }
     : null;
-  return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importDrop(event.dataTransfer); }}>
+  return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''} ${focusMode ? 'is-focus' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importDrop(event.dataTransfer); }}>
     <TooltipHost />
-    <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} zoomLens={zoomLens} zoomLensMagnification={zoomLensMag} />
-    <Toolbar collectionName={backlinkName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
+    {!focusMode && <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} zoomLens={zoomLens} zoomLensMagnification={zoomLensMag} />}
+    {!focusMode && <Toolbar collectionName={backlinkName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />}
+    {focusMode && <div className="focus-exit"><IconButton label="Exit focus mode (Shift F)" onClick={() => handleAction('fullscreen')}><Minimize2 size={17} /></IconButton></div>}
     <div className="workspace">
-      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onGenerateAlbumThumbnail={generateAlbumThumbnail} onRemoveAlbumThumbnail={removeAlbumThumbnail} onMoveToAlbum={movePhotosToAlbum} />}
+      {!focusMode && sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onGenerateAlbumThumbnail={generateAlbumThumbnail} onRemoveAlbumThumbnail={removeAlbumThumbnail} onMoveToAlbum={movePhotosToAlbum} />}
       <main className="editor-column">
-        {view === 'library' ? (
+        {effectiveView === 'library' ? (
           <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} albums={albums} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onGenerateAlbumThumbnail={generateAlbumThumbnail} onRemoveAlbumThumbnail={removeAlbumThumbnail} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} selectedIds={selection} onSelectionChange={setSelection} onMoveToAlbum={movePhotosToAlbum} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
         ) : (
           <>
@@ -1288,11 +1303,11 @@ export default function App() {
                 onInfo={() => setDialog('info')} onChange={editor.change} onEndMerge={editor.endMerge} onHistogram={setHistogram}
               />
             )}
-            {presetsOpen && <PresetStrip
+            {!focusMode && presetsOpen && <PresetStrip
               photo={photo} presets={availablePresets} selected={editor.edit.preset}
               onSelect={editor.applyPreset} onAdd={() => setDialog('preset')} onToggle={() => setPresetsOpen(false)}
             />}
-            {filmstripOpen && <Filmstrip
+            {showFilmstrip && <Filmstrip
               photos={filteredPhotos} selectedId={photo.id} collectionName={collectionName} edits={liveEdits}
               onSelect={selectPhoto}
               onSort={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')} reversed={sortDir === 'desc'} sortKey={sortKey}
@@ -1315,7 +1330,7 @@ export default function App() {
         onClose={() => setInspectorOpen(false)}
       />}
     </div>
-    <AppStatus
+    {!focusMode && <AppStatus
       count={photos.length}
       vision={{
         status: vision.status,
@@ -1323,7 +1338,7 @@ export default function App() {
         selfTest: vision.selfTest,
         onActivate: () => void vision.ensureReady(),
       }}
-    />
+    />}
     <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
     <input className="hidden" ref={folderInput} type="file" {...{ webkitdirectory: '' }} accept={`image/*,${RAW_ACCEPT}`} aria-label="Import folder as album" onChange={(event) => { if (event.target.files?.length) void importFiles(event.target.files, (file) => file.webkitRelativePath || ''); event.target.value = ''; }} />
     <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : (viewPhoto ?? photo)} edit={editor.edit} inpaintRepair={canvasRepairBinding} superres={superresBinding} initialSuperres={export2xArmed} onClose={() => { setDialog(null); setRemoveTargetId(null); setRemoveAlbumTargetId(null); setExport2xArmed(false); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} removeAlbum={removeAlbumTarget} onRemoveAlbum={confirmRemoveAlbum} onAddLabel={(photoId, label) => { void library.updateLabels(photoId, { add: [label] }).then(() => notify(`Labeled “${label}”.`), (reason: unknown) => notifyError(reason, 'Could not add the label.')); }} onRemoveLabel={(photoId, label) => { void library.updateLabels(photoId, { remove: [label] }).catch((reason: unknown) => notifyError(reason, 'Could not remove the label.')); }} onSearchLabel={(label) => { setDialog(null); setCollection('all'); clearFilters(); updateSearch(label); setView('library'); }} />

@@ -11,6 +11,7 @@ export * from "./detectionPreview.js";
 export * from "./escapeNavigation.js";
 export * from "./exportEstimate.js";
 export * from "./filmstripScroll.js";
+export * from "./focusMode.js";
 export * from "./folderImport.js";
 export * from "./image.js";
 export * from "./inspectorVisibility.js";
