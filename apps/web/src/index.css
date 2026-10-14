@@ -145,6 +145,11 @@ its chevron glyph off the toggle edge. */
 .photo-workspace { display: flex; flex-direction: column; flex: 1; min-height: 170px; }
 .photo-heading { height: 40px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 24px; }
 .photo-filename { display: flex; align-items: center; gap: 9px; font-size: 11px; color: #c4c4cd; font-weight: 450; }
+.filename-copy { display: inline-flex; align-items: center; gap: 6px; font: inherit; color: inherit; background: none; border: 0; padding: 2px 4px; margin: -2px -4px; border-radius: 4px; cursor: pointer; }
+.filename-copy:hover { color: #fff; background: #ffffff14; }
+.filename-copy > svg { opacity: 0; flex-shrink: 0; }
+.filename-copy:hover > svg, .filename-copy:focus-visible > svg, .filename-copy.is-copied > svg { opacity: 1; }
+.filename-copy.is-copied { color: var(--accent); }
 .file-type { font-size: 7px; line-height: 13px; letter-spacing: .3px; padding: 0 4px; border: 1px solid #54545d; border-radius: 3px; color: #c0c0c8; font-weight: 500; }
 .edited-indicator { display: flex; align-items: center; gap: 5px; color: #76767f; font-size: 9px; font-weight: 400; }
 .edited-indicator::before { content: ''; height: 3px; width: 3px; background: #7b7b83; border-radius: 50%; }

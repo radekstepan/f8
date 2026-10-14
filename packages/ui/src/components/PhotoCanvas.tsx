@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { ChevronsLeftRight, Columns2, Heart, ImageOff, Info, Maximize, Minus, Plus, Star, Trash2 } from 'lucide-react';
+import { Check, ChevronsLeftRight, Columns2, Copy, Heart, ImageOff, Info, Maximize, Minus, Plus, Star, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
 import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, frameAspectForPhoto, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
 import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 import { ToolHint } from './ToolHint.js';
+import { copyTextToClipboard } from '../utils/clipboard.js';
+
+/** How long the filename button shows its "Copied" confirmation. */
+export const FILENAME_COPIED_MS = 1500;
 
 /** Same-origin library client for persisted heal overlays (fire-and-forget cache I/O). */
 const overlayClient = createLibraryClient();
@@ -124,6 +128,20 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   const [retry, setRetry] = useState(0);
   const [split, setSplit] = useState(50);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  /** Filename just copied: the heading button flashes its confirmation. */
+  const [filenameCopied, setFilenameCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyFilename = useCallback(() => {
+    void copyTextToClipboard(photo.name).then((ok) => {
+      if (!ok) return;
+      setFilenameCopied(true);
+      if (copyTimer.current !== null) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => {
+        copyTimer.current = null;
+        setFilenameCopied(false);
+      }, FILENAME_COPIED_MS);
+    });
+  }, [photo.name]);
   /** Repair stroke groups with a heal still in flight (clean canvas + red overlay, never blur). */
   const [pendingRepairIds, setPendingRepairIds] = useState<number[]>([]);
   /** In-flight overlay fetch for the open photo; the main effect awaits it before first paint. */
@@ -188,6 +206,10 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   }, []);
 
   useEffect(() => { setLoading(true); setError(''); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; healGeometry.current = null; healStraightenAnchor.current.clear(); paintLog.current = []; overlayStore.current = []; healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src, retry]);
+
+  // A new photo clears any stale "Copied" flash; unmount clears the timer.
+  useEffect(() => { setFilenameCopied(false); }, [photo.id]);
+  useEffect(() => () => { if (copyTimer.current !== null) clearTimeout(copyTimer.current); }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1261,7 +1283,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   const miniWidth = Math.round(Math.min(148, 104 * displayAspect));
   const miniHeight = Math.round(Math.min(104, 148 / displayAspect));
 
-  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename">{photo.name}<span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{!isDefaultEdit(edit) && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} data-tooltip={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton>{onRemove && <IconButton label="Remove from library (Del)" className="photo-remove" onClick={onRemove}><Trash2 size={15} strokeWidth={1.5} /></IconButton>}</div></div><div className="canvas-stage-wrap"><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${pannableCursor ? 'is-pannable' : ''} ${panning ? 'is-panning' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} data-testid="photo-frame" style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onMouseDown={swallowMiddleClick} onPointerMove={(event) => { const pan = panDrag.current; if (pan && event.pointerId === pan.pointerId) { const stage = stageRef.current; if (stage) { const next = panScrollFromDrag(pan, { clientX: event.clientX, clientY: event.clientY }); stage.scrollLeft = next.scrollLeft; stage.scrollTop = next.scrollTop; } return; } if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
+  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename"><button type="button" className={`filename-copy${filenameCopied ? ' is-copied' : ''}`} data-testid="filename-copy" data-tooltip={filenameCopied ? 'Copied!' : 'Copy filename'} aria-label={filenameCopied ? `Copied ${photo.name}` : `Copy filename ${photo.name}`} onClick={copyFilename}><span>{photo.name}</span>{filenameCopied ? <Check size={11} /> : <Copy size={11} />}</button><span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{!isDefaultEdit(edit) && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} data-tooltip={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton>{onRemove && <IconButton label="Remove from library (Del)" className="photo-remove" onClick={onRemove}><Trash2 size={15} strokeWidth={1.5} /></IconButton>}</div></div><div className="canvas-stage-wrap"><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${pannableCursor ? 'is-pannable' : ''} ${panning ? 'is-panning' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} data-testid="photo-frame" style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onMouseDown={swallowMiddleClick} onPointerMove={(event) => { const pan = panDrag.current; if (pan && event.pointerId === pan.pointerId) { const stage = stageRef.current; if (stage) { const next = panScrollFromDrag(pan, { clientX: event.clientX, clientY: event.clientY }); stage.scrollLeft = next.scrollLeft; stage.scrollTop = next.scrollTop; } return; } if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
       {/* Album-thumbnail hold: the grid already decoded this URL, so it paints
           on the first frame and the full-res canvas crossfades over it —
           navigating in never flashes an empty frame. Decorative: the canvas
