@@ -114,7 +114,8 @@ describe('Curves toggle and points', () => {
     const graph = renderGraph({ ...DEFAULT_EDIT });
     expect(graph).not.toContain('curve-point');
     expect(graph).toContain('Tone curve graph. Click the line to add a point');
-    expect(graph).toContain('data-tooltip="Click the line to add a point — drag points to reshape, double-click one to remove"');
+    expect(graph).toContain('data-tooltip="Click the line to add a point — drag points to reshape, Shift-click or right-click one to remove"');
+    expect(graph).toContain('aria-label="Tone curve graph. Click the line to add a point, drag points to reshape, Shift-click, right-click, or Delete removes the focused point."');
     // Default line is the pinned diagonal (see toneCurveDisplayPath tests
     // for the bend/anchor shapes; here only the shell is pinned).
     expect(graph).toContain('M0 160');
@@ -167,16 +168,36 @@ describe('Curves toggle and points', () => {
     expect(inspector).toContain('const curvesDirty = edit.curve !== 0 || edit.curvePoints.length !== 0;');
   });
 
-  it('removes dots on double-click, not right-click', () => {
+  it('removes dots on Shift-click and right-click at pointerdown', () => {
     // Static markup cannot observe the dot gestures, so pin the wiring at
-    // the source (the detailsReset.test.tsx precedent): double-click calls
-    // the removeCurvePoint reducer and clears the in-flight drag index so a
-    // pointer that keeps moving after the removal cannot grab a neighbor.
-    // Right-click only suppresses the browser menu now — it never removed
-    // reliably (the menu opened instead), which is why the gesture moved.
+    // the source (the detailsReset.test.tsx precedent). Both removal
+    // gestures run on pointerdown — the press always hits the dot, while
+    // the drag captures the pointer to the svg and retargets the
+    // follow-up dblclick/contextmenu there, which is why dot-level
+    // onDoubleClick (and the earlier onContextMenu removal) never fired.
     const inspector = source('Inspector.tsx');
+    // Exact hits: the dot press removes before any drag or capture starts,
+    // and clears the in-flight drag index so a pointer that keeps moving
+    // after the removal cannot grab a neighbor.
+    expect(inspector).toContain('onPointerDown={(event) => { event.stopPropagation(); if (event.shiftKey || event.button === 2) { dragIndex.current = null; onChange({ curvePoints: removeCurvePoint(anchors, index) }); return; }');
+    // Near-misses: the svg press hit-tests the generous grab radius and
+    // removes that anchor — or no-ops, so a right press on empty graph
+    // can never drop a stray point.
+    expect(inspector).toContain('if (hit !== null) onChange({ curvePoints: removeCurvePoint(anchors, hit) });');
+    // Removal presses return before setPointerCapture (order pinned on
+    // the ToneCurveEditor slice), so the follow-up contextmenu still
+    // targets the pressed node and the preventDefault-only handlers below
+    // actually suppress the browser menu.
+    const editor = inspector.slice(inspector.indexOf('export function ToneCurveEditor'));
+    const removal = editor.indexOf('if (event.shiftKey || event.button === 2)');
+    const capture = editor.indexOf('event.currentTarget.setPointerCapture(event.pointerId)');
+    expect(removal).toBeGreaterThan(-1);
+    expect(removal).toBeLessThan(capture);
+    expect(inspector).toContain('onPointerCancel={endDrag} onContextMenu={(event) => { event.preventDefault(); }}');
+    // The dot-level double-click removal stays as a harmless fallback (it
+    // fires only where dblclick still dispatches to the dot); removal is
+    // no longer advertised through it.
     expect(inspector).toContain('onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); dragIndex.current = null; onChange({ curvePoints: removeCurvePoint(anchors, index) }); }}');
-    expect(inspector).not.toContain('onContextMenu={(event) => { event.preventDefault(); onChange({ curvePoints: removeCurvePoint');
   });
 
   it('styles the dots as grabbable points on the line', () => {

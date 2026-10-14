@@ -844,9 +844,13 @@ function RetouchGroups({ edit, highlightStroke, onHighlightStroke, onChange }: {
  * The interactive RGB tone-curve graph. The drawn line is the real render
  * mapping (anchor spline over the Midtones bend); the dots are the recipe's
  * anchors: press on the line to drop a new one and keep dragging it in the
- * same gesture, drag a dot to reshape, Delete (or double-click) removes the
- * focused dot. The header toggle clears dots and Midtones together, so the
- * Midtones slider carries no double-click reset of its own.
+ * same gesture, drag a dot to reshape, Shift-click, right-click, or Delete
+ * removes the focused dot. The header toggle clears dots and Midtones
+ * together, so the Midtones slider carries no double-click reset of its own.
+ * Removal runs on pointerdown (the press always hits the dot): the drag
+ * captures the pointer to the svg, which retargets the follow-up dblclick
+ * and contextmenu events there, so dot-level handlers for those gestures
+ * never fire reliably.
  */
 export function ToneCurveEditor({ points, midtone, onChange }: { points: CurvePoint[]; midtone: number; onChange: ChangeEdit }) {
   const anchors = useMemo(() => normalizeCurvePoints(points), [points]);
@@ -877,9 +881,20 @@ export function ToneCurveEditor({ points, midtone, onChange }: { points: CurvePo
   };
   // The tooltip lives on the wrapper div: TooltipHost only reads HTML
   // elements, so svg/circle nodes could never trigger it themselves.
-  return <div className="curve-graph" data-tooltip="Click the line to add a point — drag points to reshape, double-click one to remove"><span>RGB</span><svg ref={svgRef} viewBox={`0 0 ${TONE_CURVE_WIDTH} ${TONE_CURVE_HEIGHT}`} role="group" aria-label="Tone curve graph. Click the line to add a point, drag points to reshape, double-click or Delete removes the focused point." onPointerDown={(event) => {
+  return <div className="curve-graph" data-tooltip="Click the line to add a point — drag points to reshape, Shift-click or right-click one to remove"><span>RGB</span><svg ref={svgRef} viewBox={`0 0 ${TONE_CURVE_WIDTH} ${TONE_CURVE_HEIGHT}`} role="group" aria-label="Tone curve graph. Click the line to add a point, drag points to reshape, Shift-click, right-click, or Delete removes the focused point." onPointerDown={(event) => {
     const at = toCurve(event.clientX, event.clientY);
     if (!at) return;
+    // Removal gestures never reach past the press: the drag below captures
+    // the pointer to the svg, which retargets dblclick/contextmenu there,
+    // so removal on either of those never fires on the dot. A removal press
+    // near a dot (the generous grab radius) drops that anchor; anywhere
+    // else it is a no-op — in particular a right press never adds a point.
+    if (event.shiftKey || event.button === 2) {
+      const hit = hitAnchor(at);
+      dragIndex.current = null;
+      if (hit !== null) onChange({ curvePoints: removeCurvePoint(anchors, hit) });
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
     const hit = hitAnchor(at);
     if (hit !== null) { dragIndex.current = hit; return; }
@@ -898,7 +913,7 @@ export function ToneCurveEditor({ points, midtone, onChange }: { points: CurvePo
     const at = toCurve(event.clientX, event.clientY);
     if (!at) return;
     onChange({ curvePoints: moveCurvePoint(anchors, dragIndex.current, at.x, at.y) }, 'curve-points');
-  }} onPointerUp={endDrag} onPointerCancel={endDrag}><g className="curve-grid" aria-hidden="true">{[60, 120, 180].map((x) => <path key={x} d={`M${x} 0V160`} />)}{[40, 80, 120].map((y) => <path key={y} d={`M0 ${y}H240`} />)}</g><path d="M0 160L240 0" stroke="#555" strokeDasharray="3 4" aria-hidden="true" /><path d={path} fill="none" stroke="#e4c67d" strokeWidth="2" aria-hidden="true" />{anchors.map((anchor, index) => <circle key={index} className="curve-point" cx={anchor.x * TONE_CURVE_WIDTH} cy={(1 - anchor.y) * TONE_CURVE_HEIGHT} r={4.5} tabIndex={0} role="slider" aria-label={`Curve point ${index + 1} of ${anchors.length}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(anchor.y * 100)} aria-valuetext={`input ${Math.round(anchor.x * 100)} percent, output ${Math.round(anchor.y * 100)} percent`} onPointerDown={(event) => { event.stopPropagation(); dragIndex.current = index; svgRef.current?.setPointerCapture(event.pointerId); }} onKeyDown={(event) => {
+  }} onPointerUp={endDrag} onPointerCancel={endDrag} onContextMenu={(event) => { event.preventDefault(); }}><g className="curve-grid" aria-hidden="true">{[60, 120, 180].map((x) => <path key={x} d={`M${x} 0V160`} />)}{[40, 80, 120].map((y) => <path key={y} d={`M0 ${y}H240`} />)}</g><path d="M0 160L240 0" stroke="#555" strokeDasharray="3 4" aria-hidden="true" /><path d={path} fill="none" stroke="#e4c67d" strokeWidth="2" aria-hidden="true" />{anchors.map((anchor, index) => <circle key={index} className="curve-point" cx={anchor.x * TONE_CURVE_WIDTH} cy={(1 - anchor.y) * TONE_CURVE_HEIGHT} r={4.5} tabIndex={0} role="slider" aria-label={`Curve point ${index + 1} of ${anchors.length}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(anchor.y * 100)} aria-valuetext={`input ${Math.round(anchor.x * 100)} percent, output ${Math.round(anchor.y * 100)} percent`} onPointerDown={(event) => { event.stopPropagation(); if (event.shiftKey || event.button === 2) { dragIndex.current = null; onChange({ curvePoints: removeCurvePoint(anchors, index) }); return; } dragIndex.current = index; svgRef.current?.setPointerCapture(event.pointerId); }} onKeyDown={(event) => {
     if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault(); event.stopPropagation();
       onChange({ curvePoints: removeCurvePoint(anchors, index) });
