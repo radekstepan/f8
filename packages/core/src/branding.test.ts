@@ -1,26 +1,57 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   ABOUT_DISCLAIMER,
   APP_DESCRIPTION,
-  APP_EDITION,
-  APP_EDITION_SHORT,
   APP_NAME,
   APP_TAGLINE,
+  APP_VERSION,
   EXTENSION_POINTS,
 } from "./branding.js";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+
+/** Workspaces versioned in lockstep by the changesets `fixed` group. */
+const VERSIONED_PACKAGES = [
+  "apps/server/package.json",
+  "apps/web/package.json",
+  "packages/core/package.json",
+  "packages/ui/package.json",
+];
+
+function packageVersion(relative: string): string {
+  return (JSON.parse(readFileSync(join(ROOT, relative), "utf8")) as { version: string }).version;
+}
 
 describe("branding", () => {
   it("uses the adopted product name", () => {
     expect(APP_NAME).toBe("f/8");
   });
 
+  it("shows a semver app version", () => {
+    expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it("mirrors the workspace package versions (single source of truth)", () => {
+    for (const relative of VERSIONED_PACKAGES) {
+      expect(packageVersion(relative), relative).toBe(APP_VERSION);
+    }
+  });
+
+  it("keeps the retired edition label out of user-facing copy", () => {
+    const copy = [APP_NAME, APP_VERSION, APP_TAGLINE, APP_DESCRIPTION, ABOUT_DISCLAIMER].join("\n");
+    expect(copy).not.toMatch(/edition/i);
+  });
+
   it("keeps retired names out of all user-visible copy", () => {
-    const copy = [APP_NAME, APP_EDITION, APP_EDITION_SHORT, APP_TAGLINE, APP_DESCRIPTION, ABOUT_DISCLAIMER].join("\n");
+    const copy = [APP_NAME, APP_VERSION, APP_TAGLINE, APP_DESCRIPTION, ABOUT_DISCLAIMER].join("\n");
     expect(copy).not.toMatch(/safelight/i);
   });
 
   it("keeps retired demo labels out of user-facing copy", () => {
-    const copy = [APP_NAME, APP_EDITION, APP_EDITION_SHORT, APP_TAGLINE, APP_DESCRIPTION, ABOUT_DISCLAIMER].join("\n");
+    const copy = [APP_NAME, APP_VERSION, APP_TAGLINE, APP_DESCRIPTION, ABOUT_DISCLAIMER].join("\n");
     expect(copy).not.toMatch(/kitchen sink/i);
     expect(copy).not.toMatch(/this demo/i);
     expect(copy).not.toMatch(/interface study/i);

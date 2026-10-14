@@ -1,7 +1,7 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Bandage, Check, ChevronLeft, ChevronRight, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, RotateCcw, Share, SlidersHorizontal, SwatchBook, Undo2 } from 'lucide-react';
 import type { DialogType, Tool, VisionWorkerStatus, ZoomLensMagnification } from '@f8/core';
-import { APP_EDITION_SHORT, APP_NAME, ZOOM_LENS_MAGNIFICATIONS } from '@f8/core';
+import { APP_NAME, APP_VERSION, ZOOM_LENS_MAGNIFICATIONS } from '@f8/core';
 import { BrandMark, IconButton, MenuItem, MenuSeparator, MlBadge } from './EditorUI.js';
 import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
 
@@ -107,7 +107,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
           </div>
         ))}
       </nav>
-      <div className="demo-indicator"><span />{APP_EDITION_SHORT}</div>
+      <div className="version-indicator"><span />{`v${APP_VERSION}`}</div>
     </div>
   );
 }

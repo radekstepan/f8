@@ -46,9 +46,8 @@ img { display: block; }
 /* Open trigger meets its dropdown flush: square the bottom corners so
 the pill flows into the panel. Hover alone keeps the full rounding. */
 .menu-trigger.is-open { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-.demo-indicator { margin-left: auto; display: flex; align-items: center; gap: 8px; color: #929096; font-size: 8px; letter-spacing: 1.3px; }
-.demo-indicator > span:first-child { width: 4px; height: 4px; border-radius: 50%; background: var(--accent-muted); }
-.demo-version { color: #74747b; font-size: 9px; letter-spacing: 0; margin-left: 4px; }
+.version-indicator { margin-left: auto; display: flex; align-items: center; gap: 8px; color: #929096; font-size: 8px; letter-spacing: 1.3px; }
+.version-indicator > span:first-child { width: 4px; height: 4px; border-radius: 50%; background: var(--accent-muted); }
 .dropdown-menu { position: absolute; top: 100%; left: 0; z-index: 80; min-width: 218px; padding: 5px; border: 1px solid #515157; border-radius: 7px; background: #303033f5; backdrop-filter: blur(24px); box-shadow: 0 10px 35px #0007, 0 1px 3px #0005; animation: menu-in 130ms ease-out; }
 /* Top menu bar: open flush with the trigger pill, which carries
 margin: 3px 0 inside the full-height anchor (top: 100% alone would
@@ -708,7 +707,7 @@ its chevron glyph off the toggle edge. */
   .main-toolbar { padding-right: 16px; }
   .tool-button { width: 43px; }
   .backlink-name, .collection-name { max-width: 150px; }
-  .demo-indicator { display: none; }
+  .version-indicator { display: none; }
   .library-sidebar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 40; width: 213px; box-shadow: 14px 0 32px #0005; }
   .window-toolbar { width: 124px; padding-right: 12px; }
   .app-shell:not(.has-sidebar) .window-toolbar { width: auto; padding-right: 0; }

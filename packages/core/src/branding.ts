@@ -6,10 +6,16 @@
  */
 export const APP_NAME = "f/8";
 
-export const APP_EDITION = "THE LOCAL-FIRST EDITION";
-
-/** Short edition label for the menu-bar indicator. */
-export const APP_EDITION_SHORT = "LOCAL-FIRST EDITION";
+/**
+ * App-wide version shown in the menu bar and the About dialog.
+ *
+ * Single source of truth is the workspace package.json versions, kept in
+ * lockstep by the changesets `fixed` group in `.changeset/config.json`;
+ * this mirrors them and `branding.test.ts` fails if they drift. The
+ * `version-packages` root script rewrites this line automatically via
+ * `scripts/sync-app-version.mjs` after `changeset version` runs.
+ */
+export const APP_VERSION = "0.1.0";
 
 export const APP_TAGLINE = "A little darkroom. A lot of possibilities.";
 

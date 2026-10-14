@@ -12,12 +12,15 @@
     "e2e": "turbo run e2e",
     "setup": "yarn workspace @f8/server setup",
     "build": "turbo run build",
+    "changeset": "changeset",
+    "version-packages": "changeset version && node scripts/sync-app-version.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.0.0",
     "turbo": "2.5.0",
     "typescript": "5.9.3"
   },
