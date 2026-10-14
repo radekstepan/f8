@@ -355,9 +355,9 @@ describe('denoise control', () => {
   });
 
   it('renders every denoise action as a golden link, never a grey button', () => {
-    // Idle: the preview action is a full-width golden link.
+    // Idle: the preview action is a golden link in the shared action row.
     const idle = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
-    expect(idle).toContain('class="text-button full-width" data-testid="denoise-preview"');
+    expect(idle).toContain('<div class="suggestion-actions"><button class="text-button" data-testid="denoise-preview"');
     // Preview-ready: Apply joins the Update/Cancel links in one text row.
     const ready = renderAdjust(
       { ...DEFAULT_EDIT },
@@ -386,10 +386,12 @@ describe('denoise control', () => {
   });
 
   it('styles the golden link idle gold, dims it when disabled, and never lights a disabled hover', () => {
-    // The link color is the action gold; the idle preview link keeps its
-    // 10px top rhythm below the hint (the rule followed the class swap).
+    // The link color is the action gold; the idle preview link sits in
+    // the shared row now, so its 10px top rhythm comes from the row — the
+    // one-off denoise button rules are gone.
     expect(cssRule('.text-button')).toMatch(/color\s*:\s*#b8a279/);
-    expect(cssRule('.denoise > .text-button.full-width')).toMatch(/margin-top\s*:\s*10px/);
+    expect(cssRule('.suggestion-actions')).toMatch(/margin-top\s*:\s*10px/);
+    expect(css()).not.toMatch(/\.denoise > \.text-button\.full-width\s*\{/);
     expect(css()).not.toMatch(/\.denoise > \.slim-button\.full-width\s*\{/);
     // The preview link disables at strength 0 — the first disabled
     // text-button anywhere — so it dims like a slim button did and the

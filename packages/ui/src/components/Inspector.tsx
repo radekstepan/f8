@@ -361,7 +361,7 @@ function RepairMethodControl({ assist }: { assist: RepairAssist }) {
         ]} />
       </>}
       {offline
-        ? <div className="ml-offline" data-testid="ml-offline" role="alert"><p>Photo server offline.</p><button className="text-button" data-testid="ml-retry" data-tooltip="Warm the ML tier again" onClick={assist.onRetry}>Retry</button></div>
+        ? <div className="ml-offline" data-testid="ml-offline" role="alert"><p>Photo server offline.</p><div className="suggestion-actions"><button className="text-button" data-testid="ml-retry" data-tooltip="Warm the ML tier again" onClick={assist.onRetry}>Retry</button></div></div>
         : visibleProgress && <MlProgressView progress={visibleProgress} onCancel={assist.onCancelHeal} />}
       {assist.method === 'heal' && <>
       <div className="repair-toggle-row" data-testid="seamless-light-row"><span>Seamless light</span><Toggle checked={assist.seamlessLight} onChange={() => assist.onSeamlessLightChange(!assist.seamlessLight)} label="Seamless light adaptation" /></div>
@@ -658,7 +658,9 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
     {working && <div className="suggestion-actions"><button className="text-button" data-testid="denoise-cancel" onClick={assist.onDismiss}>Cancel</button></div>}
     {!working && assist.state !== 'preview-ready' && !assist.applied && <>
-      <button className="text-button full-width" data-testid="denoise-preview" disabled={slider <= 0} data-tooltip={slider <= 0 ? 'Raise the strength to preview' : `Show strength ${slider} as a small before/after below, in this panel`} onClick={() => assist.onPreview(slider, auto)}><span>Preview denoise</span></button>
+      <div className="suggestion-actions">
+        <button className="text-button" data-testid="denoise-preview" disabled={slider <= 0} data-tooltip={slider <= 0 ? 'Raise the strength to preview' : `Show strength ${slider} as a small before/after below, in this panel`} onClick={() => assist.onPreview(slider, auto)}>Preview denoise</button>
+      </div>
       <p className="inspector-note">How it works: 1) pick a strength, 2) Preview shows a small before/after below in this panel, 3) Apply denoises the full photo. Only the strength is saved.</p>
     </>}
     {!working && assist.state === 'preview-ready' && assist.preview && <>
@@ -679,7 +681,7 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
       <div className="suggestion-actions">
         <button className="text-button" data-testid="denoise-apply" data-tooltip={`Denoise the full photo at strength ${slider} and edit from the clean pixels`} onClick={() => assist.onApply(slider, auto)}>Apply to photo</button>
         <button className="text-button" data-testid="denoise-repreview" data-tooltip={`Preview the current strength (${slider}) again`} onClick={() => assist.onPreview(slider, auto)}>Update preview</button>
-        <button className="text-button" onClick={assist.onDismiss}>Cancel</button>
+        <button className="text-button" data-testid="denoise-cancel-preview" data-tooltip="Drop this preview and go back" onClick={assist.onDismiss}>Cancel</button>
       </div>
     </>}
     {!working && assist.state === 'applied' && assist.hasBase && assist.applied && <>

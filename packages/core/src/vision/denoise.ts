@@ -87,6 +87,25 @@ export function shouldAutoDenoise(iso: number): boolean {
   return Number.isFinite(iso) && iso >= DENOISE_AUTO_ISO_THRESHOLD;
 }
 
+/** Lifecycle phases of the client denoise assist (hook + Inspector share this union). */
+export type DenoisePhase = "idle" | "previewing" | "preview-ready" | "applying" | "applied" | "error";
+
+/**
+ * Status after Cancel/Dismiss from `state`, or null when already settled.
+ * Every transient phase (previewing, preview-ready, applying, error) drops
+ * back to the surrounding state: `applied` while denoised pixels are on
+ * screen (they are kept — only the preview, error, or in-flight run is
+ * dropped), else `idle`. Settled phases (idle/applied) return null so
+ * Cancel never hides applied pixels. In particular preview-ready always
+ * moves: it used to fall through unchanged, so its Cancel did nothing.
+ */
+export function dismissDenoiseStatus(state: DenoisePhase, hasBase: boolean): DenoisePhase | null {
+  if (state === "previewing" || state === "preview-ready" || state === "applying" || state === "error") {
+    return hasBase ? "applied" : "idle";
+  }
+  return null;
+}
+
 /** True when a stored denoise state changes pixels (strength > 0). */
 export function isDenoiseActive(state: DenoiseState | null | undefined): state is DenoiseState {
   if (!state) return false;

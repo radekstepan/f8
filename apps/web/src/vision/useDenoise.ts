@@ -13,6 +13,7 @@ import {
   DENOISE_APPLY_WIDTH,
   DENOISE_PREVIEW_WIDTH,
   decodeDownsampled,
+  dismissDenoiseStatus,
   type DenoiseSource,
 } from "@f8/core";
 import {
@@ -121,12 +122,10 @@ export function useDenoise(photoId: string): Denoise {
     // Dismissing keeps applied pixels (the canvas still shows them) but
     // drops previews and errors back to the surrounding state.
     setStatus((current) => {
-      if (current === "error" || current === "previewing") {
-        setPreview(null);
-        return "idle";
-      }
-      if (current === "applying") return appliedBase ? "applied" : "idle";
-      return current;
+      const next = dismissDenoiseStatus(current, appliedBase !== null);
+      if (next === null) return current;
+      setPreview(null);
+      return next;
     });
   }, [appliedBase]);
 

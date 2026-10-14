@@ -4,6 +4,7 @@ import {
   blendDenoised,
   denoiseClassic,
   denoiseStrengthForIso,
+  dismissDenoiseStatus,
   effectiveDenoiseStrength,
   isDenoiseActive,
   packDenoiseInput,
@@ -210,5 +211,30 @@ describe("denoiseClassic", () => {
     const high = lumaVariance(denoiseClassic(noisy, 100));
     expect(low).toBeLessThan(base);
     expect(high).toBeLessThan(low);
+  });
+});
+
+describe("dismissDenoiseStatus", () => {
+  it("drops every transient phase back to idle without an applied base", () => {
+    // The reported bug: preview-ready used to fall through unchanged, so
+    // its Cancel did nothing.
+    for (const state of ["previewing", "preview-ready", "applying", "error"] as const) {
+      expect(dismissDenoiseStatus(state, false), state).toBe("idle");
+    }
+  });
+
+  it("drops every transient phase back to applied while pixels are applied", () => {
+    // Before the fix, cancelling a re-preview of an applied photo landed
+    // on idle with a stored recipe and a live base — a combination the
+    // control renders with no actions at all (a dead end).
+    for (const state of ["previewing", "preview-ready", "applying", "error"] as const) {
+      expect(dismissDenoiseStatus(state, true), state).toBe("applied");
+    }
+  });
+
+  it("leaves settled phases untouched so Cancel never hides applied pixels", () => {
+    expect(dismissDenoiseStatus("idle", false)).toBeNull();
+    expect(dismissDenoiseStatus("idle", true)).toBeNull();
+    expect(dismissDenoiseStatus("applied", true)).toBeNull();
   });
 });
