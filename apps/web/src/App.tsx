@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
 import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
-import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
+import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, pickAlbumCover, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
 import { Sidebar } from '@f8/ui';
@@ -492,6 +492,34 @@ export default function App() {
       (reason: unknown) => notifyError(reason, 'Could not delete the album.'),
     );
   }, [albums, photos, library, notify, notifyError]);
+
+  // Album thumbnails pick a representative photo (favorite first, then
+  // highest-rated, then first by filename) and store its thumbnail URL as
+  // the album cover, which the sidebar row renders. The pick runs over the
+  // full library, not the filtered grid, so a narrowed grid still covers
+  // the whole album. Empty albums report instead of calling the server.
+  const generateAlbumThumbnail = useCallback((id: string) => {
+    const target = albums.find((entry) => entry.id === id);
+    if (!target) return;
+    const cover = pickAlbumCover(photos.filter((item) => item.albumId === id));
+    if (!cover) {
+      notify(`"${target.name}" has no photos yet.`);
+      return;
+    }
+    void library.updateAlbum(id, { cover }).then(
+      () => notify(`Thumbnail set for "${target.name}".`),
+      (reason: unknown) => notifyError(reason, 'Could not set the album thumbnail.'),
+    );
+  }, [albums, photos, library, notify, notifyError]);
+
+  const removeAlbumThumbnail = useCallback((id: string) => {
+    const target = albums.find((entry) => entry.id === id);
+    if (!target || !target.cover) return;
+    void library.updateAlbum(id, { cover: '' }).then(
+      () => notify(`Thumbnail removed from "${target.name}".`),
+      (reason: unknown) => notifyError(reason, 'Could not remove the album thumbnail.'),
+    );
+  }, [albums, library, notify, notifyError]);
 
   const confirmRemovePhoto = useCallback((id: string) => {
     const list = filteredPhotos.some((item) => item.id === id) ? filteredPhotos : photos;
@@ -1226,10 +1254,10 @@ export default function App() {
     <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} zoomLens={zoomLens} zoomLensMagnification={zoomLensMag} />
     <Toolbar collectionName={backlinkName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
-      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onMoveToAlbum={movePhotosToAlbum} />}
+      {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onGenerateAlbumThumbnail={generateAlbumThumbnail} onRemoveAlbumThumbnail={removeAlbumThumbnail} onMoveToAlbum={movePhotosToAlbum} />}
       <main className="editor-column">
         {view === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} albums={albums} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} selectedIds={selection} onSelectionChange={setSelection} onMoveToAlbum={movePhotosToAlbum} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} albums={albums} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onGenerateAlbumThumbnail={generateAlbumThumbnail} onRemoveAlbumThumbnail={removeAlbumThumbnail} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} selectedIds={selection} onSelectionChange={setSelection} onMoveToAlbum={movePhotosToAlbum} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (

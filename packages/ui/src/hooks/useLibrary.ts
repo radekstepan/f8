@@ -256,6 +256,20 @@ export function useLibrary() {
     [client, markOfflineIfDown],
   );
 
+  const updateAlbum = useCallback(
+    async (id: string, patch: { name?: string; cover?: string }) => {
+      try {
+        const { album } = await client.updateAlbum(id, patch);
+        setAlbums((current) => current.map((entry) => (entry.id === id ? album : entry)));
+        return album;
+      } catch (reason) {
+        markOfflineIfDown(reason);
+        throw reason;
+      }
+    },
+    [client, markOfflineIfDown],
+  );
+
   const removeAlbum = useCallback(
     async (id: string) => {
       try {
@@ -300,6 +314,7 @@ export function useLibrary() {
     removePhoto,
     saveEdit,
     createAlbum,
+    updateAlbum,
     removeAlbum,
     createPreset,
   };

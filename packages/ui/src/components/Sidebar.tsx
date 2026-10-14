@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Clock3, MoreHorizontal, Folder, Heart, Images, Import, Plus, Search, Star } from 'lucide-react';
 import type { Album, Photo } from '@f8/core';
 import { MOVE_PHOTOS_MIME, anchorMenuBelowTrigger, decodeMovePayload, isRecentlyEdited, ratingCollectionId, ratingCollectionLabel, savedRatings } from '@f8/core';
-import { IconButton, MenuItem } from './EditorUI.js';
+import { IconButton, MenuItem, MenuSeparator } from './EditorUI.js';
 import { useIsomorphicLayoutEffect } from '../hooks/useIsomorphicLayoutEffect.js';
 import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
 
@@ -17,23 +17,32 @@ interface SidebarProps {
   onNewAlbum: () => void;
   /** Request album deletion (confirmed by the caller). Omit to hide the delete item. */
   onRemoveAlbum?: (id: string) => void;
+  /** Pick a representative thumbnail for the album. Omit to hide the item. */
+  onGenerateAlbumThumbnail?: (id: string) => void;
+  /** Clear the album's thumbnail. Omit to hide the item. */
+  onRemoveAlbumThumbnail?: (id: string) => void;
   /** Move grid photos dropped onto an album row. Omit to disable photo drops. */
   onMoveToAlbum?: (photoIds: string[], albumId: string) => void;
   /** Seeds a highlighted drop row (a test seam for the drop-target markup). */
   initialDropTarget?: string | null;
+  /** Seeds an open album menu (a test seam for the open-menu markup). */
+  initialOpenMenu?: string | null;
 }
 
-function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, isDropTarget, onMoveToAlbum, onDropHighlight }: {
+function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, onGenerateAlbumThumbnail, onRemoveAlbumThumbnail, isDropTarget, onMoveToAlbum, onDropHighlight, initialOpen }: {
   album: Album;
   count: number;
   selected: boolean;
   onSelect: (id: string) => void;
   onRemoveAlbum?: (id: string) => void;
+  onGenerateAlbumThumbnail?: (id: string) => void;
+  onRemoveAlbumThumbnail?: (id: string) => void;
   isDropTarget: boolean;
   onMoveToAlbum?: (photoIds: string[], albumId: string) => void;
   onDropHighlight: (id: string | null) => void;
+  initialOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen ?? false);
   // Viewport coordinates for the fixed-positioned menu (null until measured
   // after opening). The menu floats above the UI instead of clipping inside
   // the sidebar's scroll container.
@@ -56,7 +65,11 @@ function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, isDropTarge
     const size = menu.getBoundingClientRect();
     setMenuPos(anchorMenuBelowTrigger(rect, { width: size.width, height: size.height }, { width: window.innerWidth, height: window.innerHeight }));
   }, [open ]);
-  const showMenu = Boolean(onRemoveAlbum);
+  const showMenu = Boolean(onRemoveAlbum || onGenerateAlbumThumbnail || onRemoveAlbumThumbnail);
+  // The thumbnail group (generate, plus remove while a cover is set) sits
+  // above a separator from the destructive delete item.
+  const showRemoveThumbnail = Boolean(onRemoveAlbumThumbnail && album.cover);
+  const showThumbnailGroup = Boolean(onGenerateAlbumThumbnail || showRemoveThumbnail);
   // Photo drops only: file drags from the OS pass through to the app-shell
   // import overlay (no highlight, no preventDefault), and the drop stops
   // there so the shell never tries to import photo ids as files.
@@ -97,6 +110,9 @@ function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, isDropTarge
       )}
       {showMenu && open && (
         <div className="dropdown-menu album-menu sidebar-album-menu" role="menu" aria-label={`Album actions for ${album.name}`} ref={menuRef} style={menuPos ? { left: menuPos.x, top: menuPos.y } : undefined}>
+          {onGenerateAlbumThumbnail && <MenuItem disabled={count === 0} onClick={() => { setOpen(false); onGenerateAlbumThumbnail(album.id); }}>Generate thumbnail</MenuItem>}
+          {showRemoveThumbnail && <MenuItem onClick={() => { setOpen(false); onRemoveAlbumThumbnail?.(album.id); }}>Remove thumbnail</MenuItem>}
+          {showThumbnailGroup && onRemoveAlbum && <MenuSeparator />}
           {onRemoveAlbum && <MenuItem danger onClick={() => { setOpen(false); onRemoveAlbum(album.id); }}>Delete album…</MenuItem>}
         </div>
       )}
@@ -104,7 +120,7 @@ function AlbumRow({ album, count, selected, onSelect, onRemoveAlbum, isDropTarge
   );
 }
 
-export function Sidebar({ photos, albums, collection, search, onSearch, onSelect, onImport, onNewAlbum, onRemoveAlbum, onMoveToAlbum, initialDropTarget }: SidebarProps) {
+export function Sidebar({ photos, albums, collection, search, onSearch, onSelect, onImport, onNewAlbum, onRemoveAlbum, onGenerateAlbumThumbnail, onRemoveAlbumThumbnail, onMoveToAlbum, initialDropTarget, initialOpenMenu }: SidebarProps) {
   const [dropTarget, setDropTarget] = useState<string | null>(initialDropTarget ?? null);
   const libraryItems = [
     { id: 'all', label: 'All Photos', icon: Images, count: photos.length },
@@ -125,7 +141,7 @@ export function Sidebar({ photos, albums, collection, search, onSearch, onSelect
       <div className="sidebar-search"><Search size={14} /><input id="photo-search" aria-label="Search photos" placeholder="Search photos" value={search} onChange={(event) => onSearch(event.target.value)} /><kbd>/</kbd></div>
       <div className="sidebar-scroll">
         <section className="sidebar-section"><h2>Library</h2><nav>{libraryItems.map(({ id, label, icon: Icon, count }) => <button key={id} className={`sidebar-item ${collection === id ? 'is-selected' : ''}`} onClick={() => onSelect(id)}><Icon size={17} strokeWidth={1.6} /><span>{label}</span><span className="item-count">{count}</span></button>)}</nav></section>
-        <section className="sidebar-section albums-section"><div className="sidebar-section-heading"><h2>Albums</h2><IconButton label="Create album" onClick={onNewAlbum}><Plus size={14} /></IconButton></div><nav>{albums.map((album) => <AlbumRow key={album.id} album={album} count={photos.filter((photo) => photo.albumId === album.id).length} selected={collection === album.id} onSelect={onSelect} onRemoveAlbum={onRemoveAlbum} isDropTarget={dropTarget === album.id} onMoveToAlbum={onMoveToAlbum} onDropHighlight={setDropTarget} />)}</nav></section>
+        <section className="sidebar-section albums-section"><div className="sidebar-section-heading"><h2>Albums</h2><IconButton label="Create album" onClick={onNewAlbum}><Plus size={14} /></IconButton></div><nav>{albums.map((album) => <AlbumRow key={album.id} album={album} count={photos.filter((photo) => photo.albumId === album.id).length} selected={collection === album.id} onSelect={onSelect} onRemoveAlbum={onRemoveAlbum} onGenerateAlbumThumbnail={onGenerateAlbumThumbnail} onRemoveAlbumThumbnail={onRemoveAlbumThumbnail} isDropTarget={dropTarget === album.id} onMoveToAlbum={onMoveToAlbum} onDropHighlight={setDropTarget} initialOpen={initialOpenMenu === album.id} />)}</nav></section>
       </div>
       <div className="sidebar-bottom"><button className="import-button" onClick={onImport}><Import size={16} />Import Photos<span>+</span></button></div>
     </aside>

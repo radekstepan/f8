@@ -107,3 +107,18 @@ describe("library client semantic search", () => {
     expect(warmInit?.method).toBe("POST");
   });
 });
+
+describe("library client updateAlbum", () => {
+  it("patches the encoded album URL with the cover", async () => {
+    const album = { id: "album 1", name: "Road Trip", cover: "http://localhost/thumb.jpg" };
+    const fetch = vi.fn(async () => jsonResponse({ album }));
+    vi.stubGlobal("fetch", fetch);
+    const result = await createLibraryClient().updateAlbum("album 1", { cover: album.cover });
+    expect(result).toEqual({ album });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [input, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(input).toBe("/api/albums/album%201");
+    expect(init?.method).toBe("PATCH");
+    expect(init?.body).toBe(JSON.stringify({ cover: album.cover }));
+  });
+});
