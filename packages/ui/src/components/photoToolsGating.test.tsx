@@ -6,12 +6,12 @@ import { describe, expect, it } from 'vitest';
 import { Toolbar } from './Topbar.js';
 
 // Photo-only toolbar controls: the Adjust/Repair/Crop tool switcher, the
-// hide-presets, compare-with-original, and photo-info buttons, and the
-// undo/redo/reset editing-history buttons only make sense with a photo
+// hide-presets, compare-with-original, photo-info, and export buttons, and
+// the undo/redo/reset editing-history buttons only make sense with a photo
 // open, so the library grid omits them entirely (not disabled — absent).
-// The library keeps its own controls: sidebar toggle, export, and focus
-// mode. Rendered on the server (no jsdom): pins the markup + prop wiring,
-// with the App-side view derivation pinned from source (the
+// The library keeps its own controls: sidebar toggle and focus mode.
+// Rendered on the server (no jsdom): pins the markup + prop wiring, with
+// the App-side view derivation pinned from source (the
 // topbarMenus.test.tsx precedent).
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -77,12 +77,12 @@ describe('photo-only toolbar controls', () => {
     expect(html).not.toContain('editing-tools');
     expect(html).not.toContain('history-buttons');
     expect(html).not.toContain('tool-button');
+    expect(html).not.toContain('export-button');
   });
 
-  it('keeps the library controls (sidebar, export, focus)', () => {
+  it('keeps the library controls (sidebar, focus)', () => {
     const html = renderToolbar(false);
     for (const label of LIBRARY_KEPT_LABELS) expect(html).toContain(label);
-    expect(html).toContain('export-button');
   });
 
   it('derives the gate from the view in App (editor-only, like the backlink)', () => {
