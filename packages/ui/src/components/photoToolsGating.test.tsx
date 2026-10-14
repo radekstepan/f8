@@ -5,14 +5,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { Toolbar } from './Topbar.js';
 
-// Photo-only toolbar controls: the Adjust/Repair/Crop tool switcher and
-// the hide-presets, compare-with-original, and photo-info buttons only
-// make sense with a photo open, so the library grid omits them entirely
-// (not disabled — absent). The library keeps its own controls: sidebar
-// toggle, undo/redo, reset, export, and focus mode. Rendered on the
-// server (no jsdom): pins the markup + prop wiring, with the App-side
-// view derivation pinned from source (the topbarMenus.test.tsx
-// precedent).
+// Photo-only toolbar controls: the Adjust/Repair/Crop tool switcher, the
+// hide-presets, compare-with-original, and photo-info buttons, and the
+// undo/redo/reset editing-history buttons only make sense with a photo
+// open, so the library grid omits them entirely (not disabled — absent).
+// The library keeps its own controls: sidebar toggle, export, and focus
+// mode. Rendered on the server (no jsdom): pins the markup + prop wiring,
+// with the App-side view derivation pinned from source (the
+// topbarMenus.test.tsx precedent).
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(here, '../../../../apps/web/src');
@@ -47,21 +47,22 @@ const PHOTO_ONLY_LABELS = [
   'aria-label="Hide presets"',
   'aria-label="Compare with original (B)"',
   'aria-label="Photo information (I)"',
+  'aria-label="Undo (Ctrl Z)"',
+  'aria-label="Redo (Ctrl Shift Z, Ctrl Y)"',
+  'aria-label="Reset to original"',
 ];
 
 const LIBRARY_KEPT_LABELS = [
   'aria-label="Toggle library sidebar"',
-  'aria-label="Undo (Ctrl Z)"',
-  'aria-label="Redo (Ctrl Shift Z, Ctrl Y)"',
-  'aria-label="Reset to original"',
   'aria-label="Focus mode (Shift F)"',
 ];
 
 describe('photo-only toolbar controls', () => {
-  it('shows the tool switcher and presets/compare/info buttons on a photo', () => {
+  it('shows the tool switcher, presets/compare/info, and undo/redo/reset buttons on a photo', () => {
     const html = renderToolbar(true);
     for (const label of PHOTO_ONLY_LABELS) expect(html).toContain(label);
     expect(html).toContain('class="editing-tools"');
+    expect(html).toContain('class="history-buttons"');
     expect(html).toContain('export-button');
   });
 
@@ -74,10 +75,11 @@ describe('photo-only toolbar controls', () => {
     const html = renderToolbar(false);
     for (const label of PHOTO_ONLY_LABELS) expect(html).not.toContain(label);
     expect(html).not.toContain('editing-tools');
+    expect(html).not.toContain('history-buttons');
     expect(html).not.toContain('tool-button');
   });
 
-  it('keeps the library controls (sidebar, undo/redo, reset, export, focus)', () => {
+  it('keeps the library controls (sidebar, export, focus)', () => {
     const html = renderToolbar(false);
     for (const label of LIBRARY_KEPT_LABELS) expect(html).toContain(label);
     expect(html).toContain('export-button');

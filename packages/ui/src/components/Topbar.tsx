@@ -141,14 +141,14 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
             ><Icon size={20} strokeWidth={1.55} /><span>{label}</span></button>
           ))}
         </div>}
-        <div className="history-buttons">
+        {showPhotoTools && <div className="history-buttons">
           <IconButton label="Undo (Ctrl Z)" disabled={!canUndo} onClick={() => onAction('undo')}><Undo2 size={18} /></IconButton>
           <IconButton label="Redo (Ctrl Shift Z, Ctrl Y)" disabled={!canRedo} onClick={() => onAction('redo')}><Redo2 size={18} /></IconButton>
-        </div>
+        </div>}
       </div>
       <div className="toolbar-actions">
         {showPhotoTools && onTogglePresets && <IconButton label={presetsOpen ? 'Hide presets' : 'Show presets'} active={presetsOpen} onClick={onTogglePresets}><SwatchBook size={18} strokeWidth={1.6} /></IconButton>}
-        <IconButton label="Reset to original" disabled={!canReset} onClick={() => onAction('reset')}><RotateCcw size={18} strokeWidth={1.6} /></IconButton>
+        {showPhotoTools && <IconButton label="Reset to original" disabled={!canReset} onClick={() => onAction('reset')}><RotateCcw size={18} strokeWidth={1.6} /></IconButton>}
         {showPhotoTools && <IconButton label={tool === 'crop' ? 'Compare with original (unavailable while cropping)' : 'Compare with original (B)'} active={compare} disabled={tool === 'crop'} onClick={() => onAction('compare')}><Columns2 size={18} strokeWidth={1.6} /></IconButton>}
         {showPhotoTools && <IconButton label="Photo information (I)" onClick={() => onDialog('info')}><Info size={18} strokeWidth={1.6} /></IconButton>}
         <button className="export-button" onClick={() => onDialog('export')}><Share size={15} /><span>Export</span></button>
