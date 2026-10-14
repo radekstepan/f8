@@ -12,16 +12,16 @@ import { PhotoCanvas } from './PhotoCanvas.js';
 // hangs on. The old single-layer `0 9px 35px #0005` shadow (black at 33%
 // with a 35px blur) sat densest right against the frame edge, so the photo
 // read as outlined by a dark semi-transparent border — its outer corners
-// rounded by the blur — instead of softly lifted. The fix layers a crisp
-// light keyline (topmost, so the photo edge separates cleanly from the
-// dark stage) over a tight contact shadow and a negative-spread ambient
-// lift whose dense core pulls away from the edge instead of hugging it.
-// Follow-up: the first ambient lift (`0 18px 50px -12px #000a`, a 50px
-// blur at 67% black) still banded — its long near-black gradient falls in
-// visible 8-bit steps on the dark stage — and its silhouette reached far
-// enough past the frame to show a rounded corner in the stage background.
-// The ambient is now half the blur at 40% black, so the falloff is too
-// short to band and too faint to draw a shape on the stage.
+// rounded by the blur — instead of softly lifted. Two follow-ups layered a
+// light keyline over a tight contact shadow plus a negative-spread ambient
+// lift, then halved that ambient — but the photo still read as a
+// semi-transparent oval with a rigid border: the 1px light ring is the
+// only layer that can draw a hard edge, and the negative spread shrinks
+// the shadow's source rect so the blur dominates and rounds the halo into
+// an oval silhouette on the dark stage. The fix drops the keyline and the
+// spread trick entirely: a plain two-layer drop shadow (tight contact +
+// short downward falloff, no light ring, no spread), so the frame reads as
+// softly lifted instead of outlined.
 
 function makePhoto(overrides: Partial<Photo> = {}): Photo {
   return {
@@ -87,19 +87,19 @@ describe('photo frame shadow', () => {
     expect(html).toMatch(/class="photo-frame(\s|")/);
   });
 
-  it('opens with a light keyline so the photo edge separates from the stage', () => {
+  it('carries no light keyline ring that would read as a rigid border', () => {
     const rule = cssRule('.photo-frame');
     expect(rule).toContain('box-shadow');
-    // First (topmost) layer: 1px light ring, before any black shadow layer.
-    const keylineAt = rule.indexOf('0 0 0 1px #ffffff');
-    expect(keylineAt).toBeGreaterThanOrEqual(0);
-    expect(rule.indexOf('#000')).toBeGreaterThan(keylineAt);
+    // The 1px `0 0 0` ring was the only layer able to draw a hard edge —
+    // every blurred black layer fades, only the ring outlines.
+    expect(rule).not.toContain('#ffffff');
+    expect(rule).not.toMatch(/0 0 0 1px/);
   });
 
-  it('keeps the ambient lift off the edge with a negative spread', () => {
+  it('lifts the frame with a plain two-layer drop shadow', () => {
     const rule = cssRule('.photo-frame');
-    expect(rule).toMatch(/0 1px 2px #0005/);
-    expect(rule).toMatch(/0 10px 24px -8px #0006/);
+    expect(rule).toMatch(/0 1px 2px #0006/);
+    expect(rule).toMatch(/0 6px 18px #0005/);
   });
 
   it('drops the old edge-hugging blur that read as a dark border', () => {
@@ -113,19 +113,29 @@ describe('photo frame shadow', () => {
     expect(rule).not.toContain('0 18px 50px -12px #000a');
   });
 
+  it('drops the negative-spread halo that rounded into an oval silhouette', () => {
+    const rule = cssRule('.photo-frame');
+    expect(rule).not.toContain('0 10px 24px -8px #0006');
+    expect(rule).not.toContain('0 0 0 1px #ffffff14');
+  });
+
   it('keeps every shadow layer short and faint enough not to band', () => {
     const rule = cssRule('.photo-frame');
     const shadow = rule.match(/box-shadow:\s*([^;]+)/)?.[1] ?? '';
     expect(shadow).not.toBe('');
-    // No long-blur layer: banding steps show in gradients tens of px long.
+    // No long-blur layer: banding steps show in gradients tens of px long,
+    // and a blur this short cannot round the halo into an oval silhouette.
     const blurs = [...shadow.matchAll(/(\d+)px (\d+)px(?: (-?\d+)px)? (#(?:[0-9a-fA-F]{4}|[0-9a-fA-F]{8}))?/g)]
       .map((match) => Number(match[2]));
     expect(blurs.length).toBeGreaterThan(0);
-    expect(Math.max(...blurs)).toBeLessThanOrEqual(24);
+    expect(Math.max(...blurs)).toBeLessThanOrEqual(18);
     // No near-opaque black layer: the lift must stay whisper-faint.
     const alphas = [...shadow.matchAll(/#000([0-9a-fA-F])/g)].map((match) => parseInt(match[1] ?? '', 16));
     expect(alphas.length).toBeGreaterThan(0);
     expect(Math.max(...alphas)).toBeLessThanOrEqual(0x6);
+    // No spread tricks: a shrunk source rect lets the blur dominate and
+    // detach into a free-floating oval instead of a grounded drop shadow.
+    expect(shadow).not.toMatch(/-\d+px/);
   });
 
   it('leaves the canvas square with no dark border of its own', () => {
