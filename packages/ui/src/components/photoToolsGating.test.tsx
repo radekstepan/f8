@@ -6,9 +6,10 @@ import { describe, expect, it } from 'vitest';
 import { Toolbar } from './Topbar.js';
 
 // Photo-only toolbar controls: the Adjust/Repair/Crop tool switcher, the
-// hide-presets, compare-with-original, photo-info, and export buttons, and
-// the undo/redo/reset editing-history buttons only make sense with a photo
-// open, so the library grid omits them entirely (not disabled — absent).
+// hide-presets, compare-with-original, remove-from-library, photo-info,
+// and export buttons, and the undo/redo/reset editing-history buttons only
+// make sense with a photo open, so the library grid omits them entirely
+// (not disabled — absent).
 // The library keeps its own controls: sidebar toggle and focus mode.
 // Rendered on the server (no jsdom): pins the markup + prop wiring, with
 // the App-side view derivation pinned from source (the
@@ -46,6 +47,7 @@ const PHOTO_ONLY_LABELS = [
   'aria-label="Crop"',
   'aria-label="Hide presets"',
   'aria-label="Compare with original (B)"',
+  'aria-label="Remove from library (Del)"',
   'aria-label="Photo information (I)"',
   'aria-label="Undo (Ctrl Z)"',
   'aria-label="Redo (Ctrl Shift Z, Ctrl Y)"',
@@ -58,7 +60,7 @@ const LIBRARY_KEPT_LABELS = [
 ];
 
 describe('photo-only toolbar controls', () => {
-  it('shows the tool switcher, presets/compare/info, and undo/redo/reset buttons on a photo', () => {
+  it('shows the tool switcher, presets/compare/remove/info, and undo/redo/reset buttons on a photo', () => {
     const html = renderToolbar(true);
     for (const label of PHOTO_ONLY_LABELS) expect(html).toContain(label);
     expect(html).toContain('class="editing-tools"');

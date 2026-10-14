@@ -120,20 +120,10 @@ describe('remove from library', () => {
     expect(rule).toMatch(/position\s*:\s*relative/);
   });
 
-  it('renders the remove action in the photo-view heading when onRemove is provided', () => {
-    const html = renderToStaticMarkup(
-      <PhotoCanvas
-        photo={makePhoto()} edit={{ ...DEFAULT_EDIT }} tool="adjust" zoom={1}
-        compare={false} showOriginal={false} brushSize={40} brushStrength={70}
-        onZoom={noop} onCompare={noop} onFavorite={noop} onRating={noop}
-        onRemove={noop} onInfo={noop} onChange={noop} onHistogram={noop}
-      />,
-    );
-    expect(html).toContain('photo-remove');
-    expect(html).toContain('Remove from library (Del)');
-  });
-
-  it('hides the photo-view remove action when onRemove is omitted', () => {
+  it('renders no remove action in the photo-view heading (it lives in the toolbar)', () => {
+    // The heading trash moved to the toolbar's actions row, directly left
+    // of the info button (pinned in toolbarRemoveOrder.test.tsx); the
+    // heading keeps only rating + favorite.
     const html = renderToStaticMarkup(
       <PhotoCanvas
         photo={makePhoto()} edit={{ ...DEFAULT_EDIT }} tool="adjust" zoom={1}
@@ -143,7 +133,7 @@ describe('remove from library', () => {
       />,
     );
     expect(html).not.toContain('photo-remove');
-    // The sibling favorite action stays: removal is additive, not a swap.
+    expect(html).not.toContain('Remove from library (Del)');
     expect(html).toContain('Add to favorites (F)');
   });
 

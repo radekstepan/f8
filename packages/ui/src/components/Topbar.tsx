@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Bandage, Check, ChevronLeft, ChevronRight, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, RotateCcw, Share, SlidersHorizontal, SwatchBook, Undo2 } from 'lucide-react';
+import { Bandage, Check, ChevronLeft, ChevronRight, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, RotateCcw, Share, SlidersHorizontal, SwatchBook, Trash2, Undo2 } from 'lucide-react';
 import type { DialogType, Tool, VisionWorkerStatus, ZoomLensMagnification } from '@f8/core';
 import { APP_NAME, APP_VERSION, ZOOM_LENS_MAGNIFICATIONS } from '@f8/core';
 import { BrandMark, IconButton, MenuItem, MenuSeparator, MlBadge } from './EditorUI.js';
@@ -181,6 +181,7 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
         {showPhotoTools && <IconButton label="Reset to original" className="toolbar-reset" active={canReset} disabled={!canReset} onClick={() => onAction('reset')}><RotateCcw size={18} strokeWidth={1.6} /></IconButton>}
         {showPhotoTools && <IconButton label={tool === 'crop' ? 'Compare with original (unavailable while cropping)' : 'Compare with original (B)'} active={compare} disabled={tool === 'crop'} onClick={() => onAction('compare')}><Columns2 size={18} strokeWidth={1.6} /></IconButton>}
         {showPhotoTools && onTogglePresets && <IconButton label={presetsOpen ? 'Hide presets' : 'Show presets'} active={presetsOpen} onClick={onTogglePresets}><SwatchBook size={18} strokeWidth={1.6} /></IconButton>}
+        {showPhotoTools && <IconButton label="Remove from library (Del)" className="toolbar-remove" onClick={() => onAction('remove')}><Trash2 size={18} strokeWidth={1.6} /></IconButton>}
         {showPhotoTools && <IconButton label="Photo information (I)" onClick={() => onDialog('info')}><Info size={18} strokeWidth={1.6} /></IconButton>}
         {showPhotoTools && <button className="export-button" onClick={() => onDialog('export')}><Share size={15} /><span>Export</span></button>}
         <IconButton label="Focus mode (Shift F)" className="mobile-focus" onClick={() => onAction('fullscreen')}><Maximize2 size={17} /></IconButton>

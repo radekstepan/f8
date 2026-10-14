@@ -39,7 +39,7 @@ function renderToolbar(canReset?: boolean): string {
   );
 }
 
-/** Markup of the toolbar-actions block (reset, compare, presets toggle, info, export). */
+/** Markup of the toolbar-actions block (reset, compare, presets toggle, remove, info, export). */
 function actionsBlock(html: string): string {
   return html.slice(html.indexOf('toolbar-actions'), html.indexOf('</header>'));
 }

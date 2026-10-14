@@ -1250,7 +1250,7 @@ export default function App() {
                 inpaintRepair={canvasRepairBinding}
                 highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke} highlightRegion={removalPreview}
                 onZoom={setZoom} onCompare={() => setCompare(!compare)}
-                onFavorite={() => toggleFavorite()} onRating={setRating} onRemove={() => requestRemove(photo.id)}
+                onFavorite={() => toggleFavorite()} onRating={setRating}
                 onInfo={() => setDialog('info')} onChange={editor.change} onEndMerge={editor.endMerge} onHistogram={setHistogram}
               />
             )}

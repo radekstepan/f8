@@ -96,6 +96,7 @@ which share .dropdown-menu, keep their own anchoring. */
 .history-buttons { display: flex; border-left: 1px solid #414146; padding-left: 10px; gap: 1px; }
 .history-buttons .icon-button { width: 27px; }
 .toolbar-actions { width: var(--inspector-width); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: 11px; padding: 0 20px; }
+.toolbar-actions .toolbar-remove:hover { color: #f29c97; }
 .export-button { display: flex; align-items: center; justify-content: center; gap: 8px; background: #e2c382; border: 1px solid #efd59933; box-shadow: inset 0 1px 0 #fff2, 0 1px 2px #0002; padding: 0 12px; height: 30px; border-radius: 5px; color: #383023; font-size: 10.5px; font-weight: 600; margin-left: 3px; }
 .export-button:hover { background: #edcf90; }
 .export-button > svg:last-child { margin-left: 4px; opacity: .7; }
@@ -163,7 +164,6 @@ its chevron glyph off the toggle edge. */
 .photo-rating .rated { color: #a89a76; }
 .photo-rating > button:hover .rated, .photo-rating > button:hover { color: var(--accent); }
 .photo-rating .icon-button { width: 24px; height: 25px; }
-.photo-rating .photo-remove:hover { color: #f29c97; }
 .heading-divider { height: 12px; width: 1px; background: #39393f; margin: 0 6px 0 8px; }
 .canvas-stage-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
 .canvas-stage { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: auto; }
