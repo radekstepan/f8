@@ -125,6 +125,54 @@ describe('export quality preview', () => {
     expect(html).not.toContain('data-testid="export-quality-views"');
   });
 
+  it('keeps the previous preview on screen while the next settings render', () => {
+    // Preset switches (format, size, quality) transition, never close:
+    // a stale URL plus estimating keeps the views with an updating
+    // status instead of collapsing to the loading placeholder.
+    const html = renderPreview({ previewUrl: 'blob:stale', estimating: true });
+    expect(html).toContain('data-testid="export-quality-views"');
+    expect(html).toContain('src="blob:stale"');
+    expect(html).toContain('data-testid="export-quality-zoom"');
+    expect(html).not.toContain('data-testid="export-quality-loading"');
+    expect(html).toContain('data-testid="export-quality-updating"');
+    expect(html).toContain('Updating preview…');
+    const sectionTag = html.match(/<section[^>]*data-testid="export-quality-preview"[^>]*>/)?.[0] ?? '';
+    expect(sectionTag).toContain('is-updating');
+  });
+
+  it('marks the preview settled once its own pixels land', () => {
+    const html = renderPreview({ previewUrl: 'blob:fresh', estimating: false });
+    const sectionTag = html.match(/<section[^>]*data-testid="export-quality-preview"[^>]*>/)?.[0] ?? '';
+    expect(sectionTag).not.toContain('is-updating');
+    expect(html).not.toContain('data-testid="export-quality-updating"');
+  });
+
+  it('never clears the preview URL while the next run is pending (source pin)', () => {
+    // Effects never run in static markup, so the keep-stale behavior is
+    // pinned at source level like the drag wiring below.
+    const source = readFileSync(resolve(here, 'EditorDialogs.tsx'), 'utf8');
+    const effect = source.slice(
+      source.indexOf('// Pre-export size estimate'),
+      source.indexOf('}, [photo.src, edit, format, quality, size, upscale2x, setPreviewUrl]);'),
+    );
+    expect(effect).not.toBe('');
+    // The pending block re-estimates but issues no setPreviewUrl call, so
+    // the stale URL stays until the new pixels swap it.
+    const pending = effect.slice(effect.indexOf('setEstimating(true);'), effect.indexOf('const timer'));
+    expect(pending).toContain('setEstimate(null)');
+    expect(pending).not.toMatch(/^\s*setPreviewUrl\(/m);
+    // A failed run still clears, so stale pixels never pose as new output.
+    expect(effect).toContain('() => { if (live) { setEstimate(null); setPreviewUrl(null); setEstimating(false); } }');
+    // Arming 2x still hides the preview, whose pixels cannot exist yet.
+    expect(effect).toContain('if (upscale2x) { setEstimate(null); setEstimating(false); setPreviewUrl(null); return; }');
+  });
+
+  it('fades the stale preview while it updates instead of flashing', () => {
+    expect(cssRule('.export-quality-views')).toMatch(/transition\s*:\s*opacity 160ms ease/);
+    expect(cssRule('.export-quality-preview.is-updating .export-quality-views')).toMatch(/opacity\s*:\s*0\.45/);
+    expect(css()).toMatch(/prefers-reduced-motion[\s\S]*?\.export-quality-views[^{]*\{[^}]*transition\s*:\s*none/);
+  });
+
   it('shows the full export with a focus box next to a 16x zoom of the focused area', () => {
     const html = renderPreview({});
     expect(html).toContain('data-testid="export-quality-views"');
