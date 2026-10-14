@@ -99,6 +99,7 @@ describe("isNeutralEdit", () => {
     expect(isNeutralEdit(edit({ temperature: 6000 }))).toBe(false);
     expect(isNeutralEdit(edit({ saturation: 10 }))).toBe(false);
     expect(isNeutralEdit(edit({ curve: 10 }))).toBe(false);
+    expect(isNeutralEdit(edit({ curvePoints: [{ x: 0.5, y: 0.6 }] }))).toBe(false);
     expect(isNeutralEdit(edit({ clarity: 10 }))).toBe(false);
     expect(isNeutralEdit(edit({ blackAndWhite: true }))).toBe(false);
   });
@@ -189,6 +190,29 @@ describe("renderAdjustedPixels", () => {
     expect(channel(black, 0, 0)).toEqual([0, 0, 0]);
     const white = renderAdjustedPixels(solidColor(2, 2, 255, 255, 255), edit({ curve: 100 }));
     expect(channel(white, 0, 0)).toEqual([255, 255, 255]);
+  });
+
+  it("remaps every channel through the anchor curve while pinning black and white", () => {
+    const anchors = [{ x: 0.5, y: 0.75 }];
+    const mid = renderAdjustedPixels(solidColor(2, 2, 128, 128, 128), edit({ curvePoints: anchors }));
+    const [midValue] = channel(mid, 0, 0);
+    expect(midValue).toBeGreaterThan(160);
+    // The remap hits each channel, not just luminance: a colored pixel
+    // keeps its hue direction while its levels move with the curve.
+    const color = renderAdjustedPixels(solidColor(2, 2, 200, 100, 50), edit({ curvePoints: anchors }));
+    const [r, g, b] = channel(color, 0, 0);
+    expect(r).toBeGreaterThan(200);
+    expect(g).toBeGreaterThan(100);
+    expect(b).toBeGreaterThan(50);
+    const black = renderAdjustedPixels(solidColor(2, 2, 0, 0, 0), edit({ curvePoints: anchors }));
+    expect(channel(black, 0, 0)).toEqual([0, 0, 0]);
+    const white = renderAdjustedPixels(solidColor(2, 2, 255, 255, 255), edit({ curvePoints: anchors }));
+    expect(channel(white, 0, 0)).toEqual([255, 255, 255]);
+  });
+
+  it("skips the anchor lookup while the curve is identity", () => {
+    expect(pointParameters(DEFAULT_EDIT).curveTable).toBeNull();
+    expect(pointParameters(edit({ curvePoints: [{ x: 0.5, y: 0.6 }] })).curveTable).toHaveLength(256);
   });
 
   it("renders temperature and tint as opposing channel gains", () => {

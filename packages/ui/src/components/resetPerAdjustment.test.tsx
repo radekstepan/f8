@@ -141,6 +141,7 @@ describe('reset per adjustment', () => {
       [{ vibrance: 16 }, 'Reset hue &amp; saturation'],
       [{ hue: -30 }, 'Reset hue &amp; saturation'],
       [{ curve: 25 }, 'Reset curves'],
+      [{ curvePoints: [{ x: 0.25, y: 0.3 }] }, 'Reset curves'],
       [{ clarity: 20 }, 'Reset details'],
       [{ sharpness: 30 }, 'Reset details'],
       [{ grain: 10 }, 'Reset details'],

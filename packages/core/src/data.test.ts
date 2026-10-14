@@ -68,6 +68,8 @@ describe("isOriginalLook", () => {
   it("matches the default recipe regardless of the preset label", () => {
     expect(isOriginalLook({ ...DEFAULT_EDIT })).toBe(true);
     expect(isOriginalLook({ ...DEFAULT_EDIT, preset: "Custom" })).toBe(true);
+    // Server recipes deserialize a fresh empty anchors list: still Original.
+    expect(isOriginalLook({ ...DEFAULT_EDIT, curvePoints: [] })).toBe(true);
   });
 
   it("ignores geometry and retouches, which presets never touch", () => {
@@ -80,6 +82,7 @@ describe("isOriginalLook", () => {
     const changed: Partial<EditState>[] = [
       { exposure: 0.1 },
       { temperature: 5800 },
+      { curvePoints: [{ x: 0.5, y: 0.6 }] },
       { blackAndWhite: true },
       { whiteBalanceEnabled: false },
       { autoEnhanced: true },
@@ -94,6 +97,8 @@ describe("isOriginalLook", () => {
 describe("isDefaultEdit", () => {
   it("recognizes the default recipe", () => {
     expect(isDefaultEdit({ ...DEFAULT_EDIT })).toBe(true);
+    // Server recipes deserialize a fresh empty anchors list: still default.
+    expect(isDefaultEdit({ ...DEFAULT_EDIT, curvePoints: [] })).toBe(true);
   });
 
   it("rejects color, geometry, and retouch changes", () => {
@@ -102,6 +107,7 @@ describe("isDefaultEdit", () => {
       { rotation: 90 },
       { cropRatio: "1:1" },
       { retouches: [{ ...stroke }] },
+      { curvePoints: [{ x: 0.5, y: 0.6 }] },
       { preset: "Custom" },
     ];
     for (const patch of changed) {

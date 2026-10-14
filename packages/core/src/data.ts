@@ -4,6 +4,7 @@ export const DEFAULT_EDIT: EditState = {
   temperature: 5500, tint: 0, exposure: 0, brightness: 0, contrast: 0,
   highlights: 0, shadows: 0, blacks: 0, saturation: 0, vibrance: 0,
   hue: 0, clarity: 0, sharpness: 0, grain: 0, vignette: 0, fade: 0, curve: 0,
+  curvePoints: [],
   whiteBalanceEnabled: true, lightnessEnabled: true, colorEnabled: true,
   detailsEnabled: true, blackAndWhite: false, rotation: 0,
   flipH: false, flipV: false, straighten: 0, cropRatio: 'Original',
@@ -41,11 +42,13 @@ function isDefaultMlLook(edit: EditState): boolean {
  * True when the recipe matches the factory default exactly (preset
  * included). Compares per key — never via JSON.stringify, which trips on
  * key order and on the optional ML fields that reset() nulls out.
+ * Array fields compare by length, not reference: server recipes
+ * deserialize fresh empty arrays that must still read as default.
  */
 export function isDefaultEdit(edit: EditState): boolean {
-  if (edit.retouches.length !== 0 || !isDefaultMlLook(edit)) return false;
+  if (edit.retouches.length !== 0 || edit.curvePoints.length !== 0 || !isDefaultMlLook(edit)) return false;
   return (Object.keys(DEFAULT_EDIT) as (keyof EditState)[]).every(
-    (key) => key === 'retouches' || edit[key] === DEFAULT_EDIT[key],
+    (key) => key === 'retouches' || key === 'curvePoints' || edit[key] === DEFAULT_EDIT[key],
   );
 }
 
@@ -85,7 +88,7 @@ export function patchBreaksEnhancePure(patch: Partial<EditState>): boolean {
 
 /** Edit keys compared when deciding whether a recipe still shows Original. */
 const ORIGINAL_LOOK_KEYS = (Object.keys(DEFAULT_EDIT) as (keyof EditState)[]).filter(
-  (key) => key !== 'preset' && !PRESET_PRESERVING_KEYS.has(key),
+  (key) => key !== 'preset' && key !== 'curvePoints' && !PRESET_PRESERVING_KEYS.has(key),
 );
 
 /**
@@ -101,6 +104,9 @@ export function isOriginalLook(edit: EditState): boolean {
   if (edit.selectiveAdjust != null) return false;
   // Same for denoise: server-denoised base pixels are a visible look.
   if (edit.denoise != null && edit.denoise.strength > 0) return false;
+  // Same for curve anchors, compared by length like retouches: a
+  // deserialized fresh empty array is still the default look.
+  if (edit.curvePoints.length !== 0) return false;
   return ORIGINAL_LOOK_KEYS.every((key) => edit[key] === DEFAULT_EDIT[key]);
 }
 

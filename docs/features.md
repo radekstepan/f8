@@ -12,7 +12,8 @@ The full function catalogue of f/8. The README lists the same functions in short
 
 - Fourteen built-in presets across Essentials, Cinematic, and Black & White, plus persistent custom presets.
 - Live temperature, tint, lightness, hue, saturation, vibrance, detail, tone, grain, vignette, and fade adjustments.
-- Editable numeric values, keyboard-accessible sliders, section toggles, automatic adjustment examples, and double-click slider resets.
+- Editable numeric values, keyboard-accessible sliders, section toggles, automatic adjustment examples, and double-click slider resets (every slider but Curves' Midtones, which resets from its header button like the other sections).
+- A tone-curve editor: click the curve to add control points (up to sixteen), drag them to reshape, Delete or right-click to remove; the Curves header reset clears points and Midtones together.
 - A live RGB histogram derived from the rendered image.
 - One-click Enhance (histogram-based) and ML Scene Enhance: an on-device scene classifier (portrait / landscape / night / document) picks per-scene enhance parameters over the 160px analysis image — portraits protect skin tones, landscapes allow stronger contrast. Available from the Image menu, the inspector, the Shift+A shortcut, or a photo's right-click menu; the result always labels the detected scene and confidence.
 - ML Enhance Faces: a small YuNet face detector (~227KB, photo server, cached for offline use) finds faces with eye landmarks, then anchors white balance on face skin tones, lifts underexposed faces through a softly masked exposure recipe, and suppresses flash red-eye pupils. Available from the Image menu, the inspector, the Shift+E shortcut, or a photo's right-click menu; results always say whether ML or the classical fallback served.

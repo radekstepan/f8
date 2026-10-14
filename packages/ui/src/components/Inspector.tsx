@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Bandage, Brush, ChevronDown, Circle, CircleDashed, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Layers, MoreHorizontal, Palette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Waves, X } from 'lucide-react';
-import { CROP_RATIOS, SCENE_DISPLAY_NAMES, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, shouldAutoDenoise, strokeIdForPoint } from '@f8/core';
-import type { ChangeEdit, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, MlCategory, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
+import { CROP_RATIOS, SCENE_DISPLAY_NAMES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
+import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, MlCategory, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { AdjustmentSection } from './AdjustmentSection.js';
 import { CheckField, IconButton, MenuItem, MenuSeparator, RangeControl, RevertButton, SegmentedControl, SelectField, Toggle } from './EditorUI.js';
@@ -850,6 +850,78 @@ function RetouchGroups({ edit, highlightStroke, onHighlightStroke, onChange }: {
   </div>;
 }
 
+/**
+ * The interactive RGB tone-curve graph. The drawn line is the real render
+ * mapping (anchor spline over the Midtones bend); the dots are the recipe's
+ * anchors: press on the line to drop a new one and keep dragging it in the
+ * same gesture, drag a dot to reshape, Delete (or right-click) removes the
+ * focused dot. The header reset clears dots and Midtones together, so the
+ * Midtones slider carries no double-click reset of its own.
+ */
+export function ToneCurveEditor({ points, midtone, onChange }: { points: CurvePoint[]; midtone: number; onChange: ChangeEdit }) {
+  const anchors = useMemo(() => normalizeCurvePoints(points), [points]);
+  const path = useMemo(() => toneCurveDisplayPath(anchors, midtone), [anchors, midtone]);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const dragIndex = useRef<number | null>(null);
+  const toCurve = (clientX: number, clientY: number): { x: number; y: number } | null => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || rect.height === 0) return null;
+    return { x: (clientX - rect.left) / rect.width, y: 1 - (clientY - rect.top) / rect.height };
+  };
+  // Generous grab radius (svg units) next to the 4.5-unit dot, so a press
+  // near a dot grabs it instead of dropping a duplicate on top of it.
+  const hitAnchor = (at: { x: number; y: number }): number | null => {
+    let best: number | null = null;
+    let bestSquared = 12 * 12;
+    anchors.forEach((anchor, index) => {
+      const dx = (at.x - anchor.x) * TONE_CURVE_WIDTH;
+      const dy = (at.y - anchor.y) * TONE_CURVE_HEIGHT;
+      const squared = dx * dx + dy * dy;
+      if (squared <= bestSquared) { best = index; bestSquared = squared; }
+    });
+    return best;
+  };
+  const endDrag = (event: ReactPointerEvent<SVGSVGElement>) => {
+    dragIndex.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  // The tooltip lives on the wrapper div: TooltipHost only reads HTML
+  // elements, so svg/circle nodes could never trigger it themselves.
+  return <div className="curve-graph" data-tooltip="Click the line to add a point — drag points to reshape, right-click one to remove"><span>RGB</span><svg ref={svgRef} viewBox={`0 0 ${TONE_CURVE_WIDTH} ${TONE_CURVE_HEIGHT}`} role="group" aria-label="Tone curve graph. Click the line to add a point, drag points to reshape, Delete removes the focused point." onPointerDown={(event) => {
+    const at = toCurve(event.clientX, event.clientY);
+    if (!at) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const hit = hitAnchor(at);
+    if (hit !== null) { dragIndex.current = hit; return; }
+    const x = Math.min(1, Math.max(0, at.x));
+    const y = Math.min(1, Math.max(0, at.y));
+    const next = addCurvePoint(anchors, x, y);
+    if (next === anchors) { dragIndex.current = null; return; }
+    // The drop lands in sorted position: find it so the same gesture keeps dragging it.
+    dragIndex.current = null;
+    for (let i = next.length - 1; i >= 0; i -= 1) {
+      if (next[i]?.x === x && next[i]?.y === y) { dragIndex.current = i; break; }
+    }
+    onChange({ curvePoints: next }, 'curve-points');
+  }} onPointerMove={(event) => {
+    if (dragIndex.current === null || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    const at = toCurve(event.clientX, event.clientY);
+    if (!at) return;
+    onChange({ curvePoints: moveCurvePoint(anchors, dragIndex.current, at.x, at.y) }, 'curve-points');
+  }} onPointerUp={endDrag} onPointerCancel={endDrag}><g className="curve-grid" aria-hidden="true">{[60, 120, 180].map((x) => <path key={x} d={`M${x} 0V160`} />)}{[40, 80, 120].map((y) => <path key={y} d={`M0 ${y}H240`} />)}</g><path d="M0 160L240 0" stroke="#555" strokeDasharray="3 4" aria-hidden="true" /><path d={path} fill="none" stroke="#e4c67d" strokeWidth="2" aria-hidden="true" />{anchors.map((anchor, index) => <circle key={index} className="curve-point" cx={anchor.x * TONE_CURVE_WIDTH} cy={(1 - anchor.y) * TONE_CURVE_HEIGHT} r={4.5} tabIndex={0} role="slider" aria-label={`Curve point ${index + 1} of ${anchors.length}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(anchor.y * 100)} aria-valuetext={`input ${Math.round(anchor.x * 100)} percent, output ${Math.round(anchor.y * 100)} percent`} onPointerDown={(event) => { event.stopPropagation(); dragIndex.current = index; svgRef.current?.setPointerCapture(event.pointerId); }} onKeyDown={(event) => {
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault(); event.stopPropagation();
+      onChange({ curvePoints: removeCurvePoint(anchors, index) });
+      return;
+    }
+    const step = event.shiftKey ? 0.1 : 0.02;
+    const delta = event.key === 'ArrowUp' ? [0, step] : event.key === 'ArrowDown' ? [0, -step] : event.key === 'ArrowLeft' ? [-step, 0] : event.key === 'ArrowRight' ? [step, 0] : null;
+    if (!delta) return;
+    event.preventDefault(); event.stopPropagation();
+    onChange({ curvePoints: moveCurvePoint(anchors, index, anchor.x + (delta[0] ?? 0), anchor.y + (delta[1] ?? 0)) }, 'curve-points');
+  }} onContextMenu={(event) => { event.preventDefault(); onChange({ curvePoints: removeCurvePoint(anchors, index) }); }} />)}</svg></div>;
+}
+
 interface InspectorProps {
   photo: Photo;
   edit: EditState;
@@ -986,8 +1058,8 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
         {rangeEnabled('colorEnabled', 'vibrance', 'Vibrance')}
         {rangeEnabled('colorEnabled', 'hue', 'Hue', { min: -180, max: 180, color: 'hue' })}
       </AdjustmentSection>
-      <AdjustmentSection key={`curves-${openedExtra === 'Curves' ? extraRevision : 0}`} title="Curves" icon={<Spline size={14} />} initiallyOpen={openedExtra === 'Curves'} onReset={() => onChange({ curve: 0 })} dirty={edit.curve !== 0}>
-        <div className="curve-graph"><span>RGB</span><svg viewBox="0 0 240 160" aria-label="Interactive tone curve" role="slider" tabIndex={0} aria-valuemin={-100} aria-valuemax={100} aria-valuenow={edit.curve} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const rect = event.currentTarget.getBoundingClientRect(); onChange({ curve: Math.max(-100, Math.min(100, (0.5 - (event.clientY - rect.top) / rect.height) * 200)) }, 'curve'); }} onPointerMove={(event) => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; const rect = event.currentTarget.getBoundingClientRect(); onChange({ curve: Math.max(-100, Math.min(100, (0.5 - (event.clientY - rect.top) / rect.height) * 200)) }, 'curve'); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); event.stopPropagation(); onChange({ curve: Math.max(-100, Math.min(100, edit.curve + (event.key === 'ArrowUp' ? 5 : -5))) }, 'curve'); } }}><g className="curve-grid">{[60, 120, 180].map((x) => <path key={x} d={`M${x} 0V160`} />)}{[40, 80, 120].map((y) => <path key={y} d={`M0 ${y}H240`} />)}</g><path d="M0 160L240 0" stroke="#555" strokeDasharray="3 4" /><path d={`M0 160Q120 ${80 - edit.curve * 0.8} 240 0`} fill="none" stroke="#e4c67d" strokeWidth="2" /><circle cx="120" cy={80 - edit.curve * 0.4} r="4" fill="#f3d492" /></svg></div>{range('curve', 'Midtones')}
+      <AdjustmentSection key={`curves-${openedExtra === 'Curves' ? extraRevision : 0}`} title="Curves" icon={<Spline size={14} />} initiallyOpen={openedExtra === 'Curves'} onReset={() => onChange({ curve: 0, curvePoints: [] })} dirty={edit.curve !== 0 || edit.curvePoints.length !== 0}>
+        <ToneCurveEditor points={edit.curvePoints} midtone={edit.curve} onChange={onChange} />{range('curve', 'Midtones', { disableReset: true })}
       </AdjustmentSection>
       <AdjustmentSection key={`details-${openedExtra === 'Details' ? extraRevision : 0}`} title="Details" icon={<Focus size={14} />} initiallyOpen={openedExtra === 'Details'} onReset={() => onChange({ clarity: 0, sharpness: 0, grain: 0 })} dirty={edit.clarity !== 0 || edit.sharpness !== 0 || edit.grain !== 0}>
         {rangeEnabled('detailsEnabled', 'clarity', 'Clarity')}{rangeEnabled('detailsEnabled', 'sharpness', 'Sharpness', { min: 0 })}{rangeEnabled('detailsEnabled', 'grain', 'Grain', { min: 0 })}

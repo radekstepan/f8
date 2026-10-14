@@ -189,6 +189,17 @@ export interface RetouchPoint {
   stroke?: number;
 }
 
+/**
+ * One user-placed anchor of the RGB tone curve: normalized input (x) and
+ * output (y) levels in 0..1. The pipeline interpolates a smooth monotone
+ * spline through the sorted anchors over implicit (0,0) and (1,1)
+ * endpoints; an empty list is the identity curve.
+ */
+export interface CurvePoint {
+  x: number;
+  y: number;
+}
+
 export interface EditState {
   temperature: number;
   tint: number;
@@ -207,6 +218,8 @@ export interface EditState {
   vignette: number;
   fade: number;
   curve: number;
+  /** User-placed tone-curve anchors (normalized 0..1); empty is the identity curve. */
+  curvePoints: CurvePoint[];
   whiteBalanceEnabled: boolean;
   lightnessEnabled: boolean;
   colorEnabled: boolean;

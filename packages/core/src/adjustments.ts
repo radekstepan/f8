@@ -8,10 +8,12 @@
 // Pipeline order per pixel:
 //   exposure gain -> white-balance gains -> luminance-masked tonal offsets
 //   (highlights / shadows / blacks) -> brightness lift -> contrast pivot ->
-//   midtone curve -> vibrance / saturation chroma scale -> hue rotation ->
-//   black & white. Clarity (wide radius, midtone-weighted) and Sharpness
-//   (narrow radius) then add luminance-detail deltas to all channels.
+//   midtone curve -> anchor curve LUT -> vibrance / saturation chroma scale ->
+//   hue rotation -> black & white. Clarity (wide radius, midtone-weighted)
+//   and Sharpness (narrow radius) then add luminance-detail deltas to all
+//   channels.
 
+import { MIDTONE_CURVE_RESPONSE, buildToneCurveTable, isCurvePointsActive } from "./toneCurve.js";
 import type { EditState } from "./types.js";
 import type { PixelImage } from "./vision/analyze.js";
 import { assertValidImage } from "./vision/analyze.js";
@@ -123,6 +125,8 @@ export interface PointParameters {
   brightness: number;
   contrastFactor: number;
   curve: number;
+  /** Anchor-curve channel remap (null while the anchors are identity). */
+  curveTable: Float32Array | null;
   saturationFactor: number;
   vibrance: number;
   hueMatrix: readonly [number, number, number, number, number, number, number, number, number] | null;
@@ -145,6 +149,7 @@ export function pointParameters(edit: EditState): PointParameters {
     brightness: lightnessEnabled ? clamp(edit.brightness, -100, 100) : 0,
     contrastFactor: lightnessEnabled ? 1 + clamp(edit.contrast, -100, 100) / 100 : 1,
     curve: clamp(edit.curve, -100, 100),
+    curveTable: buildToneCurveTable(edit.curvePoints),
     saturationFactor: colorEnabled ? Math.max(0, 1 + clamp(edit.saturation, -100, 100) / 100) : 1,
     vibrance: colorEnabled ? clamp(edit.vibrance, -100, 100) : 0,
     hueMatrix: colorEnabled && edit.hue !== 0 ? hueRotationMatrix(edit.hue) : null,
@@ -175,10 +180,20 @@ export function applyPointAdjustments(
     if (params.highlights !== 0) tonal += params.highlights * (HIGHLIGHT_TABLE[luminanceIndex] ?? 0);
     if (params.shadows !== 0) tonal += params.shadows * (SHADOW_TABLE[luminanceIndex] ?? 0);
     if (params.blacks !== 0) tonal += params.blacks * (BLACK_TABLE[luminanceIndex] ?? 0) * 0.9;
-    if (params.curve !== 0) tonal += params.curve * (MIDTONE_TABLE[luminanceIndex] ?? 0) * 0.6;
+    if (params.curve !== 0) tonal += params.curve * (MIDTONE_TABLE[luminanceIndex] ?? 0) * MIDTONE_CURVE_RESPONSE;
     red += tonal;
     green += tonal;
     blue += tonal;
+  }
+
+  // User-placed curve anchors remap every channel through the shared
+  // table (built once per render in pointParameters). The lookup clamps:
+  // upstream offsets can push a channel out of range before the remap.
+  if (params.curveTable) {
+    const table = params.curveTable;
+    red = table[clampByte(red)] ?? red;
+    green = table[clampByte(green)] ?? green;
+    blue = table[clampByte(blue)] ?? blue;
   }
 
   if (params.contrastFactor !== 1) {
@@ -284,7 +299,7 @@ export function isNeutralEdit(edit: EditState): boolean {
   const detailNeutral = !edit.detailsEnabled || (edit.clarity === 0 && edit.sharpness === 0);
   const faceNeutral = !isFaceAdjustActive(edit.faceAdjust);
   const selectiveNeutral = !isSelectiveAdjustActive(edit.selectiveAdjust);
-  return whiteBalanced && lightNeutral && colorNeutral && edit.curve === 0 && !edit.blackAndWhite && detailNeutral && faceNeutral && selectiveNeutral;
+  return whiteBalanced && lightNeutral && colorNeutral && edit.curve === 0 && !isCurvePointsActive(edit.curvePoints) && !edit.blackAndWhite && detailNeutral && faceNeutral && selectiveNeutral;
 }
 
 /**
