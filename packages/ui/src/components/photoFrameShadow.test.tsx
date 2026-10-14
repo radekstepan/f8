@@ -16,6 +16,12 @@ import { PhotoCanvas } from './PhotoCanvas.js';
 // light keyline (topmost, so the photo edge separates cleanly from the
 // dark stage) over a tight contact shadow and a negative-spread ambient
 // lift whose dense core pulls away from the edge instead of hugging it.
+// Follow-up: the first ambient lift (`0 18px 50px -12px #000a`, a 50px
+// blur at 67% black) still banded — its long near-black gradient falls in
+// visible 8-bit steps on the dark stage — and its silhouette reached far
+// enough past the frame to show a rounded corner in the stage background.
+// The ambient is now half the blur at 40% black, so the falloff is too
+// short to band and too faint to draw a shape on the stage.
 
 function makePhoto(overrides: Partial<Photo> = {}): Photo {
   return {
@@ -92,14 +98,34 @@ describe('photo frame shadow', () => {
 
   it('keeps the ambient lift off the edge with a negative spread', () => {
     const rule = cssRule('.photo-frame');
-    expect(rule).toMatch(/0 1px 2px #0006/);
-    expect(rule).toMatch(/0 18px 50px -12px #000a/);
+    expect(rule).toMatch(/0 1px 2px #0005/);
+    expect(rule).toMatch(/0 10px 24px -8px #0006/);
   });
 
   it('drops the old edge-hugging blur that read as a dark border', () => {
     const rule = cssRule('.photo-frame');
     expect(rule).not.toContain('0 9px 35px #0005');
     expect(rule).not.toContain('#ffffff05');
+  });
+
+  it('drops the heavy ambient blur that banded on the dark stage', () => {
+    const rule = cssRule('.photo-frame');
+    expect(rule).not.toContain('0 18px 50px -12px #000a');
+  });
+
+  it('keeps every shadow layer short and faint enough not to band', () => {
+    const rule = cssRule('.photo-frame');
+    const shadow = rule.match(/box-shadow:\s*([^;]+)/)?.[1] ?? '';
+    expect(shadow).not.toBe('');
+    // No long-blur layer: banding steps show in gradients tens of px long.
+    const blurs = [...shadow.matchAll(/(\d+)px (\d+)px(?: (-?\d+)px)? (#(?:[0-9a-fA-F]{4}|[0-9a-fA-F]{8}))?/g)]
+      .map((match) => Number(match[2]));
+    expect(blurs.length).toBeGreaterThan(0);
+    expect(Math.max(...blurs)).toBeLessThanOrEqual(24);
+    // No near-opaque black layer: the lift must stay whisper-faint.
+    const alphas = [...shadow.matchAll(/#000([0-9a-fA-F])/g)].map((match) => parseInt(match[1] ?? '', 16));
+    expect(alphas.length).toBeGreaterThan(0);
+    expect(Math.max(...alphas)).toBeLessThanOrEqual(0x6);
   });
 
   it('leaves the canvas square with no dark border of its own', () => {
