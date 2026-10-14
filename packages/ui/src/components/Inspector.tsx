@@ -755,8 +755,8 @@ function DenoiseSection({ assist, photo }: { assist: DenoiseAssist; photo: Photo
  * button, so the content holds the review list but no detect bar — the
  * idle state is just the explanatory note. The assist is ephemeral (apply
  * dismisses back to idle; the strokes live in the Repairs section from
- * there), so the button never highlights and carries no reset: every
- * click runs a fresh detection.
+ * there), so the button never highlights: every click runs a fresh
+ * detection.
  */
 function RemovalSection({ assist }: { assist: ObjectRemovalAssist }) {
   const working = assist.state === 'detecting';
@@ -769,9 +769,7 @@ function RemovalSection({ assist }: { assist: ObjectRemovalAssist }) {
     ml={{
       id: 'object-removal',
       applied: false,
-      canRevert: false,
       onToggle: assist.onDetect,
-      onRevert: assist.onDismiss,
       disabled: working,
       hint,
     }}>
@@ -783,7 +781,7 @@ function RemovalSection({ assist }: { assist: ObjectRemovalAssist }) {
  * The Dust Spots section: the same shared-header shape as
  * RemovalSection — the header Auto button runs the scan, the content
  * keeps the review list with no detect bar, and the ephemeral assist
- * means no highlight and no reset.
+ * means no highlight.
  */
 function DustSpotsSection({ assist }: { assist: DustSpotsAssist }) {
   const working = assist.state === 'detecting';
@@ -797,9 +795,7 @@ function DustSpotsSection({ assist }: { assist: DustSpotsAssist }) {
       id: 'dust-spots',
       kind: 'auto',
       applied: false,
-      canRevert: false,
       onToggle: assist.onDetect,
-      onRevert: assist.onDismiss,
       disabled: working,
       hint,
     }}>
@@ -847,7 +843,7 @@ function RetouchGroups({ edit, highlightStroke, onHighlightStroke, onChange }: {
  * mapping (anchor spline over the Midtones bend); the dots are the recipe's
  * anchors: press on the line to drop a new one and keep dragging it in the
  * same gesture, drag a dot to reshape, Delete (or right-click) removes the
- * focused dot. The header reset clears dots and Midtones together, so the
+ * focused dot. The header toggle clears dots and Midtones together, so the
  * Midtones slider carries no double-click reset of its own.
  */
 export function ToneCurveEditor({ points, midtone, onChange }: { points: CurvePoint[]; midtone: number; onChange: ChangeEdit }) {
@@ -1018,6 +1014,13 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   const whiteBalanceDirty = edit.temperature !== 5500 || edit.tint !== 0;
   const lightnessDirty = edit.exposure !== 0 || edit.brightness !== 0 || edit.contrast !== 0 || edit.highlights !== 0 || edit.shadows !== 0 || edit.blacks !== 0;
   const colorDirty = edit.hue !== 0 || edit.saturation !== 0 || edit.vibrance !== 0;
+  // The manual sections read the same dirtiness shape: their header
+  // switches light on the first tweak and reset on click. With no
+  // suggestion to apply, the switch disables while off (the Denoise
+  // no-suggestion precedent) — there is nothing to turn on.
+  const curvesDirty = edit.curve !== 0 || edit.curvePoints.length !== 0;
+  const detailsDirty = edit.clarity !== 0 || edit.sharpness !== 0 || edit.grain !== 0;
+  const effectsDirty = edit.vignette !== 0 || edit.fade !== 0;
   // The Color Adjustments header carries the classic enhance as an Auto
   // pill (same toggle contract + tooltips the retired standalone section
   // got from AdjustmentSection kind 'auto'), with the shared-snapshot
@@ -1061,16 +1064,16 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
         {rangeEnabled('colorEnabled', 'vibrance', 'Vibrance')}
         {rangeEnabled('colorEnabled', 'hue', 'Hue', { min: -180, max: 180, color: 'hue' })}
       </AdjustmentSection>
-      <AdjustmentSection key={`curves-${openedExtra === 'Curves' ? extraRevision : 0}`} title="Curves" icon={<Spline size={14} />} initiallyOpen={openedExtra === 'Curves'} onReset={() => onChange({ curve: 0, curvePoints: [] })} dirty={edit.curve !== 0 || edit.curvePoints.length !== 0}>
+      <AdjustmentSection key={`curves-${openedExtra === 'Curves' ? extraRevision : 0}`} title="Curves" icon={<Spline size={14} />} initiallyOpen={openedExtra === 'Curves'} toggle={{ id: 'curves', checked: curvesDirty, onToggle: () => onChange({ curve: 0, curvePoints: [] }), disabled: !curvesDirty, hint: curvesDirty ? 'Curves on — click to reset to defaults' : 'Curves at defaults' }}>
         <ToneCurveEditor points={edit.curvePoints} midtone={edit.curve} onChange={onChange} />{range('curve', 'Midtones', { disableReset: true })}
       </AdjustmentSection>
-      <AdjustmentSection key={`details-${openedExtra === 'Details' ? extraRevision : 0}`} title="Details" icon={<Focus size={14} />} initiallyOpen={openedExtra === 'Details'} onReset={() => onChange({ clarity: 0, sharpness: 0, grain: 0 })} dirty={edit.clarity !== 0 || edit.sharpness !== 0 || edit.grain !== 0}>
+      <AdjustmentSection key={`details-${openedExtra === 'Details' ? extraRevision : 0}`} title="Details" icon={<Focus size={14} />} initiallyOpen={openedExtra === 'Details'} toggle={{ id: 'details', checked: detailsDirty, onToggle: () => onChange({ clarity: 0, sharpness: 0, grain: 0 }), disabled: !detailsDirty, hint: detailsDirty ? 'Details on — click to reset to defaults' : 'Details at defaults' }}>
         {rangeEnabled('detailsEnabled', 'clarity', 'Clarity')}{rangeEnabled('detailsEnabled', 'sharpness', 'Sharpness', { min: 0 })}{rangeEnabled('detailsEnabled', 'grain', 'Grain', { min: 0 })}
       </AdjustmentSection>
-      <AdjustmentSection key={`effects-${openedExtra === 'Effects' ? extraRevision : 0}`} title="Effects" icon={<CircleDashed size={14} />} initiallyOpen={openedExtra === 'Effects'} onReset={() => onChange({ vignette: 0, fade: 0 })} dirty={edit.vignette !== 0 || edit.fade !== 0}>
+      <AdjustmentSection key={`effects-${openedExtra === 'Effects' ? extraRevision : 0}`} title="Effects" icon={<CircleDashed size={14} />} initiallyOpen={openedExtra === 'Effects'} toggle={{ id: 'effects', checked: effectsDirty, onToggle: () => onChange({ vignette: 0, fade: 0 }), disabled: !effectsDirty, hint: effectsDirty ? 'Effects on — click to reset to defaults' : 'Effects at defaults' }}>
         {range('vignette', 'Vignette', { min: 0 })}{range('fade', 'Fade', { min: 0 })}
       </AdjustmentSection>
-      {extraSections.includes('Black & White') && <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} onReset={() => onChange({ blackAndWhite: false })} dirty={edit.blackAndWhite}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>}
+      {extraSections.includes('Black & White') && <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} toggle={{ id: 'black-and-white', checked: edit.blackAndWhite, onToggle: () => onChange({ blackAndWhite: !edit.blackAndWhite }), hint: edit.blackAndWhite ? 'Black & White on — click to restore color' : 'Convert to black & white' }}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>}
       <div className="inspector-end-note"><Circle size={10} />Every change. Always reversible.</div>
     </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button aria-label="Rotate left 90 degrees" data-tooltip="Rotate left 90 degrees" onClick={() => onRotate(-1)}><RotateCcw size={18} /><span>Left</span></button><button aria-label="Rotate right 90 degrees" data-tooltip="Rotate right 90 degrees" onClick={() => onRotate(1)}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} aria-label="Flip horizontally" data-tooltip="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} aria-label="Flip vertically" data-tooltip="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onStraighten={onStraighten} onDraggingChange={onStraightenDragging} /> : <RangeControl label="Straighten" value={edit.straighten} min={-15} max={15} step={0.1} suffix="deg" signed onDraggingChange={onStraightenDragging} onChange={(next) => onStraighten(next, 'straighten')} />}<p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <><AdjustmentSection title="Brush" icon={<Brush size={14} />}><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} /></AdjustmentSection>{repairAssist && <AdjustmentSection title="Reconstruction" icon={<Layers size={14} />}><RepairMethodControl assist={repairAssist} /></AdjustmentSection>}{repairAssist?.removal && <RemovalSection assist={repairAssist.removal} />}{repairAssist?.dustSpots && <DustSpotsSection assist={repairAssist.dustSpots} />}<AdjustmentSection title="Repairs" icon={<Bandage size={14} />}><RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></AdjustmentSection></>}</div>
     {tool === 'adjust' && <div className="inspector-footer" ref={addMenuRef}><button className="add-adjustment" onClick={() => setAddMenu(!addMenu)} aria-expanded={addMenu}>Add Adjustment<ChevronDown size={12} /></button>{addMenu && <div className="dropdown-menu add-adjustment-menu" role="menu">{['Black & White'].filter((name) => !extraSections.includes(name)).map((name) => <MenuItem key={name} onClick={() => addSection(name)}>{name}</MenuItem>)}{!extraSections.includes('Black & White') && <MenuSeparator />}<MenuItem onClick={() => { onSavePreset(); setAddMenu(false); }}>Save as Preset...</MenuItem></div>}</div>}

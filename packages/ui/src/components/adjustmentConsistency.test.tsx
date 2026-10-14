@@ -12,10 +12,10 @@ import type { DenoiseAssist, DustSpotsAssist, FaceEnhanceAssist, ObjectRemovalAs
 // Adjustment styling consistency, rendered on the server (no jsdom): one
 // place pinning the cross-section contract — Color Adjustments headers
 // carry one switch each (an ML badge by the name marks the model tools),
-// collapsing keeps the header action, description notes share one tight
-// rhythm, the header reset never hides, Repair headers keep their
-// ML/Auto buttons with no switches, and Black & White resets to its
-// default like every other section. Per-area behavior stays in the area
+// collapsing keeps the header switch, description notes share one tight
+// rhythm, no section header carries a reset, Repair headers keep their
+// ML/Auto buttons with no switches, and Black & White flips from its
+// switch like every other section. Per-area behavior stays in the area
 // test files; this file pins the cross-section contract only.
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -182,13 +182,14 @@ function actionsRows(html: string): string[] {
 
 describe('adjustment styling consistency', () => {
   it('switches every adjust header, badges the model tools, and keeps the repair buttons honest', () => {
-    // Every Color Adjustments section with an automatic action carries the
-    // one shared switch; the ML badge by the name marks the model tools
-    // (faces, subject) while the heuristic tools (scene enhance, denoise,
-    // the slider autos) carry none. The whole-photo header pill is not a
-    // section control and stays.
+    // Every Color Adjustments section carries the one shared switch —
+    // including Curves, Details, and Effects, which have no automatic
+    // action (their switches disable while off). The ML badge by the name
+    // marks the model tools (faces, subject) while the heuristic tools
+    // (scene enhance, denoise, the slider autos) carry none. The
+    // whole-photo header pill is not a section control and stays.
     const html = renderAdjust({ ...DEFAULT_EDIT }, { scene: true, denoise: true, faceApplied: null, selectiveApplied: null });
-    for (const id of ['scene-enhance', 'face-enhance', 'selective-mask', 'denoise', 'white-balance', 'lightness', 'color'] as const) {
+    for (const id of ['scene-enhance', 'face-enhance', 'selective-mask', 'denoise', 'white-balance', 'lightness', 'color', 'curves', 'details', 'effects'] as const) {
       expect(html).toContain(`data-testid="${id}-toggle"`);
       expect(html).not.toContain(`data-testid="${id}-auto"`);
       expect(html).not.toContain(`data-testid="${id}-ml"`);
@@ -210,16 +211,14 @@ describe('adjustment styling consistency', () => {
     expect(repair).not.toContain('-toggle"');
   });
 
-  it('keeps the header action and reset rendered while collapsed', () => {
-    // Collapsing hides the sliders, never the header controls — the Auto
-    // action stays one click away, exactly like the reset.
+  it('keeps the header action rendered while collapsed', () => {
+    // Collapsing hides the sliders, never the header control — the Auto
+    // action stays one click away, exactly like the switch.
     const html = renderToStaticMarkup(
       <AdjustmentSection
         title="Lightness"
         icon={<i />}
-        ml={{ id: 'lightness', kind: 'auto', applied: false, canRevert: false, onToggle: noop, onRevert: noop }}
-        onReset={noop}
-        dirty
+        ml={{ id: 'lightness', kind: 'auto', applied: false, onToggle: noop }}
         open={false}
       >
         <span>slider-stub</span>
@@ -228,7 +227,7 @@ describe('adjustment styling consistency', () => {
     expect(html).toContain('is-collapsed');
     expect(html).not.toContain('slider-stub');
     expect(html).toContain('data-testid="lightness-auto"');
-    expect(html).toContain('aria-label="Reset lightness"');
+    expect(html).not.toContain('section-reset');
   });
 
   it('gives every description note the same tight rhythm', () => {
@@ -249,26 +248,28 @@ describe('adjustment styling consistency', () => {
     expect(html).not.toContain('Automatically enhance exposure, contrast, and color.');
   });
 
-  it('never hides the header reset at any viewport', () => {
-    // The reset used to vanish between 761–850px (a breakpoint display:none
-    // with a mobile re-show) — a functional control must not depend on
-    // window width. No display declaration on .section-reset anywhere now.
+  it('keeps the panel-header reset visible at any viewport', () => {
+    // The section-header resets are gone; the one surviving .section-reset
+    // rule serves the panel header's enhance-revert icon. It used to
+    // vanish between 761–850px (a breakpoint display:none with a mobile
+    // re-show) — a functional control must not depend on window width. No
+    // display declaration on .section-reset anywhere now.
     expect(css()).not.toMatch(/\.section-reset[^{]*\{[^}]*display\s*:/);
     expect(cssRule('.section-reset')).not.toMatch(/display\s*:/);
   });
 
   it('keeps one switch per adjust header; repair headers and the panel Auto group stay switch-free', () => {
-    // Every Color Adjustments header with an automatic action carries
-    // exactly the one shared switch (on applies the suggestion, off
-    // resets to defaults) — and manual headers carry no switch at all.
-    // The content bypass switches (faces, subject) keep their own labels,
+    // Every Color Adjustments header carries exactly the one shared
+    // switch — the automatic ones apply on and reset off, the manual
+    // Curves/Details/Effects light on tweaks and reset on click. The
+    // content bypass switches (faces, subject) keep their own labels,
     // distinct from the header switches.
     const applied: NonNullable<FaceEnhanceAssist['applied']> = { faces: 2, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 1 };
     const adjust = renderAdjust({ ...DEFAULT_EDIT }, { faceApplied: applied, selectiveApplied: { ...APPLIED_SELECTIVE, enabled: true } });
     const rows = actionsRows(adjust);
     expect(rows.length).toBeGreaterThan(0);
     const withSwitch = rows.filter((row) => row.includes('role="switch"'));
-    expect(withSwitch).toHaveLength(5);
+    expect(withSwitch).toHaveLength(8);
     for (const row of withSwitch) {
       expect(row.match(/role="switch"/g)).toHaveLength(1);
       expect(row).not.toContain('section-reset');
@@ -291,16 +292,18 @@ describe('adjustment styling consistency', () => {
     expect(repair).toContain('aria-label="Seamless light adaptation"');
   });
 
-  it('resets Black & White to its actual default, like every other section', () => {
-    // Enabled used to mean "no reset at all" for Black & White; now the
-    // header reset restores color — and the restore target is pinned to
-    // the recipe default, not a second hardcoded guess.
+  it('flips Black & White from its header switch, like every other section', () => {
+    // The switch reads the recipe flag straight (off at the false
+    // default) and flips it both ways — converting on, restoring color
+    // off — with no header reset beside it.
     expect(DEFAULT_EDIT.blackAndWhite).toBe(false);
     const inspector = source('Inspector.tsx');
     const start = inspector.indexOf('title="Black & White"');
     expect(start).toBeGreaterThan(-1);
     const blackAndWhite = inspector.slice(start, inspector.indexOf('</AdjustmentSection>', start));
-    expect(blackAndWhite).toContain('onReset={() => onChange({ blackAndWhite: false })}');
-    expect(blackAndWhite).toContain('dirty={edit.blackAndWhite}');
+    expect(blackAndWhite).toContain("toggle={{ id: 'black-and-white', checked: edit.blackAndWhite");
+    expect(blackAndWhite).toContain('onToggle: () => onChange({ blackAndWhite: !edit.blackAndWhite })');
+    expect(blackAndWhite).not.toContain('onReset');
+    expect(blackAndWhite).not.toContain('dirty=');
   });
 });

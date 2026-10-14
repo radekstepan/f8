@@ -7,10 +7,11 @@ import { DEFAULT_EDIT } from '@f8/core';
 import type { EditState, Photo } from '@f8/core';
 import { Inspector } from './Inspector.js';
 
-// Details header reset (Task 12), rendered on the server (no jsdom):
-// Details was the last slider section without a header reset. It now
-// follows the uniform contract — onReset + dirty, gated by the shared
-// AdjustmentSection rule (Task 10: renders only while non-default).
+// Details header toggle (the Task 12 header reset, converted), rendered
+// on the server (no jsdom): Details follows the uniform switch contract
+// — the toggle lights while clarity, sharpness, or grain is off defaults
+// and resets on click, disabled while off since Details has no automatic
+// action — with no reset button in the header.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = (file: string) => readFileSync(resolve(here, file), 'utf8');
@@ -81,22 +82,28 @@ function sectionSlice(html: string, title: string, nextTitle: string): string {
   return html.slice(start, end);
 }
 
-describe('Details header reset', () => {
-  it('renders no Details reset at defaults', () => {
+describe('Details header toggle', () => {
+  it('renders the Details switch off and disabled at defaults', () => {
     const details = sectionSlice(renderAdjust({ ...DEFAULT_EDIT }), 'Details', 'Effects');
+    expect(details).toContain('class="toggle" data-testid="details-toggle"');
+    expect(details).toContain('data-tooltip="Details at defaults"');
+    const tag = details.match(/<button[^>]*data-testid="details-toggle"[^>]*>/)?.[0] ?? '';
+    expect(tag).toContain('disabled');
     expect(details).not.toContain('section-reset');
     expect(details).not.toContain('aria-label="Reset details"');
   });
 
-  it('persists the Details reset while any of clarity, sharpness, or grain is off defaults', () => {
+  it('lights the Details switch while any of clarity, sharpness, or grain is off defaults', () => {
     for (const patch of [{ clarity: 20 }, { sharpness: 30 }, { grain: 10 }] as const) {
       const details = sectionSlice(renderAdjust({ ...DEFAULT_EDIT, ...patch }), 'Details', 'Effects');
-      expect(details, JSON.stringify(patch)).toContain('section-reset is-dirty" data-tooltip="Reset details"');
+      expect(details, JSON.stringify(patch)).toContain('class="toggle is-on" data-testid="details-toggle"');
+      expect(details, JSON.stringify(patch)).toContain('data-tooltip="Details on — click to reset to defaults"');
+      expect(details, JSON.stringify(patch)).not.toContain('section-reset');
     }
   });
 
-  it('keeps the dirty Details reset in the header while collapsed', () => {
-    // Details starts collapsed (Task 11); the reset must show without expanding.
+  it('keeps the lit Details switch in the header while collapsed', () => {
+    // Details starts collapsed (Task 11); the switch must show without expanding.
     const details = sectionSlice(
       renderAdjust({ ...DEFAULT_EDIT, clarity: 20, sharpness: 30, grain: 10 }),
       'Details',
@@ -104,41 +111,43 @@ describe('Details header reset', () => {
     );
     expect(details).toContain('adjustment-section is-collapsed');
     expect(details).toContain('aria-expanded="false"');
-    expect(details).toContain('section-reset is-dirty" data-tooltip="Reset details"');
+    expect(details).toContain('class="toggle is-on" data-testid="details-toggle"');
   });
 
   it('treats a legacy-disabled Details at default values as clean', () => {
     // Values alone decide dirtiness (the Task 3 convention): the enabled
     // flag flips back on the first slider drag, so a disabled-but-default
-    // section renders no reset — and a disabled-but-dirty one still does.
+    // section renders its switch off — and a disabled-but-dirty one lit.
     const clean = sectionSlice(
       renderAdjust({ ...DEFAULT_EDIT, detailsEnabled: false }),
       'Details',
       'Effects',
     );
-    expect(clean).not.toContain('aria-label="Reset details"');
+    expect(clean).toContain('class="toggle" data-testid="details-toggle"');
     const dirty = sectionSlice(
       renderAdjust({ ...DEFAULT_EDIT, detailsEnabled: false, clarity: 20 }),
       'Details',
       'Effects',
     );
-    expect(dirty).toContain('section-reset is-dirty" data-tooltip="Reset details"');
+    expect(dirty).toContain('class="toggle is-on" data-testid="details-toggle"');
   });
 
-  it('renders no other section reset for dirty Details values', () => {
+  it('lights no other section switch for dirty Details values', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT, clarity: 20, sharpness: 30, grain: 10 });
-    for (const label of ['Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation', 'Reset curves', 'Reset effects']) {
-      expect(html, `dirty Details must not render ${label}`).not.toContain(`aria-label="${label}"`);
+    expect(html).toContain('class="toggle is-on" data-testid="details-toggle"');
+    for (const toggle of ['white-balance-toggle', 'lightness-toggle', 'color-toggle', 'curves-toggle', 'effects-toggle']) {
+      expect(html, `dirty Details must not light ${toggle}`).toContain(`class="toggle" data-testid="${toggle}"`);
     }
   });
 
-  it('mirrors the reset patch keys in dirty exactly', () => {
-    // Static markup cannot observe the onChange closure, so pin the
+  it('mirrors the toggle-off patch keys in the dirtiness check exactly', () => {
+    // Static markup cannot observe the onToggle closure, so pin the
     // wiring at the source (the collapsePanels.test.tsx precedent): the
-    // reset restores exactly clarity/sharpness/grain, and dirty reads
-    // exactly those keys — the reset can never get stuck on.
+    // toggle-off restores exactly clarity/sharpness/grain, and the
+    // dirtiness flag reads exactly those keys — the switch can never get
+    // stuck on.
     const inspector = source('Inspector.tsx');
-    expect(inspector).toContain('onReset={() => onChange({ clarity: 0, sharpness: 0, grain: 0 })}');
-    expect(inspector).toContain('dirty={edit.clarity !== 0 || edit.sharpness !== 0 || edit.grain !== 0}');
+    expect(inspector).toContain('onToggle: () => onChange({ clarity: 0, sharpness: 0, grain: 0 })');
+    expect(inspector).toContain('const detailsDirty = edit.clarity !== 0 || edit.sharpness !== 0 || edit.grain !== 0;');
   });
 });

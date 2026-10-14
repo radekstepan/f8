@@ -334,14 +334,14 @@ describe('scene enhance reload', () => {
   });
 
   it('keeps per-section toggles on for reloaded enhance values', () => {
-    // The stored values light their section toggles after a reload (the
-    // manual Details section keeps its reset), alongside the persisted
-    // whole-photo revert.
+    // The stored values light their section toggles after a reload
+    // (Details lights its switch like every other manual section),
+    // alongside the persisted whole-photo revert.
     const html = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, exposure: 0.22, clarity: 12 },
       noop,
     );
     expect(html).toContain('class="toggle is-on" data-testid="lightness-toggle"');
-    expect(html).toContain('aria-label="Reset details"');
+    expect(html).toContain('class="toggle is-on" data-testid="details-toggle"');
   });
 });

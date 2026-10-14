@@ -7,9 +7,9 @@ import { DEFAULT_EDIT } from '@f8/core';
 import type { EditState, Photo } from '@f8/core';
 import { Inspector, ToneCurveEditor } from './Inspector.js';
 
-// Curves reset + addable points, rendered on the server (no jsdom): pins
+// Curves toggle + addable points, rendered on the server (no jsdom): pins
 // the markup + prop wiring — the Midtones slider carries no double-click
-// reset (the header reset owns that now), and each anchor renders as a
+// reset (the header toggle owns that now), and each anchor renders as a
 // keyboard-focusable dot — not pointer behavior (see toneCurve.test.ts
 // for the add/move/remove reducers the gestures call into). The graph
 // renders through the exported editor: the Curves section starts
@@ -99,9 +99,13 @@ function sectionSlice(html: string, title: string, nextTitle: string): string {
 
 const curvesSection = (html: string): string => sectionSlice(html, 'Curves', 'Details');
 
-describe('Curves reset and points', () => {
-  it('renders no Curves reset at defaults', () => {
+describe('Curves toggle and points', () => {
+  it('renders the Curves switch off and disabled at defaults', () => {
     const curves = curvesSection(renderAdjust({ ...DEFAULT_EDIT }));
+    expect(curves).toContain('class="toggle" data-testid="curves-toggle"');
+    expect(curves).toContain('data-tooltip="Curves at defaults"');
+    const tag = curves.match(/<button[^>]*data-testid="curves-toggle"[^>]*>/)?.[0] ?? '';
+    expect(tag).toContain('disabled');
     expect(curves).not.toContain('section-reset');
     expect(curves).not.toContain('aria-label="Reset curves"');
   });
@@ -120,7 +124,7 @@ describe('Curves reset and points', () => {
   it('drops the double-click reset from the Midtones slider only', () => {
     // The Curves section starts collapsed, so the slider wiring is pinned
     // at the source (the detailsReset.test.tsx precedent): Midtones opts
-    // out because the header reset owns Curves resets now — and it is the
+    // out because the header toggle owns Curves resets now — and it is the
     // only slider in the inspector that does.
     const inspector = source('Inspector.tsx');
     expect(inspector).toContain("{range('curve', 'Midtones', { disableReset: true })}");
@@ -143,22 +147,24 @@ describe('Curves reset and points', () => {
     expect(graph).toContain('aria-valuetext="input 75 percent, output 25 percent"');
   });
 
-  it('persists the Curves reset while anchors exist, without lighting other sections', () => {
+  it('lights the Curves switch while anchors exist, without lighting other sections', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT, curvePoints: [{ x: 0.5, y: 0.6 }] });
-    expect(curvesSection(html)).toContain('section-reset is-dirty" data-tooltip="Reset curves"');
-    for (const label of ['Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation', 'Reset details', 'Reset effects']) {
-      expect(html, `curve anchors must not render ${label}`).not.toContain(`aria-label="${label}"`);
+    expect(curvesSection(html)).toContain('class="toggle is-on" data-testid="curves-toggle"');
+    expect(curvesSection(html)).toContain('data-tooltip="Curves on — click to reset to defaults"');
+    for (const toggle of ['white-balance-toggle', 'lightness-toggle', 'color-toggle', 'details-toggle', 'effects-toggle']) {
+      expect(html, `curve anchors must not light ${toggle}`).toContain(`class="toggle" data-testid="${toggle}"`);
     }
+    expect(html).not.toContain('section-reset');
   });
 
-  it('mirrors the reset patch keys in dirty exactly', () => {
-    // Static markup cannot observe the onChange closure, so pin the
+  it('mirrors the toggle-off patch keys in the dirtiness check exactly', () => {
+    // Static markup cannot observe the onToggle closure, so pin the
     // wiring at the source (the detailsReset.test.tsx precedent): the
-    // reset restores Midtones plus the anchors, and dirty reads exactly
-    // those — the reset can never get stuck on.
+    // toggle-off restores Midtones plus the anchors, and the dirtiness
+    // flag reads exactly those — the switch can never get stuck on.
     const inspector = source('Inspector.tsx');
-    expect(inspector).toContain('onReset={() => onChange({ curve: 0, curvePoints: [] })}');
-    expect(inspector).toContain('dirty={edit.curve !== 0 || edit.curvePoints.length !== 0}');
+    expect(inspector).toContain('onToggle: () => onChange({ curve: 0, curvePoints: [] })');
+    expect(inspector).toContain('const curvesDirty = edit.curve !== 0 || edit.curvePoints.length !== 0;');
   });
 
   it('styles the dots as grabbable points on the line', () => {

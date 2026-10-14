@@ -9,12 +9,13 @@ import { Inspector } from './Inspector.js';
 import type { DenoiseAssist, FaceEnhanceAssist, SelectiveMaskAssist } from './Inspector.js';
 
 // The Auto/ML toggle contract, rendered on the server (no jsdom): one
-// switch per automatic Color Adjustments section — toggling on applies
-// the suggested change, toggling off resets to defaults (no reset
-// button survives on those sections), hand tweaks light the toggle on
-// their own, and the model tools carry a little ML badge by the name.
-// SSR pins the markup; the toggle branches pin at source level (effects
-// never run, so clicks are not observable here).
+// switch per Color Adjustments section — toggling on applies the
+// suggested change, toggling off resets to defaults (no reset button
+// survives in any section header), hand tweaks light the toggle on their
+// own, and the model tools carry a little ML badge by the name. The
+// suggestion-less Curves, Details, and Effects disable their switches
+// while off. SSR pins the markup; the toggle branches pin at source
+// level (effects never run, so clicks are not observable here).
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = (file: string) => readFileSync(resolve(here, file), 'utf8');
@@ -110,26 +111,30 @@ function actionsRows(html: string): string[] {
 }
 
 describe('auto/ml toggle contract', () => {
-  it('gives every automatic section exactly one switch and no reset', () => {
+  it('gives every section exactly one switch and no reset', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
     const rows = actionsRows(html);
     // Scene, faces, subject, denoise, white balance, lightness, color,
     // curves, details, effects.
     expect(rows).toHaveLength(10);
     const withSwitch = rows.filter((row) => row.includes('role="switch"'));
-    expect(withSwitch).toHaveLength(7);
+    expect(withSwitch).toHaveLength(10);
     for (const row of withSwitch) {
       expect(row.match(/role="switch"/g)).toHaveLength(1);
       expect(row).not.toContain('section-reset');
       expect(row).not.toContain('ml-button');
       expect(row).not.toContain('auto-small');
     }
-    // The manual leftovers keep no switch (their resets render on dirt).
+    // The manual sections light their own switches on dirt — no resets.
     const dirty = renderAdjust({ ...DEFAULT_EDIT, curve: 25, clarity: 20, vignette: 40 });
-    expect(dirty.match(/role="switch"/g)).toHaveLength(7);
-    expect(dirty).toContain('aria-label="Reset curves"');
-    expect(dirty).toContain('aria-label="Reset details"');
-    expect(dirty).toContain('aria-label="Reset effects"');
+    expect(dirty.match(/role="switch"/g)).toHaveLength(10);
+    expect(dirty).toContain('class="toggle is-on" data-testid="curves-toggle"');
+    expect(dirty).toContain('class="toggle is-on" data-testid="details-toggle"');
+    expect(dirty).toContain('class="toggle is-on" data-testid="effects-toggle"');
+    expect(dirty).not.toContain('section-reset');
+    expect(dirty).not.toContain('aria-label="Reset curves"');
+    expect(dirty).not.toContain('aria-label="Reset details"');
+    expect(dirty).not.toContain('aria-label="Reset effects"');
   });
 
   it('badges exactly the model tools by name', () => {
@@ -159,6 +164,11 @@ describe('auto/ml toggle contract', () => {
     expect(inspector).toContain("onToggle: faceChanged ? faceAssist.onClear : faceAssist.onDetect");
     expect(inspector).toContain("onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect");
     expect(inspector).toContain("onToggle: () => { if (applied) assist.onClear(); else { setSlider(suggestion); setAuto(true); } }");
+    // The manual sections reset straight to defaults (no auto to cancel,
+    // so no editor-owned reset needed) and disable while clean.
+    expect(inspector).toContain("checked: curvesDirty, onToggle: () => onChange({ curve: 0, curvePoints: [] }), disabled: !curvesDirty");
+    expect(inspector).toContain("checked: detailsDirty, onToggle: () => onChange({ clarity: 0, sharpness: 0, grain: 0 }), disabled: !detailsDirty");
+    expect(inspector).toContain("checked: effectsDirty, onToggle: () => onChange({ vignette: 0, fade: 0 }), disabled: !effectsDirty");
   });
 
   it('resets toggle-off sections to defaults while cancelling in-flight autos', () => {

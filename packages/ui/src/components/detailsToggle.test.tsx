@@ -7,12 +7,13 @@ import { DEFAULT_EDIT } from '@f8/core';
 import type { EditState, Photo } from '@f8/core';
 import { Inspector } from './Inspector.js';
 
-// Details drops its header toggle (Task 11): the toggle drove the same
-// local visibility state as the disclosure chevron — a leftover from when
-// every slider section had one — while the real enable/disable semantics
-// (the detailsEnabled recipe flag) live in the edit + the slider
-// re-enable wiring, untouched by this change. Rendered on the server (no
-// jsdom): pins markup + prop wiring, not click behavior.
+// Details carries the shared dirtiness switch (Task 11 dropped the old
+// visibility toggle, which drove the same local state as the disclosure
+// chevron; the switch is back with new semantics — on while the sliders
+// are off defaults, resetting on click). The real enable/disable
+// semantics (the detailsEnabled recipe flag) live in the edit + the
+// slider re-enable wiring, untouched by this change. Rendered on the
+// server (no jsdom): pins markup + prop wiring, not click behavior.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = (file: string) => readFileSync(resolve(here, file), 'utf8');
@@ -83,37 +84,42 @@ function sectionSlice(html: string, title: string, nextTitle: string): string {
   return html.slice(start, end);
 }
 
-describe('Details without a header toggle', () => {
-  it('renders no toggle in the Details header', () => {
+describe('Details header toggle', () => {
+  it('renders the dirtiness switch in the Details header', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
     expect(html).not.toContain('Show details');
     const details = sectionSlice(html, 'Details', 'Effects');
-    expect(details).not.toContain('role="switch"');
-    expect(details).not.toContain('aria-checked');
+    expect(details).toContain('class="toggle" data-testid="details-toggle"');
+    expect(details).toContain('role="switch"');
+    expect(details).toContain('aria-checked="false"');
+    expect(details).toContain('aria-label="Details"');
   });
 
   it('collapses Details through the shared disclosure, like Curves and Effects', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
     // Same collapsed shape three times: collapsed section class,
-    // collapsed disclosure, hidden sliders.
-    for (const [title, next] of [['Curves', 'Details'], ['Details', 'Effects']] as const) {
+    // collapsed disclosure, hidden sliders, switch in the header.
+    for (const [title, next, toggle] of [['Curves', 'Details', 'curves-toggle'], ['Details', 'Effects', 'details-toggle']] as const) {
       const section = sectionSlice(html, title, next);
       expect(section).toContain('adjustment-section is-collapsed');
       expect(section).toContain('aria-expanded="false"');
       expect(section).toContain('lucide-chevron-right');
-      expect(section).not.toContain('role="switch"');
+      expect(section).toContain(`class="toggle" data-testid="${toggle}"`);
     }
     expect(html).not.toContain('>Clarity</label>');
     expect(html).not.toContain('>Sharpness</label>');
     expect(html).not.toContain('>Grain</label>');
   });
 
-  it('keeps Details toggle-free with dirty sliders (the header carries a reset, not a toggle)', () => {
+  it('lights the Details switch with dirty sliders (no reset beside it)', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT, clarity: 20, sharpness: 30, grain: 10 });
     expect(html).not.toContain('Show details');
     const details = sectionSlice(html, 'Details', 'Effects');
-    expect(details).not.toContain('role="switch"');
+    expect(details).toContain('class="toggle is-on" data-testid="details-toggle"');
+    expect(details).toContain('aria-checked="true"');
     expect(details).toContain('aria-expanded="false"');
+    expect(details).not.toContain('section-reset');
+    expect(details).not.toContain('aria-label="Reset details"');
   });
 
   it('preserves the detailsEnabled recipe semantics outside the header', () => {
@@ -135,23 +141,21 @@ describe('Details without a header toggle', () => {
     expect(sectionSlice(html, 'Details', 'Effects')).toContain('aria-expanded="false"');
   });
 
-  it('retired the shared header toggle with Black & White: reset plus content button instead', () => {
-    // Black & White was the last header-toggle consumer: its switch
-    // duplicated the content button ("Make Black & White"/"Restore Color")
-    // while offering no reset, so a toggled section never showed whether
-    // it was on or back at defaults. The toggle is gone from the shared
-    // header; the section keeps its explicit content button and gains the
-    // standard header reset. The section renders only after "Add
-    // Adjustment" (client state), so the wiring pins at source level.
+  it('gives Black & White the shared header switch: toggle plus content button, no reset', () => {
+    // Black & White flips both ways from its header switch (off-to-on
+    // converts, on-to-off restores color), so the switch is the state
+    // indicator every other section has — the explicit content button
+    // ("Make Black & White"/"Restore Color") stays as the labeled action,
+    // and the old header reset is gone. The section renders only after
+    // "Add Adjustment" (client state), so the wiring pins at source level.
     const inspector = source('Inspector.tsx');
     const start = inspector.indexOf('title="Black & White"');
     expect(start).toBeGreaterThan(-1);
     const blackAndWhite = inspector.slice(start, inspector.indexOf('</AdjustmentSection>', start));
-    expect(blackAndWhite).not.toContain('onToggle');
-    expect(blackAndWhite).not.toContain('toggleLabel');
-    expect(blackAndWhite).not.toContain('enabled=');
-    expect(blackAndWhite).toContain('onReset={() => onChange({ blackAndWhite: false })}');
-    expect(blackAndWhite).toContain('dirty={edit.blackAndWhite}');
+    expect(blackAndWhite).toContain("toggle={{ id: 'black-and-white', checked: edit.blackAndWhite");
+    expect(blackAndWhite).toContain('onToggle: () => onChange({ blackAndWhite: !edit.blackAndWhite })');
+    expect(blackAndWhite).not.toContain('onReset');
+    expect(blackAndWhite).not.toContain('dirty=');
     expect(blackAndWhite).toContain('Restore Color');
     expect(blackAndWhite).toContain('Make Black & White');
   });

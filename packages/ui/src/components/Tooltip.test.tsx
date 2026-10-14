@@ -130,7 +130,7 @@ describe('tooltip triggers', () => {
       <AdjustmentSection
         title="White Balance"
         icon={<i />}
-        ml={{ id: 'white-balance', applied: false, canRevert: false, onToggle: noop, onRevert: noop }}
+        ml={{ id: 'white-balance', applied: false, onToggle: noop }}
       >
         <span />
       </AdjustmentSection>,

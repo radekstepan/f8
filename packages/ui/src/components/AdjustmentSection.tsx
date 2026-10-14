@@ -1,18 +1,14 @@
 import { useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
-import { IconButton, Toggle } from './EditorUI.js';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { Toggle } from './EditorUI.js';
 
 export interface AdjustmentMl {
   /** Testid prefix: `${id}-ml` for the button (`-auto` for kind 'auto'). */
   id: string;
-  /** True while the recipe holds exactly the auto values: the button highlights. Manual edits clear it. */
+  /** True while the action's effect is on the photo: the button highlights. */
   applied: boolean;
-  /** True while a pre-apply snapshot exists: the reset icon restores it, even after manual edits cleared the highlight. */
-  canRevert: boolean;
-  /** Revert when highlighted, otherwise apply fresh auto values (keeping the earliest snapshot). */
+  /** Run the action (each Repair action is a fresh run; nothing persists to revert). */
   onToggle: () => void;
-  /** Always restore the pre-apply snapshot. */
-  onRevert: () => void;
   /** Header action kind: 'ml' when a model runs, 'auto' for heuristics (histogram autos, denoise suggestion). Defaults to 'ml'. */
   kind?: 'ml' | 'auto';
   /** Disable the header action (e.g. Denoise while working or with no ISO suggestion). */
@@ -26,7 +22,12 @@ export interface AdjustmentToggle {
   id: string;
   /** On = the tool holds an effect (auto-applied or hand-tweaked); off = defaults. */
   checked: boolean;
-  /** Off-to-on applies the suggested change; on-to-off resets to defaults. */
+  /**
+   * Off-to-on applies the suggested change; on-to-off resets to defaults.
+   * Sections with no suggestion (Curves, Details, Effects) disable the
+   * switch while off instead — it lights on the first tweak and resets on
+   * click, so the header never needs a second control.
+   */
   onToggle: () => void;
   /** Disable the switch (e.g. Denoise while working or with no ISO suggestion). */
   disabled?: boolean;
@@ -43,14 +44,11 @@ export interface AdjustmentSectionProps {
   badge?: ReactNode;
   /** Per-section automatic action (ML or Auto heuristic); omit for sections with no automatic action. */
   ml?: AdjustmentMl;
-  /** Header on/off switch (the Color Adjustments sections); omit where the header keeps the ML/Auto button (Repair) or just a reset (manual sections). */
+  /** Header on/off switch (every Color Adjustments section); omit where the header keeps the ML/Auto button (Repair). */
   toggle?: AdjustmentToggle;
   /** Controlled visibility; omit for the self-managed disclosure default. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-  onReset?: () => void;
-  /** True when the section differs from its defaults: the reset icon renders. Otherwise no reset renders at all. */
-  dirty?: boolean;
 }
 
 /**
@@ -59,12 +57,12 @@ export interface AdjustmentSectionProps {
  * markup differences to `is-collapsed` / `aria-expanded` / the chevron —
  * the heading must measure identically open and collapsed, or toggling
  * shifts the surrounding text (see collapsePanels.test.tsx). A Color
- * Adjustments header carries one switch: on applies the suggested change,
- * off resets to defaults (manual tweaks light it on their own), so those
- * sections carry no reset button. Repair headers keep the ML/Auto button,
- * manual sections keep the reset.
+ * Adjustments header carries exactly one switch: on applies the suggested
+ * change, off resets to defaults (manual tweaks light it on their own,
+ * and suggestion-less sections disable it while off) — no section header
+ * carries a reset button. Repair headers keep the ML/Auto button.
  */
-export function AdjustmentSection({ title, icon, children, initiallyOpen = true, badge, ml, toggle, open: controlledOpen, onOpenChange, onReset, dirty = false }: AdjustmentSectionProps) {
+export function AdjustmentSection({ title, icon, children, initiallyOpen = true, badge, ml, toggle, open: controlledOpen, onOpenChange }: AdjustmentSectionProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(initiallyOpen);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = (next: boolean) => {
@@ -78,23 +76,15 @@ export function AdjustmentSection({ title, icon, children, initiallyOpen = true,
   const kind = ml?.kind ?? 'ml';
   const actionLabel = kind === 'auto' ? 'Auto' : 'ML';
   const actionClass = kind === 'auto' ? 'auto-small' : 'ml-button';
-  // Denoise carries no pre-apply snapshot (canRevert stays false and the
-  // reset always runs onClear), but its applied flag still means a stored
-  // effect — the untouched auto suggestion — and clicking the highlighted
-  // button turns that stored denoise off. Everywhere else applied implies
-  // canRevert, and the click reverts to the snapshot.
+  // Repair actions are ephemeral one-shots (the strokes they leave live
+  // in the Repairs section from there), so applied never highlights and
+  // every click runs fresh — callers pass a hint naming what the run does.
   const actionHint = !ml ? '' : (ml.hint ?? (kind === 'auto'
-    ? (ml.applied ? (ml.canRevert ? `${title} applied — click to revert` : `${title} applied — click to re-apply`) : ml.canRevert ? `Re-apply ${lower}` : `Apply ${lower} automatically`)
-    : (ml.applied ? (ml.canRevert ? `ML ${lower} applied — click to revert` : `ML ${lower} applied — click to re-apply`) : ml.canRevert ? `Re-apply automatic ${lower} with ML` : `Automatically adjust ${lower} with ML`)));
-  // One reset control per header, left of the action button: while a
-  // pre-apply snapshot exists it restores the pre-apply values, otherwise
-  // it resets the sliders to defaults. The icon renders only while the
-  // section is non-default (dirty values or a live snapshot) — a clean
-  // section renders no reset at all, not even hover-only. The action
-  // button stays rightmost (on/off via .is-active + aria-pressed, styled
-  // in apps/web/src/index.css) and stays rendered while collapsed, like
-  // the reset — collapsing hides the sliders, never the header controls.
-  const resetActive = dirty || Boolean(ml?.canRevert);
-  const onResetClick = ml && ml.canRevert ? ml.onRevert : onReset;
-  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onReset && resetActive && <IconButton className="section-reset is-dirty" label={`Reset ${lower}`} onClick={onResetClick}><RotateCcw size={11} /></IconButton>}{ml && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} data-tooltip={actionHint} disabled={ml.disabled} onClick={ml.onToggle}>{actionLabel}</button>}{toggle && <Toggle checked={toggle.checked} onChange={toggle.onToggle} label={title} testId={`${toggle.id}-toggle`} hint={toggle.hint} disabled={toggle.disabled} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
+    ? (ml.applied ? `${title} applied — click to re-apply` : `Apply ${lower} automatically`)
+    : (ml.applied ? `ML ${lower} applied — click to re-apply` : `Automatically adjust ${lower} with ML`)));
+  // The action button (or switch) is the header's one control — on/off
+  // via .is-active + aria-pressed, styled in apps/web/src/index.css — and
+  // stays rendered while collapsed: collapsing hides the sliders, never
+  // the header controls.
+  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{ml && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} data-tooltip={actionHint} disabled={ml.disabled} onClick={ml.onToggle}>{actionLabel}</button>}{toggle && <Toggle checked={toggle.checked} onChange={toggle.onToggle} label={title} testId={`${toggle.id}-toggle`} hint={toggle.hint} disabled={toggle.disabled} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
 }

@@ -1,14 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
 import type { EditState, Photo } from '@f8/core';
-import { AdjustmentSection } from './AdjustmentSection.js';
 import { Inspector } from './Inspector.js';
 
-// No hover-tease reset on clean sections (Task 10), rendered on the server
-// (no jsdom): a section at defaults renders no reset control at all — the
-// hover-only base Task 3 kept for Curves/Effects is retired, and the same
-// gate covers every other slider section.
+// No reset button in any section header (the Task 10 clean-section gate,
+// extended to every state), rendered on the server (no jsdom): sections
+// show their dirtiness through the header switch — off and disabled at
+// defaults for the suggestion-less Curves/Details/Effects, lit on the
+// first tweak — and the shared header owns no reset control at all.
 
 function makePhoto(): Photo {
   return {
@@ -33,6 +36,9 @@ function makePhoto(): Photo {
     rating: 0,
   };
 }
+
+const here = dirname(fileURLToPath(import.meta.url));
+const source = (file: string) => readFileSync(resolve(here, file), 'utf8');
 
 const noop = () => {};
 
@@ -79,46 +85,49 @@ function effectsSection(html: string): string {
 }
 
 describe('no reset on clean sections', () => {
-  it('renders no Curves reset until the curve leaves defaults', () => {
+  it('renders the Curves switch off and disabled at defaults, lit once the curve leaves defaults', () => {
     const clean = curvesSection(renderAdjust({ ...DEFAULT_EDIT }));
+    expect(clean).toContain('class="toggle" data-testid="curves-toggle"');
     expect(clean).not.toContain('section-reset');
     expect(clean).not.toContain('aria-label="Reset curves"');
     const dirty = curvesSection(renderAdjust({ ...DEFAULT_EDIT, curve: 25 }));
-    expect(dirty).toContain('section-reset is-dirty" data-tooltip="Reset curves"');
+    expect(dirty).toContain('class="toggle is-on" data-testid="curves-toggle"');
+    expect(dirty).not.toContain('section-reset');
+    expect(dirty).not.toContain('aria-label="Reset curves"');
   });
 
-  it('renders no Effects reset until vignette or fade leaves defaults', () => {
+  it('renders the Effects switch off and disabled at defaults, lit once vignette or fade leaves defaults', () => {
     const clean = effectsSection(renderAdjust({ ...DEFAULT_EDIT }));
+    expect(clean).toContain('class="toggle" data-testid="effects-toggle"');
     expect(clean).not.toContain('section-reset');
     expect(clean).not.toContain('aria-label="Reset effects"');
     for (const patch of [{ vignette: 40 }, { fade: 15 }]) {
       const dirty = effectsSection(renderAdjust({ ...DEFAULT_EDIT, ...patch }));
-      expect(dirty, JSON.stringify(patch)).toContain('section-reset is-dirty" data-tooltip="Reset effects"');
+      expect(dirty, JSON.stringify(patch)).toContain('class="toggle is-on" data-testid="effects-toggle"');
+      expect(dirty, JSON.stringify(patch)).not.toContain('section-reset');
+      expect(dirty, JSON.stringify(patch)).not.toContain('aria-label="Reset effects"');
     }
   });
 
-  it('renders no reset in any clean slider section — the gate is shared, not per-section', () => {
-    // Curves/Effects were the report, but White Balance, Lightness, and
-    // Hue & Saturation passed the same unconditional onReset: the
-    // AdjustmentSection gate fixes all five at once.
-    const html = renderAdjust({ ...DEFAULT_EDIT });
+  it('renders no reset in any slider section, clean or dirty — the removal is shared, not per-section', () => {
+    // Curves/Effects/Details were the report, but the reset lived in the
+    // shared AdjustmentSection: removing it there fixes every section at
+    // once, in every state.
+    const html = renderAdjust({ ...DEFAULT_EDIT, temperature: 5800, exposure: 0.5, saturation: 8, curve: 25, clarity: 20, vignette: 40 });
     expect(html).not.toContain('section-reset');
+    for (const label of ['Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation', 'Reset curves', 'Reset details', 'Reset effects']) {
+      expect(html).not.toContain(`aria-label="${label}"`);
+    }
   });
 
-  it('gates the shared header control on dirtiness or a live snapshot', () => {
-    const section = (props: Partial<React.ComponentProps<typeof AdjustmentSection>>) =>
-      renderToStaticMarkup(
-        <AdjustmentSection title="Curves" icon={<i />} onReset={noop} {...props}>
-          <span>slider-stub</span>
-        </AdjustmentSection>,
-      );
-    // onReset alone renders nothing: the hover-tease state is gone.
-    expect(section({})).not.toContain('section-reset');
-    // Dirty values render the persistent reset.
-    expect(section({ dirty: true })).toContain('section-reset is-dirty" data-tooltip="Reset curves"');
-    // A live snapshot renders it even at default values.
-    expect(
-      section({ ml: { id: 'curves', applied: false, canRevert: true, onToggle: noop, onRevert: noop } }),
-    ).toContain('section-reset is-dirty" data-tooltip="Reset curves"');
+  it('owns no reset control in the shared header module', () => {
+    // Structural pin (the collapsePanels.test.tsx precedent): the shared
+    // header cannot render a reset — no reset class, no reset icon, no
+    // reset props — so no future section can bring one back by accident.
+    const shared = source('AdjustmentSection.tsx');
+    expect(shared).not.toContain('section-reset');
+    expect(shared).not.toContain('RotateCcw');
+    expect(shared).not.toContain('onReset');
+    expect(shared).not.toContain('canRevert');
   });
 });

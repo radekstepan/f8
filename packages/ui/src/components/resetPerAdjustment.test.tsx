@@ -9,10 +9,12 @@ import { AdjustmentSection } from './AdjustmentSection.js';
 import { Inspector } from './Inspector.js';
 import type { DenoiseAssist, FaceEnhanceAssist, SelectiveMaskAssist } from './Inspector.js';
 
-// Per-adjustment header resets, rendered on the server (no jsdom): effects
-// never run, so this pins the markup + prop wiring — one reset per
-// adjustment header, persistent while its state is non-default — not click
-// behavior.
+// Per-adjustment header toggles, rendered on the server (no jsdom):
+// effects never run, so this pins the markup + prop wiring — one switch
+// per adjustment header, lit while its state is non-default, and no
+// reset button in any section header — not click behavior. (The retired
+// per-section resets gave every manual section its own reset icon; the
+// toggles below replaced them.)
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cssPath = resolve(here, '../../../../apps/web/src/index.css');
@@ -115,33 +117,42 @@ function renderAdjust(
 }
 
 describe('reset per adjustment', () => {
-  it('renders no reset on any slider section at defaults — not even hover-only', () => {
+  it('renders every section switch off at defaults, and no reset anywhere', () => {
+    // No assists rendered, so the panel-header enhance icon is absent too:
+    // the whole adjust tool is reset-free at defaults.
     const html = renderAdjust({ ...DEFAULT_EDIT });
     expect(html).not.toContain('section-reset');
     for (const label of ['Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation', 'Reset curves', 'Reset details', 'Reset effects']) {
       expect(html).not.toContain(`aria-label="${label}"`);
     }
+    for (const toggle of ['white-balance-toggle', 'lightness-toggle', 'color-toggle', 'curves-toggle', 'details-toggle', 'effects-toggle']) {
+      expect(html).toContain(`class="toggle" data-testid="${toggle}"`);
+    }
   });
 
-  it('persists the reset of exactly the manual section whose values left defaults', () => {
-    // Curves, Details, and Effects have no automatic action, so they keep
-    // the header reset; the toggle sections below carry none.
+  it('lights the toggle — never a reset — of exactly the manual section whose values left defaults', () => {
+    // Curves, Details, and Effects have no automatic action, so their
+    // switches disable while off — but a tweak lights exactly one.
     const cases: Array<[Partial<EditState>, string]> = [
-      [{ curve: 25 }, 'Reset curves'],
-      [{ curvePoints: [{ x: 0.25, y: 0.3 }] }, 'Reset curves'],
-      [{ clarity: 20 }, 'Reset details'],
-      [{ sharpness: 30 }, 'Reset details'],
-      [{ grain: 10 }, 'Reset details'],
-      [{ vignette: 40 }, 'Reset effects'],
-      [{ fade: 15 }, 'Reset effects'],
+      [{ curve: 25 }, 'curves-toggle'],
+      [{ curvePoints: [{ x: 0.25, y: 0.3 }] }, 'curves-toggle'],
+      [{ clarity: 20 }, 'details-toggle'],
+      [{ sharpness: 30 }, 'details-toggle'],
+      [{ grain: 10 }, 'details-toggle'],
+      [{ vignette: 40 }, 'effects-toggle'],
+      [{ fade: 15 }, 'effects-toggle'],
     ];
-    const labels = ['Reset curves', 'Reset details', 'Reset effects'];
-    for (const [patch, label] of cases) {
+    const toggles = ['white-balance-toggle', 'lightness-toggle', 'color-toggle', 'curves-toggle', 'details-toggle', 'effects-toggle'];
+    for (const [patch, toggle] of cases) {
       const html = renderAdjust({ ...DEFAULT_EDIT, ...patch });
-      expect(html).toContain(`section-reset is-dirty" data-tooltip="${label}"`);
-      for (const other of labels.filter((candidate) => candidate !== label)) {
-        expect(html, `${JSON.stringify(patch)} must not render ${other}`).not.toContain(`aria-label="${other}"`);
+      expect(html, JSON.stringify(patch)).toContain(`class="toggle is-on" data-testid="${toggle}"`);
+      for (const other of toggles.filter((candidate) => candidate !== toggle)) {
+        expect(html, `${JSON.stringify(patch)} must not light ${other}`).toContain(`class="toggle" data-testid="${other}"`);
       }
+      expect(html).not.toContain('section-reset');
+      expect(html).not.toContain('aria-label="Reset curves"');
+      expect(html).not.toContain('aria-label="Reset details"');
+      expect(html).not.toContain('aria-label="Reset effects"');
     }
   });
 
@@ -159,7 +170,7 @@ describe('reset per adjustment', () => {
       [{ vibrance: 16 }, 'color-toggle'],
       [{ hue: -30 }, 'color-toggle'],
     ];
-    const toggles = ['white-balance-toggle', 'lightness-toggle', 'color-toggle'];
+    const toggles = ['white-balance-toggle', 'lightness-toggle', 'color-toggle', 'curves-toggle', 'details-toggle', 'effects-toggle'];
     for (const [patch, toggle] of cases) {
       const html = renderAdjust({ ...DEFAULT_EDIT, ...patch });
       expect(html, JSON.stringify(patch)).toContain(`class="toggle is-on" data-testid="${toggle}"`);
@@ -177,29 +188,35 @@ describe('reset per adjustment', () => {
   it('treats a legacy-disabled category at default values as clean', () => {
     // The enabled flag flips back on the first slider drag, so values
     // alone decide dirtiness: a disabled-but-default section renders its
-    // toggle off (and no reset — the converted sections carry none).
-    const html = renderAdjust({ ...DEFAULT_EDIT, whiteBalanceEnabled: false });
-    expect(html).toContain('class="toggle" data-testid="white-balance-toggle"');
-    expect(html).not.toContain('aria-label="Reset white balance"');
+    // toggle off.
+    for (const [patch, toggle] of [
+      [{ whiteBalanceEnabled: false }, 'white-balance-toggle'],
+      [{ detailsEnabled: false }, 'details-toggle'],
+    ] as const) {
+      const html = renderAdjust({ ...DEFAULT_EDIT, ...patch });
+      expect(html).toContain(`class="toggle" data-testid="${toggle}"`);
+      expect(html).not.toContain('section-reset');
+    }
   });
 
-  it('keeps the dirty reset in the header while collapsed', () => {
+  it('keeps the lit toggle in the header while collapsed', () => {
     const html = renderToStaticMarkup(
-      <AdjustmentSection title="Lightness" icon={<i />} open={false} onReset={noop} dirty>
+      <AdjustmentSection title="Lightness" icon={<i />} open={false} toggle={{ id: 'lightness', checked: true, onToggle: noop, hint: 'Lightness on — click to reset to defaults' }}>
         <span>slider-stub</span>
       </AdjustmentSection>,
     );
     expect(html).toContain('is-collapsed');
     expect(html).not.toContain('slider-stub');
-    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset lightness"');
+    expect(html).toContain('class="toggle is-on" data-testid="lightness-toggle"');
   });
 
   it('carries no separate revert control in any adjust header', () => {
     // Everything applied at once: enhance, dirty slider sections, and
-    // every assist section rendered — still no revert icon anywhere (the
-    // crop tool's straighten row keeps the single remaining RevertButton).
+    // every assist section rendered — still no revert icon anywhere in
+    // the sections (the panel header's enhance revert and the crop
+    // tool's straighten row keep the only RevertButtons).
     const html = renderAdjust(
-      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 }, temperature: 5800, exposure: 0.5, saturation: 8 },
+      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 }, temperature: 5800, exposure: 0.5, saturation: 8, curve: 25, clarity: 20, vignette: 40 },
       {
         enhance: { mode: 'scene', pure: false },
         assists: true,
@@ -209,18 +226,22 @@ describe('reset per adjustment', () => {
     expect(html).not.toContain('-ml-revert"');
     expect(html).not.toContain('-auto-revert"');
     expect(html).not.toContain('aria-label="Revert');
-    // The converted sections show their toggles on, with no reset beside.
-    for (const toggle of ['scene-enhance-toggle', 'white-balance-toggle', 'lightness-toggle', 'color-toggle']) {
+    // Every section shows its toggle on, with no reset beside.
+    for (const toggle of ['scene-enhance-toggle', 'white-balance-toggle', 'lightness-toggle', 'color-toggle', 'curves-toggle', 'details-toggle', 'effects-toggle']) {
       expect(html).toContain(`class="toggle is-on" data-testid="${toggle}"`);
     }
     expect(html).not.toContain('aria-label="Reset scene enhance"');
     expect(html).not.toContain('aria-label="Reset white balance"');
+    expect(html).not.toContain('aria-label="Reset curves"');
+    expect(html).not.toContain('aria-label="Reset details"');
+    expect(html).not.toContain('aria-label="Reset effects"');
   });
 
-  it('gives Details a header reset exactly while dirty, and Denoise a toggle exactly while applied', () => {
-    // Details (reset added in Task 12): dirty values persist the reset.
+  it('gives Details a header toggle exactly while dirty, and Denoise a toggle exactly while applied', () => {
+    // Details: dirty values light the switch (off and disabled at defaults).
     const details = renderAdjust({ ...DEFAULT_EDIT, clarity: 20, sharpness: 30 }, { assists: true });
-    expect(details).toContain('section-reset is-dirty" data-tooltip="Reset details"');
+    expect(details).toContain('class="toggle is-on" data-testid="details-toggle"');
+    expect(details).not.toContain('aria-label="Reset details"');
     // Denoise: no stored denoise, toggle off and no reset.
     const idle = renderAdjust({ ...DEFAULT_EDIT }, { assists: true });
     expect(idle).toContain('class="toggle" data-testid="denoise-toggle"');
@@ -235,16 +256,17 @@ describe('reset per adjustment', () => {
     expect(applied).not.toContain('aria-label="Reset denoise"');
   });
 
-  it('keeps the reset box while rendering it only when dirty', () => {
-    // Base rule: same 14x19 icon box, always visible — clean sections
-    // render no reset at all, so there is nothing to hide until hover.
+  it('keeps the reset box for the panel-header enhance icon', () => {
+    // The section headers render no reset anymore; the class survives
+    // only on the panel header's enhance-revert icon (rendered solely
+    // while a pre-enhance snapshot lives). Same 14x19 icon box, always
+    // visible — and the hover-only reveal stays retired.
     expect(cssRule('.section-reset')).toMatch(/width\s*:\s*14px/);
     expect(cssRule('.section-reset')).toMatch(/height\s*:\s*19px/);
     expect(cssRule('.section-reset')).toMatch(/opacity\s*:\s*1/);
     // Dirty rule: standalone selector (for the cssRule helper) matching
     // the markup's always-dirty reset class.
     expect(cssRule('.section-reset.is-dirty')).toMatch(/opacity\s*:\s*1/);
-    // The hover-only reveal is retired: no hover or focus rule may resurrect it.
     expect(css()).not.toMatch(/\.adjustment-heading:hover \.section-reset/);
     expect(css()).not.toMatch(/\.section-reset:focus-visible/);
   });

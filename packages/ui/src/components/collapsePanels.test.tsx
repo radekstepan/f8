@@ -184,9 +184,8 @@ describe('shared collapse panels', () => {
           title="Dust Spots"
           icon={<i />}
           badge={<span className="ml-badge">ML</span>}
-          ml={{ id: 'dust-spots', applied: false, canRevert: false, onToggle: noop, onRevert: noop }}
-          onReset={noop}
-          dirty
+          ml={{ id: 'dust-spots', applied: false, onToggle: noop }}
+          toggle={{ id: 'dust-spots', checked: true, onToggle: noop, hint: 'Dust spots on' }}
           open={open}
         >
           <span>content-stub</span>
@@ -209,7 +208,7 @@ describe('shared collapse panels', () => {
     }
     expect(normalize(open)).toBe(normalize(collapsed));
     // The header controls ride along: collapsing hides the content, never
-    // the reset or the action — the actions row is byte-identical.
+    // the switch or the action — the actions row is byte-identical.
     expect(actionsOf(open).length).toBeGreaterThan(0);
     expect(actionsOf(open)).toBe(actionsOf(collapsed));
   });

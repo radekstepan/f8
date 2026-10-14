@@ -31,7 +31,7 @@ function renderAction(kind: 'ml' | 'auto', applied: boolean): string {
     <AdjustmentSection
       title="White Balance"
       icon={null}
-      ml={{ id: 'white-balance', kind, applied, canRevert: applied, onToggle: noop, onRevert: noop }}
+      ml={{ id: 'white-balance', kind, applied, onToggle: noop }}
     >
       <p>content</p>
     </AdjustmentSection>,

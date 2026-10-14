@@ -5,14 +5,13 @@ import type { EditState, Photo } from '@f8/core';
 import { Inspector } from './Inspector.js';
 import type { DenoiseAssist, DustSpotsAssist, FaceEnhanceAssist, ObjectRemovalAssist, RepairAssist, SelectiveMaskAssist, StraightenAssist } from './Inspector.js';
 
-// One revert/reset icon per adjustment, rendered on the server (no jsdom):
-// effects never run, so this pins the markup + prop wiring — every
-// adjustment header carries at most one revert/reset icon, the pre-apply
-// snapshot and the defaults sharing that single control — not click
-// behavior. Task 3 folded Revert into Reset for the slider and enhance
-// sections and Task 4 gave Denoise the same header; this sweep guards every
-// header (including Details and Denoise, which Task 3 skipped) against a
-// second icon creeping back in any state.
+// No revert/reset icon in any adjustment header, rendered on the server
+// (no jsdom): effects never run, so this pins the markup + prop wiring —
+// every section header carries its switch (or ML/Auto button) alone, and
+// the only reset icons left in the inspector live outside the section
+// headers (the panel header's enhance revert, the crop tool's straighten
+// revert) — not click behavior. This sweep guards every header against a
+// reset icon creeping back in any state.
 
 function makePhoto(): Photo {
   return {
@@ -260,36 +259,32 @@ function auditHeaders(html: string): HeaderAudit[] {
 const count = (html: string, token: string): number => (html.match(new RegExp(token, 'g')) ?? []).length;
 
 describe('single reset icon', () => {
-  it('shows at most one revert/reset icon per adjust header when everything is applied', () => {
+  it('shows no revert/reset icon in any adjust header when everything is applied', () => {
     const html = renderAdjust(fullyAppliedEdit(), 'classic', true);
     const headers = auditHeaders(html);
     expect(headers.length).toBeGreaterThan(0);
     for (const header of headers) {
-      expect(header.resets + header.reverts, `${header.title} must show at most one revert/reset icon`).toBeLessThanOrEqual(1);
+      expect(header.resets + header.reverts, `${header.title} must show no revert/reset icon`).toBe(0);
     }
-    // The old separate revert icon is gone from the adjust tool entirely:
-    // every icon below is the single shared reset control.
+    // The old separate revert icon is gone from the adjust tool entirely.
     expect(count(html, 'ml-revert')).toBe(0);
-    // Only the manual sections (no automatic action, no toggle) keep a
-    // reset: every converted section shows its toggle on instead.
-    const withIcon = headers.filter((header) => header.resets + header.reverts === 1).map((header) => header.title);
-    expect(withIcon).toEqual([
-      'Curves',
-      'Details',
-      'Effects',
-    ]);
-    for (const toggle of ['face-enhance-toggle', 'selective-mask-toggle', 'denoise-toggle', 'white-balance-toggle', 'lightness-toggle', 'color-toggle'] as const) {
+    // Every section shows its toggle on instead — including the manual
+    // Curves, Details, and Effects, whose resets the toggles replaced.
+    // (The scene toggle stays off: classic is the last-used enhance mode.)
+    for (const toggle of ['face-enhance-toggle', 'selective-mask-toggle', 'denoise-toggle', 'white-balance-toggle', 'lightness-toggle', 'color-toggle', 'curves-toggle', 'details-toggle', 'effects-toggle'] as const) {
       expect(html).toContain(`class="toggle is-on" data-testid="${toggle}"`);
     }
-    // The classic enhance icon moved with its button to the panel header:
-    // exactly one, outside every section. Only the last-used enhance mode
-    // carries the shared icon.
+    expect(html).toContain('class="toggle" data-testid="scene-enhance-toggle"');
+    // The classic enhance icon lives in the panel header: exactly one,
+    // outside every section. Only the last-used enhance mode carries it.
     expect(headers.find((header) => header.title === 'Auto Enhance')).toBeUndefined();
     expect(html).toContain('aria-label="Reset auto enhance"');
+    expect(count(html, 'section-reset')).toBe(1);
     expect(headers.find((header) => header.title === 'Scene Enhance')).toMatchObject({ resets: 0, reverts: 0 });
-    // Collapsed sections keep exactly their one icon (the header action stays visible, like the reset).
+    // Collapsed sections keep their switch rendered (the header action
+    // stays visible while collapsed).
     for (const title of ['Curves', 'Details', 'Effects']) {
-      expect(headers.find((header) => header.title === title)).toMatchObject({ collapsed: true, resets: 1, reverts: 0 });
+      expect(headers.find((header) => header.title === title)).toMatchObject({ collapsed: true, resets: 0, reverts: 0 });
     }
   });
 
@@ -297,7 +292,7 @@ describe('single reset icon', () => {
     const html = renderAdjust(fullyAppliedEdit(), 'scene', true);
     const headers = auditHeaders(html);
     for (const header of headers) {
-      expect(header.resets + header.reverts, `${header.title} must show at most one revert/reset icon`).toBeLessThanOrEqual(1);
+      expect(header.resets + header.reverts, `${header.title} must show no revert/reset icon`).toBe(0);
     }
     // The scene section reverts from its toggle, so it carries no icon;
     // the panel header carries none either while scene is last-used.
@@ -305,6 +300,7 @@ describe('single reset icon', () => {
     expect(html).toContain('class="toggle is-on" data-testid="scene-enhance-toggle"');
     expect(headers.find((header) => header.title === 'Auto Enhance')).toBeUndefined();
     expect(html).not.toContain('aria-label="Reset auto enhance"');
+    expect(count(html, 'section-reset')).toBe(0);
     expect(count(html, 'ml-revert')).toBe(0);
   });
 
