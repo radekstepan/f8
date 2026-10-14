@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EDIT, INITIAL_EDIT, ML_CATEGORIES, ML_CATEGORY_ENABLED_KEY, RESET_PATCH, actionEntry, clearCategoryActions, clearEnhanceAction, clearPureOnPatch, computeAutoEnhance, computeColorAuto, computeLightnessAuto, computeSceneAwareEnhance, computeWhiteBalanceAuto, decodeDownsampled, enhanceFromStack, isDefaultEdit, isOriginalLook, mlAppliedFromStack, mlRevertFromStack, presetForPatch, pushAction, pushEnhanceAction, revertAction, sanitizeActionStack, snapshotMlCategory } from '@f8/core';
+import { DEFAULT_EDIT, INITIAL_EDIT, ML_CATEGORIES, ML_CATEGORY_ENABLED_KEY, RESET_PATCH, actionEntry, clearEnhanceAction, clearPureOnPatch, computeAutoEnhance, computeColorAuto, computeLightnessAuto, computeSceneAwareEnhance, computeWhiteBalanceAuto, decodeDownsampled, enhanceFromStack, isDefaultEdit, isOriginalLook, presetForPatch, pushEnhanceAction, revertAction, sanitizeActionStack } from '@f8/core';
 import type { ActionStack, EditState, EnhanceMode, HistoryState, MlCategory, PixelImage, Preset } from '@f8/core';
 
 const initialHistory = (_id?: string): HistoryState => ({
@@ -35,11 +35,12 @@ function sanitizeSeedActions(seed?: Record<string, ActionStack>): Record<string,
 export function useEditor(photoId: string, persistence?: EditorPersistence) {
   const [histories, setHistories] = useState<Record<string, HistoryState>>(() => persistence?.initial?.histories ?? {});
   /**
-   * Applied auto actions per photo (whole-photo enhance + per-category
-   * autos), each with the snapshot its revert restores. This is the single
-   * source of truth for Auto highlights and reverts — it persists with the
-   * recipe, so every Auto stays revertible across a hard reload. The
-   * `stacks` ref mirrors it for synchronous reads inside change handlers.
+   * Applied whole-photo enhance per photo, with the snapshot its revert
+   * restores. This is the single source of truth for the enhance highlight
+   * and revert — it persists with the recipe, so the enhance stays
+   * revertible across a hard reload. The per-category autos keep no
+   * entries: their header toggles read the recipe directly. The `stacks`
+   * ref mirrors it for synchronous reads inside change handlers.
    */
   const [actionStacks, setActionStacks] = useState<Record<string, ActionStack>>(() => sanitizeSeedActions(persistence?.initial?.actions));
   const lastChange = useRef({ key: '', photoId: '', time: 0 });
@@ -68,8 +69,6 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
   const history = useMemo(() => histories[photoId] || initialHistory(photoId), [histories, photoId]);
   const stack = useMemo(() => actionStacks[photoId] ?? EMPTY_STACK, [actionStacks, photoId]);
   const enhance = useMemo(() => enhanceFromStack(stack), [stack]);
-  const mlApplied = useMemo(() => mlAppliedFromStack(stack), [stack]);
-  const mlRevert = useMemo(() => mlRevertFromStack(stack), [stack]);
 
   const initial = persistence?.initial;
   useEffect(() => {
@@ -209,18 +208,6 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
   }, []);
 
   /**
-   * Drop a photo's per-category ML state: wholesale recipe changes (reset,
-   * preset, enhance revert) leave no highlight and no revert, and any
-   * in-flight async apply is invalidated so it cannot land on the new
-   * recipe. (Enhance applies go the other way: they turn the categories on
-   * via pushEnhanceAction, below.)
-   */
-  const clearMl = useCallback((id: string) => {
-    writeStack(id, clearCategoryActions(stacksRef.current[id] ?? []));
-    invalidateMlRuns(id);
-  }, [invalidateMlRuns, writeStack]);
-
-  /**
    * Drop a photo's whole-photo enhance state: wholesale recipe changes
    * (reset, preset) leave no highlight and no revert, and any in-flight
    * async enhance is invalidated so it cannot land on the new recipe.
@@ -232,14 +219,14 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
 
   const applyPreset = useCallback((preset: Preset) => {
     const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
-    clearMl(photoId);
+    invalidateMlRuns(photoId);
     clearEnhance(photoId);
     change({ ...DEFAULT_EDIT, ...preset.values, rotation, flipH, flipV, straighten, cropRatio, retouches, preset: preset.name });
-  }, [change, clearMl, clearEnhance, history.present, photoId]);
+  }, [change, invalidateMlRuns, clearEnhance, history.present, photoId]);
 
   const reset = useCallback(() => {
     const hadStack = (stacksRef.current[photoId] ?? []).length > 0;
-    clearMl(photoId);
+    invalidateMlRuns(photoId);
     clearEnhance(photoId);
     if (isDefaultEdit(history.present)) {
       // Nothing to reset in the recipe, but a cleared stack still has to
@@ -249,33 +236,32 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     }
     change({ ...RESET_PATCH });
     return true;
-  }, [change, clearMl, clearEnhance, history.present, photoId, schedulePersist]);
+  }, [change, invalidateMlRuns, clearEnhance, history.present, photoId, schedulePersist]);
   // Classic and scene enhance share one stack slot and one revert: each
-  // button highlights only its own pure mode. Clicking the highlighted
-  // mode's button (or its revert icon) restores the pre-enhance snapshot;
-  // clicking any other enhance button applies fresh values while keeping
+  // control highlights only its own pure mode. Clicking the highlighted
+  // mode's control (or its revert icon) restores the pre-enhance snapshot;
+  // clicking any other enhance control applies fresh values while keeping
   // the earliest snapshot, so revert always returns to the un-enhanced
   // recipe. Manual look edits clear `pure` (highlight off, via change())
-  // but keep the snapshot for the revert icon. Each enhance apply also
-  // pushes pure per-category entries (see pushEnhanceAction), so the
-  // sections it wrote highlight their Autos with their own reverts —
-  // reverting one section clears the enhance highlight through the normal
-  // manual-edit path.
+  // but keep the snapshot for the revert icon. An enhance apply also
+  // dirties the sections it wrote, so their header toggles light with no
+  // stack entries of their own — toggling one off clears the enhance
+  // highlight through the normal manual-edit path.
   const revertEnhance = useCallback(() => {
     const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
     const geometry = { rotation, flipH, flipV, straighten, cropRatio, retouches };
     enhanceRuns.current[photoId] = (enhanceRuns.current[photoId] ?? 0) + 1;
-    // An enhance revert is a wholesale recipe change for the per-category
-    // ML state: the full pre-enhance look comes back, so the enhance-driven
-    // category entries go with the enhance entry.
-    clearMl(photoId);
+    // An enhance revert is a wholesale recipe change: the full pre-enhance
+    // look comes back, so any in-flight per-category apply is invalidated
+    // rather than landing on the restored recipe.
+    invalidateMlRuns(photoId);
     const popped = revertAction(stacksRef.current[photoId] ?? [], 'enhance');
     if (popped) writeStack(photoId, popped.stack);
     // Unguarded on purpose: restoring the snapshot also drops stale pure
     // flags through the normal manual-edit path.
     if (popped) change({ ...popped.snapshot, ...geometry, autoEnhanced: false, sceneEnhance: null });
     else change({ autoEnhanced: false, sceneEnhance: null });
-  }, [change, clearMl, history.present, photoId, writeStack]);
+  }, [change, invalidateMlRuns, history.present, photoId, writeStack]);
 
   const runEnhance = useCallback((mode: EnhanceMode, src: string | undefined, label: string, produce: (pixels: PixelImage) => { patch: Partial<EditState>; sceneEnhance: EditState['sceneEnhance'] }) => {
     const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
@@ -289,11 +275,11 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
       revertEnhance();
       return;
     }
-    // Whole-photo enhance turns the per-category autos on too: one stack
-    // transition pushes the enhance entry plus a pure entry per category it
-    // writes (same pre-enhance base), so every section it changed
-    // highlights its Auto and offers its own revert. In-flight per-category
-    // applies are still invalidated — the enhance overwrites their values.
+    // Whole-photo enhance turns the per-category toggles on too: the
+    // enhance writes non-default values, so the dirty-driven section
+    // toggles light with no stack entries of their own. In-flight
+    // per-category applies are still invalidated — the enhance overwrites
+    // their values.
     invalidateMlRuns(photoId);
     writeStack(photoId, pushEnhanceAction(stacksRef.current[photoId] ?? [], mode, history.present, new Date().toISOString()));
     const run = (enhanceRuns.current[photoId] ?? 0) + 1;
@@ -330,54 +316,26 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     });
   }, [runEnhance]);
 
-  // Per-category ML actions share one pattern with enhance: the button
-  // highlights only while the recipe holds exactly the auto values, with a
-  // separate revert icon offering the pre-ML snapshot. Clicking a
-  // highlighted button reverts (the Task 1 click-again behavior); clicking
-  // an idle or manually-touched button applies fresh values while keeping
-  // the earliest snapshot, so revert always returns to pre-ML. Manual
-  // slider edits clear the highlight via change() but keep the snapshot.
-  const revertCategoryMl = useCallback((category: MlCategory) => {
+  // Per-category auto actions are apply-only: the header toggle reads
+  // dirtiness straight from the recipe (on = non-default values, whether
+  // auto-applied or hand-tweaked), so applies push no stack entries — and
+  // toggling off resets to the section defaults via resetCategory below,
+  // which needs no snapshot either. The apply runs unguarded on purpose:
+  // rewriting color values breaks whole-photo enhance purity through the
+  // normal manual-edit path, exactly like a slider drag would.
+  // The run token guards the async decode: a reset (or wholesale recipe
+  // change) landing before the values arrive cancels the apply instead of
+  // re-dirtying a section the user just turned off.
+  const runCategoryAuto = useCallback((category: MlCategory, src: string | undefined, compute: (image: PixelImage) => Partial<EditState>, fallbackPatch: Partial<EditState>) => {
     const key = `${photoId}:${category}`;
-    mlRuns.current[key] = (mlRuns.current[key] ?? 0) + 1;
-    const popped = revertAction(stacksRef.current[photoId] ?? [], category);
-    if (!popped) return;
-    writeStack(photoId, popped.stack);
-    // Unguarded on purpose: the restore also drops stale pure flags
-    // (whole-photo enhance included) through the normal manual-edit path.
-    change(popped.snapshot);
-  }, [change, photoId, writeStack]);
-
-  // The run token guards the async decode: a revert landing before the
-  // values arrive cancels the apply instead of stranding the photo in the
-  // applied state.
-  const toggleCategoryMl = useCallback((category: MlCategory, src: string | undefined, compute: (image: PixelImage) => Partial<EditState>, fallbackPatch: Partial<EditState>) => {
-    const key = `${photoId}:${category}`;
-    if (actionEntry(stacksRef.current[photoId] ?? [], category)?.pure) {
-      revertCategoryMl(category);
-      return;
-    }
-    writeStack(photoId, pushAction(stacksRef.current[photoId] ?? [], { kind: category, pure: true, snapshot: snapshotMlCategory(history.present, category), appliedAt: new Date().toISOString() }));
     const run = (mlRuns.current[key] ?? 0) + 1;
     mlRuns.current[key] = run;
-    // A category ML apply rewrites color values, so any whole-photo
-    // enhance is no longer pure — its revert snapshot stays.
-    const withEntry = stacksRef.current[photoId] ?? [];
-    const enhanceEntry = actionEntry(withEntry, 'enhance');
-    if (enhanceEntry?.pure) {
-      writeStack(photoId, withEntry.map((candidate) => candidate.kind === 'enhance' ? { ...candidate, pure: false } : candidate));
-    }
     // An applied category always enables its effect (legacy recipes can
     // carry a disabled category — the header toggle used to bypass it).
     const enabledKey = ML_CATEGORY_ENABLED_KEY[category];
     const apply = (patch: Partial<EditState>) => {
       if (mlRuns.current[key] !== run) return;
-      autoApplyRef.current = true;
-      try {
-        change({ ...patch, [enabledKey]: true });
-      } finally {
-        autoApplyRef.current = false;
-      }
+      change({ ...patch, [enabledKey]: true });
     };
     if (!src) { apply(fallbackPatch); return; }
     void (async () => {
@@ -387,24 +345,38 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
         apply(fallbackPatch);
       }
     })();
-  }, [change, history.present, photoId, revertCategoryMl, writeStack]);
+  }, [change, photoId]);
+
+  // Toggle-off target per category: the section defaults, matching the
+  // sliders' dirty checks in the Inspector. Bumping the run token first
+  // cancels an in-flight auto apply so it cannot land on the reset recipe.
+  const resetCategory = useCallback((category: MlCategory) => {
+    const key = `${photoId}:${category}`;
+    mlRuns.current[key] = (mlRuns.current[key] ?? 0) + 1;
+    const patch = category === 'whiteBalance'
+      ? { temperature: 5500, tint: 0 }
+      : category === 'lightness'
+        ? { exposure: 0, brightness: 0, contrast: 0, highlights: 0, shadows: 0, blacks: 0 }
+        : { hue: 0, saturation: 0, vibrance: 0 };
+    change(patch);
+  }, [change, photoId]);
 
   const autoWhiteBalance = useCallback((src?: string) => {
-    toggleCategoryMl('whiteBalance', src, computeWhiteBalanceAuto, { temperature: 5800, tint: 6 });
-  }, [toggleCategoryMl]);
+    runCategoryAuto('whiteBalance', src, computeWhiteBalanceAuto, { temperature: 5800, tint: 6 });
+  }, [runCategoryAuto]);
 
   const autoLightness = useCallback((src?: string) => {
-    toggleCategoryMl('lightness', src, computeLightnessAuto, { exposure: 0.2, contrast: 12, highlights: -28, shadows: 24 });
-  }, [toggleCategoryMl]);
+    runCategoryAuto('lightness', src, computeLightnessAuto, { exposure: 0.2, contrast: 12, highlights: -28, shadows: 24 });
+  }, [runCategoryAuto]);
 
   const autoColor = useCallback((src?: string) => {
-    toggleCategoryMl('color', src, computeColorAuto, { saturation: 8 });
-  }, [toggleCategoryMl]);
+    runCategoryAuto('color', src, computeColorAuto, { saturation: 8 });
+  }, [runCategoryAuto]);
 
-  const revertWhiteBalance = useCallback(() => revertCategoryMl('whiteBalance'), [revertCategoryMl]);
-  const revertLightness = useCallback(() => revertCategoryMl('lightness'), [revertCategoryMl]);
-  const revertColor = useCallback(() => revertCategoryMl('color'), [revertCategoryMl]);
+  const resetWhiteBalance = useCallback(() => resetCategory('whiteBalance'), [resetCategory]);
+  const resetLightness = useCallback(() => resetCategory('lightness'), [resetCategory]);
+  const resetColor = useCallback(() => resetCategory('color'), [resetCategory]);
 
   const enhanceCanRevert = enhance != null;
-  return { edit: history.present, ready: seedApplied, histories, change, endMerge, flushPersist, undo, redo, reset, autoEnhance, autoEnhanceScene, revertEnhance, autoWhiteBalance, autoLightness, autoColor, revertWhiteBalance, revertLightness, revertColor, mlApplied, mlRevert, enhanceMode: enhance?.mode ?? null, enhancePure: enhance?.pure ?? false, enhanceCanRevert, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
+  return { edit: history.present, ready: seedApplied, histories, change, endMerge, flushPersist, undo, redo, reset, autoEnhance, autoEnhanceScene, revertEnhance, autoWhiteBalance, autoLightness, autoColor, resetWhiteBalance, resetLightness, resetColor, enhanceMode: enhance?.mode ?? null, enhancePure: enhance?.pure ?? false, enhanceCanRevert, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
 }

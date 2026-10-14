@@ -27,8 +27,8 @@ export function IconButton({ label, active, className = '', children, ...props }
   return <button type="button" className={`icon-button ${active ? 'is-active' : ''} ${className}`} data-tooltip={label} aria-label={label} aria-pressed={active === undefined ? undefined : active} {...props}>{children}</button>;
 }
 
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
-  return <button type="button" role="switch" aria-checked={checked} aria-label={label} data-tooltip={label} className={`toggle ${checked ? 'is-on' : ''}`} onClick={onChange}><span /></button>;
+export function Toggle({ checked, onChange, label, testId, hint, disabled }: { checked: boolean; onChange: () => void; label: string; testId?: string; hint?: string; disabled?: boolean }) {
+  return <button type="button" role="switch" aria-checked={checked} aria-label={label} data-tooltip={hint ?? label} className={`toggle${checked ? ' is-on' : ''}`} {...(testId ? { 'data-testid': testId } : {})} disabled={disabled} onClick={onChange}><span /></button>;
 }
 
 interface RangeControlProps {

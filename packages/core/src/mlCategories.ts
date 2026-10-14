@@ -1,10 +1,12 @@
-/** Per-category ML (automatic) actions for the adjustments inspector.
+/** Per-category automatic actions for the adjustments inspector.
  *
- * White Balance, Lightness, and Hue & Saturation each carry an ML button
- * that computes values from the photo; clicking it again (or the revert
- * icon beside it) restores the pre-ML snapshot. The tables below are the
- * single source of truth for which EditState keys belong to a category —
- * values plus the enabled flag, so a revert also restores bypass state.
+ * White Balance, Lightness, and Hue & Saturation each carry a header
+ * toggle that computes values from the photo; toggling off resets the
+ * section to its defaults (no snapshot — defaults need none). The tables
+ * below are the single source of truth for which EditState keys belong to
+ * a category — values plus the enabled flag, so an auto apply also
+ * re-enables a legacy-disabled category, and so manual edits know which
+ * whole-photo enhance highlight they break.
  */
 
 import type { EditState } from "./types.js";
@@ -29,20 +31,10 @@ export const ML_CATEGORY_ENABLED_KEY: Record<MlCategory, "whiteBalanceEnabled" |
   color: "colorEnabled",
 };
 
-/** Capture a category's current values so an ML apply can be reverted. */
-export function snapshotMlCategory(edit: EditState, category: MlCategory): Partial<EditState> {
-  const snapshot: Partial<EditState> = {};
-  const record = snapshot as Record<keyof EditState, unknown>;
-  for (const key of ML_CATEGORY_KEYS[category]) {
-    record[key] = edit[key];
-  }
-  return snapshot;
-}
-
 /**
  * ML categories a manual edit patch touches: any category owning at least
- * one of the patch's keys is no longer on pure auto values, so its ML
- * button highlight drops (the revert snapshot stays available).
+ * one of the patch's keys. The stack transition clears `pure` on touched
+ * entries (the whole-photo enhance plus any legacy category entries).
  */
 export function touchedMlCategories(patch: Partial<EditState>): MlCategory[] {
   const keys = new Set(Object.keys(patch));

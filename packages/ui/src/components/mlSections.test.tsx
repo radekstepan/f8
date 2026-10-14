@@ -125,9 +125,9 @@ function renderAdjust(edit: EditState, ml?: { scene?: boolean; face?: boolean; s
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -169,26 +169,30 @@ describe('ml enhance sections', () => {
     expect(html.indexOf('data-testid="denoise"')).toBeGreaterThan(html.indexOf('histogram-section'));
   });
 
-  it('marks every model section header with a header ML button, never a badge', () => {
+  it('marks the model sections with an ML badge by the name, all with a header toggle', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
-    // Faces and subject run a model from their header ML button, so they
-    // carry the button instead of a badge. Scene enhance is a heuristic
-    // auto (no trained weights run), so it carries the Auto pill instead.
-    expect(html).toContain('data-testid="scene-enhance-auto"');
-    expect(html).not.toContain('data-testid="scene-enhance-ml"');
-    for (const [title, button] of [['Enhance Faces', 'face-enhance-ml'], ['Subject &amp; Background', 'selective-mask-ml']] as const) {
-      expect(html).toContain(`data-testid="${button}"`);
-      expect(html.match(new RegExp(`<h3>${title}</h3><span class="ml-badge"`)), `${title} header carries no badge`).toBeNull();
+    // Faces and subject run a model, so the tool name carries the little
+    // ML badge; the header control itself is the shared switch everywhere.
+    for (const [title, toggle] of [['Enhance Faces', 'face-enhance-toggle'], ['Subject &amp; Background', 'selective-mask-toggle']] as const) {
+      expect(html).toContain(`data-testid="${toggle}"`);
+      expect(html.match(new RegExp(`<h3>${title}</h3><span class="ml-badge"`)), `${title} header carries the badge`).not.toBeNull();
     }
+    expect(html).toContain('data-testid="scene-enhance-toggle"');
+    expect(html).toContain('data-testid="denoise-toggle"');
+    // No header ML/Auto buttons survive in the adjust tool (the whole-photo
+    // header pill is not a section control).
+    expect(html).not.toContain('ml-button');
+    expect(html).not.toContain('>ML</button>');
   });
 
-  it('runs the denoise suggestion from a header Auto button, never an ML button', () => {
-    // Denoise drafts an ISO-ladder suggestion (a heuristic, not a model
-    // run), so its header carries the Auto pill like the slider autos.
+  it('badges only the model tools: scene enhance and denoise carry no ML badge', () => {
+    // Scene enhance is a heuristic auto (no trained weights run) and the
+    // denoise header drafts an ISO-ladder suggestion (also a heuristic),
+    // so neither name carries the ML badge — only their toggles.
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
-    expect(html).toContain('data-testid="denoise-auto"');
-    expect(html).not.toContain('data-testid="denoise-ml"');
+    expect(html.match(/<h3>Scene Enhance<\/h3><span class="ml-badge"/), 'Scene Enhance header carries no badge').toBeNull();
     expect(html.match(/<h3>Denoise<\/h3><span class="ml-badge"/), 'Denoise header carries no badge').toBeNull();
+    expect(html.match(/class="ml-badge"/g)).toHaveLength(2);
   });
 
   it('omits every ML section without any assist but keeps the header Auto', () => {
@@ -223,10 +227,10 @@ describe('ml enhance sections', () => {
     expect(html).not.toContain('auto-enhance-row');
   });
 
-  it('marks exactly the pure enhance mode as pressed', () => {
+  it('marks exactly the pure enhance mode: pill pressed, scene toggle on', () => {
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: true });
     expect(classic).toContain('class="auto-small inspector-auto is-active" data-testid="auto-enhance-auto"');
-    expect(classic).toContain('class="auto-small" data-testid="scene-enhance-auto"');
+    expect(classic).toContain('class="toggle" data-testid="scene-enhance-toggle"');
     expect(classic).toContain('data-tooltip="Auto Enhance applied — click to revert"');
     const scene = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
@@ -234,14 +238,14 @@ describe('ml enhance sections', () => {
       { mode: 'scene', pure: true },
     );
     expect(scene).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto"');
-    expect(scene).toContain('class="auto-small is-active" data-testid="scene-enhance-auto"');
-    expect(scene).toContain('data-tooltip="Scene Enhance applied — click to revert"');
+    expect(scene).toContain('class="toggle is-on" data-testid="scene-enhance-toggle"');
+    expect(scene).toContain('data-tooltip="Scene enhance on — click to revert"');
     expect(scene).toContain('data-testid="scene-enhance-scene"');
     expect(scene).toContain('Night · 90%');
     expect(scene).not.toContain('· ML');
   });
 
-  it('shows a header reset beside the last-used mode only', () => {
+  it('shows the header reset beside the classic pill only; the scene toggle carries no reset', () => {
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: true });
     expect(classic).toContain('section-reset is-dirty" data-tooltip="Reset auto enhance"');
     expect(classic).not.toContain('aria-label="Reset scene enhance"');
@@ -250,20 +254,24 @@ describe('ml enhance sections', () => {
       ALL_ML,
       { mode: 'scene', pure: true },
     );
-    expect(scene).toContain('section-reset is-dirty" data-tooltip="Reset scene enhance"');
+    // Toggling the scene switch off reverts the whole enhance, so the
+    // section needs no reset icon of its own.
+    expect(scene).toContain('class="toggle is-on" data-testid="scene-enhance-toggle"');
+    expect(scene).not.toContain('aria-label="Reset scene enhance"');
     expect(scene).not.toContain('aria-label="Reset auto enhance"');
-    // No snapshot, no reset on either enhance section.
+    // No snapshot: the header pill carries no reset either.
     const idle = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
     expect(idle).not.toContain('aria-label="Reset auto enhance"');
     expect(idle).not.toContain('aria-label="Reset scene enhance"');
   });
 
-  it('keeps the reset after manual edits cleared the enhance highlight', () => {
-    // A slider drag after the enhance drops pure (both buttons idle) while
-    // the last-used mode keeps its persistent reset with a re-apply title.
+  it('keeps the scene toggle on after manual edits cleared the enhance highlight', () => {
+    // A slider drag after the enhance drops pure (the header pill goes
+    // idle) while the last-used mode keeps its persistent revert — the
+    // scene section's toggle stays on, still offering the revert.
     const classic = renderAdjust({ ...DEFAULT_EDIT, autoEnhanced: true }, ALL_ML, { mode: 'classic', pure: false });
     expect(classic).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto"');
-    expect(classic).toContain('class="auto-small" data-testid="scene-enhance-auto"');
+    expect(classic).toContain('class="toggle" data-testid="scene-enhance-toggle"');
     expect(classic).toContain('data-tooltip="Re-apply auto enhance"');
     expect(classic).toContain('section-reset is-dirty" data-tooltip="Reset auto enhance"');
     const scene = renderAdjust(
@@ -271,9 +279,8 @@ describe('ml enhance sections', () => {
       ALL_ML,
       { mode: 'scene', pure: false },
     );
-    expect(scene).toContain('class="auto-small" data-testid="scene-enhance-auto"');
-    expect(scene).toContain('data-tooltip="Re-apply scene enhance"');
-    expect(scene).toContain('section-reset is-dirty" data-tooltip="Reset scene enhance"');
+    expect(scene).toContain('class="toggle is-on" data-testid="scene-enhance-toggle"');
+    expect(scene).toContain('data-tooltip="Scene enhance on — click to revert"');
     // The persisted scene badge survives the highlight loss.
     expect(scene).toContain('Night · 90%');
   });
@@ -291,11 +298,12 @@ describe('ml enhance sections', () => {
     expect(css()).not.toMatch(/\.scene-enhance-row/);
   });
 
-  it('runs faces and subject from header ML buttons and scene from Auto, never content bars', () => {
+  it('runs scene, faces, subject, and denoise from header toggles, never content bars', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, ALL_ML);
-    expect(html).toContain('class="auto-small" data-testid="scene-enhance-auto"');
-    expect(html).toContain('class="ml-button" data-testid="face-enhance-ml"');
-    expect(html).toContain('class="ml-button" data-testid="selective-mask-ml"');
+    expect(html).toContain('class="toggle" data-testid="scene-enhance-toggle"');
+    expect(html).toContain('class="toggle" data-testid="face-enhance-toggle"');
+    expect(html).toContain('class="toggle" data-testid="selective-mask-toggle"');
+    expect(html).toContain('class="toggle" data-testid="denoise-toggle"');
     expect(html).not.toContain('data-testid="scene-enhance-apply"');
     expect(html).not.toContain('data-testid="face-enhance-detect"');
     expect(html).not.toContain('data-testid="selective-mask-detect"');

@@ -10,12 +10,13 @@ import { Inspector } from './Inspector.js';
 import type { DenoiseAssist, DustSpotsAssist, FaceEnhanceAssist, ObjectRemovalAssist, RepairAssist, SelectiveMaskAssist } from './Inspector.js';
 
 // Adjustment styling consistency, rendered on the server (no jsdom): one
-// place pinning the six complaints fixed together — heuristic header
-// actions say Auto (ML is reserved for model runs), collapsing keeps the
-// header action, description notes share one tight rhythm, the header
-// reset never hides, headers carry no toggles, and Black & White resets
-// to its default like every other section. Per-area behavior stays in the
-// area test files; this file pins the cross-section contract only.
+// place pinning the cross-section contract — Color Adjustments headers
+// carry one switch each (an ML badge by the name marks the model tools),
+// collapsing keeps the header action, description notes share one tight
+// rhythm, the header reset never hides, Repair headers keep their
+// ML/Auto buttons with no switches, and Black & White resets to its
+// default like every other section. Per-area behavior stays in the area
+// test files; this file pins the cross-section contract only.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cssPath = resolve(here, '../../../../apps/web/src/index.css');
@@ -122,9 +123,9 @@ function renderAdjust(edit: EditState, ml?: { scene?: boolean; faceApplied?: Fac
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -161,9 +162,9 @@ function renderRepair(method: InpaintMethod): string {
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -180,26 +181,33 @@ function actionsRows(html: string): string[] {
 }
 
 describe('adjustment styling consistency', () => {
-  it('labels heuristic header actions Auto and model runs ML', () => {
-    // The header Auto, the slider autos, the denoise suggestion, scene
-    // enhance, and dust spots are heuristics (no trained weights run when
-    // clicked); faces, subject, and people removal run a model. The header
-    // label names the engine, honestly either way.
+  it('switches every adjust header, badges the model tools, and keeps the repair buttons honest', () => {
+    // Every Color Adjustments section with an automatic action carries the
+    // one shared switch; the ML badge by the name marks the model tools
+    // (faces, subject) while the heuristic tools (scene enhance, denoise,
+    // the slider autos) carry none. The whole-photo header pill is not a
+    // section control and stays.
     const html = renderAdjust({ ...DEFAULT_EDIT }, { scene: true, denoise: true, faceApplied: null, selectiveApplied: null });
-    for (const id of ['auto-enhance', 'white-balance', 'lightness', 'color', 'denoise', 'scene-enhance'] as const) {
-      expect(html).toContain(`data-testid="${id}-auto"`);
+    for (const id of ['scene-enhance', 'face-enhance', 'selective-mask', 'denoise', 'white-balance', 'lightness', 'color'] as const) {
+      expect(html).toContain(`data-testid="${id}-toggle"`);
+      expect(html).not.toContain(`data-testid="${id}-auto"`);
       expect(html).not.toContain(`data-testid="${id}-ml"`);
     }
-    for (const id of ['face-enhance', 'selective-mask'] as const) {
-      expect(html).toContain(`data-testid="${id}-ml"`);
-      expect(html).not.toContain(`data-testid="${id}-auto"`);
-    }
-    // The repair tool's people removal runs a model; dust spots are a
-    // classical proposer plus a hand-tuned filter, so they carry Auto.
+    expect(html).toContain('data-testid="auto-enhance-auto"');
+    expect(html).toContain('<h3>Enhance Faces</h3><span class="ml-badge"');
+    expect(html).toContain('<h3>Subject &amp; Background</h3><span class="ml-badge"');
+    expect(html.match(/class="ml-badge"/g)).toHaveLength(2);
+    expect(html).not.toContain('ml-button');
+    expect(html).not.toContain('>ML</button>');
+    // The repair tool keeps its buttons: people removal runs a model;
+    // dust spots are a classical proposer plus a hand-tuned filter, so
+    // they carry Auto. The header label names the engine, honestly
+    // either way.
     const repair = renderRepair('heal');
     expect(repair).toContain('data-testid="object-removal-ml"');
     expect(repair).toContain('data-testid="dust-spots-auto"');
     expect(repair).not.toContain('data-testid="dust-spots-ml"');
+    expect(repair).not.toContain('-toggle"');
   });
 
   it('keeps the header action and reset rendered while collapsed', () => {
@@ -249,25 +257,33 @@ describe('adjustment styling consistency', () => {
     expect(cssRule('.section-reset')).not.toMatch(/display\s*:/);
   });
 
-  it('keeps toggles out of headers: content bypass and setting switches only', () => {
-    // No header carries a switch: the retired Black & White header toggle
-    // duplicated its content button while offering no reset. Switches
-    // remain only where they mean bypass-without-deleting (faces, subject)
-    // or a plain setting (seamless light).
+  it('keeps one switch per adjust header; repair headers and the panel Auto group stay switch-free', () => {
+    // Every Color Adjustments header with an automatic action carries
+    // exactly the one shared switch (on applies the suggestion, off
+    // resets to defaults) — and manual headers carry no switch at all.
+    // The content bypass switches (faces, subject) keep their own labels,
+    // distinct from the header switches.
     const applied: NonNullable<FaceEnhanceAssist['applied']> = { faces: 2, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 1 };
     const adjust = renderAdjust({ ...DEFAULT_EDIT }, { faceApplied: applied, selectiveApplied: { ...APPLIED_SELECTIVE, enabled: true } });
     const rows = actionsRows(adjust);
     expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      expect(row).not.toContain('role="switch"');
+    const withSwitch = rows.filter((row) => row.includes('role="switch"'));
+    expect(withSwitch).toHaveLength(5);
+    for (const row of withSwitch) {
+      expect(row.match(/role="switch"/g)).toHaveLength(1);
+      expect(row).not.toContain('section-reset');
+      expect(row).not.toContain('ml-button');
+      expect(row).not.toContain('auto-small');
     }
     expect(adjust).toContain('aria-label="Enable face enhance"');
     expect(adjust).toContain('aria-label="Enable subject and background enhance"');
-    // The panel header's Auto group follows the same rule: pill plus
+    // The panel header's Auto group follows its own rule: pill plus
     // revert icon, no switch.
     const headerGroup = adjust.match(/<div class="inspector-auto-wrap">[\s\S]*?<\/div>/)?.[0] ?? '';
     expect(headerGroup.length).toBeGreaterThan(0);
     expect(headerGroup).not.toContain('role="switch"');
+    // Repair headers keep their ML/Auto buttons with no switches; the
+    // seamless-light setting switch stays in the content.
     const repair = renderRepair('heal');
     for (const row of actionsRows(repair)) {
       expect(row).not.toContain('role="switch"');

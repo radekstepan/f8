@@ -73,9 +73,9 @@ function renderInspector(tool: 'adjust' | 'repair'): string {
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}

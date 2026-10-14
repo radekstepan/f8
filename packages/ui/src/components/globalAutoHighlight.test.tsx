@@ -4,14 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
-import type { EditState, MlCategory, Photo } from '@f8/core';
+import type { EditState, Photo } from '@f8/core';
 import { Inspector } from './Inspector.js';
 
-// Global Auto lights the per-section Autos it drove: after the Color
+// Global Auto lights the per-section toggles it drove: after the Color
 // Adjustments header Auto applies, White Balance, Lightness, and Hue &
-// Saturation show their reset icons (their values changed) — and their
-// Auto pills highlight to match, since the enhance turned those autos on.
-// Rendered on the server (no jsdom): the markup pins the flag-to-pill
+// Saturation hold non-default values — so their header toggles read on,
+// with no per-section reset (toggling off resets to defaults). Rendered
+// on the server (no jsdom): the markup pins the dirtiness-to-toggle
 // wiring, and the hook transition itself is pinned from the useEditor
 // source (the resetDehighlights.test.ts precedent) plus the
 // pushEnhanceAction unit tests in @f8/core.
@@ -45,8 +45,6 @@ function makePhoto(): Photo {
 
 const noop = () => {};
 
-const ALL_ON: Partial<Record<MlCategory, boolean>> = { whiteBalance: true, lightness: true, color: true };
-
 function renderEnhanced(edit: EditState): string {
   return renderToStaticMarkup(
     <Inspector
@@ -69,11 +67,9 @@ function renderEnhanced(edit: EditState): string {
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
-      mlApplied={ALL_ON}
-      mlRevert={ALL_ON}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -85,9 +81,10 @@ function renderEnhanced(edit: EditState): string {
 }
 
 describe('global auto highlight', () => {
-  it('highlights every per-section Auto the enhance turned on, matching the reset icons', () => {
-    // Enhance-produced values: every auto-capable section is dirty, so each
-    // header carries a reset — and now a highlighted Auto pill beside it.
+  it('lights every per-section toggle the enhance turned on, with no per-section reset', () => {
+    // Enhance-produced values: every auto-capable section is dirty, so
+    // each header toggle reads on — and the converted sections carry no
+    // reset icon at all.
     const html = renderEnhanced({
       ...DEFAULT_EDIT,
       temperature: 6000,
@@ -98,23 +95,25 @@ describe('global auto highlight', () => {
     });
     expect(html).toContain('class="auto-small inspector-auto is-active" data-testid="auto-enhance-auto" aria-pressed="true"');
     for (const [id, tooltip] of [
-      ['white-balance', 'White Balance applied — click to revert'],
-      ['lightness', 'Lightness applied — click to revert'],
-      ['color', 'Hue &amp; Saturation applied — click to revert'],
+      ['white-balance', 'White Balance on — click to reset to defaults'],
+      ['lightness', 'Lightness on — click to reset to defaults'],
+      ['color', 'Hue &amp; Saturation on — click to reset to defaults'],
     ] as const) {
-      expect(html).toContain(`class="auto-small is-active" data-testid="${id}-auto" aria-pressed="true"`);
+      expect(html).toContain(`class="toggle is-on" data-testid="${id}-toggle"`);
       expect(html).toContain(`data-tooltip="${tooltip}"`);
       expect(html).not.toContain(`data-testid="${id}-ml"`);
+      expect(html).not.toContain(`data-testid="${id}-auto"`);
     }
-    // One reset per touched section, matching the highlight state.
-    expect(html).toContain('aria-label="Reset white balance"');
-    expect(html).toContain('aria-label="Reset lightness"');
-    expect(html).toContain('aria-label="Reset hue &amp; saturation"');
+    // No reset on the converted sections — the toggle owns the reset.
+    expect(html).not.toContain('aria-label="Reset white balance"');
+    expect(html).not.toContain('aria-label="Reset lightness"');
+    expect(html).not.toContain('aria-label="Reset hue &amp; saturation"');
   });
 
   it('routes the enhance apply through the shared stack transition, keeping run invalidation', () => {
-    // runEnhance pushes the enhance entry plus the per-category entries in
-    // one core transition (snapshotting the same pre-enhance recipe), while
+    // runEnhance pushes the enhance entry in one core transition
+    // (snapshotting the pre-enhance recipe for the whole-photo revert —
+    // the dirty section toggles need no entries of their own), while
     // still invalidating in-flight per-category applies the enhance
     // overwrites.
     const source = useEditorSource();

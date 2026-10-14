@@ -1,22 +1,15 @@
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
-import type { EditState, MlCategory, Photo } from '@f8/core';
+import type { EditState, Photo } from '@f8/core';
 import { AdjustmentSection } from './AdjustmentSection.js';
 import { Inspector } from './Inspector.js';
 
-// Per-category Auto buttons, rendered on the server (no jsdom): effects never
-// run, so this pins the markup + prop wiring — Auto button per auto-capable
-// category (the slider autos are histogram heuristics, not models, so the ML
-// label would lie), one reset per header (persistent iff non-default,
-// restoring the pre-auto snapshot while one lives), the chevron alone
-// collapsing every header — not click behavior.
-
-const here = dirname(fileURLToPath(import.meta.url));
-const source = (file: string) => readFileSync(resolve(here, file), 'utf8');
+// Per-category header toggles, rendered on the server (no jsdom): effects
+// never run, so this pins the markup + prop wiring — one switch per
+// auto-capable category (on = non-default values, whether auto-applied or
+// hand-tweaked), no Auto/ML button and no reset beside it — not click
+// behavior.
 
 function makePhoto(): Photo {
   return {
@@ -44,7 +37,7 @@ function makePhoto(): Photo {
 
 const noop = () => {};
 
-function renderAdjust(edit: EditState, mlApplied?: Partial<Record<MlCategory, boolean>>, mlRevert?: Partial<Record<MlCategory, boolean>>): string {
+function renderAdjust(edit: EditState): string {
   return renderToStaticMarkup(
     <Inspector
       photo={makePhoto()}
@@ -63,11 +56,9 @@ function renderAdjust(edit: EditState, mlApplied?: Partial<Record<MlCategory, bo
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
-      {...(mlApplied ? { mlApplied } : {})}
-      {...(mlRevert ? { mlRevert } : {})}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -78,153 +69,131 @@ function renderAdjust(edit: EditState, mlApplied?: Partial<Record<MlCategory, bo
   );
 }
 
-describe('adjustment auto buttons', () => {
-  it('renders an Auto button on each auto-capable category, never an ML button', () => {
+describe('adjustment header toggles', () => {
+  it('renders a toggle on each auto-capable category, never an Auto or ML button', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
-    // The slider autos are histogram heuristics (no model runs), so they
-    // carry the Auto pill like classic enhance — ML buttons are reserved
-    // for sections where a model actually runs.
     for (const [id, title] of [
       ['white-balance', 'white balance'],
       ['lightness', 'lightness'],
       ['color', 'hue &amp; saturation'],
     ] as const) {
-      expect(html).toContain(`data-testid="${id}-auto"`);
+      expect(html).toContain(`data-testid="${id}-toggle"`);
       expect(html).toContain(`data-tooltip="Apply ${title} automatically"`);
+      expect(html).not.toContain(`data-testid="${id}-auto"`);
       expect(html).not.toContain(`data-testid="${id}-ml"`);
     }
-    expect(html).toContain('aria-pressed="false"');
-    // Four Auto pills in the assist-free adjust tool: the header Auto plus
-    // the three slider categories. Straighten's pill lives in crop, and no
-    // ML button renders at all.
+    expect(html).toContain('aria-checked="false"');
+    // The only Auto pill left in the assist-free adjust tool is the
+    // whole-photo header Auto; the slider categories carry switches now.
     expect(html).not.toContain('>ML</button>');
     expect(html).not.toContain('ml-button');
-    expect(html.match(/auto-small/g)).toHaveLength(4);
+    expect(html.match(/>Auto<\/button>/g)).toHaveLength(1);
     expect(html).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto"');
-    expect(html.match(/>Auto<\/button>/g)).toHaveLength(4);
-    // No snapshot and default values: no reset renders at all.
+    // No reset renders on the converted sections at all.
     expect(html).not.toContain('-ml-revert');
     expect(html).not.toContain('section-reset');
     expect(html).not.toContain('aria-label="Reset white balance"');
   });
 
-  it('shows a persistent reset next to the applied Auto button only', () => {
-    const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true }, { whiteBalance: true });
-    expect(html).toContain('class="auto-small is-active" data-testid="white-balance-auto"');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('data-tooltip="White Balance applied — click to revert"');
-    // One reset control, persistent while the snapshot lives, left of the
-    // Auto button. The separate revert icon is gone: reset restores the
-    // pre-auto values while a snapshot exists.
-    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset white balance"');
+  it('lights the toggle of exactly the dirty section, with no reset beside it', () => {
+    const html = renderAdjust({ ...DEFAULT_EDIT, exposure: 0.5 });
+    expect(html).toContain('class="toggle is-on" data-testid="lightness-toggle"');
+    expect(html).toContain('aria-checked="true"');
+    expect(html).toContain('data-tooltip="Lightness on — click to reset to defaults"');
+    // The toggle replaces the reset: no reset icon renders on the
+    // converted sections, dirty or not.
+    expect(html).not.toContain('section-reset');
     expect(html).not.toContain('-ml-revert');
-    const auto = html.indexOf('data-testid="white-balance-auto"');
-    const reset = html.indexOf('aria-label="Reset white balance"');
-    expect(auto).toBeGreaterThan(-1);
-    expect(reset).toBeGreaterThan(-1);
-    expect(reset).toBeLessThan(auto);
-    // The other categories stay idle, with no reset at all.
-    expect(html).toContain('class="auto-small" data-testid="lightness-auto"');
-    expect(html).toContain('class="auto-small" data-testid="color-auto"');
-    expect(html).not.toContain('aria-label="Reset lightness"');
-    expect(html).not.toContain('aria-label="Reset hue &amp; saturation"');
+    // The other categories stay off.
+    expect(html).toContain('class="toggle" data-testid="white-balance-toggle"');
+    expect(html).toContain('class="toggle" data-testid="color-toggle"');
   });
 
-  it('keeps the reset persistent after manual edits cleared the highlight', () => {
-    // A slider drag after the auto apply drops the pure-auto highlight but
-    // leaves the pre-auto snapshot: idle button, re-apply title, persistent
-    // reset still beside it.
-    const html = renderAdjust({ ...DEFAULT_EDIT }, {}, { whiteBalance: true });
-    expect(html).toContain('class="auto-small" data-testid="white-balance-auto"');
-    expect(html).toContain('data-tooltip="Re-apply white balance"');
-    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset white balance"');
-    expect(html).not.toContain('aria-label="Reset lightness"');
+  it('keeps the toggle on past the auto values: any tweak is on, defaults are off', () => {
+    // Auto-produced values and hand-tweaked values both light the toggle
+    // — on means "holds an effect", not "holds exactly the auto values".
+    // There is no separate touched state anymore.
+    const auto = renderAdjust({ ...DEFAULT_EDIT, temperature: 5800, tint: 6 });
+    expect(auto).toContain('class="toggle is-on" data-testid="white-balance-toggle"');
+    expect(auto).toContain('data-tooltip="White Balance on — click to reset to defaults"');
+    const tweaked = renderAdjust({ ...DEFAULT_EDIT, temperature: 6200, tint: -8 });
+    expect(tweaked).toContain('class="toggle is-on" data-testid="white-balance-toggle"');
+    expect(tweaked).toContain('data-tooltip="White Balance on — click to reset to defaults"');
+    expect(tweaked).not.toContain('section-reset');
   });
 
-  it('tracks applied state per category', () => {
-    const html = renderAdjust({ ...DEFAULT_EDIT }, { lightness: true, color: true }, { lightness: true, color: true });
-    expect(html).toContain('class="auto-small is-active" data-testid="lightness-auto"');
-    expect(html).toContain('class="auto-small is-active" data-testid="color-auto"');
-    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset lightness"');
-    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset hue &amp; saturation"');
-    expect(html).toContain('class="auto-small" data-testid="white-balance-auto"');
-    expect(html).not.toContain('aria-label="Reset white balance"');
+  it('tracks dirtiness per category', () => {
+    const html = renderAdjust({ ...DEFAULT_EDIT, exposure: 0.5, saturation: 8 });
+    expect(html).toContain('class="toggle is-on" data-testid="lightness-toggle"');
+    expect(html).toContain('class="toggle is-on" data-testid="color-toggle"');
+    expect(html).toContain('class="toggle" data-testid="white-balance-toggle"');
+    expect(html).not.toContain('section-reset');
   });
 
-  it('offers one reset control per header: persistent while non-default, absent at defaults', () => {
-    // A pre-auto snapshot keeps the reset persistent even at default slider values.
-    const applied = renderAdjust({ ...DEFAULT_EDIT }, { lightness: true }, { lightness: true });
-    expect(applied).toContain('section-reset is-dirty" data-tooltip="Reset lightness"');
-    expect(applied).not.toContain('-ml-revert');
-    // No snapshot, default values: no reset control at all.
-    const idle = renderAdjust({ ...DEFAULT_EDIT });
-    expect(idle).not.toContain('aria-label="Reset lightness"');
-    // The touched-but-unhighlighted state stays persistent (snapshot kept).
-    const touched = renderAdjust({ ...DEFAULT_EDIT }, {}, { lightness: true });
-    expect(touched).toContain('section-reset is-dirty" data-tooltip="Reset lightness"');
-    // Dirty sliders persist the reset with no snapshot at all.
-    const dirty = renderAdjust({ ...DEFAULT_EDIT, exposure: 0.5 });
-    expect(dirty).toContain('section-reset is-dirty" data-tooltip="Reset lightness"');
-    expect(dirty).not.toContain('aria-label="Reset white balance"');
-  });
-
-  it('keeps the Auto button rightmost with the reset control left of it', () => {
-    // Every category dirty, so every header carries its reset.
+  it('keeps the toggle rightmost as the one header control', () => {
+    // Every category dirty, so every toggle is on — each still closes its
+    // row alone, with no reset beside it.
     const html = renderAdjust({ ...DEFAULT_EDIT, temperature: 5800, exposure: 0.5, saturation: 8 });
+    expect(html).not.toContain('section-reset');
     for (const id of ['white-balance', 'lightness', 'color'] as const) {
-      const auto = html.indexOf(`data-testid="${id}-auto"`);
-      expect(auto).toBeGreaterThan(-1);
-      const section = html.slice(Math.max(0, auto - 800), auto);
-      // The single reset icon precedes the Auto button in its row.
+      const toggle = html.indexOf(`data-testid="${id}-toggle"`);
+      expect(toggle).toBeGreaterThan(-1);
+      const section = html.slice(Math.max(0, toggle - 800), toggle);
       const actions = section.slice(section.lastIndexOf('section-actions'));
-      expect(actions).toContain('section-reset');
+      expect(actions).not.toContain('section-reset');
       expect(actions).not.toContain('ml-revert');
-      // The Auto button closes the row: button end tag, then the row end tag.
-      const after = html.slice(auto, auto + 400);
-      expect(after).toMatch(new RegExp(`data-testid="${id}-auto"[^>]*>Auto</button></div>`));
-    }
-    // At defaults no header carries a reset, so the Auto button stands alone.
-    const idle = renderAdjust({ ...DEFAULT_EDIT });
-    expect(idle).not.toContain('section-reset');
-    for (const id of ['white-balance', 'lightness', 'color'] as const) {
-      const auto = idle.indexOf(`data-testid="${id}-auto"`);
-      expect(auto).toBeGreaterThan(-1);
-      const after = idle.slice(auto, auto + 400);
-      expect(after).toMatch(new RegExp(`data-testid="${id}-auto"[^>]*>Auto</button></div>`));
+      // The toggle closes the row: switch end tag, then the row end tag.
+      const after = html.slice(toggle, toggle + 400);
+      expect(after).toMatch(new RegExp(`data-testid="${id}-toggle"[^>]*><span></span></button></div>`));
     }
   });
 
-  it('distinguishes Auto on from off via highlight plus pressed state', () => {
-    const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true }, { whiteBalance: true });
-    expect(html).toContain('class="auto-small is-active" data-testid="white-balance-auto" aria-pressed="true"');
-    expect(html).toContain('class="auto-small" data-testid="lightness-auto" aria-pressed="false"');
-    expect(html).toContain('class="auto-small" data-testid="color-auto" aria-pressed="false"');
+  it('distinguishes toggle on from off via is-on plus aria-checked', () => {
+    const html = renderAdjust({ ...DEFAULT_EDIT, temperature: 5800 });
+    expect(html).toContain('class="toggle is-on" data-testid="white-balance-toggle"');
+    expect(html).toContain('class="toggle" data-testid="lightness-toggle"');
+    expect(html).toContain('class="toggle" data-testid="color-toggle"');
+    // Each switch carries its own checked state next to the section title.
+    const on = html.match(/<button[^>]*data-testid="white-balance-toggle"[^>]*>/)?.[0] ?? '';
+    expect(on).toContain('role="switch"');
+    expect(on).toContain('aria-checked="true"');
+    expect(on).toContain('aria-label="White Balance"');
+    const off = html.match(/<button[^>]*data-testid="lightness-toggle"[^>]*>/)?.[0] ?? '';
+    expect(off).toContain('aria-checked="false"');
+    expect(off).toContain('aria-label="Lightness"');
   });
 
-  it('gives no header action to sections without an automatic action', () => {
-    const html = renderAdjust({ ...DEFAULT_EDIT }, { whiteBalance: true, lightness: true, color: true }, { whiteBalance: true, lightness: true, color: true });
+  it('gives no header switch to sections without an automatic action', () => {
+    const html = renderAdjust({ ...DEFAULT_EDIT, curve: 25, clarity: 20, vignette: 40 });
+    expect(html).not.toContain('data-testid="curves-toggle"');
+    expect(html).not.toContain('data-testid="details-toggle"');
+    expect(html).not.toContain('data-testid="effects-toggle"');
     expect(html).not.toContain('data-testid="curves-ml"');
     expect(html).not.toContain('data-testid="details-ml"');
     expect(html).not.toContain('data-testid="effects-ml"');
     expect(html).not.toContain('data-testid="curves-auto"');
     expect(html).not.toContain('data-testid="details-auto"');
     expect(html).not.toContain('data-testid="effects-auto"');
+    // Those manual sections keep their header resets instead.
+    expect(html).toContain('aria-label="Reset curves"');
+    expect(html).toContain('aria-label="Reset details"');
+    expect(html).toContain('aria-label="Reset effects"');
   });
 });
 
 describe('adjustment header controls', () => {
-  it('carries no toggle beside the Auto button — the Auto button is the one control', () => {
+  it('drives auto sections from the header toggle alone: no button, no reset, no bypass', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
-    // The chevron alone collapses auto sections; no toggle sits next to the
-    // Auto button, neither as visibility nor as effect bypass.
-    expect(html).not.toContain('aria-label="Show white balance"');
-    expect(html).not.toContain('aria-label="Show lightness"');
-    expect(html).not.toContain('aria-label="Show hue &amp; saturation"');
+    // The switch is the one header control: toggling on applies the
+    // suggested change, toggling off resets to defaults.
+    expect(html).toContain('aria-label="White Balance"');
+    expect(html).toContain('aria-label="Lightness"');
+    expect(html).toContain('aria-label="Hue &amp; Saturation"');
     expect(html).not.toContain('Enable white balance');
     expect(html).not.toContain('Enable lightness');
     expect(html).not.toContain('Enable hue');
     // Details has no automatic action and no toggle either — the chevron
-    // alone collapses it, like every other control (Task 11).
+    // alone collapses it, like every other manual section.
     expect(html).not.toContain('aria-label="Show details"');
   });
 
@@ -292,7 +261,7 @@ describe('AdjustmentSection', () => {
   it('disables the header action and honors a custom tooltip when given', () => {
     // The shared header action carries the disabled state and a
     // section-specific tooltip instead of the computed one (the contract
-    // One-Click Removal and Denoise both use).
+    // One-Click Removal and Dust Spots both use).
     const html = section({ ml: { id: 'denoise', applied: false, canRevert: false, onToggle: noop, onRevert: noop, disabled: true, hint: 'ISO 100 needs no denoise' } });
     expect(html).toContain('data-testid="denoise-ml"');
     const tag = html.match(/<button[^>]*data-testid="denoise-ml"[^>]*>/)?.[0] ?? '';
@@ -308,20 +277,30 @@ describe('AdjustmentSection', () => {
     expect(html).toContain('data-tooltip="Automatically adjust white balance with ML"');
   });
 
-  it('offers no header toggle — on/off lives in the content, not the header', () => {
-    // The header toggle retired with Black & White's: every section drives
-    // its effect from content controls, the header carries at most the
-    // reset + the action. Pinned at source level — the props no longer
-    // exist to render.
-    const shared = source('AdjustmentSection.tsx');
-    expect(shared).toContain("import { IconButton } from './EditorUI.js'");
-    expect(shared).not.toContain('<Toggle');
-    expect(shared).not.toContain('toggleLabel');
-    expect(shared).not.toContain('onToggle?:');
-    // ...while the header action's own toggle contract is untouched: the
-    // required onToggle still drives the ML/Auto button.
-    expect(shared).toContain('onToggle: () => void;');
-    const html = section({ open: true });
-    expect(html).not.toContain('role="switch"');
+  it('renders the header toggle as the one control, staying put while collapsed', () => {
+    // The Color Adjustments sections drive their effect from the header
+    // switch (on applies the suggestion, off resets to defaults) — the
+    // Repair headers keep the ML/Auto button above. The switch stays
+    // rendered while collapsed, like every other header control.
+    const html = section({ open: false, toggle: { id: 'white-balance', checked: true, onToggle: noop, hint: 'White Balance on — click to reset to defaults' } });
+    expect(html).toContain('is-collapsed');
+    expect(html).not.toContain('slider-stub');
+    expect(html).toContain('class="toggle is-on" data-testid="white-balance-toggle"');
+    expect(html).toContain('aria-checked="true"');
+    expect(html).toContain('aria-label="White Balance"');
+    expect(html).toContain('data-tooltip="White Balance on — click to reset to defaults"');
+    expect(html).not.toContain('section-reset');
+    expect(html).not.toContain('ml-button');
+  });
+
+  it('disables the header toggle and honors its tooltip when given', () => {
+    // The Denoise contract: no suggestion (or a running job) disables the
+    // switch, with a section-specific tooltip instead of the title.
+    const html = section({ title: 'Denoise', toggle: { id: 'denoise', checked: false, onToggle: noop, disabled: true, hint: 'ISO 100 needs no denoise' } });
+    expect(html).toContain('data-testid="denoise-toggle"');
+    const tag = html.match(/<button[^>]*data-testid="denoise-toggle"[^>]*>/)?.[0] ?? '';
+    expect(tag).toContain('disabled');
+    expect(tag).toContain('aria-label="Denoise"');
+    expect(html).toContain('data-tooltip="ISO 100 needs no denoise"');
   });
 });

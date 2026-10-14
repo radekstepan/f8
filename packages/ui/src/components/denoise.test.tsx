@@ -85,9 +85,9 @@ function renderAdjust(edit: EditState, photo: Photo, denoiseAssist?: DenoiseAssi
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -103,44 +103,45 @@ describe('denoise control', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT }, makePhoto())).not.toContain('data-testid="denoise"');
   });
 
-  it('starts high-ISO captures on the auto suggestion with Auto off until applied', () => {
+  it('starts high-ISO captures on the auto suggestion with the toggle off until applied', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
     expect(html).toContain('data-testid="denoise"');
     expect(html).toContain('data-testid="denoise-strength"');
     expect(html).toContain('data-testid="denoise-preview"');
     expect(html).toContain('Suggested for ISO 3200: 50');
     expect(html).toContain('Auto 50 — drag the slider to fine-tune');
-    // The draft starts on the ISO suggestion, but the shared header Auto
-    // button (a heuristic, not a model run) stays OFF: nothing is stored
-    // yet, and a lit toggle would read as "denoise is on". The slider
-    // stays enabled so the suggestion flows into fine-tuning.
-    expect(html).toContain('class="auto-small" data-testid="denoise-auto"');
-    const autoTag = html.match(/<button[^>]*data-testid="denoise-auto"[^>]*>/)?.[0] ?? '';
-    expect(autoTag).toContain('aria-pressed="false"');
-    expect(autoTag).not.toContain('disabled');
+    // The draft starts on the ISO suggestion, but the shared header toggle
+    // stays OFF: nothing is stored yet, and a lit toggle would read as
+    // "denoise is on". The slider stays enabled so the suggestion flows
+    // into fine-tuning.
+    expect(html).toContain('class="toggle" data-testid="denoise-toggle"');
+    const toggleTag = html.match(/<button[^>]*data-testid="denoise-toggle"[^>]*>/)?.[0] ?? '';
+    expect(toggleTag).toContain('aria-checked="false"');
+    expect(toggleTag).not.toContain('disabled');
     expect(html).toContain('data-tooltip="Set strength to the ISO 3200 suggestion (50)"');
-    expect(html).toContain('>Auto</button>');
   });
 
-  it('lights Auto only while the stored denoise is the untouched suggestion', () => {
+  it('lights the toggle while a stored denoise exists, auto or manual', () => {
     // The reported case: DSC06322.ARW at ISO 6400 with an auto denoise
-    // stored — the lit toggle now means a stored effect, like every other
-    // section, and offers to turn it off.
+    // stored — the lit toggle means a stored effect, like every other
+    // section, and offers to clear it.
     const stored = renderAdjust(
       { ...DEFAULT_EDIT, denoise: APPLIED },
       makePhoto(6400, 'DSC06322.ARW'),
       assist({ state: 'applied', applied: APPLIED, hasBase: true }),
     );
-    expect(stored).toContain('class="auto-small is-active" data-testid="denoise-auto"');
-    expect(stored).toContain('aria-pressed="true"');
-    expect(stored).toContain('data-tooltip="Auto denoise 65 applied — click to turn off"');
-    // Same photo, nothing stored: Auto stays off even at ISO 6400.
+    expect(stored).toContain('class="toggle is-on" data-testid="denoise-toggle"');
+    expect(stored).toContain('aria-checked="true"');
+    expect(stored).toContain('data-tooltip="Denoise 65 applied — click to clear"');
+    // Same photo, nothing stored: the toggle stays off even at ISO 6400.
     const fresh = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(6400, 'DSC06322.ARW'), assist());
-    expect(fresh).toContain('class="auto-small" data-testid="denoise-auto"');
+    expect(fresh).toContain('class="toggle" data-testid="denoise-toggle"');
     expect(fresh).toContain('data-tooltip="Set strength to the ISO 6400 suggestion (65)"');
   });
 
-  it('leaves Auto off for a stored manual denoise', () => {
+  it('lights the toggle for a stored manual denoise too', () => {
+    // On means "a denoise is stored", however it got there — toggling off
+    // clears it either way.
     const manual: DenoiseState = { strength: 65, auto: false, source: 'onnx' };
     const html = renderAdjust(
       { ...DEFAULT_EDIT, denoise: manual },
@@ -148,20 +149,20 @@ describe('denoise control', () => {
       assist({ state: 'applied', applied: manual, hasBase: true }),
     );
     expect(html).toContain('data-testid="denoise-applied"');
-    expect(html).toContain('class="auto-small" data-testid="denoise-auto"');
-    expect(html).toContain('data-tooltip="Set strength to the ISO 3200 suggestion (50)"');
+    expect(html).toContain('class="toggle is-on" data-testid="denoise-toggle"');
+    expect(html).toContain('data-tooltip="Denoise 65 applied — click to clear"');
   });
 
-  it('starts clean captures on a manual strength with auto disabled', () => {
+  it('starts clean captures on a manual strength with the toggle disabled', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(100), assist());
     expect(html).toContain('Draft strength — Preview, then Apply, to change the photo');
     expect(html).toContain('data-testid="denoise-preview"');
     expect(html).toContain('ISO 100 looks clean — no suggestion');
-    expect(html).toContain('class="auto-small" data-testid="denoise-auto"');
+    expect(html).toContain('class="toggle" data-testid="denoise-toggle"');
     expect(html).toContain('data-tooltip="ISO 100 needs no denoise"');
-    const autoTag = html.match(/<button[^>]*data-testid="denoise-auto"[^>]*>/)?.[0] ?? '';
-    expect(autoTag).toContain('disabled');
-    // The slider itself is never locked: only the suggestion-less auto is off.
+    const toggleTag = html.match(/<button[^>]*data-testid="denoise-toggle"[^>]*>/)?.[0] ?? '';
+    expect(toggleTag).toContain('disabled');
+    // The slider itself is never locked: only the suggestion-less toggle is off.
     expect(html).not.toContain('range-control is-disabled');
   });
 
@@ -312,45 +313,46 @@ describe('denoise control', () => {
     expect(control).toBeGreaterThan(html.indexOf('histogram-section'));
   });
 
-  it('runs the suggestion from a right-aligned header Auto button, never an ML button', () => {
+  it('runs the suggestion from a right-aligned header toggle, never an ML button', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
-    // The header action drafts the ISO suggestion (a heuristic, not a
-    // model run), so it carries the Auto pill like the slider autos — the
-    // suggestion text stays as a plain row, and no content Auto pill remains.
+    // The header toggle drafts the ISO suggestion (a heuristic, not a
+    // model run), so it carries no ML badge — the suggestion text stays
+    // as a plain row, and no content pill remains.
     const tail = html.slice(html.indexOf('<h3>Denoise</h3>'));
-    expect(tail).toContain('data-testid="denoise-auto"');
+    expect(tail).toContain('data-testid="denoise-toggle"');
     expect(tail).not.toContain('data-testid="denoise-ml"');
     expect(tail).not.toContain('>ML</button>');
     expect(html).toContain('data-testid="denoise-suggest-row"');
     expect(html).toContain('Suggested for ISO 3200: 50');
-    // The Auto action sits in the shared header row (badge gone) and closes
-    // it, like every other header action.
+    // The toggle sits in the shared header row and closes it, like every
+    // other header action.
     const header = html.slice(html.indexOf('<h3>Denoise</h3>'), html.indexOf('data-testid="denoise"'));
     expect(header).toContain('section-actions');
-    expect(header).toContain('data-testid="denoise-auto"');
+    expect(header).toContain('data-testid="denoise-toggle"');
     expect(header).not.toContain('ml-badge');
-    const after = html.slice(html.indexOf('data-testid="denoise-auto"'), html.indexOf('data-testid="denoise-auto"') + 400);
-    expect(after).toMatch(/data-testid="denoise-auto"[^>]*>Auto<\/button><\/div>/);
+    const after = html.slice(html.indexOf('data-testid="denoise-toggle"'), html.indexOf('data-testid="denoise-toggle"') + 400);
+    expect(after).toMatch(/data-testid="denoise-toggle"[^>]*><span><\/span><\/button><\/div>/);
     // The row itself is pushed right, and the idle tooltip names the
-    // suggestion the button fills into the draft.
+    // suggestion the toggle fills into the draft.
     const actions = cssRule('.section-actions');
     expect(actions).toMatch(/margin-left\s*:\s*auto/);
     expect(html).toContain('data-tooltip="Set strength to the ISO 3200 suggestion (50)"');
   });
 
-  it('offers a persistent header reset exactly while a denoise is stored', () => {
+  it('lights the header toggle exactly while a denoise is stored, with no reset', () => {
     // Stored denoise, fresh or stale (session pixels dropped after reload):
-    // the reset stays visible and sits left of the Auto button.
+    // the toggle stays on — toggling off clears it, so no reset renders.
     for (const stored of [
       assist({ state: 'applied', applied: APPLIED, hasBase: true }),
       assist({ state: 'applied', applied: APPLIED, hasBase: false }),
     ]) {
       const html = renderAdjust({ ...DEFAULT_EDIT, denoise: APPLIED }, makePhoto(3200), stored);
-      expect(html).toContain('section-reset is-dirty" data-tooltip="Reset denoise"');
-      expect(html.indexOf('aria-label="Reset denoise"')).toBeLessThan(html.indexOf('data-testid="denoise-auto"'));
+      expect(html).toContain('class="toggle is-on" data-testid="denoise-toggle"');
+      expect(html).not.toContain('aria-label="Reset denoise"');
     }
-    // Nothing stored: no header reset at all (nothing to restore).
+    // Nothing stored: toggle off, and no header reset (nothing to restore).
     const idle = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
+    expect(idle).toContain('class="toggle" data-testid="denoise-toggle"');
     expect(idle).not.toContain('aria-label="Reset denoise"');
   });
 
@@ -376,8 +378,8 @@ describe('denoise control', () => {
     );
     expect(stale).toContain('class="text-button" data-testid="denoise-restore"');
     // No grey-button class survives anywhere in the Denoise section, in any
-    // of the three states above (the header ML pill + reset icon are not
-    // in-content actions and keep their own styles).
+    // of the three states above (the header toggle is not an in-content
+    // action and keeps its own style).
     for (const html of [idle, ready, stale]) {
       const section = html.slice(html.indexOf('<h3>Denoise</h3>'), html.indexOf('<h3>White Balance</h3>'));
       expect(section).not.toContain('slim-button');

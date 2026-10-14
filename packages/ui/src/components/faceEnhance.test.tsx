@@ -76,9 +76,9 @@ function renderAdjust(edit: EditState, faceAssist?: FaceEnhanceAssist): string {
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -94,45 +94,45 @@ describe('face enhance control', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT })).not.toContain('data-testid="face-enhance"');
   });
 
-  it('runs face detection from a header ML button, never a repeated bar', () => {
+  it('runs face detection from a header toggle with an ML badge, never a repeated bar', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, assist());
     expect(html).toContain('data-testid="face-enhance"');
-    expect(html).toContain('data-testid="face-enhance-ml"');
-    expect(html).toContain('class="ml-button" data-testid="face-enhance-ml"');
-    expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('data-tooltip="Automatically adjust enhance faces with ML"');
-    expect(html).toContain('>ML<');
+    expect(html).toContain('data-testid="face-enhance-toggle"');
+    expect(html).toContain('class="toggle" data-testid="face-enhance-toggle"');
+    expect(html).toContain('aria-checked="false"');
+    expect(html).toContain('data-tooltip="Detect faces with ML"');
+    // A model runs here, so the tool name carries the little ML badge.
+    expect(html).toContain('<h3>Enhance Faces</h3><span class="ml-badge"');
     expect(html).toContain('Nothing changes until you apply');
-    // No detect bar repeating the section title, and no badge doubling the
-    // header button.
+    // No detect bar repeating the section title, no header button, no reset.
     expect(html).not.toContain('data-testid="face-enhance-detect"');
-    expect(html).not.toContain('ml-badge');
+    expect(html).not.toContain('data-testid="face-enhance-ml"');
     expect(html).not.toContain('aria-label="Reset enhance faces"');
   });
 
   it('keeps the section title visible before and after applying', () => {
     const idle = renderAdjust({ ...DEFAULT_EDIT }, assist());
     expect(idle).toContain('<h3>Enhance Faces</h3>');
-    expect(idle).toContain('data-testid="face-enhance-ml"');
+    expect(idle).toContain('data-testid="face-enhance-toggle"');
     const applied = renderAdjust(
       { ...DEFAULT_EDIT },
       assist({ applied: { faces: 1, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 0 } }),
     );
     expect(applied).toContain('<h3>Enhance Faces</h3>');
-    expect(applied).toContain('data-testid="face-enhance-ml"');
-    expect(applied).toContain('aria-label="Reset enhance faces"');
+    expect(applied).toContain('data-testid="face-enhance-toggle"');
+    expect(applied).not.toContain('aria-label="Reset enhance faces"');
     expect(applied).not.toContain('data-testid="face-enhance-detect"');
   });
 
-  it('highlights the header ML button and offers reset while a face adjust is stored', () => {
+  it('lights the header toggle while a face adjust is stored, with no reset beside it', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT },
       assist({ applied: { faces: 1, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 0 } }),
     );
-    expect(html).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('data-tooltip="ML enhance faces applied — click to revert"');
-    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset enhance faces"');
+    expect(html).toContain('class="toggle is-on" data-testid="face-enhance-toggle"');
+    expect(html).toContain('aria-checked="true"');
+    expect(html).toContain('data-tooltip="Face enhance on — click to clear"');
+    expect(html).not.toContain('aria-label="Reset enhance faces"');
   });
 
   it('summarizes an ML result with skin WB, lift, and red-eye', () => {
@@ -198,11 +198,11 @@ describe('face enhance control', () => {
     expect(html).toContain('data-testid="face-enhance-redetect"');
     expect(html).toContain('data-testid="face-enhance-clear"');
     expect(html).toContain('Remove the recorded no-face scan');
-    // No change was applied, so the header stays quiet: no ML highlight,
-    // no section reset — the button is back to offering a fresh scan.
-    expect(html).toContain('class="ml-button" data-testid="face-enhance-ml"');
-    expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('data-tooltip="Automatically adjust enhance faces with ML"');
+    // No change was applied, so the header stays quiet: the toggle is
+    // off (back to offering a fresh scan) and no reset renders.
+    expect(html).toContain('class="toggle" data-testid="face-enhance-toggle"');
+    expect(html).toContain('aria-checked="false"');
+    expect(html).toContain('data-tooltip="Detect faces with ML"');
     expect(html).not.toContain('aria-label="Reset enhance faces"');
   });
 
@@ -255,9 +255,9 @@ describe('face enhance control', () => {
     // The badge stays with rescan/clear so the stored adjust survives the toggle.
     expect(off).toContain('data-testid="face-enhance-redetect"');
     expect(off).toContain('data-testid="face-enhance-clear"');
-    // The header ML highlight means "face adjust stored", not "enabled" —
-    // the content toggle owns on/off, so bypassing keeps the highlight.
-    expect(off).toContain('class="ml-button is-active" data-testid="face-enhance-ml"');
-    expect(off).toContain('section-reset is-dirty" data-tooltip="Reset enhance faces"');
+    // The header toggle means "face adjust stored", not "enabled" —
+    // the content toggle owns on/off, so bypassing keeps the header on.
+    expect(off).toContain('class="toggle is-on" data-testid="face-enhance-toggle"');
+    expect(off).not.toContain('aria-label="Reset enhance faces"');
   });
 });

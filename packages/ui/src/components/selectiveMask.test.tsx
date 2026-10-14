@@ -96,9 +96,9 @@ function renderAdjust(edit: EditState, selectiveAssist?: SelectiveMaskAssist): s
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -114,47 +114,48 @@ describe('selective mask control', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT })).not.toContain('data-testid="selective-mask"');
   });
 
-  it('runs segmentation from a header ML button, never a full-width bar', () => {
+  it('runs segmentation from a header toggle with an ML badge, never a full-width bar', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, assist());
     expect(html).toContain('data-testid="selective-mask"');
-    expect(html).toContain('data-testid="selective-mask-ml"');
-    expect(html).toContain('class="ml-button" data-testid="selective-mask-ml"');
-    expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('data-tooltip="Automatically adjust subject &amp; background with ML"');
-    expect(html).toContain('>ML<');
+    expect(html).toContain('data-testid="selective-mask-toggle"');
+    expect(html).toContain('class="toggle" data-testid="selective-mask-toggle"');
+    expect(html).toContain('aria-checked="false"');
+    expect(html).toContain('data-tooltip="Find the subject with ML"');
+    // A model runs here, so the tool name carries the little ML badge.
+    expect(html).toContain('<h3>Subject &amp; Background</h3><span class="ml-badge"');
     expect(html).toContain('Changes save automatically');
-    // No detect bar in the content and no badge doubling the header button.
+    // No detect bar in the content, no header button, no reset.
     expect(html).not.toContain('data-testid="selective-mask-detect"');
     expect(html).not.toContain('Enhance Subject &amp; Background');
-    expect(html).not.toContain('ml-badge');
+    expect(html).not.toContain('data-testid="selective-mask-ml"');
     expect(html).not.toContain('aria-label="Reset subject &amp; background"');
   });
 
   it('keeps the section title visible before and after detection', () => {
     // The title names the action in every state, so the sliders always
-    // have a visible group; the header ML button drives segment/clear.
+    // have a visible group; the header toggle drives segment/clear.
     const idle = renderAdjust({ ...DEFAULT_EDIT }, assist());
     expect(idle).toContain('<h3>Subject &amp; Background</h3>');
-    expect(idle).toContain('data-testid="selective-mask-ml"');
+    expect(idle).toContain('data-testid="selective-mask-toggle"');
     const applied = renderAdjust(
       { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
       assist({ applied: APPLIED }),
     );
     expect(applied).toContain('<h3>Subject &amp; Background</h3>');
-    expect(applied).toContain('data-testid="selective-mask-ml"');
-    expect(applied).toContain('aria-label="Reset subject &amp; background"');
+    expect(applied).toContain('data-testid="selective-mask-toggle"');
+    expect(applied).not.toContain('aria-label="Reset subject &amp; background"');
     expect(applied).not.toContain('data-testid="selective-mask-detect"');
   });
 
-  it('highlights the header ML button and offers reset while a mask is stored', () => {
+  it('lights the header toggle while a mask is stored, with no reset beside it', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
       assist({ applied: APPLIED }),
     );
-    expect(html).toContain('class="ml-button is-active" data-testid="selective-mask-ml"');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('data-tooltip="ML subject &amp; background applied — click to revert"');
-    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset subject &amp; background"');
+    expect(html).toContain('class="toggle is-on" data-testid="selective-mask-toggle"');
+    expect(html).toContain('aria-checked="true"');
+    expect(html).toContain('data-tooltip="Subject &amp; Background on — click to clear"');
+    expect(html).not.toContain('aria-label="Reset subject &amp; background"');
   });
 
   it('auto-applies an ML result with no apply step or target toggle', () => {
@@ -321,9 +322,9 @@ describe('selective mask control', () => {
     expect(off).toContain('data-testid="selective-mask-background-exposure"');
     expect(off).toContain('data-testid="selective-mask-redetect"');
     expect(off).toContain('data-testid="selective-mask-clear"');
-    // The header ML highlight means "mask stored", not "enabled" — the
-    // content toggle owns on/off, so bypassing keeps the highlight.
-    expect(off).toContain('class="ml-button is-active" data-testid="selective-mask-ml"');
-    expect(off).toContain('section-reset is-dirty" data-tooltip="Reset subject &amp; background"');
+    // The header toggle means "mask stored", not "enabled" — the
+    // content toggle owns on/off, so bypassing keeps the header on.
+    expect(off).toContain('class="toggle is-on" data-testid="selective-mask-toggle"');
+    expect(off).not.toContain('aria-label="Reset subject &amp; background"');
   });
 });

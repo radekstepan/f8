@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Bandage, Brush, ChevronDown, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Waves, X } from 'lucide-react';
 import { CROP_RATIOS, SCENE_DISPLAY_NAMES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
-import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, MlCategory, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
+import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { AdjustmentSection } from './AdjustmentSection.js';
-import { CheckField, IconButton, MenuItem, MenuSeparator, RangeControl, RevertButton, SegmentedControl, SelectField, Toggle } from './EditorUI.js';
+import { CheckField, IconButton, MenuItem, MenuSeparator, MlBadge, RangeControl, RevertButton, SegmentedControl, SelectField, Toggle } from './EditorUI.js';
 import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
 
 function Histogram({ data, photo }: { data: HistogramData | null; photo: Photo }) {
@@ -471,7 +471,7 @@ function DustSpotsControl({ assist }: { assist: DustSpotsAssist }) {
 }
 
 function SceneEnhanceControl({ edit }: { edit: EditState }) {
-  // Enhancement runs from the section header's Auto button (White Balance
+  // Enhancement runs from the section header's toggle (White Balance
   // pattern), so there is no apply bar in the content in any state — just
   // the persisted scene label, or the explanatory note before the first run.
   return <div className="scene-enhance" data-testid="scene-enhance">
@@ -506,7 +506,7 @@ function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
       ...(assist.redEyeCount > 0 ? [`${assist.redEyeCount} red-eye`] : []),
     ].join(' · ') + mlTag
     : null;
-  // Detection runs from the section header's ML button (White Balance
+  // Detection runs from the section header's toggle (White Balance
   // pattern), so there is no detect bar in the content in any state — the
   // idle state is just the explanatory note.
   return <div className="face-enhance" data-testid="face-enhance">
@@ -560,7 +560,7 @@ function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
   // so every slider below patches the recipe and previews live. No applied
   // summary line either — the sliders themselves show the values, and the
   // section title above names the action in every state. Segmentation runs
-  // from the section header's ML button (White Balance pattern), so there
+  // from the section header's toggle (White Balance pattern), so there
   // is no detect bar in the content in any state.
   return <div className="selective-mask" data-testid="selective-mask">
     {assist.state === 'idle' && !assist.applied &&
@@ -639,12 +639,12 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
   const previewTag = assist.preview?.source === 'onnx' ? ' · ML' : '';
   // The draft moved past what the on-screen preview shows.
   const previewStale = assist.preview !== null && slider !== assist.preview.strength;
-  // No inner heading and no Auto pill: the control lives in its own
-  // "Denoise" section whose header already carries the title and the Auto
-  // action (the auto suggestion moved there like everywhere else). The
-  // slider stays always editable — any manual move clears the auto mark
-  // (White Balance pattern: manual edits clear the highlight, the value
-  // stays). Nothing on the photo changes until Preview, then Apply.
+  // No inner heading and no suggestion pill: the control lives in its
+  // own "Denoise" section whose header already carries the title and the
+  // toggle (the auto suggestion moved there like everywhere else). The
+  // slider stays always editable — any manual move marks the draft manual
+  // (the stored auto tag clears, the value stays). Nothing on the photo
+  // changes until Preview, then Apply.
   return <div className="denoise" data-testid="denoise">
     <div className="denoise-suggest-row" data-testid="denoise-suggest-row">
       <span>{suggestion > 0 ? `Suggested for ISO ${photo.iso}: ${suggestion}` : `ISO ${photo.iso} looks clean — no suggestion`}</span>
@@ -714,13 +714,12 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
 
 /**
  * The Denoise section: the draft strength lives here (not in the control)
- * so the shared header Auto button fills the same ISO suggestion the old
- * content Auto pill did. The button highlights only while the stored
- * denoise IS the untouched auto suggestion — never for the mere draft (a
- * fresh high-ISO capture used to open with Auto lit although nothing was
- * applied). The reset follows the Enhance Faces pattern: present exactly
- * while a denoise is stored, and clearing it (no pre-apply snapshot
- * exists, so canRevert stays false and the reset always runs onClear).
+ * so the shared header toggle drafts the same ISO suggestion the old
+ * content Auto pill did. The toggle is on exactly while a denoise is
+ * stored — auto or manual — never for the mere draft (a fresh high-ISO
+ * capture opens with the toggle off although the draft sits on the
+ * suggestion). Toggling on drafts the suggestion (Preview + Apply still
+ * run the photo change); toggling off clears the stored denoise.
  */
 function DenoiseSection({ assist, photo }: { assist: DenoiseAssist; photo: Photo }) {
   const working = assist.state === 'previewing' || assist.state === 'applying';
@@ -734,38 +733,30 @@ function DenoiseSection({ assist, photo }: { assist: DenoiseAssist; photo: Photo
   }, [photo.id]);
   const suggestion = denoiseStrengthForIso(photo.iso);
   const applied = assist.applied !== null;
-  // Stored-auto only: the draft being the suggestion must not light the
-  // button — every other section highlights its action solely for a stored
-  // effect, and the lit toggle otherwise reads as "denoise is on".
-  const autoApplied = assist.applied?.auto === true;
-  const mlHint = suggestion <= 0
-    ? `ISO ${photo.iso} needs no denoise`
-    : autoApplied
-      ? `Auto denoise ${assist.applied!.strength} applied — click to turn off`
+  const toggleHint = applied
+    ? `Denoise ${assist.applied!.strength} applied — click to clear`
+    : suggestion <= 0
+      ? `ISO ${photo.iso} needs no denoise`
       : `Set strength to the ISO ${photo.iso} suggestion (${suggestion})`;
   return <AdjustmentSection title="Denoise" icon={<Waves size={14} />}
-    ml={{
+    toggle={{
       id: 'denoise',
-      kind: 'auto',
-      applied: autoApplied,
-      canRevert: false,
-      onToggle: () => { if (autoApplied) assist.onClear(); else { setSlider(suggestion); setAuto(true); } },
-      onRevert: () => setAuto(false),
-      disabled: working || suggestion <= 0,
-      hint: mlHint,
-    }}
-    onReset={applied ? assist.onClear : undefined} dirty={applied}>
+      checked: applied,
+      onToggle: () => { if (applied) assist.onClear(); else { setSlider(suggestion); setAuto(true); } },
+      disabled: working || (!applied && suggestion <= 0),
+      hint: toggleHint,
+    }}>
     <DenoiseControl assist={assist} photo={photo} slider={slider} auto={auto} onDraft={(strength, nextAuto) => { setSlider(strength); setAuto(nextAuto); }} />
   </AdjustmentSection>;
 }
 
 /**
  * The One-Click Removal section: detection runs from the shared header ML
- * button (Face Enhance pattern), so the content holds the review list but
- * no detect bar — the idle state is just the explanatory note. The assist
- * is ephemeral (apply dismisses back to idle; the strokes live in the
- * Repairs section from there), so the button never highlights and carries
- * no reset: every click runs a fresh detection.
+ * button, so the content holds the review list but no detect bar — the
+ * idle state is just the explanatory note. The assist is ephemeral (apply
+ * dismisses back to idle; the strokes live in the Repairs section from
+ * there), so the button never highlights and carries no reset: every
+ * click runs a fresh detection.
  */
 function RemovalSection({ assist }: { assist: ObjectRemovalAssist }) {
   const working = assist.state === 'detecting';
@@ -789,10 +780,10 @@ function RemovalSection({ assist }: { assist: ObjectRemovalAssist }) {
 }
 
 /**
- * The Dust Spots section: the same shared-header convergence as
- * RemovalSection — the header Auto button runs the scan, the content keeps
- * the review list with no detect bar, and the ephemeral assist means no
- * highlight and no reset.
+ * The Dust Spots section: the same shared-header shape as
+ * RemovalSection — the header Auto button runs the scan, the content
+ * keeps the review list with no detect bar, and the ephemeral assist
+ * means no highlight and no reset.
  */
 function DustSpotsSection({ assist }: { assist: DustSpotsAssist }) {
   const working = assist.state === 'detecting';
@@ -960,16 +951,14 @@ interface InspectorProps {
   selectiveAssist?: SelectiveMaskAssist;
   /** Lightweight denoise; omit to hide it from the ML Enhance section. */
   denoiseAssist?: DenoiseAssist;
+  /** Per-section auto apply (header toggle off-to-on). */
   onAutoWhiteBalance: () => void;
   onAutoLightness: () => void;
   onAutoColor: () => void;
-  onRevertWhiteBalance: () => void;
-  onRevertLightness: () => void;
-  onRevertColor: () => void;
-  /** Per-category ML highlight flags; a set flag lights the ML button (pure auto values). */
-  mlApplied?: Partial<Record<MlCategory, boolean>>;
-  /** Per-category ML revert flags; a set flag routes the header reset to the pre-ML snapshot, even after manual edits. */
-  mlRevert?: Partial<Record<MlCategory, boolean>>;
+  /** Per-section reset to defaults (header toggle on-to-off); also cancels an in-flight auto apply. */
+  onResetWhiteBalance: () => void;
+  onResetLightness: () => void;
+  onResetColor: () => void;
   onCopy: () => void;
   onPaste: () => void;
   onSavePreset: () => void;
@@ -978,7 +967,7 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, enhanceMode = null, enhancePure = false, enhanceCanRevert, onRevertEnhance, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, onRevertWhiteBalance, onRevertLightness, onRevertColor, mlApplied, mlRevert, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, enhanceMode = null, enhancePure = false, enhanceCanRevert, onRevertEnhance, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, onResetWhiteBalance, onResetLightness, onResetColor, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
   const [extraSections, setExtraSections] = useState<string[]>([]);
@@ -1006,21 +995,29 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
     if (name === 'Black & White') onChange({ blackAndWhite: true });
     window.setTimeout(() => ref.current?.querySelector('.inspector-scroll')?.scrollTo({ top: 2000, behavior: 'smooth' }), 50);
   };
-  // Whole-photo enhance UI: each mode's button highlights only its own pure
-  // state, and the last-used mode carries the shared revert icon — manual
-  // look edits clear the highlight but keep the revert. The revert icon
-  // (and its dirty state) keys off the explicit stack signal, not the mode:
-  // only a persisted stack entry can restore the pre-enhance values.
+  // Whole-photo enhance UI: the header pill highlights only the pure
+  // classic state, and the last-used mode carries the shared revert icon —
+  // manual look edits clear the highlight but keep the revert. The revert
+  // icon keys off the explicit stack signal, not the mode: only a
+  // persisted stack entry can restore the pre-enhance values. The Scene
+  // Enhance section toggle is on while its snapshot lives (pure or
+  // hand-tweaked past it); toggling off reverts the whole enhance.
   const enhanceSnapshot = enhanceCanRevert ?? enhanceMode !== null;
   const classicActive = enhanceMode === 'classic' && enhancePure;
   const classicRevert = enhanceMode === 'classic' && enhanceSnapshot;
-  const sceneActive = enhanceMode === 'scene' && enhancePure;
   const sceneRevert = enhanceMode === 'scene' && enhanceSnapshot;
   // A recorded no-face scan (faces 0) is information, not an applied
-  // change: it keeps its content row with Rescan/Clear, but the header ML
-  // highlight and the section reset light only when faces were found and
-  // the enhancement was actually applied.
+  // change: it keeps its content row with Rescan/Clear, but the header
+  // toggle stays off — it lights only when faces were found and the
+  // enhancement was actually applied.
   const faceChanged = Boolean(faceAssist?.applied && faceAssist.applied.faces > 0);
+  // Slider-section toggles read dirtiness straight from the recipe: an
+  // auto apply lights the toggle, and so does any hand tweak — no
+  // highlight bookkeeping. (The toggle-off resets live in the editor hook
+  // so they can also cancel an in-flight auto apply.)
+  const whiteBalanceDirty = edit.temperature !== 5500 || edit.tint !== 0;
+  const lightnessDirty = edit.exposure !== 0 || edit.brightness !== 0 || edit.contrast !== 0 || edit.highlights !== 0 || edit.shadows !== 0 || edit.blacks !== 0;
+  const colorDirty = edit.hue !== 0 || edit.saturation !== 0 || edit.vibrance !== 0;
   // The Color Adjustments header carries the classic enhance as an Auto
   // pill (same toggle contract + tooltips the retired standalone section
   // got from AdjustmentSection kind 'auto'), with the shared-snapshot
@@ -1046,12 +1043,12 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><Histogram data={histogram} photo={photo} />{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} ml={{ id: 'scene-enhance', kind: 'auto', applied: sceneActive, canRevert: sceneRevert, onToggle: onAutoScene, onRevert: onRevertEnhance }} onReset={sceneRevert ? onRevertEnhance : undefined} dirty={sceneRevert}><SceneEnhanceControl edit={edit} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} ml={{ id: 'face-enhance', applied: faceChanged, canRevert: faceChanged, onToggle: faceChanged ? faceAssist.onClear : faceAssist.onDetect, onRevert: faceAssist.onClear }} onReset={faceChanged ? faceAssist.onClear : undefined} dirty={faceChanged}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} ml={{ id: 'selective-mask', applied: Boolean(selectiveAssist.applied), canRevert: Boolean(selectiveAssist.applied), onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect, onRevert: selectiveAssist.onClear }} onReset={selectiveAssist.applied ? selectiveAssist.onClear : undefined} dirty={Boolean(selectiveAssist.applied)}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <DenoiseSection assist={denoiseAssist} photo={photo} />}
-      <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} ml={{ id: 'white-balance', kind: 'auto', applied: Boolean(mlApplied?.whiteBalance), canRevert: Boolean(mlRevert?.whiteBalance), onToggle: onAutoWhiteBalance, onRevert: onRevertWhiteBalance }} onReset={() => onChange({ temperature: 5500, tint: 0 })} dirty={edit.temperature !== 5500 || edit.tint !== 0}>
+    <div className="inspector-scroll">{tool === 'adjust' ? <><Histogram data={histogram} photo={photo} />{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} toggle={{ id: 'scene-enhance', checked: sceneRevert, onToggle: sceneRevert ? onRevertEnhance : onAutoScene, hint: sceneRevert ? 'Scene enhance on — click to revert' : 'Apply scene enhance automatically' }}><SceneEnhanceControl edit={edit} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} badge={<MlBadge hint="Face detection runs a machine-learning model" />} toggle={{ id: 'face-enhance', checked: faceChanged, onToggle: faceChanged ? faceAssist.onClear : faceAssist.onDetect, hint: faceChanged ? 'Face enhance on — click to clear' : 'Detect faces with ML' }}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} badge={<MlBadge hint="Subject segmentation runs a machine-learning model" />} toggle={{ id: 'selective-mask', checked: Boolean(selectiveAssist.applied), onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect, hint: selectiveAssist.applied ? 'Subject & Background on — click to clear' : 'Find the subject with ML' }}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <DenoiseSection assist={denoiseAssist} photo={photo} />}
+      <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} toggle={{ id: 'white-balance', checked: whiteBalanceDirty, onToggle: whiteBalanceDirty ? onResetWhiteBalance : onAutoWhiteBalance, hint: whiteBalanceDirty ? 'White Balance on — click to reset to defaults' : 'Apply white balance automatically' }}>
         {rangeEnabled('whiteBalanceEnabled', 'temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false })}
         {rangeEnabled('whiteBalanceEnabled', 'tint', 'Tint', { color: 'tint' })}
       </AdjustmentSection>
-      <AdjustmentSection title="Lightness" icon={<Sun size={15} />} ml={{ id: 'lightness', kind: 'auto', applied: Boolean(mlApplied?.lightness), canRevert: Boolean(mlRevert?.lightness), onToggle: onAutoLightness, onRevert: onRevertLightness }} onReset={() => onChange({ exposure: 0, brightness: 0, contrast: 0, highlights: 0, shadows: 0, blacks: 0 })} dirty={edit.exposure !== 0 || edit.brightness !== 0 || edit.contrast !== 0 || edit.highlights !== 0 || edit.shadows !== 0 || edit.blacks !== 0}>
+      <AdjustmentSection title="Lightness" icon={<Sun size={15} />} toggle={{ id: 'lightness', checked: lightnessDirty, onToggle: lightnessDirty ? onResetLightness : onAutoLightness, hint: lightnessDirty ? 'Lightness on — click to reset to defaults' : 'Apply lightness automatically' }}>
         {rangeEnabled('lightnessEnabled', 'exposure', 'Exposure', { min: -3, max: 3, step: 0.01 })}
         {rangeEnabled('lightnessEnabled', 'brightness', 'Brightness')}
         {rangeEnabled('lightnessEnabled', 'contrast', 'Contrast')}
@@ -1059,7 +1056,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
         {rangeEnabled('lightnessEnabled', 'shadows', 'Shadows')}
         {rangeEnabled('lightnessEnabled', 'blacks', 'Black Point')}
       </AdjustmentSection>
-      <AdjustmentSection title="Hue & Saturation" icon={<Palette size={14} />} ml={{ id: 'color', kind: 'auto', applied: Boolean(mlApplied?.color), canRevert: Boolean(mlRevert?.color), onToggle: onAutoColor, onRevert: onRevertColor }} onReset={() => onChange({ hue: 0, saturation: 0, vibrance: 0 })} dirty={edit.hue !== 0 || edit.saturation !== 0 || edit.vibrance !== 0}>
+      <AdjustmentSection title="Hue & Saturation" icon={<Palette size={14} />} toggle={{ id: 'color', checked: colorDirty, onToggle: colorDirty ? onResetColor : onAutoColor, hint: colorDirty ? 'Hue & Saturation on — click to reset to defaults' : 'Apply hue & saturation automatically' }}>
         {rangeEnabled('colorEnabled', 'saturation', 'Saturation')}
         {rangeEnabled('colorEnabled', 'vibrance', 'Vibrance')}
         {rangeEnabled('colorEnabled', 'hue', 'Hue', { min: -180, max: 180, color: 'hue' })}

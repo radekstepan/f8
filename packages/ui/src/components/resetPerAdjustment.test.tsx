@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
-import type { EditState, MlCategory, Photo } from '@f8/core';
+import type { EditState, Photo } from '@f8/core';
 import { AdjustmentSection } from './AdjustmentSection.js';
 import { Inspector } from './Inspector.js';
 import type { DenoiseAssist, FaceEnhanceAssist, SelectiveMaskAssist } from './Inspector.js';
@@ -76,8 +76,6 @@ function denoiseAssist(overrides: Partial<DenoiseAssist> = {}): DenoiseAssist {
 function renderAdjust(
   edit: EditState,
   options?: {
-    mlApplied?: Partial<Record<MlCategory, boolean>>;
-    mlRevert?: Partial<Record<MlCategory, boolean>>;
     enhance?: { mode: 'classic' | 'scene' | null; pure?: boolean };
     assists?: boolean;
     denoise?: Partial<DenoiseAssist>;
@@ -103,11 +101,9 @@ function renderAdjust(
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
-      {...(options?.mlApplied ? { mlApplied: options.mlApplied } : {})}
-      {...(options?.mlRevert ? { mlRevert: options.mlRevert } : {})}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -127,19 +123,10 @@ describe('reset per adjustment', () => {
     }
   });
 
-  it('persists the reset of exactly the section whose values left defaults', () => {
+  it('persists the reset of exactly the manual section whose values left defaults', () => {
+    // Curves, Details, and Effects have no automatic action, so they keep
+    // the header reset; the toggle sections below carry none.
     const cases: Array<[Partial<EditState>, string]> = [
-      [{ temperature: 5800 }, 'Reset white balance'],
-      [{ tint: 6 }, 'Reset white balance'],
-      [{ exposure: 0.5 }, 'Reset lightness'],
-      [{ brightness: 10 }, 'Reset lightness'],
-      [{ contrast: -10 }, 'Reset lightness'],
-      [{ highlights: 20 }, 'Reset lightness'],
-      [{ shadows: -20 }, 'Reset lightness'],
-      [{ blacks: 5 }, 'Reset lightness'],
-      [{ saturation: 8 }, 'Reset hue &amp; saturation'],
-      [{ vibrance: 16 }, 'Reset hue &amp; saturation'],
-      [{ hue: -30 }, 'Reset hue &amp; saturation'],
       [{ curve: 25 }, 'Reset curves'],
       [{ curvePoints: [{ x: 0.25, y: 0.3 }] }, 'Reset curves'],
       [{ clarity: 20 }, 'Reset details'],
@@ -148,7 +135,7 @@ describe('reset per adjustment', () => {
       [{ vignette: 40 }, 'Reset effects'],
       [{ fade: 15 }, 'Reset effects'],
     ];
-    const labels = ['Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation', 'Reset curves', 'Reset details', 'Reset effects'];
+    const labels = ['Reset curves', 'Reset details', 'Reset effects'];
     for (const [patch, label] of cases) {
       const html = renderAdjust({ ...DEFAULT_EDIT, ...patch });
       expect(html).toContain(`section-reset is-dirty" data-tooltip="${label}"`);
@@ -158,11 +145,41 @@ describe('reset per adjustment', () => {
     }
   });
 
+  it('lights the toggle — never a reset — of exactly the auto section whose values left defaults', () => {
+    const cases: Array<[Partial<EditState>, string]> = [
+      [{ temperature: 5800 }, 'white-balance-toggle'],
+      [{ tint: 6 }, 'white-balance-toggle'],
+      [{ exposure: 0.5 }, 'lightness-toggle'],
+      [{ brightness: 10 }, 'lightness-toggle'],
+      [{ contrast: -10 }, 'lightness-toggle'],
+      [{ highlights: 20 }, 'lightness-toggle'],
+      [{ shadows: -20 }, 'lightness-toggle'],
+      [{ blacks: 5 }, 'lightness-toggle'],
+      [{ saturation: 8 }, 'color-toggle'],
+      [{ vibrance: 16 }, 'color-toggle'],
+      [{ hue: -30 }, 'color-toggle'],
+    ];
+    const toggles = ['white-balance-toggle', 'lightness-toggle', 'color-toggle'];
+    for (const [patch, toggle] of cases) {
+      const html = renderAdjust({ ...DEFAULT_EDIT, ...patch });
+      expect(html, JSON.stringify(patch)).toContain(`class="toggle is-on" data-testid="${toggle}"`);
+      for (const other of toggles.filter((candidate) => candidate !== toggle)) {
+        expect(html, `${JSON.stringify(patch)} must not light ${other}`).toContain(`class="toggle" data-testid="${other}"`);
+      }
+      // The toggle replaces the reset on these sections entirely.
+      expect(html).not.toContain('section-reset');
+      expect(html).not.toContain('aria-label="Reset white balance"');
+      expect(html).not.toContain('aria-label="Reset lightness"');
+      expect(html).not.toContain('aria-label="Reset hue &amp; saturation"');
+    }
+  });
+
   it('treats a legacy-disabled category at default values as clean', () => {
     // The enabled flag flips back on the first slider drag, so values
-    // alone decide dirtiness: a disabled-but-default section renders no
-    // reset at all (and its reset would have nothing to restore).
+    // alone decide dirtiness: a disabled-but-default section renders its
+    // toggle off (and no reset — the converted sections carry none).
     const html = renderAdjust({ ...DEFAULT_EDIT, whiteBalanceEnabled: false });
+    expect(html).toContain('class="toggle" data-testid="white-balance-toggle"');
     expect(html).not.toContain('aria-label="Reset white balance"');
   });
 
@@ -178,13 +195,12 @@ describe('reset per adjustment', () => {
   });
 
   it('carries no separate revert control in any adjust header', () => {
-    // Snapshots everywhere at once: enhance, all three ML categories, and
-    // every assist section rendered — still exactly one icon per header.
+    // Everything applied at once: enhance, dirty slider sections, and
+    // every assist section rendered — still no revert icon anywhere (the
+    // crop tool's straighten row keeps the single remaining RevertButton).
     const html = renderAdjust(
-      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
+      { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 }, temperature: 5800, exposure: 0.5, saturation: 8 },
       {
-        mlApplied: { whiteBalance: true, lightness: true, color: true },
-        mlRevert: { whiteBalance: true, lightness: true, color: true },
         enhance: { mode: 'scene', pure: false },
         assists: true,
       },
@@ -193,26 +209,30 @@ describe('reset per adjustment', () => {
     expect(html).not.toContain('-ml-revert"');
     expect(html).not.toContain('-auto-revert"');
     expect(html).not.toContain('aria-label="Revert');
-    // The snapshot sections still offer their shared-snapshot reset.
-    for (const label of ['Reset scene enhance', 'Reset white balance', 'Reset lightness', 'Reset hue &amp; saturation']) {
-      expect(html).toContain(`section-reset is-dirty" data-tooltip="${label}"`);
+    // The converted sections show their toggles on, with no reset beside.
+    for (const toggle of ['scene-enhance-toggle', 'white-balance-toggle', 'lightness-toggle', 'color-toggle']) {
+      expect(html).toContain(`class="toggle is-on" data-testid="${toggle}"`);
     }
+    expect(html).not.toContain('aria-label="Reset scene enhance"');
+    expect(html).not.toContain('aria-label="Reset white balance"');
   });
 
-  it('gives Details a header reset exactly while dirty, and Denoise one exactly while applied', () => {
+  it('gives Details a header reset exactly while dirty, and Denoise a toggle exactly while applied', () => {
     // Details (reset added in Task 12): dirty values persist the reset.
     const details = renderAdjust({ ...DEFAULT_EDIT, clarity: 20, sharpness: 30 }, { assists: true });
     expect(details).toContain('section-reset is-dirty" data-tooltip="Reset details"');
-    // Denoise (header rework, Task 4): no stored denoise, no reset.
+    // Denoise: no stored denoise, toggle off and no reset.
     const idle = renderAdjust({ ...DEFAULT_EDIT }, { assists: true });
+    expect(idle).toContain('class="toggle" data-testid="denoise-toggle"');
     expect(idle).not.toContain('aria-label="Reset denoise"');
-    // A stored denoise persists the reset (Enhance Faces pattern).
+    // A stored denoise lights the toggle (no reset — toggling off clears).
     const stored = { strength: 65, auto: true, source: 'onnx' } as const;
     const applied = renderAdjust(
       { ...DEFAULT_EDIT, denoise: { ...stored } },
       { assists: true, denoise: { state: 'applied', applied: { ...stored }, hasBase: true } },
     );
-    expect(applied).toContain('section-reset is-dirty" data-tooltip="Reset denoise"');
+    expect(applied).toContain('class="toggle is-on" data-testid="denoise-toggle"');
+    expect(applied).not.toContain('aria-label="Reset denoise"');
   });
 
   it('keeps the reset box while rendering it only when dirty', () => {

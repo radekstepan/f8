@@ -89,9 +89,9 @@ function renderInspector(tool: Tool, enhance?: { mode: 'classic' | 'scene' | nul
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -166,7 +166,7 @@ describe('auto enhance header button', () => {
     // auto flag stays in the recipe, but no stack entry exists — so the
     // header Auto reopens idle (never enabled-without-a-reset) with the
     // plain apply tooltip, while the stored values keep their
-    // per-section resets.
+    // per-section toggle lit.
     const html = renderInspector(
       'adjust',
       undefined,
@@ -175,7 +175,7 @@ describe('auto enhance header button', () => {
     expect(html).toContain('class="auto-small inspector-auto" data-testid="auto-enhance-auto" aria-pressed="false"');
     expect(html).toContain('data-tooltip="Apply auto enhance automatically"');
     expect(html).not.toContain('aria-label="Reset auto enhance"');
-    expect(html).toContain('aria-label="Reset lightness"');
+    expect(html).toContain('class="toggle is-on" data-testid="lightness-toggle"');
   });
 
   it('keeps the header Auto adjust-only: repair and crop headers carry no enhance action', () => {

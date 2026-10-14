@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_EDIT } from "./data.js";
-import { ML_CATEGORIES, ML_CATEGORY_ENABLED_KEY, ML_CATEGORY_KEYS, snapshotMlCategory, touchedMlCategories } from "./mlCategories.js";
+import { ML_CATEGORIES, ML_CATEGORY_ENABLED_KEY, ML_CATEGORY_KEYS, touchedMlCategories } from "./mlCategories.js";
 import type { MlCategory } from "./mlCategories.js";
 import { computeColorAuto, computeLightnessAuto, computeWhiteBalanceAuto } from "./vision/enhance.js";
 import { solidColor } from "./vision/fixtures.js";
@@ -20,13 +20,13 @@ describe("ML categories", () => {
     }
   });
 
-  it("owns each category's enabled flag so a revert restores bypass state", () => {
+  it("owns each category's enabled flag so an auto apply re-enables a legacy-disabled section", () => {
     for (const category of ML_CATEGORIES) {
       expect(ML_CATEGORY_KEYS[category]).toContain(ML_CATEGORY_ENABLED_KEY[category]);
     }
   });
 
-  it("snapshots every key the ML computes write, so a revert restores all of them", () => {
+  it("covers every key the auto computes write, so purity tracking sees the whole apply", () => {
     const image = solidColor(8, 8, 100, 100, 100);
     const writes: Record<MlCategory, object> = {
       whiteBalance: computeWhiteBalanceAuto(image),
@@ -40,7 +40,7 @@ describe("ML categories", () => {
     }
   });
 
-  it("keeps categories disjoint so one revert never touches another section", () => {
+  it("keeps categories disjoint so a slider patch maps to exactly its section", () => {
     const seen = new Set<string>();
     for (const category of ML_CATEGORIES) {
       for (const key of ML_CATEGORY_KEYS[category]) {
@@ -52,7 +52,7 @@ describe("ML categories", () => {
 });
 
 describe("touchedMlCategories", () => {
-  it("maps a slider patch to its owning category for highlight clearing", () => {
+  it("maps a slider patch to its owning category", () => {
     expect(touchedMlCategories({ temperature: 6000 })).toEqual(["whiteBalance"]);
     expect(touchedMlCategories({ tint: 4 })).toEqual(["whiteBalance"]);
     expect(touchedMlCategories({ exposure: 0.5 })).toEqual(["lightness"]);
@@ -67,8 +67,8 @@ describe("touchedMlCategories", () => {
   });
 
   it("ignores keys no automatic action owns", () => {
-    // Brightness, blacks, vibrance, and hue have sliders in ML sections
-    // but are never auto-computed, so dragging them keeps the highlight.
+    // Brightness, blacks, vibrance, and hue have sliders in auto
+    // sections but are never auto-computed.
     expect(touchedMlCategories({ brightness: 10 })).toEqual([]);
     expect(touchedMlCategories({ blacks: -10 })).toEqual([]);
     expect(touchedMlCategories({ vibrance: 10 })).toEqual([]);
@@ -79,36 +79,5 @@ describe("touchedMlCategories", () => {
 
   it("reports every category a mixed patch touches", () => {
     expect(touchedMlCategories({ temperature: 6000, saturation: 5 })).toEqual(["whiteBalance", "color"]);
-  });
-});
-
-describe("snapshotMlCategory", () => {
-  it("captures the white-balance values plus the enabled flag", () => {
-    const edit = { ...DEFAULT_EDIT, temperature: 6200, tint: -8, whiteBalanceEnabled: false, exposure: 0.4 };
-    expect(snapshotMlCategory(edit, "whiteBalance")).toEqual({
-      temperature: 6200,
-      tint: -8,
-      whiteBalanceEnabled: false,
-    });
-  });
-
-  it("captures the lightness values without brightness or blacks", () => {
-    const edit = {
-      ...DEFAULT_EDIT,
-      exposure: 0.3, contrast: 10, highlights: -5, shadows: 7,
-      brightness: 20, blacks: -20, lightnessEnabled: true,
-    };
-    expect(snapshotMlCategory(edit, "lightness")).toEqual({
-      exposure: 0.3,
-      contrast: 10,
-      highlights: -5,
-      shadows: 7,
-      lightnessEnabled: true,
-    });
-  });
-
-  it("captures only saturation for color, leaving vibrance and hue alone", () => {
-    const edit = { ...DEFAULT_EDIT, saturation: 12, vibrance: 30, hue: -10, colorEnabled: true };
-    expect(snapshotMlCategory(edit, "color")).toEqual({ saturation: 12, colorEnabled: true });
   });
 });

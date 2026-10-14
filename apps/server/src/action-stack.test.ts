@@ -16,12 +16,6 @@ const STACK: ActionStack = [
     snapshot: { exposure: 0, contrast: 0, preset: "Original" },
     appliedAt: "2026-10-13T00:00:00.000Z",
   },
-  {
-    kind: "whiteBalance",
-    pure: false,
-    snapshot: { temperature: 5500, tint: 0, whiteBalanceEnabled: true },
-    appliedAt: "2026-10-13T00:01:00.000Z",
-  },
 ];
 
 describe("persisted action stack", () => {
@@ -68,7 +62,27 @@ describe("persisted action stack", () => {
   it("round-trips the stack with the recipe", async () => {
     const saved = await putEdit({ present: { ...DEFAULT_EDIT, exposure: 0.22 }, actions: STACK });
     expect(saved.actions).toEqual(STACK);
-    // A reload (fresh GET) sees the same stack, so every Auto keeps its revert.
+    // A reload (fresh GET) sees the same stack, so the enhance keeps its revert.
+    expect((await libraryPhoto()).actions).toEqual(STACK);
+  });
+
+  it("drops legacy per-category entries on save", async () => {
+    // Pre-toggle clients persisted white-balance/lightness/color entries;
+    // nothing reads them anymore (section toggles read the recipe), so the
+    // sanitizer sheds them while the enhance entry round-trips.
+    const saved = await putEdit({
+      present: { ...DEFAULT_EDIT, exposure: 0.22 },
+      actions: [
+        ...STACK,
+        {
+          kind: "whiteBalance",
+          pure: false,
+          snapshot: { temperature: 5500, tint: 0, whiteBalanceEnabled: true },
+          appliedAt: "2026-10-13T00:01:00.000Z",
+        },
+      ],
+    });
+    expect(saved.actions).toEqual(STACK);
     expect((await libraryPhoto()).actions).toEqual(STACK);
   });
 

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
-import type { EditState, MlCategory, Photo } from '@f8/core';
+import type { EditState, Photo } from '@f8/core';
 import { Inspector } from './Inspector.js';
 import type { DenoiseAssist, DustSpotsAssist, FaceEnhanceAssist, ObjectRemovalAssist, RepairAssist, SelectiveMaskAssist, StraightenAssist } from './Inspector.js';
 
@@ -74,8 +74,6 @@ function denoiseApplied(): DenoiseAssist {
   };
 }
 
-const ALL_ML: Partial<Record<MlCategory, boolean>> = { whiteBalance: true, lightness: true, color: true };
-
 /** Every slider off defaults, both enhance modes' flags set, one repair stamp. */
 function fullyAppliedEdit(): EditState {
   return {
@@ -136,10 +134,9 @@ function renderAdjust(edit: EditState, enhanceMode: 'classic' | 'scene' | null, 
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
-      {...(applied ? { mlApplied: ALL_ML, mlRevert: ALL_ML } : {})}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -185,9 +182,9 @@ function renderRepair(): string {
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -222,9 +219,9 @@ function renderCrop(snapshot: number | null): string {
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -273,18 +270,17 @@ describe('single reset icon', () => {
     // The old separate revert icon is gone from the adjust tool entirely:
     // every icon below is the single shared reset control.
     expect(count(html, 'ml-revert')).toBe(0);
+    // Only the manual sections (no automatic action, no toggle) keep a
+    // reset: every converted section shows its toggle on instead.
     const withIcon = headers.filter((header) => header.resets + header.reverts === 1).map((header) => header.title);
     expect(withIcon).toEqual([
-      'Enhance Faces',
-      'Subject &amp; Background',
-      'Denoise',
-      'White Balance',
-      'Lightness',
-      'Hue &amp; Saturation',
       'Curves',
       'Details',
       'Effects',
     ]);
+    for (const toggle of ['face-enhance-toggle', 'selective-mask-toggle', 'denoise-toggle', 'white-balance-toggle', 'lightness-toggle', 'color-toggle'] as const) {
+      expect(html).toContain(`class="toggle is-on" data-testid="${toggle}"`);
+    }
     // The classic enhance icon moved with its button to the panel header:
     // exactly one, outside every section. Only the last-used enhance mode
     // carries the shared icon.
@@ -303,7 +299,10 @@ describe('single reset icon', () => {
     for (const header of headers) {
       expect(header.resets + header.reverts, `${header.title} must show at most one revert/reset icon`).toBeLessThanOrEqual(1);
     }
-    expect(headers.find((header) => header.title === 'Scene Enhance')).toMatchObject({ resets: 1, reverts: 0 });
+    // The scene section reverts from its toggle, so it carries no icon;
+    // the panel header carries none either while scene is last-used.
+    expect(headers.find((header) => header.title === 'Scene Enhance')).toMatchObject({ resets: 0, reverts: 0 });
+    expect(html).toContain('class="toggle is-on" data-testid="scene-enhance-toggle"');
     expect(headers.find((header) => header.title === 'Auto Enhance')).toBeUndefined();
     expect(html).not.toContain('aria-label="Reset auto enhance"');
     expect(count(html, 'ml-revert')).toBe(0);

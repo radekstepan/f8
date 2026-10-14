@@ -1,11 +1,19 @@
-/** Persisted action stack for the Adjust-tool Auto actions.
+/** Persisted action stack for the Adjust-tool whole-photo enhance.
  *
- * Whole-photo enhance (classic + scene) and the three per-category autos
- * (white balance, lightness, color) used to keep their pre-apply snapshots
- * in session-only refs: after a reload the recipe still held the auto
- * values, but every revert was gone. The stack below is the persisted
- * replacement — one entry per auto action, each carrying the snapshot its
- * revert restores — so every Auto stays revertible across a hard reload.
+ * Whole-photo enhance (classic + scene) used to keep its pre-apply snapshot
+ * in a session-only ref: after a reload the recipe still held the enhanced
+ * values, but the revert was gone. The stack below is the persisted
+ * replacement — one entry carrying the snapshot its revert restores — so
+ * the enhance stays revertible across a hard reload.
+ *
+ * The per-category autos (white balance, lightness, color) deliberately
+ * keep no entries: their header toggles read dirtiness straight from the
+ * recipe (on = non-default values, whether auto-applied or hand-tweaked),
+ * so they need no highlight bookkeeping — and toggle-off resets to the
+ * section defaults, which needs no snapshot. Only the enhance reverts to
+ * its pre-apply look instead of defaults, so only it keeps a snapshot.
+ * Legacy persisted stacks may still carry category entries; the sanitizer
+ * drops them on load (they were always ignored the same way).
  *
  * The stack rides with the recipe (PUT /api/photos/:id/edit persists
  * `{ present, actions }` together) but is provenance, not look: it never
@@ -15,14 +23,14 @@
  */
 
 import { DEFAULT_EDIT, patchBreaksEnhancePure } from "./data.js";
-import { ML_CATEGORIES, snapshotMlCategory, touchedMlCategories } from "./mlCategories.js";
+import { ML_CATEGORIES, touchedMlCategories } from "./mlCategories.js";
 import type { MlCategory } from "./mlCategories.js";
 import type { EditState } from "./types.js";
 
 /** Whole-photo enhance modes sharing the single enhance stack slot. */
 export type EnhanceMode = "classic" | "scene";
 
-/** Auto actions with a persisted revert: enhance plus the per-category autos. */
+/** Auto actions with a persisted revert: the enhance, plus the per-category autos as legacy stack values only. */
 export type AutoActionKind = "enhance" | MlCategory;
 
 /** All stackable auto-action kinds, oldest-slot order. */
@@ -80,31 +88,25 @@ export function clearEnhanceAction(stack: ActionStack): ActionStack {
   return stack.some((entry) => entry.kind === "enhance") ? stack.filter((entry) => entry.kind !== "enhance") : stack;
 }
 
-/** Drop the per-category auto entries (enhance applies, resets, presets). */
+/** Drop legacy per-category auto entries (the enhance transition sheds them; the sanitizer drops them on load). */
 export function clearCategoryActions(stack: ActionStack): ActionStack {
   return stack.some((entry) => entry.kind !== "enhance") ? stack.filter((entry) => entry.kind === "enhance") : stack;
 }
 
 /**
  * Whole-photo enhance stack transition: drop stale per-category entries
- * (the enhance overwrites their values, so those snapshots predate the
- * enhance), then push the enhance entry plus one pure per-category entry
- * for every auto the enhance turns on — white balance, lightness, and
- * color, which both the classic and the scene patch write. All four
- * entries snapshot the same pre-enhance recipe, so each section highlights
- * its Auto and offers its own revert back to the pre-enhance values while
- * the whole-photo revert still restores the full look. Re-applying an
- * enhance mode refreshes its entry in place (earliest snapshot wins, via
- * pushAction); the category entries always snapshot the latest enhance, so
- * a per-section revert undoes the latest enhance only.
+ * (legacy pre-toggle stacks may still carry them; nothing pushes them
+ * anymore), then push the enhance entry. No per-category entries follow:
+ * the enhance writes non-default values, so the dirty-driven section
+ * toggles light on their own — and each toggle-off resets its section to
+ * defaults rather than to the pre-enhance values. Re-applying an enhance
+ * mode refreshes its entry in place (earliest snapshot wins, via
+ * pushAction), so the whole-photo revert always returns to the
+ * un-enhanced recipe.
  */
 export function pushEnhanceAction(stack: ActionStack, mode: EnhanceMode, edit: EditState, appliedAt: string): ActionStack {
-  let next = clearCategoryActions(stack);
-  next = pushAction(next, { kind: "enhance", mode, pure: true, snapshot: snapshotForEnhance(edit), appliedAt });
-  for (const category of ML_CATEGORIES) {
-    next = pushAction(next, { kind: category, pure: true, snapshot: snapshotMlCategory(edit, category), appliedAt });
-  }
-  return next;
+  const next = clearCategoryActions(stack);
+  return pushAction(next, { kind: "enhance", mode, pure: true, snapshot: snapshotForEnhance(edit), appliedAt });
 }
 
 /**
@@ -154,24 +156,6 @@ export function enhanceFromStack(stack: ActionStack): { mode: EnhanceMode; pure:
   return entry ? { mode: entry.mode ?? "classic", pure: entry.pure } : null;
 }
 
-/** Per-category highlight flags: set while the recipe holds exactly the auto values. */
-export function mlAppliedFromStack(stack: ActionStack): Partial<Record<MlCategory, boolean>> {
-  const applied: Partial<Record<MlCategory, boolean>> = {};
-  for (const category of ML_CATEGORIES) {
-    if (actionEntry(stack, category)?.pure) applied[category] = true;
-  }
-  return applied;
-}
-
-/** Per-category revert flags: set while a pre-apply snapshot exists, even after manual edits. */
-export function mlRevertFromStack(stack: ActionStack): Partial<Record<MlCategory, boolean>> {
-  const revert: Partial<Record<MlCategory, boolean>> = {};
-  for (const category of ML_CATEGORIES) {
-    if (actionEntry(stack, category)) revert[category] = true;
-  }
-  return revert;
-}
-
 const EDIT_STATE_KEYS = new Set<string>([
   ...Object.keys(DEFAULT_EDIT),
   "sceneEnhance",
@@ -182,7 +166,9 @@ const EDIT_STATE_KEYS = new Set<string>([
 
 /**
  * Sanitize a stack across the persistence boundary (server load/save, seed).
- * Drops unknown kinds, entries without a usable snapshot or timestamp, and
+ * Drops unknown kinds, legacy per-category entries (nothing pushes them
+ * since the header-toggle conversion — the toggles read the recipe, not
+ * the stack), entries without a usable snapshot or timestamp, and
  * duplicate kinds (first wins, preserving application order); unknown
  * snapshot keys are stripped. Never throws — garbage in, empty stack out.
  */
@@ -193,7 +179,7 @@ export function sanitizeActionStack(value: unknown): ActionStack {
   for (const candidate of value) {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
     const record = candidate as Record<string, unknown>;
-    if (record.kind !== "enhance" && !ML_CATEGORIES.includes(record.kind as MlCategory)) continue;
+    if (record.kind !== "enhance") continue;
     const kind = record.kind as AutoActionKind;
     if (seen.has(kind)) continue;
     const snapshot = record.snapshot;

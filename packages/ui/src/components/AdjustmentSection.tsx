@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
-import { IconButton } from './EditorUI.js';
+import { IconButton, Toggle } from './EditorUI.js';
 
 export interface AdjustmentMl {
   /** Testid prefix: `${id}-ml` for the button (`-auto` for kind 'auto'). */
@@ -21,6 +21,19 @@ export interface AdjustmentMl {
   hint?: string;
 }
 
+export interface AdjustmentToggle {
+  /** Testid: `${id}-toggle`. */
+  id: string;
+  /** On = the tool holds an effect (auto-applied or hand-tweaked); off = defaults. */
+  checked: boolean;
+  /** Off-to-on applies the suggested change; on-to-off resets to defaults. */
+  onToggle: () => void;
+  /** Disable the switch (e.g. Denoise while working or with no ISO suggestion). */
+  disabled?: boolean;
+  /** Tooltip; the switch itself is labeled with the section title. */
+  hint: string;
+}
+
 export interface AdjustmentSectionProps {
   title: string;
   icon: ReactNode;
@@ -30,6 +43,8 @@ export interface AdjustmentSectionProps {
   badge?: ReactNode;
   /** Per-section automatic action (ML or Auto heuristic); omit for sections with no automatic action. */
   ml?: AdjustmentMl;
+  /** Header on/off switch (the Color Adjustments sections); omit where the header keeps the ML/Auto button (Repair) or just a reset (manual sections). */
+  toggle?: AdjustmentToggle;
   /** Controlled visibility; omit for the self-managed disclosure default. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -43,11 +58,13 @@ export interface AdjustmentSectionProps {
  * categories, ML Enhance, and every Repair section). Keep collapse-only
  * markup differences to `is-collapsed` / `aria-expanded` / the chevron —
  * the heading must measure identically open and collapsed, or toggling
- * shifts the surrounding text (see collapsePanels.test.tsx). The header
- * carries no toggle: on/off lives in the content (bypass switches,
- * effect buttons), the header carries at most the reset + the action.
+ * shifts the surrounding text (see collapsePanels.test.tsx). A Color
+ * Adjustments header carries one switch: on applies the suggested change,
+ * off resets to defaults (manual tweaks light it on their own), so those
+ * sections carry no reset button. Repair headers keep the ML/Auto button,
+ * manual sections keep the reset.
  */
-export function AdjustmentSection({ title, icon, children, initiallyOpen = true, badge, ml, open: controlledOpen, onOpenChange, onReset, dirty = false }: AdjustmentSectionProps) {
+export function AdjustmentSection({ title, icon, children, initiallyOpen = true, badge, ml, toggle, open: controlledOpen, onOpenChange, onReset, dirty = false }: AdjustmentSectionProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(initiallyOpen);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = (next: boolean) => {
@@ -79,5 +96,5 @@ export function AdjustmentSection({ title, icon, children, initiallyOpen = true,
   // the reset — collapsing hides the sliders, never the header controls.
   const resetActive = dirty || Boolean(ml?.canRevert);
   const onResetClick = ml && ml.canRevert ? ml.onRevert : onReset;
-  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onReset && resetActive && <IconButton className="section-reset is-dirty" label={`Reset ${lower}`} onClick={onResetClick}><RotateCcw size={11} /></IconButton>}{ml && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} data-tooltip={actionHint} disabled={ml.disabled} onClick={ml.onToggle}>{actionLabel}</button>}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
+  return <section className={`adjustment-section ${!open ? 'is-collapsed' : ''}`}><div className="adjustment-heading"><button className="section-disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<span className="adjustment-section-icon">{icon}</span><h3>{title}</h3>{badge}</button><div className="section-actions">{onReset && resetActive && <IconButton className="section-reset is-dirty" label={`Reset ${lower}`} onClick={onResetClick}><RotateCcw size={11} /></IconButton>}{ml && <button className={`${actionClass}${ml.applied ? ' is-active' : ''}`} data-testid={`${ml.id}-${kind}`} aria-pressed={ml.applied} data-tooltip={actionHint} disabled={ml.disabled} onClick={ml.onToggle}>{actionLabel}</button>}{toggle && <Toggle checked={toggle.checked} onChange={toggle.onToggle} label={title} testId={`${toggle.id}-toggle`} hint={toggle.hint} disabled={toggle.disabled} />}</div></div>{open && <div className="adjustment-content">{children}</div>}</section>;
 }

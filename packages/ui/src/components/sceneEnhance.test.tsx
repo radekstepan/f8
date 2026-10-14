@@ -69,9 +69,9 @@ function renderAdjust(edit: EditState, onAutoScene?: () => void, enhance?: { mod
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -87,46 +87,46 @@ describe('scene enhance row', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT })).not.toContain('data-testid="scene-enhance"');
   });
 
-  it('runs scene enhance from a header Auto button, never a repeated bar', () => {
+  it('runs scene enhance from a header toggle, never a repeated bar', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, noop);
     expect(html).toContain('data-testid="scene-enhance"');
-    expect(html).toContain('data-testid="scene-enhance-auto"');
+    expect(html).toContain('data-testid="scene-enhance-toggle"');
     expect(html).not.toContain('data-testid="scene-enhance-ml"');
-    expect(html).toContain('class="auto-small" data-testid="scene-enhance-auto"');
-    expect(html).toContain('aria-pressed="false"');
+    expect(html).not.toContain('data-testid="scene-enhance-auto"');
+    expect(html).toContain('class="toggle" data-testid="scene-enhance-toggle"');
+    expect(html).toContain('aria-checked="false"');
     expect(html).toContain('data-tooltip="Apply scene enhance automatically"');
-    expect(html).toMatch(/data-testid="scene-enhance-auto"[^>]*>Auto<\/button>/);
     expect(html).toContain('Classify the scene automatically');
-    // No apply bar repeating the section title, and no badge doubling the
-    // header button.
+    // No apply bar repeating the section title; no ML badge (a heuristic
+    // auto runs here, not a model) and no reset (the toggle reverts).
     expect(html).not.toContain('data-testid="scene-enhance-apply"');
     expect(html).not.toContain('ml-badge');
     expect(html).not.toContain('aria-label="Reset scene enhance"');
   });
 
-  it('highlights the header Auto button and offers reset while applied', () => {
+  it('lights the header toggle while applied, with no reset beside it', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       noop,
       { mode: 'scene', pure: true },
     );
-    expect(html).toContain('class="auto-small is-active" data-testid="scene-enhance-auto"');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('data-tooltip="Scene Enhance applied — click to revert"');
-    expect(html).toContain('section-reset is-dirty" data-tooltip="Reset scene enhance"');
+    expect(html).toContain('class="toggle is-on" data-testid="scene-enhance-toggle"');
+    expect(html).toContain('aria-checked="true"');
+    expect(html).toContain('data-tooltip="Scene enhance on — click to revert"');
+    expect(html).not.toContain('aria-label="Reset scene enhance"');
   });
 
   it('keeps the section title visible before and after applying', () => {
     const idle = renderAdjust({ ...DEFAULT_EDIT }, noop);
     expect(idle).toContain('<h3>Scene Enhance</h3>');
-    expect(idle).toContain('data-testid="scene-enhance-auto"');
+    expect(idle).toContain('data-testid="scene-enhance-toggle"');
     const applied = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       noop,
       { mode: 'scene', pure: true },
     );
     expect(applied).toContain('<h3>Scene Enhance</h3>');
-    expect(applied).toContain('data-testid="scene-enhance-auto"');
+    expect(applied).toContain('data-testid="scene-enhance-toggle"');
     expect(applied).not.toContain('data-testid="scene-enhance-apply"');
   });
 
@@ -202,11 +202,9 @@ function ReloadProbe({ seed }: { seed: EditorSeed }) {
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
-      onRevertWhiteBalance={noop}
-      onRevertLightness={noop}
-      onRevertColor={noop}
-      mlApplied={editor.mlApplied}
-      mlRevert={editor.mlRevert}
+      onResetWhiteBalance={noop}
+      onResetLightness={noop}
+      onResetColor={noop}
       onCopy={noop}
       onPaste={noop}
       onSavePreset={noop}
@@ -228,7 +226,7 @@ describe('scene enhance reload', () => {
 
   function EnhanceSeedProbe({ seed, photoId }: { seed: EditorSeed; photoId: string }) {
     const editor = useEditor(photoId, { initial: seed });
-    return <span data-testid="enhance-seed" data-mode={editor.enhanceMode ?? 'none'} data-pure={String(editor.enhancePure)} data-revert={String(editor.enhanceCanRevert)} data-wb={`${String(Boolean(editor.mlApplied.whiteBalance))}/${String(Boolean(editor.mlRevert.whiteBalance))}`} data-lightness={`${String(Boolean(editor.mlApplied.lightness))}/${String(Boolean(editor.mlRevert.lightness))}`} data-color={`${String(Boolean(editor.mlApplied.color))}/${String(Boolean(editor.mlRevert.color))}`} />;
+    return <span data-testid="enhance-seed" data-mode={editor.enhanceMode ?? 'none'} data-pure={String(editor.enhancePure)} data-revert={String(editor.enhanceCanRevert)} />;
   }
 
   const seedHtml = (seed: EditorSeed, photoId = 'p1'): string =>
@@ -243,8 +241,8 @@ describe('scene enhance reload', () => {
   }];
 
   it('restores the scene highlight and revert from the persisted stack', () => {
-    // The reload state: recipe plus its action stack — the Auto button keeps
-    // its highlight AND its revert instead of reopening idle.
+    // The reload state: recipe plus its action stack — the scene toggle
+    // reopens on AND revertible instead of reopening idle.
     const html = seedHtml(seedFor(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       sceneStack,
@@ -266,19 +264,33 @@ describe('scene enhance reload', () => {
     expect(html).toContain('data-revert="true"');
   });
 
-  it('restores every per-category auto highlight and revert from the stack', () => {
+  it('drops legacy per-category entries: section toggles light from the dirty values instead', () => {
+    // A pre-toggle persisted stack still carries category entries: the
+    // seed sanitizer drops them (nothing reads them anymore) while the
+    // enhance entry restores — and the dirty sections light their
+    // toggles straight from the recipe values.
     const html = seedHtml(seedFor({ ...DEFAULT_EDIT, temperature: 5800, tint: 6, exposure: 0.2 }, [
+      ...sceneStack,
       { kind: 'whiteBalance', pure: true, snapshot: { temperature: 5500, tint: 0 }, appliedAt: '2026-10-13T00:00:00.000Z' },
       { kind: 'lightness', pure: false, snapshot: { exposure: 0 }, appliedAt: '2026-10-13T00:01:00.000Z' },
     ]));
-    expect(html).toContain('data-wb="true/true"');
-    expect(html).toContain('data-lightness="false/true"');
-    expect(html).toContain('data-color="false/false"');
+    expect(html).toContain('data-mode="scene"');
+    expect(html).toContain('data-pure="true"');
+    expect(html).toContain('data-revert="true"');
+    const reloaded = renderToStaticMarkup(<ReloadProbe seed={seedFor(
+      { ...DEFAULT_EDIT, temperature: 5800, tint: 6, exposure: 0.2, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
+      sceneStack,
+    )} />);
+    expect(reloaded).toContain('class="toggle is-on" data-testid="scene-enhance-toggle"');
+    expect(reloaded).toContain('class="toggle is-on" data-testid="white-balance-toggle"');
+    expect(reloaded).toContain('class="toggle is-on" data-testid="lightness-toggle"');
+    expect(reloaded).toContain('class="toggle" data-testid="color-toggle"');
+    expect(reloaded).not.toContain('section-reset');
   });
 
   it('seeds no highlight from persisted flags alone (legacy stack-less recipe)', () => {
     // Pre-stack recipes carry the auto flags but no revert snapshot — the
-    // buttons reopen idle (never enabled-without-a-reset) until a fresh
+    // controls reopen idle (never enabled-without-a-reset) until a fresh
     // apply pushes a stack entry.
     const html = seedHtml(seedFor({ ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } }));
     expect(html).toContain('data-mode="none"');
@@ -294,18 +306,18 @@ describe('scene enhance reload', () => {
     ), 'p2')).toContain('data-mode="none"');
   });
 
-  it('renders the reloaded auto applied with its reset and scene badge', () => {
+  it('renders the reloaded scene enhance on, with its scene badge and no reset', () => {
     // The full reload wiring in one render: the seeded editor drives the
-    // Inspector, so the Auto button highlights, the reset restores the
-    // persisted snapshot, and the scene badge still shows what ran.
+    // Inspector, so the scene toggle reopens on (toggling off restores
+    // the persisted snapshot) and the scene badge still shows what ran.
     const html = renderToStaticMarkup(<ReloadProbe seed={seedFor(
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       sceneStack,
     )} />);
-    expect(html).toContain('class="auto-small is-active" data-testid="scene-enhance-auto"');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('data-tooltip="Scene Enhance applied — click to revert"');
-    expect(html).toContain('aria-label="Reset scene enhance"');
+    expect(html).toContain('class="toggle is-on" data-testid="scene-enhance-toggle"');
+    expect(html).toContain('aria-checked="true"');
+    expect(html).toContain('data-tooltip="Scene enhance on — click to revert"');
+    expect(html).not.toContain('aria-label="Reset scene enhance"');
     expect(html).toContain('data-testid="scene-enhance-scene"');
   });
 
@@ -314,21 +326,22 @@ describe('scene enhance reload', () => {
       { ...DEFAULT_EDIT, autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 } },
       noop,
     );
-    expect(html).toContain('class="auto-small" data-testid="scene-enhance-auto"');
-    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('class="toggle" data-testid="scene-enhance-toggle"');
+    expect(html).toContain('aria-checked="false"');
     expect(html).toContain('data-tooltip="Apply scene enhance automatically"');
     expect(html).toContain('data-testid="scene-enhance-scene"');
     expect(html).not.toContain('aria-label="Reset scene enhance"');
   });
 
-  it('keeps per-section resets for reloaded enhance values', () => {
-    // The stored values are still adjustable after a reload through the
-    // per-section (and toolbar) resets, alongside the persisted revert.
+  it('keeps per-section toggles on for reloaded enhance values', () => {
+    // The stored values light their section toggles after a reload (the
+    // manual Details section keeps its reset), alongside the persisted
+    // whole-photo revert.
     const html = renderAdjust(
       { ...DEFAULT_EDIT, autoEnhanced: true, exposure: 0.22, clarity: 12 },
       noop,
     );
-    expect(html).toContain('aria-label="Reset lightness"');
+    expect(html).toContain('class="toggle is-on" data-testid="lightness-toggle"');
     expect(html).toContain('aria-label="Reset details"');
   });
 });
