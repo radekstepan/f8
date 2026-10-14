@@ -213,6 +213,7 @@ its chevron glyph off the toggle edge. */
 .photo-frame.is-pannable, .photo-frame.is-panning { user-select: none; -webkit-user-select: none; }
 .brush-cursor { position: absolute; border: 1px solid white; box-shadow: 0 0 0 1px #0008; border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%); z-index: 6; }
 .zoom-lens { position: absolute; right: 12px; bottom: 12px; overflow: hidden; pointer-events: none; z-index: 7; border: 1.5px solid #e8e8ec; border-radius: 3px; box-shadow: 0 6px 24px #000a, 0 0 0 1px #0008; background: #101012; }
+.zoom-lens.is-outside { right: auto; left: calc(100% + 12px); bottom: 0; }
 .zoom-lens canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .zoom-lens-label { position: absolute; right: 9px; bottom: 9px; font-size: 9px; font-weight: 600; color: #ececef; background: #16161a9c; padding: 2px 6px; border-radius: 999px; backdrop-filter: blur(10px); }
 .tool-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); width: fit-content; max-width: 90%; font-size: 10px; color: #d4d0c7; background: #292824ed; border: 1px solid #4b463a; padding: 6px 10px; border-radius: 4px; z-index: 6; opacity: 1; transition: opacity 0.5s ease; pointer-events: none; }

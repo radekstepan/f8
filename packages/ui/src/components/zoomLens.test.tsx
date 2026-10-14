@@ -10,8 +10,9 @@ import { PhotoCanvas } from './PhotoCanvas.js';
 
 // Zoom in View: a View-menu submenu in its own section under the Show items with 4x/8x/16x
 // options (8x is the default and the only one with a shortcut, Z) that
-// shows a fixed square preview in the photo's bottom-right corner in
-// photo (editor) view only. The pane paints from the edited canvas in an
+// shows a fixed square preview in photo (editor) view only — docked
+// right of the photo when the stage has room, else overlaying the
+// photo's bottom-right corner. The pane paints from the edited canvas in an
 // effect (unreachable from server rendering, like the minimap mirror),
 // compositing the original side while Compare is on and the repair brush
 // circle while Repair is on — so the paint math is unit-tested in
@@ -197,8 +198,15 @@ describe('zoom-in-view preview pane', () => {
 
   it('gates the preview markup on the toggle alone (fixed pane, no cursor needed)', () => {
     const source = canvasSource();
-    expect(source).toContain('{showLens && <div className="zoom-lens" data-testid="zoom-lens"');
+    expect(source).toContain('{showLens && <div className={`zoom-lens${lensDockedOutside ? \' is-outside\' : \'\'}`} data-testid="zoom-lens"');
     expect(source).not.toContain('lensCenter');
+  });
+
+  it('docks the preview right of the frame when the stage has room, from render-derived sizes', () => {
+    // Synchronous from stageSize + frame dims (no viewport/effect lag),
+    // so zooming in/out never flashes the wrong placement for a frame.
+    const source = canvasSource();
+    expect(source).toContain('shouldDockZoomLensOutside(stageSize, { width: frameWidth, height: frameHeight })');
   });
 
   it('previews the frame center before the cursor enters the photo', () => {
@@ -244,6 +252,15 @@ describe('zoom-in-view preview pane', () => {
     expect(rule).toMatch(/overflow\s*:\s*hidden/);
     expect(cssRule('.zoom-lens canvas')).toMatch(/width\s*:\s*100%/);
     expect(cssRule('.zoom-lens-label')).toMatch(/position\s*:\s*absolute/);
+  });
+
+  it('docks the preview outside the frame, bottom-aligned with a frame gap, when there is room', () => {
+    // Still absolutely positioned inside the frame element (scrolls with
+    // the photo), just offset past its right edge instead of inset.
+    const rule = cssRule('.zoom-lens.is-outside');
+    expect(rule).toMatch(/left\s*:\s*calc\(100%\s*\+\s*12px\)/);
+    expect(rule).toMatch(/right\s*:\s*auto/);
+    expect(rule).toMatch(/bottom\s*:\s*0/);
   });
 
   it('styles the flyout right of the parent item with full rounding', () => {

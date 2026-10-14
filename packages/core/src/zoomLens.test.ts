@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   ZOOM_LENS_MAGNIFICATION,
   ZOOM_LENS_MAGNIFICATIONS,
+  ZOOM_LENS_OUTSIDE_GAP_PX,
   ZOOM_LENS_SIZE_PX,
+  shouldDockZoomLensOutside,
   shouldShowZoomLens,
   zoomLensBrushRadius,
   zoomLensDestPoint,
@@ -163,6 +165,53 @@ describe("zoomLensOriginalOverlay", () => {
     expect(zoomLensOriginalOverlay(50, { width: 0, height: 800 }, rect, lens)).toBeNull();
     expect(zoomLensOriginalOverlay(50, canvas, { ...rect, sw: 0 }, lens)).toBeNull();
     expect(zoomLensOriginalOverlay(Number.NaN, canvas, rect, lens)).toBeNull();
+  });
+});
+
+describe("shouldDockZoomLensOutside", () => {
+  it("docks the pane beside a portrait frame with room to spare", () => {
+    // Stage 1000x600, portrait frame 300x450: each side holds 350px,
+    // well past the 180px pane plus a gap on each side.
+    expect(shouldDockZoomLensOutside({ width: 1000, height: 600 }, { width: 300, height: 450 })).toBe(true);
+  });
+
+  it("keeps the corner overlay when a landscape frame fills the width", () => {
+    // 900px frame in a 1000px stage: 50px a side cannot hold the pane.
+    expect(shouldDockZoomLensOutside({ width: 1000, height: 600 }, { width: 900, height: 560 })).toBe(false);
+  });
+
+  it("keeps the corner overlay once zooming pushes the frame past the stage", () => {
+    expect(shouldDockZoomLensOutside({ width: 800, height: 520 }, { width: 1472, height: 920 })).toBe(false);
+  });
+
+  it("keeps the corner overlay when the stage is too short for the bottom-aligned pane", () => {
+    // Plenty of side room (350px) but the 180px pane would poke above
+    // the 200px stage when bottom-aligned with the 150px frame.
+    expect(shouldDockZoomLensOutside({ width: 800, height: 200 }, { width: 100, height: 150 })).toBe(false);
+  });
+
+  it("docks with exactly enough room on each side", () => {
+    // Each side holds exactly the pane plus a gap on both sides.
+    const side = ZOOM_LENS_SIZE_PX + ZOOM_LENS_OUTSIDE_GAP_PX * 2;
+    const frame = { width: 300, height: 450 };
+    expect(shouldDockZoomLensOutside({ width: 300 + side * 2, height: 600 }, frame)).toBe(true);
+    expect(shouldDockZoomLensOutside({ width: 300 + side * 2 - 1, height: 600 }, frame)).toBe(false);
+  });
+
+  it("honors a custom pane size and gap", () => {
+    // 350px a side holds a 300px pane with a 12px gap but not a 340px one.
+    expect(shouldDockZoomLensOutside({ width: 1000, height: 600 }, { width: 300, height: 450 }, 300, 12)).toBe(true);
+    expect(shouldDockZoomLensOutside({ width: 1000, height: 600 }, { width: 300, height: 450 }, 340, 12)).toBe(false);
+  });
+
+  it("returns false for degenerate inputs", () => {
+    const stage = { width: 1000, height: 600 };
+    const frame = { width: 300, height: 450 };
+    expect(shouldDockZoomLensOutside({ width: 0, height: 600 }, frame)).toBe(false);
+    expect(shouldDockZoomLensOutside(stage, { width: 300, height: 0 })).toBe(false);
+    expect(shouldDockZoomLensOutside({ width: Number.NaN, height: 600 }, frame)).toBe(false);
+    expect(shouldDockZoomLensOutside(stage, frame, 0)).toBe(false);
+    expect(shouldDockZoomLensOutside(stage, frame, ZOOM_LENS_SIZE_PX, -1)).toBe(false);
   });
 });
 

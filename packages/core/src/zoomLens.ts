@@ -3,11 +3,13 @@
  * The View menu carries a "Zoom in View" submenu (under the Show items)
  * with 4x/8x/16x options — 8x is the default and the only one with a
  * shortcut (Z) — that is only meaningful on an open photo: while enabled,
- * a fixed square preview pane sits in the photo's bottom-right corner and
- * shows the region under the cursor magnified, Photoshop-navigator style.
- * The magnification is relative to the displayed photo (the fitted/zoomed
- * frame), not to source pixels — like the zoom percentages in the canvas
- * status bar.
+ * a fixed square preview pane shows the region under the cursor
+ * magnified, Photoshop-navigator style. The pane docks right of the
+ * photo, bottom-aligned with the frame, when the stage has room (a
+ * portrait photo in a wide stage); otherwise it overlays the photo's
+ * bottom-right corner. The magnification is relative to the displayed
+ * photo (the fitted/zoomed frame), not to source pixels — like the zoom
+ * percentages in the canvas status bar.
  *
  * The pane itself lives in PhotoCanvas (it paints from the edited canvas
  * so crop, rotation, and adjustments match the frame, compositing the
@@ -28,6 +30,9 @@ export type ZoomLensMagnification = (typeof ZOOM_LENS_MAGNIFICATIONS)[number];
 
 /** Preview pane side length in CSS pixels. */
 export const ZOOM_LENS_SIZE_PX = 180;
+
+/** Gap between the photo frame and the docked-outside preview, in CSS pixels. */
+export const ZOOM_LENS_OUTSIDE_GAP_PX = 12;
 
 /** Frame-fraction point (0..1 in each axis). */
 export interface LensFraction {
@@ -52,6 +57,41 @@ export interface ZoomLensSourceRect {
 /** True only when the preview may show: toggled on and in photo (editor) view. */
 export function shouldShowZoomLens(view: ViewMode, enabled: boolean): boolean {
   return enabled && view === "editor";
+}
+
+/**
+ * True when the preview docks right of the photo frame (bottom-aligned
+ * with it) instead of overlaying its bottom-right corner: the centered
+ * frame must leave room for the pane plus a gap on each side, and the
+ * bottom-aligned pane must not poke above the stage. The inner box grows
+ * past the stage when the frame overflows it at high zoom (64px/48px of
+ * stage padding, mirroring `.canvas-stage-inner` and the fit math in
+ * PhotoCanvas), so a zoomed frame always fails the sideways check and
+ * keeps the corner overlay. Degenerate inputs yield false.
+ */
+export function shouldDockZoomLensOutside(
+  stage: LensSize,
+  frame: LensSize,
+  lensSize: number = ZOOM_LENS_SIZE_PX,
+  gap: number = ZOOM_LENS_OUTSIDE_GAP_PX,
+): boolean {
+  if (
+    !Number.isFinite(stage.width) || stage.width <= 0 ||
+    !Number.isFinite(stage.height) || stage.height <= 0 ||
+    !Number.isFinite(frame.width) || frame.width <= 0 ||
+    !Number.isFinite(frame.height) || frame.height <= 0 ||
+    !Number.isFinite(lensSize) || lensSize <= 0 ||
+    !Number.isFinite(gap) || gap < 0
+  ) {
+    return false;
+  }
+  const innerWidth = Math.max(stage.width, frame.width + 64);
+  const innerHeight = Math.max(stage.height, frame.height + 48);
+  const frameLeft = (innerWidth - frame.width) / 2;
+  const frameTop = (innerHeight - frame.height) / 2;
+  const paneRight = frameLeft + frame.width + gap + lensSize;
+  const paneTop = frameTop + frame.height - lensSize;
+  return paneRight <= innerWidth - gap && paneTop >= 0;
 }
 
 const clamp = (value: number, min: number, max: number): number =>
