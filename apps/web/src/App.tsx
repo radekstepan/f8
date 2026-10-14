@@ -501,15 +501,19 @@ export default function App() {
     );
   }, [albums, photos, library, notify, notifyError]);
 
-  // Album thumbnails pick a representative photo (favorite first, then
-  // highest-rated, then first by filename) and store its thumbnail URL as
+  // Album thumbnails pick a random photo from the most interesting tier
+  // (favorites first, else highest-rated) and store its thumbnail URL as
   // the album cover, which the sidebar row renders. The pick runs over the
   // full library, not the filtered grid, so a narrowed grid still covers
-  // the whole album. Empty albums report instead of calling the server.
+  // the whole album, and excludes the current cover so repeated clicks
+  // move to a different photo. Empty albums report instead of calling
+  // the server.
   const generateAlbumThumbnail = useCallback((id: string) => {
     const target = albums.find((entry) => entry.id === id);
     if (!target) return;
-    const cover = pickAlbumCover(photos.filter((item) => item.albumId === id));
+    const cover = pickAlbumCover(photos.filter((item) => item.albumId === id), {
+      exclude: target.cover || undefined,
+    });
     if (!cover) {
       notify(`"${target.name}" has no photos yet.`);
       return;
