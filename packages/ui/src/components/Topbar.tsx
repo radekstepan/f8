@@ -85,7 +85,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
 }
 
 interface ToolbarProps {
-  /** Null while the photo's collection is not yet known: the backlink renders an empty pending placeholder rather than a wrong name. Never null in the library grid. */
+  /** Null while the photo's collection is not yet known: the backlink renders nothing rather than a wrong name, then fades in once known. Never null in the library grid. */
   collectionName: string | null;
   count: number;
   tool: Tool;
@@ -122,9 +122,7 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
           {showBacklink ? (
             collectionName ? (
               <button className="photo-backlink" aria-label={`Back to ${collectionName}`} data-tooltip={`Back to ${collectionName} (G)`} onClick={() => onAction('back')}><ChevronLeft size={14} className="backlink-chevron" aria-hidden="true" /><span className="backlink-name">{collectionName}</span></button>
-            ) : (
-              <span className="backlink-pending" aria-hidden="true" />
-            )
+            ) : null
           ) : (
             <div className="collection-title"><span className="collection-name">{collectionName}</span><span className="collection-count">{count} photos</span></div>
           )}

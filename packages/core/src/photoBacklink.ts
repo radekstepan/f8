@@ -29,8 +29,9 @@ export function shouldShowPhotoBacklink(view: ViewMode): boolean {
  * On a hard reload of a photo URL the collection state starts at the 'all'
  * default and the inference effect adopts the photo's album only after the
  * first paint, so naming `collection` directly flashes "All Photos" before
- * the correct category. Null means "render a pending placeholder, never a
- * guess": no photo yet, or the initial inference has not run. Once settled
+ * the correct category. Null means "render nothing, never a guess": no
+ * photo yet, or the initial inference has not run — the backlink then
+ * fades in with the album name. Once settled
  * a photo outside the current collection already names its target album
  * (exactly what the inference effect is about to set), so a filmstrip
  * switch across albums never flashes the stale name for a frame either.

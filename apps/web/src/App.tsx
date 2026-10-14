@@ -101,9 +101,10 @@ export default function App() {
   // False until the photo-driven collection inference below has run once.
   // On a photo deep-link the collection starts at the 'all' placeholder and
   // adopting the photo's album happens after the first paint — until then
-  // the backlink renders a pending placeholder instead of flashing the
-  // wrong "All Photos" name. Grid loads start settled: the URL names the
-  // collection and there is no photo to wait for.
+  // the backlink renders nothing instead of flashing the wrong "All
+  // Photos" name, then fades in with the album name. Grid loads start
+  // settled: the URL names the collection and there is no photo to wait
+  // for.
   const [collectionSettled, setCollectionSettled] = useState(start.view === 'library');
   const [search, setSearch] = useState('');
   // Grid multi-selection (Ctrl/Cmd-click, Shift-click, marquee): photo ids in
@@ -269,9 +270,10 @@ export default function App() {
   }, []);
   const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
   // What the toolbar backlink names: null while the photo's collection is
-  // not yet known (hard reload of a photo URL), so the toolbar shows an
-  // empty placeholder instead of flashing the wrong category. In the grid
-  // this always equals the collection — only the backlink can be pending.
+  // not yet known (hard reload of a photo URL), so the toolbar shows
+  // nothing instead of flashing the wrong category, then fades the link
+  // in. In the grid this always equals the collection — only the backlink
+  // can be pending.
   const backlinkCollection = resolveBacklinkCollection(view, photo ?? null, collection, collectionSettled);
   const backlinkName = backlinkCollection === null ? null : (albums.find((album) => album.id === backlinkCollection)?.name || collectionTitles[backlinkCollection] || 'Your Photos');
   const removeAlbumRow = dialog === 'remove-album' ? albums.find((album) => album.id === removeAlbumTargetId) ?? null : null;
