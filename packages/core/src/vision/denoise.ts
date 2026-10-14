@@ -106,6 +106,37 @@ export function dismissDenoiseStatus(state: DenoisePhase, hasBase: boolean): Den
   return null;
 }
 
+/**
+ * One step of the denoise pixels→recipe sync: the full-res pass lands
+ * pixels in the client hook first, and the app stores the matching recipe
+ * strength in one undo step. Each applied base syncs exactly once —
+ * `syncedBase` is the last base the app accounted for (identity-compared;
+ * every apply creates a fresh object), and the step returns the base to
+ * record plus whether this sighting must write the recipe.
+ *
+ * The identity guard is what keeps undo working: after undoing an apply
+ * the recipe diverges from the still-live base, and without it the sync
+ * would immediately re-store the strength — undo would look like it did
+ * nothing and the redo stack would be destroyed. A restore at the stored
+ * strength still records its base while writing nothing (pixels-only
+ * no-op), so a later undo past it stays undone too. A null base (clear,
+ * reset, photo switch) resets the record so the next apply syncs fresh.
+ */
+export function nextDenoiseRecipeSync<Base extends DenoiseState>(
+  syncedBase: Base | null,
+  base: Base | null | undefined,
+  recipe: DenoiseState | null | undefined,
+): { syncedBase: Base | null; writeRecipe: boolean } {
+  if (!base) return { syncedBase: null, writeRecipe: false };
+  if (syncedBase === base) return { syncedBase, writeRecipe: false };
+  const matches =
+    recipe != null &&
+    recipe.strength === base.strength &&
+    recipe.auto === base.auto &&
+    recipe.source === base.source;
+  return { syncedBase: base, writeRecipe: !matches };
+}
+
 /** True when a stored denoise state changes pixels (strength > 0). */
 export function isDenoiseActive(state: DenoiseState | null | undefined): state is DenoiseState {
   if (!state) return false;

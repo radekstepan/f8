@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
+import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, pickAlbumCover, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
@@ -17,7 +17,7 @@ import { useObjectRemoval } from './vision/useObjectRemoval';
 import { useDustSpots } from './vision/useDustSpots';
 import { useFaceEnhance } from './vision/useFaceEnhance';
 import { useSelectiveMask } from './vision/useSelectiveMask';
-import { useDenoise } from './vision/useDenoise';
+import { useDenoise, type DenoiseAppliedBase } from './vision/useDenoise';
 import { useSemanticSearch } from './vision/useSemanticSearch';
 import type { SelectiveAdjustParams, SelectiveTarget } from '@f8/core';
 import { useInpaintRepair } from './vision/useInpaintRepair';
@@ -751,14 +751,20 @@ export default function App() {
   }, [photo, denoise, handleEditChange]);
 
   // The full-res pass lands pixels in the hook first; this stores the
-  // matching recipe strength in one undo step. Guarded on equality so the
-  // patch never loops back in (and a restore at the stored strength is a
-  // pixels-only no-op for the recipe).
+  // matching recipe strength in one undo step. Each applied base syncs
+  // exactly once (tracked by identity): the old equality-only guard
+  // re-stored the strength right after an undo cleared it, so undoing a
+  // denoise looked like it did nothing (and wiped the redo stack). A
+  // restore at the stored strength stays a pixels-only no-op for the
+  // recipe.
   const denoiseBase = denoise.appliedBase;
   const denoiseRecipe = editor.edit.denoise;
+  const denoiseSyncedBase = useRef<DenoiseAppliedBase | null>(null);
   useEffect(() => {
-    if (!photo || !denoiseBase) return;
-    if (denoiseRecipe && denoiseRecipe.strength === denoiseBase.strength && denoiseRecipe.auto === denoiseBase.auto && denoiseRecipe.source === denoiseBase.source) return;
+    if (!photo) return;
+    const step = nextDenoiseRecipeSync(denoiseSyncedBase.current, denoiseBase, denoiseRecipe);
+    denoiseSyncedBase.current = step.syncedBase;
+    if (!step.writeRecipe || !denoiseBase) return;
     handleEditChange({ denoise: { strength: denoiseBase.strength, auto: denoiseBase.auto, source: denoiseBase.source } });
     notify(`Denoised${denoiseBase.source === 'onnx' ? ' (ML)' : ''}: strength ${denoiseBase.strength}.`);
   }, [photo, denoiseBase, denoiseRecipe, handleEditChange, notify]);

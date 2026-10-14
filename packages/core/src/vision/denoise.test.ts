@@ -7,12 +7,14 @@ import {
   dismissDenoiseStatus,
   effectiveDenoiseStrength,
   isDenoiseActive,
+  nextDenoiseRecipeSync,
   packDenoiseInput,
   parseDenoiseOutput,
   separateOriginalSrc,
   shouldAutoDenoise,
 } from "./denoise.js";
 import type { PixelImage } from "./analyze.js";
+import type { DenoiseState } from "../types.js";
 
 function flatImage(width: number, height: number, r: number, g: number, b: number): PixelImage {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -211,6 +213,75 @@ describe("denoiseClassic", () => {
     const high = lumaVariance(denoiseClassic(noisy, 100));
     expect(low).toBeLessThan(base);
     expect(high).toBeLessThan(low);
+  });
+});
+
+describe("nextDenoiseRecipeSync", () => {
+  const base = (strength: number): DenoiseState => ({ strength, auto: false, source: "onnx" });
+
+  it("writes the recipe once for a fresh base, then stays quiet on re-sightings", () => {
+    const fresh = base(45);
+    const first = nextDenoiseRecipeSync(null, fresh, null);
+    expect(first).toEqual({ syncedBase: fresh, writeRecipe: true });
+    // The recipe now matches (and any later render re-sights the same base).
+    const second = nextDenoiseRecipeSync(first.syncedBase, fresh, base(45));
+    expect(second).toEqual({ syncedBase: fresh, writeRecipe: false });
+  });
+
+  it("does not re-store the strength after undo clears the recipe (the reported bug)", () => {
+    const applied = base(45);
+    // Apply lands: recipe written.
+    let synced = nextDenoiseRecipeSync(null, applied, null);
+    expect(synced.writeRecipe).toBe(true);
+    // Undo clears the recipe while the pixels stay live: no rewrite, so the
+    // photo flips back to the original and the redo stack survives.
+    synced = nextDenoiseRecipeSync(synced.syncedBase, applied, null);
+    expect(synced).toEqual({ syncedBase: applied, writeRecipe: false });
+    // Redo restores the recipe from history: nothing to write either.
+    synced = nextDenoiseRecipeSync(synced.syncedBase, applied, base(45));
+    expect(synced).toEqual({ syncedBase: applied, writeRecipe: false });
+  });
+
+  it("syncs a second apply at a new strength exactly once", () => {
+    const first = base(45);
+    let synced = nextDenoiseRecipeSync(null, first, null);
+    expect(synced.writeRecipe).toBe(true);
+    const second = base(60);
+    synced = nextDenoiseRecipeSync(synced.syncedBase, second, base(45));
+    expect(synced).toEqual({ syncedBase: second, writeRecipe: true });
+    synced = nextDenoiseRecipeSync(synced.syncedBase, second, base(60));
+    expect(synced.writeRecipe).toBe(false);
+  });
+
+  it("treats a restore at the stored strength as a pixels-only no-op that still records", () => {
+    const restored = base(45);
+    // Recipe already holds 45 (e.g. Reload → Restore): no history entry.
+    let synced = nextDenoiseRecipeSync(null, restored, base(45));
+    expect(synced).toEqual({ syncedBase: restored, writeRecipe: false });
+    // But the sighting is recorded: a later undo past it must not resurrect the write.
+    synced = nextDenoiseRecipeSync(synced.syncedBase, restored, null);
+    expect(synced).toEqual({ syncedBase: restored, writeRecipe: false });
+  });
+
+  it("resets on a null base so the next apply after clear syncs fresh", () => {
+    const applied = base(45);
+    let synced = nextDenoiseRecipeSync(null, applied, null);
+    expect(synced.writeRecipe).toBe(true);
+    // Clear drops the pixels: record resets, nothing to write.
+    synced = nextDenoiseRecipeSync(synced.syncedBase, null, null);
+    expect(synced).toEqual({ syncedBase: null, writeRecipe: false });
+    // A fresh apply afterwards writes again.
+    const reapplied = base(45);
+    synced = nextDenoiseRecipeSync(synced.syncedBase, reapplied, null);
+    expect(synced).toEqual({ syncedBase: reapplied, writeRecipe: true });
+  });
+
+  it("compares auto and source too, not just the strength", () => {
+    const autoBase: DenoiseState = { strength: 50, auto: true, source: "onnx" };
+    // Same strength but manual in the recipe: still a mismatch, write it.
+    expect(nextDenoiseRecipeSync(null, autoBase, base(50)).writeRecipe).toBe(true);
+    const classicBase: DenoiseState = { strength: 50, auto: true, source: "classic" };
+    expect(nextDenoiseRecipeSync(null, classicBase, autoBase).writeRecipe).toBe(true);
   });
 });
 
