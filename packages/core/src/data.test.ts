@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_EDIT, INITIAL_EDIT, PRESETS, isDefaultEdit, isOriginalLook, patchBreaksEnhancePure, presetForPatch } from "./data.js";
+import { DEFAULT_EDIT, INITIAL_EDIT, PRESETS, RESET_PATCH, isDefaultEdit, isOriginalLook, patchBreaksEnhancePure, presetForPatch } from "./data.js";
 import type { EditState } from "./types.js";
 
 const stroke = { x: 0.5, y: 0.5, size: 0.05, strength: 100, kind: "repair" } as const;
@@ -107,6 +107,70 @@ describe("isDefaultEdit", () => {
     for (const patch of changed) {
       expect(isDefaultEdit({ ...DEFAULT_EDIT, ...patch })).toBe(false);
     }
+  });
+
+  it("accepts the exact recipe reset() produces (defaults + nulled ML fields)", () => {
+    expect(
+      isDefaultEdit({ ...DEFAULT_EDIT, sceneEnhance: null, faceAdjust: null, selectiveAdjust: null, denoise: null }),
+    ).toBe(true);
+  });
+
+  it("ignores key order", () => {
+    const reordered = Object.fromEntries(Object.entries({ ...DEFAULT_EDIT }).reverse()) as unknown as EditState;
+    expect(isDefaultEdit(reordered)).toBe(true);
+  });
+
+  it("rejects set ML look fields", () => {
+    const changed: Partial<EditState>[] = [
+      { sceneEnhance: { scene: "portrait", confidence: 0.9 } },
+      { faceAdjust: { boxes: [{ x0: 0, y0: 0, x1: 1, y1: 1 }], amount: 0.5, redEye: [], source: "onnx" } },
+      {
+        selectiveAdjust: {
+          maskB64: "AA==", maskWidth: 1, maskHeight: 1,
+          subject: { exposure: 0.5, contrast: 0, saturation: 0 },
+          background: { exposure: 0, contrast: 0, saturation: 0 },
+          source: "onnx",
+        },
+      },
+      { denoise: { strength: 40, auto: true, source: "onnx" } },
+    ];
+    for (const patch of changed) {
+      expect(isDefaultEdit({ ...DEFAULT_EDIT, ...patch })).toBe(false);
+    }
+  });
+
+  it("treats nulled and zero-strength denoise as default, like isOriginalLook", () => {
+    expect(isDefaultEdit({ ...DEFAULT_EDIT })).toBe(true);
+    expect(isDefaultEdit({ ...DEFAULT_EDIT, denoise: null })).toBe(true);
+    expect(isDefaultEdit({ ...DEFAULT_EDIT, denoise: { strength: 0, auto: false, source: "onnx" } })).toBe(true);
+  });
+});
+
+describe("RESET_PATCH", () => {
+  it("merges over a fully dirty edit back to the factory default", () => {
+    const dirty: EditState = {
+      ...DEFAULT_EDIT,
+      exposure: 1,
+      rotation: 90,
+      retouches: [{ ...stroke }],
+      preset: "Custom",
+      sceneEnhance: { scene: "night", confidence: 0.8 },
+      faceAdjust: { boxes: [{ x0: 0, y0: 0, x1: 1, y1: 1 }], amount: 0.5, redEye: [], source: "onnx" },
+      selectiveAdjust: {
+        maskB64: "AA==", maskWidth: 1, maskHeight: 1,
+        subject: { exposure: 0.5, contrast: 0, saturation: 0 },
+        background: { exposure: 0, contrast: 0, saturation: 0 },
+        source: "onnx",
+      },
+      denoise: { strength: 40, auto: true, source: "onnx" },
+    };
+    expect(isDefaultEdit(dirty)).toBe(false);
+    // Same merge useEditor.change() performs: spread the patch, then resolve
+    // the preset label with the real presetForPatch.
+    const next = { ...dirty, ...RESET_PATCH };
+    const present = { ...next, preset: presetForPatch(dirty.preset, RESET_PATCH) };
+    expect(present.denoise).toBeNull();
+    expect(isDefaultEdit(present)).toBe(true);
   });
 });
 

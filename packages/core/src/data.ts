@@ -17,11 +17,36 @@ export const INITIAL_EDIT: EditState = {
   preset: 'Natural',
 };
 
-/** True when the recipe matches the factory default exactly (preset included). */
+/**
+ * Patch that restores the factory-default recipe: every default value plus
+ * explicit nulls for the optional ML look fields, which are absent from
+ * DEFAULT_EDIT's keys and would otherwise survive a spread-merge reset.
+ */
+export const RESET_PATCH: Partial<EditState> = {
+  ...DEFAULT_EDIT,
+  sceneEnhance: null,
+  faceAdjust: null,
+  selectiveAdjust: null,
+  denoise: null,
+};
+
+/** Optional ML look fields: nullish (or off) counts as the factory default. */
+function isDefaultMlLook(edit: EditState): boolean {
+  if (edit.sceneEnhance != null || edit.faceAdjust != null || edit.selectiveAdjust != null) return false;
+  // Strength 0 is off (see DenoiseState), matching isOriginalLook.
+  return edit.denoise == null || edit.denoise.strength <= 0;
+}
+
+/**
+ * True when the recipe matches the factory default exactly (preset
+ * included). Compares per key — never via JSON.stringify, which trips on
+ * key order and on the optional ML fields that reset() nulls out.
+ */
 export function isDefaultEdit(edit: EditState): boolean {
-  const { retouches, ...rest } = edit;
-  const { retouches: _base, ...base } = DEFAULT_EDIT;
-  return retouches.length === 0 && JSON.stringify(rest) === JSON.stringify(base);
+  if (edit.retouches.length !== 0 || !isDefaultMlLook(edit)) return false;
+  return (Object.keys(DEFAULT_EDIT) as (keyof EditState)[]).every(
+    (key) => key === 'retouches' || edit[key] === DEFAULT_EDIT[key],
+  );
 }
 
 /**

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EDIT, INITIAL_EDIT, ML_CATEGORIES, ML_CATEGORY_ENABLED_KEY, actionEntry, clearCategoryActions, clearEnhanceAction, clearPureOnPatch, computeAutoEnhance, computeColorAuto, computeLightnessAuto, computeSceneAwareEnhance, computeWhiteBalanceAuto, decodeDownsampled, enhanceFromStack, isDefaultEdit, isOriginalLook, mlAppliedFromStack, mlRevertFromStack, presetForPatch, pushAction, revertAction, sanitizeActionStack, snapshotForEnhance, snapshotMlCategory } from '@f8/core';
+import { DEFAULT_EDIT, INITIAL_EDIT, ML_CATEGORIES, ML_CATEGORY_ENABLED_KEY, RESET_PATCH, actionEntry, clearCategoryActions, clearEnhanceAction, clearPureOnPatch, computeAutoEnhance, computeColorAuto, computeLightnessAuto, computeSceneAwareEnhance, computeWhiteBalanceAuto, decodeDownsampled, enhanceFromStack, isDefaultEdit, isOriginalLook, mlAppliedFromStack, mlRevertFromStack, presetForPatch, pushAction, revertAction, sanitizeActionStack, snapshotForEnhance, snapshotMlCategory } from '@f8/core';
 import type { ActionStack, EditState, EnhanceMode, HistoryState, MlCategory, PixelImage, Preset } from '@f8/core';
 
 const initialHistory = (_id?: string): HistoryState => ({
@@ -237,7 +237,7 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
       if (hadStack) schedulePersist(photoId, history.present);
       return false;
     }
-    change({ ...DEFAULT_EDIT, sceneEnhance: null, faceAdjust: null, selectiveAdjust: null });
+    change({ ...RESET_PATCH });
     return true;
   }, [change, clearMl, clearEnhance, history.present, photoId, schedulePersist]);
   // Classic and ML scene enhance share one stack slot and one revert: each
