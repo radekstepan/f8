@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Clock3, MoreHorizontal, Folder, Heart, Images, Import, Plus, Search, Star } from 'lucide-react';
 import type { Album, Photo } from '@f8/core';
-import { MOVE_PHOTOS_MIME, anchorMenuBelowTrigger, decodeMovePayload, isRecentlyEdited, ratingCollectionId, ratingCollectionLabel, savedRatings } from '@f8/core';
+import { MOVE_PHOTOS_MIME, anchorMenuBelowTrigger, decodeMovePayload, isRecentlyEdited, ratingCollectionId, ratingCollectionLabel, savedRatings, sortSidebarAlbums } from '@f8/core';
 import { IconButton, MenuItem, MenuSeparator } from './EditorUI.js';
 import { useIsomorphicLayoutEffect } from '../hooks/useIsomorphicLayoutEffect.js';
 import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
@@ -141,7 +141,7 @@ export function Sidebar({ photos, albums, collection, search, onSearch, onSelect
       <div className="sidebar-search"><Search size={14} /><input id="photo-search" aria-label="Search photos" placeholder="Search photos" value={search} onChange={(event) => onSearch(event.target.value)} /><kbd>/</kbd></div>
       <div className="sidebar-scroll">
         <section className="sidebar-section"><h2>Library</h2><nav>{libraryItems.map(({ id, label, icon: Icon, count }) => <button key={id} className={`sidebar-item ${collection === id ? 'is-selected' : ''}`} onClick={() => onSelect(id)}><Icon size={17} strokeWidth={1.6} /><span>{label}</span><span className="item-count">{count}</span></button>)}</nav></section>
-        <section className="sidebar-section albums-section"><div className="sidebar-section-heading"><h2>Albums</h2><IconButton label="Create album" onClick={onNewAlbum}><Plus size={14} /></IconButton></div><nav>{albums.map((album) => <AlbumRow key={album.id} album={album} count={photos.filter((photo) => photo.albumId === album.id).length} selected={collection === album.id} onSelect={onSelect} onRemoveAlbum={onRemoveAlbum} onGenerateAlbumThumbnail={onGenerateAlbumThumbnail} onRemoveAlbumThumbnail={onRemoveAlbumThumbnail} isDropTarget={dropTarget === album.id} onMoveToAlbum={onMoveToAlbum} onDropHighlight={setDropTarget} initialOpen={initialOpenMenu === album.id} />)}</nav></section>
+        <section className="sidebar-section albums-section"><div className="sidebar-section-heading"><h2>Albums</h2><IconButton label="Create album" onClick={onNewAlbum}><Plus size={14} /></IconButton></div><nav>{sortSidebarAlbums(albums).map((album) => <AlbumRow key={album.id} album={album} count={photos.filter((photo) => photo.albumId === album.id).length} selected={collection === album.id} onSelect={onSelect} onRemoveAlbum={onRemoveAlbum} onGenerateAlbumThumbnail={onGenerateAlbumThumbnail} onRemoveAlbumThumbnail={onRemoveAlbumThumbnail} isDropTarget={dropTarget === album.id} onMoveToAlbum={onMoveToAlbum} onDropHighlight={setDropTarget} initialOpen={initialOpenMenu === album.id} />)}</nav></section>
       </div>
       <div className="sidebar-bottom"><button className="import-button" onClick={onImport}><Import size={16} />Import Photos<span>+</span></button></div>
     </aside>

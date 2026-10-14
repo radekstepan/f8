@@ -25,6 +25,7 @@ export * from "./photoTools.js";
 export * from "./photoSelection.js";
 export * from "./raw.js";
 export * from "./retouch.js";
+export * from "./sidebarAlbums.js";
 export * from "./tiffThumb.js";
 export * from "./toneCurve.js";
 export * from "./toolHints.js";
