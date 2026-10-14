@@ -1,18 +1,22 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across four
+Distilled from per-task writeups and subagent learnings across five
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, or library UI so we don't repeat the same mistakes.
 
 - **R1** = first run (16 tasks). Its `docs/tasks/` writeups were removed
   during the task reset; the index below is preserved for archaeology.
-- **R2** = second run, 2026-10-13 (12 tasks). Writeups live in
-  `docs/tasks/01–12`.
+- **R2** = second run, 2026-10-13 (12 tasks). Its `docs/tasks/`
+  writeups were removed during the task reset; the index below is
+  preserved for archaeology.
 - **R3** = third run, 2026-10-13 (8 tasks). Its `docs/tasks/`
   writeups were removed during the task reset; the index below is
   preserved for archaeology.
-- **R4** = fourth run, 2026-10-13 (8 tasks). Writeups live in
-  `docs/tasks/task-N-<slug>.md`.
+- **R4** = fourth run, 2026-10-13 (8 tasks). Its `docs/tasks/`
+  writeups were removed during the task reset; the index below is
+  preserved for archaeology.
+- **R5** = fifth run, 2026-10-13 (7 tasks). Writeups live in
+  `docs/tasks/<slug>.md`.
 
 ## 1. Honest labels and naming
 
@@ -118,10 +122,14 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 - **Omit photo-only controls in the library, don't disable them.**
   A disabled Adjust button asks "how do I enable it?"; an absent one
   reads as "not applicable here" — same rule as the static grid title.
-  Gate exactly the named controls (hide-presets, compare, info,
-  Adjust/Repair/Crop); reset/undo/redo still operate on the selection
-  and export/focus are view-agnostic. Menus and shortcuts stay
-  reachable — the task is about visible buttons, not actions. (R4-5)
+  R4-5 gated hide-presets, compare, info, Adjust/Repair/Crop and kept
+  reset/undo/redo (they "operate on the selection"); R5-2 overturned
+  that carve-out — undo/redo/reset are now omitted in the grid too,
+  reusing the same `showPhotoTools` gate with no new props. Menus and
+  shortcuts stay reachable — the task is about visible buttons, not
+  actions. When a task flips a recorded contract, update the rationale
+  comment in the pinning test too, not just the assertion. (R4-5,
+  R5-2)
 - **Removing `title` can remove accessible names.** Buttons whose only
   name was the tooltip need explicit `aria-label`s when migrating to
   custom tooltips. (R4-4)
@@ -129,6 +137,17 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   A zoom of uncompressed pixels cannot show the compression artifacts
   under judgment — and it renders `pixelated`, unlike the smooth
   denoise closeup it mirrors, so blocks read as blocks. (R4-8)
+- **A highlight must mirror its action's enabled gate exactly.**
+  `active={canReset}` on the same predicate as `disabled={!canReset}`
+  keeps the Reset button highlighted iff clicking it does something —
+  no second derivation to drift. Reuse the shared `is-active` accent
+  (compare, presets-toggle) for free visual consistency plus
+  `aria-pressed` semantics. (R5-3)
+- **Scope a shared-component change with an opt-out prop mirroring
+  the existing opt-in pattern.** The export Quality slider's reset
+  hint came from the shared `RangeControl`, whose affordance is
+  intentional elsewhere — so `disableReset` follows the `valueHint`
+  shape and is passed only there. (R5-4)
 
 ## 3. Spacing, layout, and motion
 
@@ -233,6 +252,18 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   migration per site, one positioning implementation to verify, zero
   new dependencies — and future tooltips work by adding an
   attribute. (R4-4)
+- **"Show nothing" is a sized placeholder, not a hole.** The pending
+  backlink is an empty shimmer pill (names no category) so the
+  toolbar doesn't collapse and the state reads as loading, not
+  broken; the histogram skeleton occupies the curves' exact 68px
+  slot so the data swap causes no layout jump. (R5-1)
+- **Mirror the existing transition convention for state swaps.**
+  The export preview's old→new pixel fade reuses the filmstrip
+  `opacity 160ms ease` treatment, dimming to 0.45 while updating.
+  (R5-6)
+- **Every new animation extends the `prefers-reduced-motion`
+  block.** Shimmer, skeleton wave, bloom entrance, preview fade —
+  no motion ships without its off-ramp. (R5-1, R5-6)
 
 ## 4. Navigation and state
 
@@ -353,7 +384,45 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 - **While a new run is pending, hide — never show stale pixels under
   a new label.** The preview shows a loading note (like the size
   line), which would otherwise mislead under a changed quality.
-  (R4-8)
+  (R4-8; transition behavior refined by R5-6 below.)
+- **Keep-stale-during-transition is the refined rule.** R5-6 keeps
+  the previous preview mounted while the next render runs (dimmed
+  with an "Updating preview…" status + fade swap) instead of
+  collapsing to the placeholder on every preset change — but ONLY
+  while pending: a failed re-render still clears, so stale pixels
+  never pose as new output; 2x arming still hides immediately (its
+  pixels can't exist yet) and PNG still renders nothing. The target
+  note keeps naming the new settings; a separate status line says
+  the pixels are mid-transition. (R5-6)
+- **Unknown-until-inferred state resolves to null, never to a
+  placeholder value.** `resolveBacklinkCollection` returns null
+  before the photo-driven inference settles (grid loads start
+  settled since the URL names the collection) — and names the
+  photo's album at render time while a cross-album switch is in
+  flight, matching the inference effect's outcome a frame early so
+  no stale name flashes. Ship it as a tested pure `@f8/core`
+  predicate, per the R2-11 seam. (R5-1)
+- **Don't reset derived state on every navigation when effects
+  ordering can strand it.** Resetting histogram state on each
+  photo switch risked a null stuck between PhotoCanvas and App
+  effects plus flicker on every filmstrip click — stale-then-update
+  on switches stays, and the loading animation covers only the
+  null→data transition. (R5-1)
+- **Measure pointer input against the element the indicator is
+  positioned against.** The focus square drifted because clicks
+  were measured on the `<figure>` (rect folded in the caption
+  height: bottom-edge clicks read 91%) while the square was
+  positioned in the image box. Moving handlers to the positioning
+  context removes the mismatch by construction — no caption-height
+  offset hack to rot. Caption clicks then correctly do nothing.
+  (R5-5)
+- **Drags use pointer capture + a pure mapping helper.** Capture
+  keeps the drag alive outside the box (the tone-curve precedent);
+  press moves so click needs no separate handler;
+  `draggable={false}` + `touch-action: none` keep native
+  image-drag and scroll from hijacking the gesture; the
+  client-point→% math lives in an exported pure helper so the
+  node-only test env can cover it. (R5-5)
 - **Every minted object URL goes through a revoking setter** (+
   unmount cleanup) so superseded previews never leak. (R4-8)
 
@@ -480,6 +549,23 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   the old object shape survived a source grep and only failed at
   `build` — run the full gate, not just the tests you expect to
   change. (R4-6)
+- **Handlers are invisible to static markup — pin them at source
+  level.** `onPointerDown/Move/Up` and conditional `onDoubleClick`
+  wiring can't be observed via `renderToStaticMarkup`, so the
+  pointer-capture and reset-handler wiring are pinned by reading
+  component source, while markup pins (tooltip/testid placement,
+  `draggable="false"`) and pure-helper units cover the rest.
+  (R5-4, R5-5)
+- **Unanchored `cssRule` resolves the FIRST match — selector
+  placement in the stylesheet is load-bearing.** The updating-dim
+  rule had to sit mid-list so the helper still resolved the main
+  rule first; keep new rules positioned with the helper in mind.
+  (R5-6)
+- **A figure-vs-box regression test pins coordinate fixes.**
+  Asserting the same client point maps to 91% on the old rect and
+  100% on the new one proves the test pins the fix, not incidental
+  markup — the mapping-test equivalent of the R3-6 stash check.
+  (R5-5)
 
 ## 6. Tooling gotchas
 
@@ -506,7 +592,7 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   signature of a stale `dist` (unit tests resolve source). Never
   commit `dist/`.
   (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6,
-  R4-4, R4-5, R4-6, R4-7, R4-8)
+  R4-4, R4-5, R4-6, R4-7, R4-8, R5-1)
 - **Commit by explicit paths, never `git add -A`.** Stray files
   (e.g. `.DS_Store` under `docs/`) get swept in otherwise. (R1)
 - **No CI, no configured linter** — both packages' `lint` scripts
@@ -591,6 +677,23 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   `renderExportPreview` without breaking callers, so the preview
   task shared the estimate's run instead of adding a second one.
   (R4-7, R4-8)
+- **Removing a hint means auditing the behavior it advertised.**
+  The Quality slider's double-click reset silently reset to `0`
+  on a 10–100 scale (no `defaultValue` passed) — keeping a hidden
+  broken reset while deleting its hint would be worse than
+  removing both. A hint can be the only visible symptom of a
+  broken default. (R5-4)
+- **Deleting a control means proving each shared dependency still
+  has consumers.** The removed Settings button's `downloadBlob`
+  serves the real export path and `.text-button` spans the
+  Inspector/browser — only the button-only `Download` icon import
+  and the exclusive `.export-settings` subclass were dead.
+  (R5-7)
+- **Shared-pattern siblings outside the task get recorded, not
+  fixed.** The denoise closeup shares the export preview's
+  click-on-figure pattern and likely the same y-offset — noted in
+  the R5-5 writeup as a follow-up, untouched in the commit.
+  (R5-5)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -613,7 +716,7 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 | 15 | `913da57` | `15-cancel-dismiss-align.md` | Cancel/Dismiss share one action-row treatment |
 | 16 | `75e5feb` | `16-star-during-repair.md` | Star/favorite applies immediately during repair |
 
-## Per-task index, R2 (writeups in `docs/tasks/`)
+## Per-task index, R2 (writeups removed; commits reachable via git)
 
 | # | Commit | Writeup | One-line summary |
 |---|--------|---------|------------------|
@@ -643,7 +746,7 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 | 7 | `ebbd1cb` | `task-7.md` | Top menu dropdowns open flush with trigger pills |
 | 8 | `747a425` | `task-8.md` | Photo backlink becomes single-line ghost back button |
 
-## Per-task index, R4 (writeups in `docs/tasks/`)
+## Per-task index, R4 (writeups removed; commits reachable via git)
 
 | # | Commit | Writeup | One-line summary |
 |---|--------|---------|------------------|
@@ -655,3 +758,15 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 | 6 | `7e4c58e` | `task-6-superres-cached-weights-note.md` | Cached-but-cold weights get an honest note, not "missing" |
 | 7 | `2414132` | `task-7-export-size-estimate.md` | Byte-exact size estimate via background real-pipeline run |
 | 8 | `2d09d19` | `task-8-export-jpeg-zoom-preview.md` | 16× lossy quality preview sharing the estimate's run |
+
+## Per-task index, R5 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `c881f31` | `backlink-flash-histogram-loading.md` | Null-while-unknown backlink + shimmer pill; animated histogram skeleton |
+| 2 | `64e14c6` | `undo-redo-reset-album-view.md` | Undo/Redo/Reset omitted on album view via `showPhotoTools` |
+| 3 | `79f070f` | `reset-highlight-when-edited.md` | Reset highlighted with `is-active` iff `canReset` |
+| 4 | `32261ce` | `remove-quality-reset-hint.md` | Quality-only `disableReset` drops broken hint + handler |
+| 5 | `58139d9` | `export-preview-drag-click-position.md` | Draggable focus square; clicks measured on image box |
+| 6 | `37c7bae` | `export-preview-keeps-open-on-preset-change.md` | Stale-dimmed preview fades to new pixels across presets |
+| 7 | `4ccba62` | `remove-download-settings-button.md` | Export dialog Settings button + dead CSS removed |
