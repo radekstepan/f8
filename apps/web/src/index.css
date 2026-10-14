@@ -206,6 +206,9 @@ its chevron glyph off the toggle edge. */
 .photo-frame.is-panning { cursor: grabbing; }
 .photo-frame.is-pannable, .photo-frame.is-panning { user-select: none; -webkit-user-select: none; }
 .brush-cursor { position: absolute; border: 1px solid white; box-shadow: 0 0 0 1px #0008; border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%); z-index: 6; }
+.zoom-lens { position: absolute; border-radius: 50%; overflow: hidden; pointer-events: none; transform: translate(-50%, -50%); z-index: 7; border: 1.5px solid #e8e8ec; box-shadow: 0 6px 24px #000a, 0 0 0 1px #0008; background: #101012; }
+.zoom-lens canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.zoom-lens-label { position: absolute; right: 9px; bottom: 9px; font-size: 9px; font-weight: 600; color: #ececef; background: #16161a9c; padding: 2px 6px; border-radius: 999px; backdrop-filter: blur(10px); }
 .tool-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); width: fit-content; max-width: 90%; font-size: 10px; color: #d4d0c7; background: #292824ed; border: 1px solid #4b463a; padding: 6px 10px; border-radius: 4px; z-index: 6; opacity: 1; transition: opacity 0.5s ease; pointer-events: none; }
 .tool-hint.is-fading { opacity: 0; }
 .canvas-status { height: 34px; flex-shrink: 0; padding: 0 14px 0 20px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #252528; background: #1a1a1c; font-size: 9px; color: #898992; }

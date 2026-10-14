@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools } from '@f8/core';
+import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode } from '@f8/core';
@@ -122,6 +122,11 @@ export default function App() {
   const [compare, setCompare] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [zoom, setZoom] = useState(1);
+  // View-menu "Zoom in View" toggle: a 16x loupe follows the cursor in photo
+  // view only (PhotoCanvas receives it gated on the editor view, so toggling
+  // off — or leaving the photo — restores the normal view). A persistent
+  // mode like Compare, not per-photo state: switching photos keeps it.
+  const [zoomLens, setZoomLens] = useState(false);
   const [sortKey, setSortKey] = useState<AlbumSortKey>(() => readToolPrefs().albumSortKey);
   const [sortDir, setSortDir] = useState<AlbumSortDir>(() => readToolPrefs().albumSortDir);
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
@@ -979,6 +984,7 @@ export default function App() {
       case 'grid': setView((current) => current === 'editor' ? 'library' : 'editor'); break;
       case 'back': setView('library'); break;
       case 'fit': setZoom(1); break;
+      case 'zoom-lens': setZoomLens((current) => !current); break;
       case 'fullscreen': { const showing = sidebarOpen || inspectorOpen; setSidebarOpen(!showing); setInspectorOpen(!showing); break; }
       case 'shortcuts': setDialog('shortcuts'); break;
       case 'about': setDialog('about'); break;
@@ -1195,7 +1201,7 @@ export default function App() {
     : null;
   return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importDrop(event.dataTransfer); }}>
     <TooltipHost />
-    <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} />
+    <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} zoomLens={zoomLens} />
     <Toolbar collectionName={backlinkName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
       {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onMoveToAlbum={movePhotosToAlbum} />}
@@ -1217,7 +1223,7 @@ export default function App() {
             ) : (
               <PhotoCanvas
                 photo={viewPhoto ?? photo} edit={editor.edit} tool={tool} zoom={zoom}
-                compare={compare} showOriginal={showOriginal} originalSrc={photo.src}
+                compare={compare} showOriginal={showOriginal} originalSrc={photo.src} zoomLens={shouldShowZoomLens(view, zoomLens)}
                 brushSize={brushSize} brushStrength={brushStrength} fineGrid={straightenDragging} straightenFlash={straightenFlash}
                 inpaintRepair={canvasRepairBinding}
                 highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke} highlightRegion={removalPreview}

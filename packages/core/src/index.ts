@@ -29,3 +29,4 @@ export * from "./toolHints.js";
 export * from "./types.js";
 export * from "./virtualGrid.js";
 export * from "./vision/index.js";
+export * from "./zoomLens.js";

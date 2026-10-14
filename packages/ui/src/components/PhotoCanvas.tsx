@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Check, ChevronsLeftRight, Columns2, Copy, Heart, ImageOff, Info, Maximize, Minus, Plus, Star, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
-import { LibraryError, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, frameAspectForPhoto, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint } from '@f8/core';
+import { LibraryError, ZOOM_LENS_MAGNIFICATION, ZOOM_LENS_SIZE_PX, applyInpaintRepair, clampZoomLensCenter, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, frameAspectForPhoto, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint, zoomLensSourceRect } from '@f8/core';
 import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 import { ToolHint } from './ToolHint.js';
@@ -51,6 +51,8 @@ interface PhotoCanvasProps {
   fineGrid?: boolean;
   /** Transient no-horizon notice: flashed over the photo through the shared tool-hint overlay. */
   straightenFlash?: { runId: number; message: string } | null;
+  /** Zoom-in-view loupe: while true a 16x magnifier follows the cursor over the photo. Defaults to false. */
+  zoomLens?: boolean;
   onHighlightStroke?: (stroke: number | null) => void;
   onZoom: (zoom: number) => void;
   onCompare: () => void;
@@ -64,11 +66,12 @@ interface PhotoCanvasProps {
   onHistogram: (data: HistogramData) => void;
 }
 
-export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, originalSrc, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, straightenFlash = null, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onRemove, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
+export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, originalSrc, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, straightenFlash = null, zoomLens = false, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onRemove, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const originalRef = useRef<HTMLCanvasElement>(null);
+  const lensCanvasRef = useRef<HTMLCanvasElement>(null);
   const painting = useRef(false);
   /** Active drag-pan gesture: press point + stage scroll it is measured from. */
   const panDrag = useRef<{ pointerId: number; clientX: number; clientY: number; scrollLeft: number; scrollTop: number } | null>(null);
@@ -1248,6 +1251,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   // Compare and healing are mutually exclusive on canvas: comparing shows
   // the before/after slider with no heal cursor and no painting.
   const showBrushCursor = isBrush && cursor && !compare && !showOriginal && !mlRepairBlocked;
+  // Zoom-in-view loupe: follows the cursor while toggled on (nothing to
+  // magnify until the photo has painted). The center clamps so the whole
+  // loupe stays over the photo near the frame edges.
+  const showLens = zoomLens && !loading && !error;
+  const lensCenter = showLens && cursor ? clampZoomLensCenter(cursor, { width: frameWidth, height: frameHeight }) : null;
   const draggingRepair = showOverlay && isLiveRepairDrag(tool, activeStroke);
   // While dragging, every repair area shows red — not just the new stroke —
   // so the single worker pass over all areas is visible. While healing,
@@ -1283,7 +1291,30 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   const miniWidth = Math.round(Math.min(148, 104 * displayAspect));
   const miniHeight = Math.round(Math.min(104, 148 / displayAspect));
 
-  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename"><button type="button" className={`filename-copy${filenameCopied ? ' is-copied' : ''}`} data-testid="filename-copy" data-tooltip={filenameCopied ? 'Copied!' : 'Copy filename'} aria-label={filenameCopied ? `Copied ${photo.name}` : `Copy filename ${photo.name}`} onClick={copyFilename}><span>{photo.name}</span>{filenameCopied ? <Check size={11} /> : <Copy size={11} />}</button><span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{!isDefaultEdit(edit) && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} data-tooltip={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton>{onRemove && <IconButton label="Remove from library (Del)" className="photo-remove" onClick={onRemove}><Trash2 size={15} strokeWidth={1.5} /></IconButton>}</div></div><div className="canvas-stage-wrap"><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${pannableCursor ? 'is-pannable' : ''} ${panning ? 'is-panning' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} data-testid="photo-frame" style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onMouseDown={swallowMiddleClick} onPointerMove={(event) => { const pan = panDrag.current; if (pan && event.pointerId === pan.pointerId) { const stage = stageRef.current; if (stage) { const next = panScrollFromDrag(pan, { clientX: event.clientX, clientY: event.clientY }); stage.scrollLeft = next.scrollLeft; stage.scrollTop = next.scrollTop; } return; } if (isBrush) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (!painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
+  // The loupe mirrors the edited canvas (not the thumbnail), so adjustments,
+  // crop, and rotation match the frame. Runs after every render like the
+  // minimap mirror, so the loupe stays in sync with repaints and follows the
+  // cursor. Backing store is 2x the CSS size for a crisp loupe on retina.
+  useEffect(() => {
+    if (!showLens || !cursor) return;
+    const lens = lensCanvasRef.current;
+    const source = canvasRef.current;
+    if (!lens || !source || !source.width || !source.height) return;
+    const ctx = lens.getContext('2d');
+    if (!ctx) return;
+    const rect = zoomLensSourceRect(
+      { fx: cursor.x / frameWidth, fy: cursor.y / frameHeight },
+      { width: source.width, height: source.height },
+      { width: frameWidth, height: frameHeight },
+    );
+    if (rect.sw <= 0 || rect.sh <= 0) return;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.clearRect(0, 0, lens.width, lens.height);
+    ctx.drawImage(source, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, lens.width, lens.height);
+  });
+
+  return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename"><button type="button" className={`filename-copy${filenameCopied ? ' is-copied' : ''}`} data-testid="filename-copy" data-tooltip={filenameCopied ? 'Copied!' : 'Copy filename'} aria-label={filenameCopied ? `Copied ${photo.name}` : `Copy filename ${photo.name}`} onClick={copyFilename}><span>{photo.name}</span>{filenameCopied ? <Check size={11} /> : <Copy size={11} />}</button><span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{!isDefaultEdit(edit) && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} data-tooltip={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton>{onRemove && <IconButton label="Remove from library (Del)" className="photo-remove" onClick={onRemove}><Trash2 size={15} strokeWidth={1.5} /></IconButton>}</div></div><div className="canvas-stage-wrap"><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${pannableCursor ? 'is-pannable' : ''} ${panning ? 'is-panning' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} data-testid="photo-frame" style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onMouseDown={swallowMiddleClick} onPointerMove={(event) => { const pan = panDrag.current; if (pan && event.pointerId === pan.pointerId) { const stage = stageRef.current; if (stage) { const next = panScrollFromDrag(pan, { clientX: event.clientX, clientY: event.clientY }); stage.scrollLeft = next.scrollLeft; stage.scrollTop = next.scrollTop; } return; } if (isBrush || showLens) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (isBrush && !painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
       {/* Album-thumbnail hold: the grid already decoded this URL, so it paints
           on the first frame and the full-res canvas crossfades over it —
           navigating in never flashes an empty frame. Decorative: the canvas
@@ -1301,6 +1332,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
         ? <div className="crop-grid is-fine" aria-hidden="true" data-testid="crop-grid-fine">{Array.from({ length: 8 }, (_, index) => <i key={`v${index}`} className={(index + 1) % 3 === 0 ? 'is-major' : ''} style={{ left: `${((index + 1) * 100) / 9}%`, top: 0, height: '100%', width: '1px' }} />)}{Array.from({ length: 8 }, (_, index) => <i key={`h${index}`} className={(index + 1) % 3 === 0 ? 'is-major' : ''} style={{ top: `${((index + 1) * 100) / 9}%`, left: 0, width: '100%', height: '1px' }} />)}</div>
         : <div className="crop-grid" aria-hidden="true"><i /><i /><i /><i /></div>)}
       {showBrushCursor && <div className="brush-cursor" style={{ left: cursor!.x, top: cursor!.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
+      {showLens && lensCenter && <div className="zoom-lens" data-testid="zoom-lens" aria-hidden="true" style={{ left: lensCenter.x, top: lensCenter.y, width: ZOOM_LENS_SIZE_PX, height: ZOOM_LENS_SIZE_PX }}><canvas ref={lensCanvasRef} width={ZOOM_LENS_SIZE_PX * 2} height={ZOOM_LENS_SIZE_PX * 2} /><span className="zoom-lens-label">{ZOOM_LENS_MAGNIFICATION}×</span></div>}
       {(activePoints.length > 0 || hoverPoints.length > 0 || previewGeometry !== null) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}{previewGeometry && <g className="retouch-preview-group" data-testid="removal-preview">{previewGeometry.kind === 'rect' ? <rect x={previewGeometry.x} y={previewGeometry.y} width={previewGeometry.width} height={previewGeometry.height} rx={3} /> : <circle cx={previewGeometry.cx} cy={previewGeometry.cy} r={previewGeometry.r} />}</g>}</svg>}
     </div></div>
     </div>
