@@ -54,7 +54,7 @@ margin: 3px 0 inside the full-height anchor (top: 100% alone would
 leave a 3px gap). Scoped so inspector/sidebar/browser dropdowns,
 which share .dropdown-menu, keep their own anchoring. */
 .menu-bar .dropdown-menu { top: calc(100% - 3px); border-top-left-radius: 0; border-top-right-radius: 0; }
-.menu-item { display: flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; padding: 8px 9px; border-radius: 4px; text-align: left; font-size: 11px; white-space: nowrap; color: #dddde2; }
+.menu-item { display: flex; align-items: center; justify-content: flex-start; gap: 20px; width: 100%; padding: 8px 9px; border-radius: 4px; text-align: left; font-size: 11px; white-space: nowrap; color: #dddde2; }
 .menu-item:hover:not(:disabled) { background: #78663f; color: #fff7e7; }
 .menu-item.is-danger { color: #f29c97; }
 .menu-item kbd { color: #98989e; font: inherit; font-size: 10px; margin-left: auto; }

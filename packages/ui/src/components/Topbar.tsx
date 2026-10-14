@@ -33,8 +33,8 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
   useMenuDismiss(ref, () => openMenu(null));
   const action = (value: MenuAction) => { onAction(value); openMenu(null); };
   const item = (name: string, value: MenuAction, shortcut?: string, disabled?: boolean, checked?: boolean, danger?: boolean) => <MenuItem key={value} onClick={() => action(value)} shortcut={shortcut} disabled={disabled} checked={checked} danger={danger}>{name}</MenuItem>;
-  // Zoom-in-view lives with the Show toggles (not at the dropdown's
-  // bottom): a checked parent with a 4x/8x/16x flyout. Hover opens it;
+  // Zoom-in-view sits in its own section under the Show toggles (not
+  // at the dropdown's bottom): a checked parent with a 4x/8x/16x flyout. Hover opens it;
   // click toggles for touch. Only the 8x default carries the Z shortcut.
   const zoomLensSubmenu = <div className="menu-submenu-anchor" onMouseEnter={() => setSubmenu('zoom-lens')} onMouseLeave={() => setSubmenu(null)}>
     <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={submenu === 'zoom-lens'} className="menu-item has-submenu" onClick={() => setSubmenu(submenu === 'zoom-lens' ? null : 'zoom-lens')}><span className="menu-check">{zoomLens && <Check size={13} />}</span><span>Zoom in View</span><ChevronRight size={13} className="menu-chevron" /></button>
@@ -44,7 +44,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
     File: <>{item('Import Photos...', 'import', 'Ctrl O')}{item('Import Folder as Album...', 'import-local-folder')}{item('Import from Folder...', 'import-folder', 'Ctrl Shift O')}{item('New Album...', 'album')}<MenuSeparator />{item('Export Photo...', 'export', 'Ctrl Shift E')}</>,
     Edit: <>{item('Undo', 'undo', 'Ctrl Z', !canUndo)}{item('Redo', 'redo', 'Ctrl Shift Z', !canRedo)}<MenuSeparator />{item('Copy Adjustments', 'copy', 'Ctrl Shift C')}{item('Paste Adjustments', 'paste', 'Ctrl Shift V', !canPaste)}<MenuSeparator />{item('Reset All Adjustments', 'reset')}</>,
     Image: <>{item('Auto Enhance', 'enhance', 'A')}<MenuItem key="enhance-scene" onClick={() => action('enhance-scene')} shortcut="Shift A"><span>Scene Enhance <MlBadge hint="The scene is classified by a machine-learning model on your device" /></span></MenuItem><MenuItem key="enhance-faces" onClick={() => action('enhance-faces')} shortcut="Shift E"><span>Enhance Faces <MlBadge hint="Faces are detected by a machine-learning model on the photo server" /></span></MenuItem>{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<MenuSeparator />{item('Compare with Original', 'compare', 'B', compareDisabled)}<MenuSeparator />{item('Remove from Library…', 'remove', 'Del', false, undefined, true)}</>,
-    View: <>{item('Show Library', 'sidebar', undefined, false, sidebar)}{item('Show Adjustments', 'inspector', undefined, false, inspector)}{item('Show Presets', 'presets', undefined, false, presets)}{item('Show Filmstrip', 'filmstrip', undefined, false, filmstrip)}{zoomLensSubmenu}<MenuSeparator />{item('Photo Browser', 'grid', 'G')}{item('Zoom to Fit', 'fit', '0')}</>,
+    View: <>{item('Show Library', 'sidebar', undefined, false, sidebar)}{item('Show Adjustments', 'inspector', undefined, false, inspector)}{item('Show Presets', 'presets', undefined, false, presets)}{item('Show Filmstrip', 'filmstrip', undefined, false, filmstrip)}<MenuSeparator />{zoomLensSubmenu}<MenuSeparator />{item('Photo Browser', 'grid', 'G')}{item('Zoom to Fit', 'fit', '0')}</>,
     Window: <>{item('Focus Mode', 'fullscreen', 'Shift F')}{item('Photo Browser', 'grid')}</>,
     Help: <>{item('Keyboard Shortcuts', 'shortcuts', '?')}{item(`About ${APP_NAME}`, 'about')}</>,
   };

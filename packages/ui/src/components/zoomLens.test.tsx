@@ -8,7 +8,7 @@ import type { Photo } from '@f8/core';
 import { MenuBar } from './Topbar.js';
 import { PhotoCanvas } from './PhotoCanvas.js';
 
-// Zoom in View: a View-menu submenu under the Show items with 4x/8x/16x
+// Zoom in View: a View-menu submenu in its own section under the Show items with 4x/8x/16x
 // options (8x is the default and the only one with a shortcut, Z) that
 // shows a fixed square preview in the photo's bottom-right corner in
 // photo (editor) view only. The pane paints from the edited canvas in an
@@ -106,13 +106,33 @@ function menuBarBlock(): string {
 }
 
 describe('zoom-in-view menu submenu', () => {
-  it('lives under the Show items with a checked parent, not at the bottom of the dropdown', () => {
+  it('sits in its own section under the Show items, not at the bottom of the dropdown', () => {
     const line = viewMenuLine();
     expect(line).toContain('{zoomLensSubmenu}');
-    expect(line.indexOf('{zoomLensSubmenu}')).toBeGreaterThan(line.indexOf("'filmstrip'"));
-    expect(line.indexOf('{zoomLensSubmenu}')).toBeLessThan(line.indexOf('<MenuSeparator />'));
-    expect(line.indexOf('<MenuSeparator />')).toBeLessThan(line.indexOf("'fit'"));
+    const at = line.indexOf('{zoomLensSubmenu}');
+    expect(at).toBeGreaterThan(line.indexOf("'filmstrip'"));
+    // Own section: a separator on each side of the submenu parent.
+    const before = line.slice(0, at);
+    expect(before.lastIndexOf('<MenuSeparator />')).toBeGreaterThan(before.indexOf("'filmstrip'"));
+    const after = line.slice(at);
+    expect(after.indexOf('<MenuSeparator />')).toBeGreaterThan(-1);
+    expect(after.indexOf('<MenuSeparator />')).toBeLessThan(after.indexOf("'fit'"));
     expect(line).not.toContain("'zoom-lens'");
+  });
+
+  it('left-aligns every dropdown label with shortcuts pinned right (8x lines up with 4x/16x)', () => {
+    // Root cause: .menu-item used space-between, so two-child items
+    // ([check, label]: Show toggles, 4x, 16x) pushed the label flush
+    // right while three-child items ([check, label, kbd/chevron]: 8x
+    // with Z, the Zoom in View parent) centered it. Labels now start
+    // left; kbd and the submenu chevron keep margin-left auto so
+    // shortcuts stay right-aligned.
+    expect(cssRule('.menu-item')).toMatch(/justify-content\s*:\s*flex-start/);
+    expect(cssRule('.menu-item')).not.toMatch(/space-between/);
+    expect(cssRule('.menu-item kbd')).toMatch(/margin-left\s*:\s*auto/);
+    // The submenu parent keeps the same [check, label] lead as its
+    // MenuItem siblings, so its label starts at the same x.
+    expect(topbarSource()).toContain('<span className="menu-check">{zoomLens && <Check size={13} />}</span><span>Zoom in View</span>');
   });
 
   it('opens a 4x/8x/16x flyout from the submenu map with per-option checked state', () => {
