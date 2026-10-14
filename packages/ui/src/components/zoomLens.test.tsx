@@ -163,6 +163,28 @@ describe('zoom-in-view menu submenu', () => {
   });
 });
 
+describe('zoom-in-view parent clears the preview', () => {
+  it('fires the active factor when the parent row is clicked while on (re-pick turns it off)', () => {
+    // No new action: re-picking the active factor hits the App toggle-off
+    // rule, and action() dismisses the menu like any other Show item.
+    const source = topbarSource();
+    const parent = source.split('\n').find((line) => line.includes('has-submenu') && line.includes('Zoom in View')) ?? '';
+    expect(parent).toContain('onClick={() => zoomLens ? action(zoomLensActions[zoomLensMagnification])');
+  });
+
+  it('keeps the click-to-open flyout for touch while the preview is off', () => {
+    const source = topbarSource();
+    const parent = source.split('\n').find((line) => line.includes('has-submenu') && line.includes('Zoom in View')) ?? '';
+    expect(parent).toContain(": setSubmenu(submenu === 'zoom-lens' ? null : 'zoom-lens')");
+  });
+
+  it('opens the flyout from ArrowRight without firing the parent clear', () => {
+    const source = topbarSource();
+    expect(source).toContain("if (focused.classList.contains('has-submenu')) setSubmenu('zoom-lens');");
+    expect(source).toContain('else (focused as HTMLButtonElement).click();');
+  });
+});
+
 describe('zoom-in-view app wiring', () => {
   it('enables the preview at the picked factor, re-picking the active factor turns it off', () => {
     const source = appSource();

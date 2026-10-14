@@ -35,9 +35,12 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
   const item = (name: string, value: MenuAction, shortcut?: string, disabled?: boolean, checked?: boolean, danger?: boolean) => <MenuItem key={value} onClick={() => action(value)} shortcut={shortcut} disabled={disabled} checked={checked} danger={danger}>{name}</MenuItem>;
   // Zoom-in-view sits in its own section under the Show toggles (not
   // at the dropdown's bottom): a checked parent with a 4x/8x/16x flyout. Hover opens it;
-  // click toggles for touch. Only the 8x default carries the Z shortcut.
+  // clicking the parent itself while the preview is on clears it (re-picks
+  // the active factor, which the App toggle rule turns off) and dismisses
+  // the menu like any other item; while off, click toggles the flyout for
+  // touch. Only the 8x default carries the Z shortcut.
   const zoomLensSubmenu = <div className="menu-submenu-anchor" onMouseEnter={() => setSubmenu('zoom-lens')} onMouseLeave={() => setSubmenu(null)}>
-    <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={submenu === 'zoom-lens'} className="menu-item has-submenu" onClick={() => setSubmenu(submenu === 'zoom-lens' ? null : 'zoom-lens')}><span className="menu-check">{zoomLens && <Check size={13} />}</span><span>Zoom in View</span><ChevronRight size={13} className="menu-chevron" /></button>
+    <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={submenu === 'zoom-lens'} className="menu-item has-submenu" onClick={() => zoomLens ? action(zoomLensActions[zoomLensMagnification]) : setSubmenu(submenu === 'zoom-lens' ? null : 'zoom-lens')}><span className="menu-check">{zoomLens && <Check size={13} />}</span><span>Zoom in View</span><ChevronRight size={13} className="menu-chevron" /></button>
     {submenu === 'zoom-lens' && <div className="dropdown-menu dropdown-submenu" role="menu">{ZOOM_LENS_MAGNIFICATIONS.map((mag) => <MenuItem key={mag} onClick={() => action(zoomLensActions[mag])} shortcut={mag === 8 ? 'Z' : undefined} checked={zoomLens && zoomLensMagnification === mag}>{`${mag}×`}</MenuItem>)}</div>}
   </div>;
   const menus: Record<string, ReactNode> = {
@@ -72,7 +75,10 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
       // Into/out of the flyout: ArrowRight on a closed submenu parent
       // opens it, ArrowLeft inside a flyout closes back to the parent.
       if (event.key === 'ArrowRight' && focused?.getAttribute('aria-haspopup') === 'menu' && focused?.getAttribute('aria-expanded') === 'false') {
-        (focused as HTMLButtonElement).click();
+        // Submenu parents open the flyout directly: clicking one would fire
+        // its clear action instead. Triggers still open via click.
+        if (focused.classList.contains('has-submenu')) setSubmenu('zoom-lens');
+        else (focused as HTMLButtonElement).click();
         window.requestAnimationFrame(() => ref.current?.querySelector<HTMLButtonElement>('.dropdown-submenu button:not([disabled])')?.focus());
         return;
       }
