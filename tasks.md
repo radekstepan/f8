@@ -14,8 +14,24 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-Align "Zoom in View" in the dropdown beautifully with the other items. ANd put it in its own section. Same with the 4x 8x and 16x. 8x is to the left, the other to the right.
+Which version of the app are we showing in the top right corner? Is it any one being moved by changesets? I want to make sure we keep updating this version number.
 
-Show the zoom in view square to the right of the image canvas (if there is space). Right now it shows in the right bottom corner of the image even though (on a portrait photo) there is space to the right of it.
+Clicking on "Zoom in view" in the dropdown (not one of the 4x 8x 16x) is how you clear the zoom in view.
 
-Don't name smart "star" albums based on how many stars they have. Show that many stars instead!
+Not sure if it's a bad antialising but I see dark black semitransparent border around a photo. Including rounded corners. Is it just a drop shadow gone havoc? Make it beautiful and subtle.
+
+I am noticing with some tools (like Vignette, Fade, but possibly others), that we make calls to DELETE /api/photos/7c4ab7f0-5e85-4dae-9ca2-36d2c9aef3c3/heal-overlays/1 -> while dragging sliders in Vignette tool etc? First of all, we should have a debounce I believe. And second, why is it calling a delete on a heal overlay? Seems odd. Explain or fix.
+
+Curves shouldn't use "double click to reset", but instzead have a reset button like other tools. Also, the curve line with one dot - how useful is it? The slider does the same thing. Are we supposed to be able to add a new dot as well?
+
+The algo for White balance and Lightness (possibly others), would they benefit from ML functions? Do a writeup.
+
+For subject and background, find an icon for each subtitle (avatar plus a picture? up to you to decide), so that each subsection is easier to see.
+
+If "Enhance Faces" finds no faces, why is the Reset button showing and "ML" highlighted. It should only do that if we actually apply any change.
+
+Scene Enhance and Subject & Background. Are they actually ML driven? If not they should have an "Auto" icon and not "ML" icon. Be consistent throughout the tools.
+
+There is a bug where on a photo if I click the global Auto button next to Color Adjustments, adjustments like White Balance, Lightness etc show a reset icon (correct), but the "Auto" button is not highlighted. We turned these on, so show them highlighted.
+
+Switch the Auto and ML icons in Color Adjustments to a toggle (we should have it in history or still use it somewhere, it's pretty). Turning the toggle on will apply suggested changes, toggling off will reset to defaults. This means we can remove the reset button. Manually tweaking sliders will turn the toggle on as well. For ML derived tools, just add a little ML icon/label next to the name of the tool to say it's an "ML" tool.
