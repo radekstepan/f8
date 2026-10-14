@@ -13,16 +13,13 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-Remove the "Updating preview" text from the Export modal. I don't want the modal to resize at all.
+In the PResets on a portrait photo the preset box is too wide. Should be smaller to be just big enough to show the preview (of course) and the name of the preset. That's it. Right now it's about 3x the width.
 
-The histogram animation on initial load is weird. It animates from individual bars (10 or so) to the beautiful histogram. Start histogram as "flat" (no lines/areas) and then when we have the data animate them in to rise from the horizontal 0.
+"The library server is not running" is weird to say. Say that the application or server is not running. It's not a library server only anymore.
 
-Clicking filename in photo view should copy the filename.
+DSC06322.ARW why is the Denoise "Auto" button turned on?
 
-DSC06323.ARW the Reset to orginal button is highlighted even after I click it. The image should be reset now no? Why keep highlighting the reset button.
+Under View be able to toggle a "zoom in view" when in photo view so wherever the cursor goes we see a 16x magnification.
 
-Export button keeps showing on album view, remove it, only shows on photo view.
+Rewrite the README.md by extracting learnings/architecture into relevant separate md files, then keep the readme light, using ASD-STE100 lanbguage saying what all the functions of the app are and that the original design is GPT 6 Astra with followup work by Muse Spark 1.3 (both in italics). It nees to have init instructions and of couese include a screenshot as well.
 
-Switch URL structure to use / and not query strings.
-
-When animating the photo backlink don't show this weird horizontal "bar", show nothing and fade in the backlink with album name.

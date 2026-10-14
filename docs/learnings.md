@@ -1,6 +1,6 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across five
+Distilled from per-task writeups and subagent learnings across six
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, or library UI so we don't repeat the same mistakes.
 
@@ -15,7 +15,10 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 - **R4** = fourth run, 2026-10-13 (8 tasks). Its `docs/tasks/`
   writeups were removed during the task reset; the index below is
   preserved for archaeology.
-- **R5** = fifth run, 2026-10-13 (7 tasks). Writeups live in
+- **R5** = fifth run, 2026-10-13 (7 tasks). Its `docs/tasks/`
+  writeups were removed during the task reset; the index below is
+  preserved for archaeology.
+- **R6** = sixth run, 2026-10-13 (7 tasks). Writeups live in
   `docs/tasks/<slug>.md`.
 
 ## 1. Honest labels and naming
@@ -125,14 +128,16 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   R4-5 gated hide-presets, compare, info, Adjust/Repair/Crop and kept
   reset/undo/redo (they "operate on the selection"); R5-2 overturned
   that carve-out — undo/redo/reset are now omitted in the grid too,
-  reusing the same `showPhotoTools` gate with no new props. Menus and
+  reusing the same `showPhotoTools` gate with no new props; R6-5
+  extends the same gate to Export with no `App.tsx` change (it
+  already passes the prop). Menus and
   shortcuts stay reachable — the task is about visible buttons, not
   actions. When a task flips a recorded contract, update the rationale
   comment in the pinning test too, not just the assertion. (R4-5,
-  R5-2)
+  R5-2, R6-5)
 - **Removing `title` can remove accessible names.** Buttons whose only
   name was the tooltip need explicit `aria-label`s when migrating to
-  custom tooltips. (R4-4)
+  custom tooltips. (R4-4, R6-3)
 - **A quality preview shows the encoded output, not the source.**
   A zoom of uncompressed pixels cannot show the compression artifacts
   under judgment — and it renders `pixelated`, unlike the smooth
@@ -148,6 +153,13 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   hint came from the shared `RangeControl`, whose affordance is
   intentional elsewhere — so `disableReset` follows the `valueHint`
   shape and is passed only there. (R5-4)
+- **Copy affordances confirm inline and fail silent.** The filename
+  button copies via a Clipboard-API → `execCommand` helper that
+  resolves `boolean` and never throws; the "Copied!" tooltip flip +
+  same-size Copy→Check icon swap show only on success, so failure
+  is a silent no-op with no error UI. No toast system was built for
+  a one-word action — the `data-tooltip` host plus an inline glyph
+  is enough confirmation. (R6-3)
 
 ## 3. Spacing, layout, and motion
 
@@ -252,18 +264,41 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   migration per site, one positioning implementation to verify, zero
   new dependencies — and future tooltips work by adding an
   attribute. (R4-4)
-- **"Show nothing" is a sized placeholder, not a hole.** The pending
-  backlink is an empty shimmer pill (names no category) so the
-  toolbar doesn't collapse and the state reads as loading, not
-  broken; the histogram skeleton occupies the curves' exact 68px
-  slot so the data swap causes no layout jump. (R5-1)
+- **"Show nothing" is a sized placeholder — until the placeholder
+  itself reads as the bug.** R5-1's shimmer backlink pill and 68px
+  histogram skeleton both read as weird artifacts, so R6 overturned
+  both: the pending backlink renders literal `null` and fades in on
+  arrival (R6-7), and the histogram starts flat (shell only, no
+  curve paths) with the curves rising from zero (R6-2). The same
+  shell in both states means no swap and no layout jump — strictly
+  better than a matched-size skeleton. When a task flips a recorded
+  contract, update the rationale here too. (R5-1, R6-2, R6-7)
 - **Mirror the existing transition convention for state swaps.**
   The export preview's old→new pixel fade reuses the filmstrip
   `opacity 160ms ease` treatment, dimming to 0.45 while updating.
   (R5-6)
+- **Pending feedback inside a fixed-size surface must be purely
+  visual, never structural.** R5-6's "Updating preview…" status line
+  mounted/unmounted on every settings change, resizing the Export
+  modal — R6-1 deleted the line, leaving the 0.45 dim alone (opacity
+  transition only, no layout impact). Any added/removed element
+  reintroduces the resize. (R6-1)
 - **Every new animation extends the `prefers-reduced-motion`
-  block.** Shimmer, skeleton wave, bloom entrance, preview fade —
-  no motion ships without its off-ramp. (R5-1, R5-6)
+  block.** Shimmer, skeleton wave, bloom entrance, preview fade,
+  backlink fade — no motion ships without its off-ramp. (R5-1,
+  R5-6, R6-2, R6-7)
+- **Animate the entering layer, not its static shell — and keep
+  entrances opacity-only when motion would read as settling.** The
+  histogram bloom moved from the whole svg onto the curve group
+  starting at `scaleY(0)` (scaling the svg would launch the grid
+  too), while the backlink fade pins "no transform" because a
+  drifting link next to the sidebar toggle looks like layout
+  settling. Mount-on-arrival entrances play exactly once; later
+  updates mutate attributes (`d`), never re-mount. (R6-2, R6-7)
+- **"No lines" means no paths, not zero-area paths.** A zero-height
+  curve path still strokes a colored hairline over the baseline —
+  the flat histogram mounts no curve paths at all until the data
+  lands. (R6-2)
 
 ## 4. Navigation and state
 
@@ -392,8 +427,9 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   while pending: a failed re-render still clears, so stale pixels
   never pose as new output; 2x arming still hides immediately (its
   pixels can't exist yet) and PNG still renders nothing. The target
-  note keeps naming the new settings; a separate status line says
-  the pixels are mid-transition. (R5-6)
+  note keeps naming the new settings; R6-1 removed the separate
+  status line (it resized the modal), so the dim alone says the
+  pixels are mid-transition. (R5-6, R6-1)
 - **Unknown-until-inferred state resolves to null, never to a
   placeholder value.** `resolveBacklinkCollection` returns null
   before the photo-driven inference settles (grid loads start
@@ -425,6 +461,32 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   node-only test env can cover it. (R5-5)
 - **Every minted object URL goes through a revoking setter** (+
   unmount cleanup) so superseded previews never leak. (R4-8)
+- **Recipe equality is per-key over canonical keys, never
+  `JSON.stringify`.** Reset nulls optional ML fields that are absent
+  from `DEFAULT_EDIT`, so the reset-produced recipe always carried
+  extra `null` keys and stringify never matched — the Reset button
+  stayed highlighted after every reset. The per-key check
+  (order-independent, nullish-tolerant for optional fields,
+  mirroring the `isOriginalLook` convention) fixes the predicate,
+  not just the patch. A shared `RESET_PATCH` is the single source
+  of truth for the reset shape, with a test pinning the
+  patch→predicate loop (merge over a fully dirty edit ⇒ default).
+  And a reset must clear every field the predicate checks —
+  `denoise` strength survived `reset()` and re-ran on reopen.
+  (R6-4; cf. the R1-3 "dirty mirrors reset keys" invariant.)
+- **Emit one canonical URL form; parse leniently.** The app always
+  writes `/photo/<id>/<tool>` (tool segment never omitted, so every
+  editor URL round-trips exactly) while the parser also accepts bare
+  `/photo/<id>`, trailing slashes, and unknown paths (normalized to
+  canonical by the sync effect). Ids are
+  `encodeURIComponent`-escaped on build and decoded on parse, so
+  spaces round-trip and an encoded `%2F` stays inside one segment.
+  (R6-6)
+- **Legacy URLs ride the existing sync effect for free.** Old
+  `?photo=`/`?album=`/`?collection=`/`?tool=` links still parse when
+  the path carries no route (path wins on conflict), and the
+  unchanged URL-sync effect rewrites them to canonical paths via
+  `replaceState` — the redirect needed no new code. (R6-6)
 
 ## 5. Testing practices (repo-specific)
 
@@ -492,7 +554,7 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 - **"Don't run Playwright" ≠ "don't update Playwright specs."** Grep
   e2e for the changed UI and update stale expectations in the same
   commit, or the next e2e run fails on an intended change. (R2-3,
-  R4-4)
+  R4-4, R6-6)
 - **A test pinning "keep X different" is a deliberate contract, not
   incidental coverage.** When a task flips it, update the rationale
   comment too — not just the assertion — and add an explicit match
@@ -566,6 +628,17 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   100% on the new one proves the test pins the fix, not incidental
   markup — the mapping-test equivalent of the R3-6 stash check.
   (R5-5)
+- **Pin no-layout-shift with byte-identical markup assertions.**
+  Updating-vs-settled export markup must differ only by the
+  `is-updating` class; loading-vs-loaded histogram markup must be
+  identical after stripping the live curve group. If nothing may
+  appear/disappear, assert the bytes, not just the absence of one
+  known element. (R6-1, R6-2)
+- **Strictly-empty renders pin "nothing" exactly.** The pending
+  backlink asserts the full `<div
+  class="collection-breadcrumb"></div>` — no button, no span, no
+  text — which is stronger than one absence check and fails on any
+  future placeholder. (R6-7)
 
 ## 6. Tooling gotchas
 
@@ -592,13 +665,20 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   signature of a stale `dist` (unit tests resolve source). Never
   commit `dist/`.
   (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6,
-  R4-4, R4-5, R4-6, R4-7, R4-8, R5-1)
+  R4-4, R4-5, R4-6, R4-7, R4-8, R5-1, R6-6)
 - **Commit by explicit paths, never `git add -A`.** Stray files
   (e.g. `.DS_Store` under `docs/`) get swept in otherwise. (R1)
 - **No CI, no configured linter** — both packages' `lint` scripts
   are no-op echoes. No Playwright for these tasks by instruction;
   unit/integration tests only; tests + typecheck are the only gates.
   (R1-9, R1-13, R2-4)
+- **Vite `base: "./"` breaks deep-link reloads under nested
+  paths.** R6-6's `/photo/…` and `/album/…` routes made the relative
+  base resolve the favicon and lazy `vision.worker`/opencv chunks
+  against `/photo/` or `/album/` (404s) — the fix is an absolute
+  `"/"` base, verified in the built `dist/index.html`. Any routing
+  change must re-check the base + lazy-chunk URLs in a production
+  build. (R6-6)
 
 ## 7. Scope and ambiguity discipline
 
@@ -694,6 +774,17 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
   click-on-figure pattern and likely the same y-offset — noted in
   the R5-5 writeup as a follow-up, untouched in the commit.
   (R5-5)
+- **Single-instance reports need a breadth check first.** "Reset
+  stays highlighted on DSC06323.ARW" reproduced on every photo — a
+  repro script (fresh default ⇒ default, after-reset recipe ⇒
+  default) confirmed the predicate bug before any fix was written,
+  and named the real scope (all photos, two defects) instead of one
+  file. (R6-4)
+- **Check the existing infrastructure before adding any.** Path-URL
+  deep-link reloads needed no server change (`app.ts` already falls
+  back non-`/api` GETs to `index.html`) and no redirect code (the
+  URL-sync effect already rewrites). Verify first, then build only
+  what's missing — the R2-8 instinct. (R6-6)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -770,3 +861,15 @@ toolbar, export, or library UI so we don't repeat the same mistakes.
 | 5 | `58139d9` | `export-preview-drag-click-position.md` | Draggable focus square; clicks measured on image box |
 | 6 | `37c7bae` | `export-preview-keeps-open-on-preset-change.md` | Stale-dimmed preview fades to new pixels across presets |
 | 7 | `4ccba62` | `remove-download-settings-button.md` | Export dialog Settings button + dead CSS removed |
+
+## Per-task index, R6 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `d053e4e` | `01-export-modal-no-resize.md` | "Updating preview" line removed; dim-only updating feedback |
+| 2 | `5361a40` | `02-histogram-flat-start.md` | Histogram starts flat, curves rise from zero |
+| 3 | `8f212d2` | `03-copy-filename.md` | Filename click copies via boolean clipboard helper |
+| 4 | `cb39df2` | `04-reset-button-highlight.md` | Per-key `isDefaultEdit` + shared `RESET_PATCH` + denoise cleared |
+| 5 | `1245b9d` | `05-export-button-photo-only.md` | Export gated on `showPhotoTools` |
+| 6 | `2cded86` | `06-path-urls.md` | `/photo/<id>/<tool>` + `/album/<id>` routes, legacy queries redirect |
+| 7 | `1697df2` | `07-backlink-fade.md` | Pending backlink renders null, fades in on arrival |
