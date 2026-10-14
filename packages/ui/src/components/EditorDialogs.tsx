@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { Camera, Check, Download, Folder, FolderPlus, Info, Keyboard, MapPin, Save, Share, Tag, Trash2, X } from 'lucide-react';
 import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_EDITION, APP_NAME, APP_TAGLINE, CULL_LABELS, EXTENSION_POINTS, SEMANTIC_CONCEPT_VOCAB, SEMANTIC_SEARCH_EMPTY_LABELS_NOTE, SEMANTIC_SEARCH_ML_BADGE_HINT, SUPERRES_MAX_INPUT_DIM, SUPERRES_SCALE, createLibraryClient, downloadBlob, encodeExportCanvas, exportPhoto, formatByteSize, getPhotoFilter, isDefaultEdit, isLossyExportFormat, loadStoredHealOverlays, renderExportCanvas, renderExportPreview, superresEngineNote } from '@f8/core';
 import type { DialogType, EditState, Photo, RepairInpaintBinding, SuperresExportBinding, SuperresHealthSnapshot } from '@f8/core';
@@ -63,13 +64,31 @@ function clampExportFocus(value: number): number {
   return Math.max(EXPORT_FOCUS_HALF, Math.min(100 - EXPORT_FOCUS_HALF, value));
 }
 
+/**
+ * Focus % from a pointer position over the full-view image box. Pure so the
+ * coordinate mapping is unit-testable: the rect must be the image box
+ * (.export-quality-full-wrap) — the focus rect's own positioning context —
+ * not the figure, whose rect folds the caption into the height and lands the
+ * square above the click. Null when the box has no size yet.
+ */
+export function exportFocusFromClientPoint(
+  clientX: number,
+  clientY: number,
+  rect: { left: number; top: number; width: number; height: number },
+): { x: number; y: number } | null {
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const x = Math.round(((clientX - rect.left) / rect.width) * 100);
+  const y = Math.round(((clientY - rect.top) / rect.height) * 100);
+  return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
+}
+
 export interface ExportQualityPreviewProps {
   format: string;
   quality: number;
   /** Object URL of the encoded export; null while rendering or on failure. */
   previewUrl: string | null;
   estimating: boolean;
-  /** Focus center in % of the full view; clicking the full view moves it. */
+  /** Focus center in % of the full view; clicking or dragging the full view moves it. */
   focus: { x: number; y: number };
   onFocus: (focus: { x: number; y: number }) => void;
 }
@@ -89,19 +108,20 @@ export function ExportQualityPreview({ format, quality, previewUrl, estimating, 
     return <section className="export-quality-preview" data-testid="export-quality-preview"><p className="export-quality-title" data-testid="export-quality-title">Quality preview</p><p className="inspector-note" role="status" data-testid="export-quality-loading">Rendering quality preview…</p></section>;
   }
   const position = `${focus.x}% ${focus.y}%`;
+  // Pointer position → focus %, measured against the image box (the focus
+  // rect's own positioning context). The figure is NOT the reference: its
+  // rect includes the caption, which used to land the square above the click.
+  const moveFocus = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const next = exportFocusFromClientPoint(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect());
+    if (next) onFocus(next);
+  };
   return <section className="export-quality-preview" data-testid="export-quality-preview">
     <p className="export-quality-title" data-testid="export-quality-title">Quality preview</p>
     <div className="export-quality-views" data-testid="export-quality-views">
-      <figure className="export-quality-full" data-testid="export-quality-full" data-tooltip="Click to move the 16× closeup" onClick={(event) => {
-        const rect = event.currentTarget.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return;
-        const x = Math.round(((event.clientX - rect.left) / rect.width) * 100);
-        const y = Math.round(((event.clientY - rect.top) / rect.height) * 100);
-        onFocus({ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) });
-      }}><div className="export-quality-full-wrap"><img src={previewUrl} alt="Full export preview" data-testid="export-quality-full-img" /><div className="export-quality-focus" data-testid="export-quality-focus" aria-hidden="true" style={{ left: `${clampExportFocus(focus.x)}%`, top: `${clampExportFocus(focus.y)}%` }} /></div><figcaption>Full export</figcaption></figure>
+      <figure className="export-quality-full" data-testid="export-quality-full"><div className="export-quality-full-wrap" data-testid="export-quality-full-wrap" data-tooltip="Click or drag to move the 16× closeup" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveFocus(event); }} onPointerMove={(event) => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; moveFocus(event); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} onPointerCancel={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}><img src={previewUrl} alt="Full export preview" draggable={false} data-testid="export-quality-full-img" /><div className="export-quality-focus" data-testid="export-quality-focus" aria-hidden="true" style={{ left: `${clampExportFocus(focus.x)}%`, top: `${clampExportFocus(focus.y)}%` }} /></div><figcaption>Full export</figcaption></figure>
       <figure><div className="export-quality-zoom" role="img" aria-label="Export closeup at 16x magnification" data-testid="export-quality-zoom" style={{ backgroundImage: `url("${previewUrl}")`, backgroundPosition: position }} /><figcaption>16×</figcaption></figure>
     </div>
-    <p className="inspector-note" data-testid="export-quality-note">Actual {format.toUpperCase()} output at {quality}% — click the full view to move the closeup.</p>
+    <p className="inspector-note" data-testid="export-quality-note">Actual {format.toUpperCase()} output at {quality}% — click or drag the full view to move the closeup.</p>
   </section>;
 }
 

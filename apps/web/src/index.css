@@ -552,7 +552,7 @@ its chevron glyph off the toggle edge. */
 .export-quality-full { cursor: crosshair; }
 .export-quality-views img { display: block; width: 100%; border-radius: 4px; border: 1px solid #3a3a3e; }
 .export-quality-views figcaption { margin-top: 4px; font-size: 9px; color: #85858f; text-align: center; }
-.export-quality-full-wrap { position: relative; }
+.export-quality-full-wrap { position: relative; touch-action: none; }
 .export-quality-focus { position: absolute; width: 6.25%; aspect-ratio: 1 / 1; transform: translate(-50%, -50%); border: 1px solid #ffffff; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55); pointer-events: none; }
 .export-quality-zoom { width: 100%; aspect-ratio: 1 / 1; background-size: 1600%; background-repeat: no-repeat; image-rendering: pixelated; border-radius: 4px; border: 1px solid #3a3a3e; }
 .text-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 19px; font-size: 10px; color: #bdbdc8; }

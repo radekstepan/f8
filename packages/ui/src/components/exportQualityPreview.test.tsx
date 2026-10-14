@@ -5,14 +5,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
 import type { Photo, SuperresExportBinding } from '@f8/core';
-import { EditorDialogs, ExportQualityPreview } from './EditorDialogs.js';
+import { EditorDialogs, ExportQualityPreview, exportFocusFromClientPoint } from './EditorDialogs.js';
 
 // Lossy-format quality preview, rendered on the server (no jsdom): effects
 // never run, so the dialog pins the loading placeholder + gating, while
 // the preview component pins the full-view/zoom markup with an injected
-// URL (the same prop-injection the denoise tests use). Click behavior
+// URL (the same prop-injection the denoise tests use). Pointer behavior
 // (moving the focus, keeping it across preset switches) is structural:
-// one dialog-owned focus state, reset only on photo change.
+// one dialog-owned focus state, reset only on photo change; the drag
+// wiring is pinned at source level (handlers are invisible to static
+// markup) and the coordinate mapping is a unit-tested pure helper.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cssPath = resolve(here, '../../../../apps/web/src/index.css');
@@ -142,7 +144,7 @@ describe('export quality preview', () => {
     expect(rectTag).toContain('left:50%');
     expect(rectTag).toContain('top:50%');
     expect(html).toContain('background-position:50% 50%');
-    expect(html).toContain('Click to move the 16× closeup');
+    expect(html).toContain('Click or drag to move the 16× closeup');
     // The note names the actual output: format + quality.
     expect(html).toContain('data-testid="export-quality-note"');
     expect(html).toContain('Actual JPEG output at 90%');
@@ -204,5 +206,73 @@ describe('export quality preview', () => {
     expect(cssRule('.export-quality-full')).toMatch(/cursor\s*:\s*crosshair/);
     const title = cssRule('.export-quality-title');
     expect(title).toMatch(/text-transform\s*:\s*uppercase/);
+  });
+
+  it('anchors the drag target on the image box, not the figure with its caption', () => {
+    const html = renderPreview({});
+    // The interactive box wraps the image (the focus rect's positioning
+    // context): it carries the tooltip and a test id, while the figure —
+    // whose rect folds the caption into the height — carries neither.
+    const figureTag = html.match(/<figure[^>]*data-testid="export-quality-full"[^>]*>/)?.[0] ?? '';
+    expect(figureTag).not.toBe('');
+    expect(figureTag).not.toContain('data-tooltip');
+    const wrapTag = html.match(/<div[^>]*data-testid="export-quality-full-wrap"[^>]*>/)?.[0] ?? '';
+    expect(wrapTag).not.toBe('');
+    expect(wrapTag).toContain('data-tooltip="Click or drag to move the 16× closeup"');
+    // The image opts out of native drag so a loupe drag never tears it away.
+    const imgTag = html.match(/<img[^>]*data-testid="export-quality-full-img"[^>]*>/)?.[0] ?? '';
+    expect(imgTag).toContain('draggable="false"');
+    expect(html).toContain('click or drag the full view to move the closeup');
+  });
+
+  it('drags with pointer capture and measures the image box (source pin)', () => {
+    // Handlers never render into static markup, so the wiring is pinned at
+    // source level like the quality-reset-hint test does.
+    const source = readFileSync(resolve(here, 'EditorDialogs.tsx'), 'utf8');
+    const preview = source.slice(source.indexOf('export function ExportQualityPreview'), source.indexOf('function ExportDialog'));
+    expect(preview).toContain('onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveFocus(event); }}');
+    expect(preview).toContain('onPointerMove={(event) => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; moveFocus(event); }}');
+    expect(preview).toContain('onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}');
+    expect(preview).toContain('onPointerCancel={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}');
+    // One shared mapping against the handler's own box; no figure onClick left.
+    expect(preview).toContain('exportFocusFromClientPoint(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect())');
+    expect(preview).not.toContain('onClick');
+  });
+
+  it('lets touch drags reach the loupe instead of scrolling', () => {
+    expect(cssRule('.export-quality-full-wrap')).toMatch(/touch-action\s*:\s*none/);
+  });
+});
+
+describe('export focus mapping', () => {
+  const box = { left: 100, top: 50, width: 200, height: 100 };
+
+  it('maps pointer positions to focus % with rounding', () => {
+    expect(exportFocusFromClientPoint(100, 50, box)).toEqual({ x: 0, y: 0 });
+    expect(exportFocusFromClientPoint(200, 100, box)).toEqual({ x: 50, y: 50 });
+    expect(exportFocusFromClientPoint(300, 150, box)).toEqual({ x: 100, y: 100 });
+    // Quarter-pixel positions round to whole percents.
+    expect(exportFocusFromClientPoint(125, 62, box)).toEqual({ x: 13, y: 12 });
+  });
+
+  it('clamps drags outside the box to the edges', () => {
+    expect(exportFocusFromClientPoint(0, 0, box)).toEqual({ x: 0, y: 0 });
+    expect(exportFocusFromClientPoint(999, 999, box)).toEqual({ x: 100, y: 100 });
+  });
+
+  it('lands the square where the user clicked, caption or not', () => {
+    // Regression: the click used to be measured against the figure, whose
+    // 20px caption inflated a 200px-tall image box to 220px — a click on
+    // the image's bottom edge (clientY 250) then read 91% and the square
+    // appeared above the click. Measured against the image box it reads 100%.
+    const figureRect = { left: 100, top: 50, width: 200, height: 220 };
+    expect(exportFocusFromClientPoint(200, 250, figureRect)).toEqual({ x: 50, y: 91 });
+    const imageBox = { left: 100, top: 50, width: 200, height: 200 };
+    expect(exportFocusFromClientPoint(200, 250, imageBox)).toEqual({ x: 50, y: 100 });
+  });
+
+  it('ignores pointers while the box has no size', () => {
+    expect(exportFocusFromClientPoint(200, 100, { ...box, width: 0 })).toBeNull();
+    expect(exportFocusFromClientPoint(200, 100, { ...box, height: 0 })).toBeNull();
   });
 });
