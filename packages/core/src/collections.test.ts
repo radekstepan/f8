@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectionForPhoto, isBuiltInCollection, isDeletableCollection, isRecentlyEdited, photoInCollection, resolveCollectionClick } from "./collections.js";
+import { collectionForPhoto, isBuiltInCollection, isDeletableCollection, isRecentlyEdited, photoInCollection, ratingCollectionId, ratingCollectionLabel, ratingForCollection, resolveCollectionClick, savedRatings } from "./collections.js";
 import { buildLibraryUrl, parseLibraryUrl } from "./libraryUrl.js";
 import type { Photo } from "./types.js";
 
@@ -134,5 +134,59 @@ describe("built-in collections", () => {
       expect(isBuiltInCollection(id)).toBe(false);
       expect(isDeletableCollection(id)).toBe(true);
     }
+  });
+});
+
+describe("star-rating smart albums", () => {
+  it("builds one collection id per rating", () => {
+    expect(ratingCollectionId(5)).toBe("rating-5");
+    expect(ratingCollectionId(1)).toBe("rating-1");
+  });
+
+  it("parses only ratings 1..5 from collection ids", () => {
+    expect(ratingForCollection("rating-5")).toBe(5);
+    expect(ratingForCollection("rating-1")).toBe(1);
+    for (const id of ["all", "favorites", "coast", "rating-0", "rating-6", "rating-x", "rating-", "rating-3x", "Rating-5"]) {
+      expect(ratingForCollection(id)).toBeNull();
+    }
+  });
+
+  it("labels ratings with a singular one-star form", () => {
+    expect(ratingCollectionLabel(1)).toBe("1 Star");
+    expect(ratingCollectionLabel(5)).toBe("5 Stars");
+  });
+
+  it("lists the distinct saved ratings, highest first", () => {
+    const photos = [photo({ rating: 3 }), photo({ rating: 5 }), photo({ rating: 3 }), photo({ rating: 0 })];
+    expect(savedRatings(photos)).toEqual([5, 3]);
+  });
+
+  it("ignores unrated and out-of-range ratings", () => {
+    expect(savedRatings([photo({ rating: 0 }), photo({ rating: 0 })])).toEqual([]);
+    expect(savedRatings([photo({ rating: 7 }), photo({ rating: -1 }), photo({ rating: 2.5 })])).toEqual([]);
+  });
+
+  it("matches photos by exact rating", () => {
+    expect(photoInCollection(photo({ rating: 5 }), "rating-5")).toBe(true);
+    expect(photoInCollection(photo({ rating: 4 }), "rating-5")).toBe(false);
+    expect(photoInCollection(photo({ rating: 0 }), "rating-5")).toBe(false);
+  });
+
+  it("treats smart albums as built-in: never deletable", () => {
+    for (const id of ["rating-1", "rating-3", "rating-5"]) {
+      expect(isBuiltInCollection(id)).toBe(true);
+      expect(isDeletableCollection(id)).toBe(false);
+    }
+  });
+
+  it("falls invalid rating ids through to album matching", () => {
+    expect(photoInCollection(photo({ albumId: "rating-0" }), "rating-0")).toBe(true);
+    expect(photoInCollection(photo(), "rating-0")).toBe(false);
+  });
+
+  it("round-trips a smart album through the grid URL", () => {
+    const id = ratingCollectionId(4);
+    expect(parseLibraryUrl(buildLibraryUrl({ view: "library", collectionId: id })).collectionId).toBe(id);
+    expect(photoInCollection(photo({ rating: 4 }), id)).toBe(true);
   });
 });

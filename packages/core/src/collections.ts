@@ -1,7 +1,7 @@
 // Collection matching for the library sidebar, filmstrip, and grid.
 //
-// A photo's home collection is its album; the three built-in collections
-// match by flag or recency. Inside a photo the open photo decides the
+// A photo's home collection is its album; the built-in collections match
+// by flag, recency, or star rating. Inside a photo the open photo decides the
 // collection (sidebar, toolbar, and filmstrip always agree with what's on
 // screen — see libraryUrl.ts), so this predicate is the single source of
 // truth for both listing and inference; the album grid itself deep-links
@@ -33,6 +33,8 @@ export function photoInCollection(photo: Photo, collection: string, now: number 
   if (collection === "all") return true;
   if (collection === "favorites") return photo.favorite;
   if (collection === "edited") return isRecentlyEdited(photo, now);
+  const rating = ratingForCollection(collection);
+  if (rating !== null) return photo.rating === rating;
   return photo.albumId === collection;
 }
 
@@ -46,9 +48,57 @@ export const BUILT_IN_COLLECTIONS = ["all", "favorites", "edited"] as const;
 
 export type BuiltInCollection = (typeof BUILT_IN_COLLECTIONS)[number];
 
-/** True for the built-in collections (All Photos, Favorites, Recently Edited). */
+/**
+ * Star-rating smart albums: one computed collection per saved rating
+ * (`rating-5`, `rating-1`, ...), shown in the sidebar Library group only
+ * for ratings at least one photo has. Like the built-ins they are never
+ * stored and never deletable; the URL form is /album/rating-<n>.
+ */
+export const RATING_COLLECTION_PREFIX = "rating-";
+
+/** Lowest/highest star rating with a smart album (0 means unrated — no album). */
+export const MIN_STAR_RATING = 1;
+export const MAX_STAR_RATING = 5;
+
+/** Collection id for a star rating's smart album. */
+export function ratingCollectionId(rating: number): string {
+  return `${RATING_COLLECTION_PREFIX}${rating}`;
+}
+
+/**
+ * Star rating a collection id names, or null when it names no smart
+ * album. Strict: only integers 1..5 parse, so `rating-0`, `rating-6`,
+ * and `rating-x` all fall through to album matching.
+ */
+export function ratingForCollection(collection: string): number | null {
+  if (!collection.startsWith(RATING_COLLECTION_PREFIX)) return null;
+  const rating = Number(collection.slice(RATING_COLLECTION_PREFIX.length));
+  if (!Number.isInteger(rating) || rating < MIN_STAR_RATING || rating > MAX_STAR_RATING) return null;
+  return rating;
+}
+
+/** Sidebar/grid title for a star rating's smart album ("5 Stars", "1 Star"). */
+export function ratingCollectionLabel(rating: number): string {
+  return `${rating} Star${rating === 1 ? "" : "s"}`;
+}
+
+/**
+ * Distinct star ratings present in the photos, highest first. Ratings
+ * outside 1..5 (unrated, legacy strays) never earn a smart album.
+ */
+export function savedRatings(photos: Photo[]): number[] {
+  const found = new Set<number>();
+  for (const photo of photos) {
+    if (Number.isInteger(photo.rating) && photo.rating >= MIN_STAR_RATING && photo.rating <= MAX_STAR_RATING) {
+      found.add(photo.rating);
+    }
+  }
+  return [...found].sort((a, b) => b - a);
+}
+
+/** True for the built-in collections (All Photos, Favorites, Recently Edited) and the star-rating smart albums. */
 export function isBuiltInCollection(collection: string): boolean {
-  return (BUILT_IN_COLLECTIONS as readonly string[]).includes(collection);
+  return (BUILT_IN_COLLECTIONS as readonly string[]).includes(collection) || ratingForCollection(collection) !== null;
 }
 
 /** True when the collection is a user album that may be deleted. */

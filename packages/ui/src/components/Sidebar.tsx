@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
-import { Clock3, MoreHorizontal, Folder, Heart, Images, Import, Plus, Search } from 'lucide-react';
+import { Clock3, MoreHorizontal, Folder, Heart, Images, Import, Plus, Search, Star } from 'lucide-react';
 import type { Album, Photo } from '@f8/core';
-import { MOVE_PHOTOS_MIME, anchorMenuBelowTrigger, decodeMovePayload, isRecentlyEdited } from '@f8/core';
+import { MOVE_PHOTOS_MIME, anchorMenuBelowTrigger, decodeMovePayload, isRecentlyEdited, ratingCollectionId, ratingCollectionLabel, savedRatings } from '@f8/core';
 import { IconButton, MenuItem } from './EditorUI.js';
 import { useIsomorphicLayoutEffect } from '../hooks/useIsomorphicLayoutEffect.js';
 import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
@@ -110,6 +110,15 @@ export function Sidebar({ photos, albums, collection, search, onSearch, onSelect
     { id: 'all', label: 'All Photos', icon: Images, count: photos.length },
     { id: 'favorites', label: 'Favorites', icon: Heart, count: photos.filter((photo) => photo.favorite).length },
     { id: 'edited', label: 'Recently Edited', icon: Clock3, count: photos.filter((photo) => isRecentlyEdited(photo)).length },
+    // Star smart albums: one row per saved rating (highest first), so
+    // starring the first photo adds its row and unstarring the last one
+    // removes it — no row ever shows a zero count.
+    ...savedRatings(photos).map((rating) => ({
+      id: ratingCollectionId(rating),
+      label: ratingCollectionLabel(rating),
+      icon: Star,
+      count: photos.filter((photo) => photo.rating === rating).length,
+    })),
   ];
   return (
     <aside className="library-sidebar" aria-label="Photo library">

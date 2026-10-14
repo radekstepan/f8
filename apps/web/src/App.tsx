@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
+import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
@@ -26,6 +26,14 @@ import { FsBrowser } from './components/FsBrowser';
 import { readToolPrefs, writeToolPrefsRaw } from './hooks/useToolPrefs';
 
 const collectionTitles: Record<string, string> = { all: 'All Photos', favorites: 'Favorites', edited: 'Recently Edited' };
+
+// Grid/backlink title for a collection id: user albums by name, the
+// static Library entries from the table, star smart albums from their
+// rating ("5 Stars") — anything else is an unknown id ("Your Photos").
+const titleForCollection = (albums: Array<{ id: string; name: string }>, id: string): string => {
+  const rating = ratingForCollection(id);
+  return albums.find((album) => album.id === id)?.name || collectionTitles[id] || (rating === null ? 'Your Photos' : ratingCollectionLabel(rating));
+};
 
 type FolderDialog = { mode: 'import' } | { mode: 'locate'; photoId: string };
 
@@ -248,7 +256,7 @@ export default function App() {
   // grid titled 'Your Photos'. Built-ins always resolve.
   useEffect(() => {
     if (view !== 'library' || library.status !== 'ready') return;
-    if (collection === 'all' || collection === 'favorites' || collection === 'edited') return;
+    if (isBuiltInCollection(collection)) return;
     if (!albums.some((album) => album.id === collection)) setCollection('all');
   }, [view, collection, albums, library.status]);
   useEffect(() => {
@@ -276,14 +284,14 @@ export default function App() {
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
-  const collectionName = albums.find((album) => album.id === collection)?.name || collectionTitles[collection] || 'Your Photos';
+  const collectionName = titleForCollection(albums, collection);
   // What the toolbar backlink names: null while the photo's collection is
   // not yet known (hard reload of a photo URL), so the toolbar shows
   // nothing instead of flashing the wrong category, then fades the link
   // in. In the grid this always equals the collection — only the backlink
   // can be pending.
   const backlinkCollection = resolveBacklinkCollection(view, photo ?? null, collection, collectionSettled);
-  const backlinkName = backlinkCollection === null ? null : (albums.find((album) => album.id === backlinkCollection)?.name || collectionTitles[backlinkCollection] || 'Your Photos');
+  const backlinkName = backlinkCollection === null ? null : titleForCollection(albums, backlinkCollection);
   const removeAlbumRow = dialog === 'remove-album' ? albums.find((album) => album.id === removeAlbumTargetId) ?? null : null;
   const removeAlbumTarget = removeAlbumRow ? { id: removeAlbumRow.id, name: removeAlbumRow.name, count: photos.filter((item) => item.albumId === removeAlbumRow.id).length } : null;
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
@@ -316,10 +324,7 @@ export default function App() {
   const filteredPhotos = useMemo(() => {
     let items = photos.filter((item) => {
       if (search) return true;
-      if (collection === 'all') return true;
-      if (collection === 'favorites') return item.favorite;
-      if (collection === 'edited') return isRecentlyEdited(item);
-      return item.albumId === collection;
+      return photoInCollection(item, collection);
     });
     if (searchRank) {
       const byId = new Map(items.map((item) => [item.id, item]));
@@ -382,27 +387,32 @@ export default function App() {
   // Chips narrow within albums, but the Library shortcuts are just entry
   // presets: touching any chip there drops back to All Photos with that
   // filter applied, so the sidebar never claims a scope the chips undid.
+  // All Photos is already the deselected state, so only the narrowed
+  // built-ins (Favorites, Recently Edited, star smart albums) drop.
   // Re-clicking the active chip is a no-op, not a scope change.
+  const dropEntryPreset = () => {
+    if (collection !== 'all' && isBuiltInCollection(collection)) setCollection('all');
+  };
   const handleEditedFilter = (value: EditedFilter) => {
     if (value === editedFilter) return;
-    if (collection === 'favorites' || collection === 'edited') setCollection('all');
+    dropEntryPreset();
     setEditedFilter(value);
   };
 
   const handleFavoriteFilter = (value: FavoriteFilter) => {
     if (value === favoriteFilter) return;
-    if (collection === 'favorites' || collection === 'edited') setCollection('all');
+    dropEntryPreset();
     setFavoriteFilter(value);
   };
 
   const handleCullFilter = (value: CullFilter) => {
     if (value === cullFilter) return;
-    if (collection === 'favorites' || collection === 'edited') setCollection('all');
+    dropEntryPreset();
     setCullFilter(value);
   };
 
   const clearFilters = () => {
-    if (collection === 'favorites' || collection === 'edited') setCollection('all');
+    dropEntryPreset();
     setEditedFilter('all');
     setFavoriteFilter('all');
     setCullFilter('all');
