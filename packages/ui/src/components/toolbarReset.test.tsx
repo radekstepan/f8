@@ -9,9 +9,10 @@ import { Toolbar } from './Topbar.js';
 // next to the show/hide presets toggle, so a photo can be restored to its
 // original without opening the Edit menu. Rendered on the server (no
 // jsdom): effects never run, so this pins the markup + prop wiring — the
-// button order, the reset glyph, and the disabled-when-clean gate — with
-// the 'reset' dispatch and the App-side canReset derivation pinned from
-// source (the topbarMenus.test.tsx precedent).
+// button order, the reset glyph, the disabled-when-clean gate, and the
+// highlighted-when-edited state — with the 'reset' dispatch and the
+// App-side canReset derivation pinned from source (the
+// topbarMenus.test.tsx precedent).
 
 const here = dirname(fileURLToPath(import.meta.url));
 const topbarSource = () => readFileSync(resolve(here, 'Topbar.tsx'), 'utf8');
@@ -76,8 +77,19 @@ describe('toolbar reset to original', () => {
   });
 
   it('dispatches the shared reset action (same handler as Edit > Reset All Adjustments)', () => {
-    expect(topbarSource()).toContain(`label="Reset to original" disabled={!canReset} onClick={() => onAction('reset')}`);
+    expect(topbarSource()).toContain(`label="Reset to original" active={canReset} disabled={!canReset} onClick={() => onAction('reset')}`);
     expect(appSource()).toContain("case 'reset': {");
+  });
+
+  it('highlights the reset button only when the image has edits', () => {
+    for (const html of [renderToolbar(true), renderToolbar()]) {
+      const resetTag = actionsBlock(html).match(/<button[^>]*aria-label="Reset to original"[^>]*>/)?.[0] ?? '';
+      expect(resetTag).toContain('is-active');
+      expect(resetTag).toContain('aria-pressed="true"');
+    }
+    const cleanTag = actionsBlock(renderToolbar(false)).match(/<button[^>]*aria-label="Reset to original"[^>]*>/)?.[0] ?? '';
+    expect(cleanTag).not.toContain('is-active');
+    expect(cleanTag).toContain('aria-pressed="false"');
   });
 
   it('derives canReset from the default-recipe check, mirroring reset() itself', () => {

@@ -148,7 +148,7 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
       </div>
       <div className="toolbar-actions">
         {showPhotoTools && onTogglePresets && <IconButton label={presetsOpen ? 'Hide presets' : 'Show presets'} active={presetsOpen} onClick={onTogglePresets}><SwatchBook size={18} strokeWidth={1.6} /></IconButton>}
-        {showPhotoTools && <IconButton label="Reset to original" disabled={!canReset} onClick={() => onAction('reset')}><RotateCcw size={18} strokeWidth={1.6} /></IconButton>}
+        {showPhotoTools && <IconButton label="Reset to original" active={canReset} disabled={!canReset} onClick={() => onAction('reset')}><RotateCcw size={18} strokeWidth={1.6} /></IconButton>}
         {showPhotoTools && <IconButton label={tool === 'crop' ? 'Compare with original (unavailable while cropping)' : 'Compare with original (B)'} active={compare} disabled={tool === 'crop'} onClick={() => onAction('compare')}><Columns2 size={18} strokeWidth={1.6} /></IconButton>}
         {showPhotoTools && <IconButton label="Photo information (I)" onClick={() => onDialog('info')}><Info size={18} strokeWidth={1.6} /></IconButton>}
         <button className="export-button" onClick={() => onDialog('export')}><Share size={15} /><span>Export</span></button>
