@@ -568,7 +568,6 @@ its chevron glyph off the toggle edge. */
 .dialog-note { display: flex; align-items: flex-start; gap: 8px; color: #8c8c9a; font-size: 9px; line-height: 1.8; margin-top: 16px; }
 .dialog-note > svg { margin-top: 2px; color: #9292a0; }
 .modal-footer { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding-top: 20px; margin-top: 23px; border-top: 1px solid #46464e; }
-.export-settings { margin-right: auto; font-size: 9px; }
 .form-error { margin-top: 15px; padding: 9px 11px; border-left: 2px solid #d88a7d; background: #bb756217; color: #dda89c; font-size: 10px; line-height: 1.6; }
 .dialog-feature-icon { color: #c5ad7d; display: flex; justify-content: center; padding: 4px 0 26px; }
 .small-modal { width: 400px; }
