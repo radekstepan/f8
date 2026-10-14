@@ -723,7 +723,7 @@ its chevron glyph off the toggle edge. */
   .main-toolbar { gap: 3px; padding-left: 0; padding-right: 6px; }
   .backlink-name, .collection-name { max-width: 130px; }
   .toolbar-actions { gap: 3px; padding-inline: 10px; }
-  .toolbar-actions > .icon-button:nth-of-type(2) { display: none; }
+  .toolbar-actions > .toolbar-reset { display: none; }
   .tool-button { width: 37px; }
   .tool-button span { font-size: 8px; }
   .editing-tools { gap: 2px; }
