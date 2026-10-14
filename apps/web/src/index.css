@@ -473,7 +473,7 @@ its chevron glyph off the toggle edge. */
 .selective-mask-row .suggestion-actions { margin: 0 0 0 auto; }
 .selective-mask-row .suggestion-actions > button { flex: none; height: auto; }
 .selective-group { margin-top: 10px; }
-.selective-group-label { display: block; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #a2a2ac; }
+.selective-group-label { display: inline-flex; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #a2a2ac; }
 .selective-group .range-control { margin-top: 6px; }
 .selective-mask .range-control { margin-top: 8px; }
 .dust-spots .retouch-group-list { max-height: 220px; }

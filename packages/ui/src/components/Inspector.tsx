@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Bandage, Brush, ChevronDown, Circle, CircleDashed, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Layers, MoreHorizontal, Palette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Waves, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Bandage, Brush, ChevronDown, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Waves, X } from 'lucide-react';
 import { CROP_RATIOS, SCENE_DISPLAY_NAMES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
 import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, MlCategory, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
@@ -544,9 +544,9 @@ function FaceEnhanceControl({ assist }: { assist: FaceEnhanceAssist }) {
   </div>;
 }
 
-function SelectiveParamGroup({ label, values, onParam, testIdPrefix }: { label: string; values: SelectiveAdjustParams; onParam: (patch: Partial<SelectiveAdjustParams>) => void; testIdPrefix: string }) {
+function SelectiveParamGroup({ label, icon, values, onParam, testIdPrefix }: { label: string; icon: ReactNode; values: SelectiveAdjustParams; onParam: (patch: Partial<SelectiveAdjustParams>) => void; testIdPrefix: string }) {
   return <div className="selective-group" data-testid={`${testIdPrefix}-group`}>
-    <span className="selective-group-label">{label}</span>
+    <span className="selective-group-label">{icon}{label}</span>
     <RangeControl label="Exposure" value={values.exposure} min={-1} max={1} step={0.05} suffix=" EV" signed testId={`${testIdPrefix}-exposure`} onChange={(exposure) => onParam({ exposure })} />
     <RangeControl label="Contrast" value={values.contrast} min={-50} max={50} step={1} signed testId={`${testIdPrefix}-contrast`} onChange={(contrast) => onParam({ contrast })} />
     <RangeControl label="Saturation" value={values.saturation} min={-50} max={50} step={1} signed testId={`${testIdPrefix}-saturation`} onChange={(saturation) => onParam({ saturation })} />
@@ -574,8 +574,8 @@ function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
           <button className="text-button" data-testid="selective-mask-clear" data-tooltip="Remove the subject mask and its adjustments" onClick={assist.onClear}>Clear</button>
         </div>
       </div>
-      <SelectiveParamGroup label="Subject" values={assist.applied.subject} onParam={(patch) => assist.onAdjust('subject', patch)} testIdPrefix="selective-mask-subject" />
-      <SelectiveParamGroup label="Background" values={assist.applied.background} onParam={(patch) => assist.onAdjust('background', patch)} testIdPrefix="selective-mask-background" />
+      <SelectiveParamGroup label="Subject" icon={<CircleUserRound size={11} aria-hidden="true" />} values={assist.applied.subject} onParam={(patch) => assist.onAdjust('subject', patch)} testIdPrefix="selective-mask-subject" />
+      <SelectiveParamGroup label="Background" icon={<Image size={11} aria-hidden="true" />} values={assist.applied.background} onParam={(patch) => assist.onAdjust('background', patch)} testIdPrefix="selective-mask-background" />
     </>}
     {working && assist.progress && <MlProgressView progress={assist.progress} />}
     {working && <div className="suggestion-actions"><button className="text-button" data-testid="selective-mask-cancel" onClick={assist.onDismiss}>Cancel</button></div>}

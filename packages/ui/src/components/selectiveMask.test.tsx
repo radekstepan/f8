@@ -275,6 +275,35 @@ describe('selective mask control', () => {
     expect(cssRule('.toggle')).toContain('width: 25px');
   });
 
+  it('gives each slider group an icon so the subsections scan faster', () => {
+    // Subject takes the avatar glyph, Background the picture glyph — both
+    // from the same lucide set as every section header icon.
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
+      assist({ applied: APPLIED }),
+    );
+    const subjectStart = html.indexOf('data-testid="selective-mask-subject-group"');
+    const backgroundStart = html.indexOf('data-testid="selective-mask-background-group"');
+    expect(subjectStart).toBeGreaterThan(-1);
+    expect(backgroundStart).toBeGreaterThan(subjectStart);
+    const subjectGroup = html.slice(subjectStart, backgroundStart);
+    const backgroundGroup = html.slice(backgroundStart);
+    expect(subjectGroup).toContain('lucide-circle-user-round');
+    expect(subjectGroup).toContain('>Subject<');
+    expect(backgroundGroup).toContain('lucide-image');
+    expect(backgroundGroup).toContain('>Background<');
+    // The glyphs are decorative: screen readers keep hearing just the label.
+    expect(subjectGroup).toContain('aria-hidden="true"');
+    expect(backgroundGroup).toContain('aria-hidden="true"');
+  });
+
+  it('aligns the subgroup icons with their labels', () => {
+    const rule = cssRule('.selective-group-label');
+    expect(rule).toContain('inline-flex');
+    expect(rule).toContain('align-items: center');
+    expect(rule).toContain('gap: 4px');
+  });
+
   it('toggles the stored adjust off and on without deleting the mask', () => {
     const on = renderAdjust(
       { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
