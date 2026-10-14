@@ -155,7 +155,7 @@ describe('zoom-in-view menu submenu', () => {
       <MenuBar onAction={noop} canUndo canRedo={false} canPaste sidebar inspector presets={false} filmstrip zoomLens zoomLensMagnification={8} />,
     );
     const labels = Array.from(html.matchAll(/class="menu-trigger[^"]*"[^>]*>([^<]+)</g)).map((match) => match[1] ?? '');
-    expect(labels).toEqual(['File', 'Edit', 'Image', 'View', 'Window', 'Help']);
+    expect(labels).toEqual(['File', 'Edit', 'Image', 'View', 'Help']);
   });
 
   it('is listed in the keyboard shortcuts dialog', () => {

@@ -45,10 +45,15 @@ function triggerLabels(html: string): string[] {
   return Array.from(html.matchAll(/class="menu-trigger[^"]*"[^>]*>([^<]+)</g)).map((match) => match[1] ?? '');
 }
 
+/** The View dropdown source line (dropdowns only render while open). */
+function viewMenuLine(): string {
+  return source().split('\n').find((line) => line.trimStart().startsWith('View:')) ?? '';
+}
+
 describe('topbar menus and buttons', () => {
   it('renders exactly the File–Help triggers, with no f/8 brand trigger', () => {
     const labels = triggerLabels(renderMenuBar());
-    expect(labels).toEqual(['File', 'Edit', 'Image', 'View', 'Window', 'Help']);
+    expect(labels).toEqual(['File', 'Edit', 'Image', 'View', 'Help']);
     expect(renderMenuBar()).not.toContain('brand-name');
   });
 
@@ -82,10 +87,29 @@ describe('topbar menus and buttons', () => {
     expect(css()).not.toContain('brand-name');
   });
 
-  it('still hides Window (now the 5th menu) on very small screens', () => {
+  it('opens View with Focus Mode first, in its own section', () => {
+    const line = viewMenuLine();
+    expect(line).toContain("item('Focus Mode', 'fullscreen', 'Shift F')");
+    // First item: nothing but the fragment opener precedes it.
+    const at = line.indexOf("'fullscreen'");
+    expect(line.slice(0, at)).toMatch(/View: <>\{item\('Focus Mode', $/);
+    // Own section: a separator between it and the Show toggles.
+    const after = line.slice(at);
+    expect(after.indexOf('<MenuSeparator />')).toBeGreaterThan(-1);
+    expect(after.indexOf('<MenuSeparator />')).toBeLessThan(after.indexOf("'sidebar'"));
+  });
+
+  it('drops the Window menu and the duplicate Photo Browser entry', () => {
+    expect(source()).not.toMatch(/^\s*Window:/m);
+    expect(triggerLabels(renderMenuBar())).not.toContain('Window');
+    // One Photo Browser left: the View entry with the G shortcut.
+    expect(source().match(/Photo Browser/g)?.length).toBe(1);
+    expect(viewMenuLine()).toContain("item('Photo Browser', 'grid', 'G')");
+  });
+
+  it('hides no menu on very small screens (Help, now 5th, must stay)', () => {
     const labels = triggerLabels(renderMenuBar());
-    expect(labels[4]).toBe('Window');
-    expect(css()).toMatch(/\.menu-anchor:nth-child\(5\)\s*\{\s*display:\s*none/);
-    expect(css()).not.toContain('nth-child(6)');
+    expect(labels[4]).toBe('Help');
+    expect(css()).not.toMatch(/\.menu-anchor:nth-child\(\d+\)\s*\{\s*display:\s*none/);
   });
 });

@@ -795,7 +795,6 @@ its chevron glyph off the toggle edge. */
 @media (max-width: 460px) {
   .menu-bar { padding-inline: 10px; gap: 3px; }
   .menu-trigger { padding-inline: 8px; font-size: 10px; }
-  .menu-anchor:nth-child(5) { display: none; }
   .menu-anchor:nth-last-child(-n+2) .dropdown-menu { left: auto; right: 0; }
   .photo-rating > button:not(.icon-button) { display: none; }
   .heading-divider { display: none; }
