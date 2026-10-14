@@ -20,8 +20,6 @@ const cssRule = (selector: string): string => {
   return css().match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
 };
 
-const normalize = (body: string): string => body.replace(/\s+/g, ' ').trim();
-
 function makePhoto(): Photo {
   return {
     id: 'p1',
@@ -154,7 +152,7 @@ describe('selective mask control', () => {
     );
     expect(html).toContain('class="toggle is-on" data-testid="selective-mask-toggle"');
     expect(html).toContain('aria-checked="true"');
-    expect(html).toContain('data-tooltip="Subject &amp; Background on — click to clear"');
+    expect(html).toContain('data-tooltip="Subject &amp; Background on — click to turn off"');
     expect(html).not.toContain('aria-label="Reset subject &amp; background"');
   });
 
@@ -198,13 +196,14 @@ describe('selective mask control', () => {
     expect(failed).toContain('data-testid="selective-mask-retry"');
   });
 
-  it('shows an on-toggle with both live slider groups, rescan, and clear', () => {
+  it('shows both live slider groups with rescan and clear, and no content toggle', () => {
     const html = renderAdjust(
       { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
       assist({ applied: APPLIED }),
     );
-    expect(html).toContain('aria-label="Enable subject and background enhance"');
-    expect(html).toContain('aria-checked="true"');
+    // The header owns the only switch; the content holds just actions.
+    expect(html).toContain('class="toggle is-on" data-testid="selective-mask-toggle"');
+    expect(html).not.toContain('Enable subject and background enhance');
     expect(html).toContain('data-testid="selective-mask-subject-group"');
     expect(html).toContain('data-testid="selective-mask-subject-exposure"');
     expect(html).toContain('data-testid="selective-mask-subject-contrast"');
@@ -215,6 +214,18 @@ describe('selective mask control', () => {
     expect(html).toContain('data-testid="selective-mask-clear"');
     expect(html).not.toContain('data-testid="selective-mask-apply"');
     expect(html).not.toContain('data-testid="selective-mask-detect"');
+  });
+
+  it('keeps exactly one switch in the section — the header toggle', () => {
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
+      assist({ applied: APPLIED }),
+    );
+    const headingAt = html.indexOf('<h3>Subject &amp; Background</h3>');
+    expect(headingAt).toBeGreaterThan(-1);
+    const section = html.slice(html.lastIndexOf('<section', headingAt), html.indexOf('</section>', headingAt));
+    expect(section.match(/role="switch"/g)).toHaveLength(1);
+    expect(section).toContain('data-testid="selective-mask-toggle"');
   });
 
   it('drops the golden settings summary — the sliders show the values', () => {
@@ -247,33 +258,37 @@ describe('selective mask control', () => {
       { ...DEFAULT_EDIT, selectiveAdjust: neutral },
       assist({ applied: neutral }),
     );
-    expect(html).toContain('aria-label="Enable subject and background enhance"');
+    expect(html).toContain('class="toggle is-on" data-testid="selective-mask-toggle"');
     expect(html).toContain('data-testid="selective-mask-subject-exposure"');
     expect(html).toContain('data-testid="selective-mask-background-exposure"');
     expect(html).not.toContain('data-testid="selective-mask-detect"');
   });
 
-  it('renders the enable toggle as the row first child with standard switch classes', () => {
-    // The toggle leads the row (unlike Enhance Faces, there is no summary
-    // span before it), so row CSS must never target first-child buttons —
-    // that stretched the 25px switch into a wide gold bar.
+  it('keeps the actions row switch-free — Rescan and Clear only', () => {
+    // The header owns the only switch now; the row holds just the two
+    // text actions, so row CSS must never target first-child buttons —
+    // that once stretched a leading switch into a wide gold bar.
     const html = renderAdjust(
       { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
       assist({ applied: APPLIED }),
     );
-    expect(html).toContain('<div class="auto-enhance-row selective-mask-row"><button type="button" role="switch"');
-    expect(html).toContain('aria-label="Enable subject and background enhance"');
-    expect(html).toContain('class="toggle is-on"');
+    const rowStart = html.indexOf('selective-mask-row');
+    expect(rowStart).toBeGreaterThan(-1);
+    const row = html.slice(rowStart, html.indexOf('selective-mask-subject-group', rowStart));
+    expect(row).not.toContain('role="switch"');
+    expect(row).toContain('data-testid="selective-mask-redetect"');
+    expect(row).toContain('data-testid="selective-mask-clear"');
   });
 
-  it('has no first-child button rule that could stretch the leading toggle', () => {
+  it('has no first-child button rule that could stretch a leading control', () => {
     expect(css()).not.toMatch(/\.auto-enhance-row > button:first-child/);
   });
 
-  it('keeps the row toggle at the standard switch size, like Enhance Faces', () => {
-    expect(normalize(cssRule('.selective-mask-row > .toggle'))).toBe(normalize(cssRule('.face-enhance-row > .toggle')));
-    expect(cssRule('.selective-mask-row > .toggle')).toContain('flex: none');
-    expect(cssRule('.toggle')).toContain('width: 25px');
+  it('drops the row-toggle sizing rule and dims bypassed slider groups instead', () => {
+    // No switch lives in the content anymore, so its sizing rule is gone;
+    // the bypassed state dims the slider groups (the Faces is-off value).
+    expect(cssRule('.selective-mask-row > .toggle')).toBe('');
+    expect(cssRule('.selective-mask.is-off .selective-group')).toContain('opacity: .45');
   });
 
   it('gives each slider group an icon so the subsections scan faster', () => {
@@ -305,26 +320,27 @@ describe('selective mask control', () => {
     expect(rule).toContain('gap: 4px');
   });
 
-  it('toggles the stored adjust off and on without deleting the mask', () => {
+  it('drives bypass from the header toggle without deleting the mask', () => {
     const on = renderAdjust(
       { ...DEFAULT_EDIT, selectiveAdjust: APPLIED },
       assist({ applied: APPLIED }),
     );
-    expect(on).toContain('aria-checked="true"');
+    expect(on).toContain('class="toggle is-on" data-testid="selective-mask-toggle"');
+    expect(on).toContain('data-tooltip="Subject &amp; Background on — click to turn off"');
     const off = renderAdjust(
       { ...DEFAULT_EDIT, selectiveAdjust: { ...APPLIED, enabled: false } },
       assist({ applied: { ...APPLIED, enabled: false } }),
     );
-    expect(off).toContain('aria-label="Enable subject and background enhance"');
-    expect(off).toContain('aria-checked="false"');
+    // The header reads the enabled flag: bypassed shows off with a
+    // restore hint, and the slider groups dim so the state reads there.
+    expect(off).toContain('class="toggle" data-testid="selective-mask-toggle"');
+    expect(off).toContain('data-tooltip="Subject &amp; Background off — click to turn on"');
+    expect(off).toContain('selective-mask is-off');
     // The sliders and rescan/clear stay, so values survive the toggle.
     expect(off).toContain('data-testid="selective-mask-subject-exposure"');
     expect(off).toContain('data-testid="selective-mask-background-exposure"');
     expect(off).toContain('data-testid="selective-mask-redetect"');
     expect(off).toContain('data-testid="selective-mask-clear"');
-    // The header toggle means "mask stored", not "enabled" — the
-    // content toggle owns on/off, so bypassing keeps the header on.
-    expect(off).toContain('class="toggle is-on" data-testid="selective-mask-toggle"');
     expect(off).not.toContain('aria-label="Reset subject &amp; background"');
   });
 });

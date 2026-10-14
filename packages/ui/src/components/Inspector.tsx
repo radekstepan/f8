@@ -185,7 +185,7 @@ export interface SelectiveMaskAssist {
   onDetect: () => void;
   /** Live-tweak one side's stored params (each drag coalesces to one undo step). */
   onAdjust: (target: SelectiveTarget, patch: Partial<SelectiveAdjustParams>) => void;
-  /** Bypass/restore both sides' stored params without deleting the mask. */
+  /** Bypass/restore both sides' stored params without deleting the mask (driven from the header toggle). */
   onToggle: () => void;
   /** Remove the stored mask + params. */
   onClear: () => void;
@@ -556,19 +556,21 @@ function SelectiveParamGroup({ label, icon, values, onParam, testIdPrefix }: { l
 function SelectiveMaskControl({ assist }: { assist: SelectiveMaskAssist }) {
   const working = assist.state === 'detecting';
   const mlTag = assist.source === 'onnx' ? ' · ML' : '';
+  const bypassed = assist.applied != null && assist.applied.enabled === false;
   // No draft state: the app stores the mask the moment segmentation lands,
   // so every slider below patches the recipe and previews live. No applied
   // summary line either — the sliders themselves show the values, and the
-  // section title above names the action in every state. Segmentation runs
-  // from the section header's toggle (White Balance pattern), so there
-  // is no detect bar in the content in any state.
-  return <div className="selective-mask" data-testid="selective-mask">
+  // section title above names the action in every state. Segmentation and
+  // bypass both run from the section header's toggle (White Balance
+  // pattern), so the content holds no switch in any state — just the
+  // Rescan/Clear actions. While bypassed the slider groups dim (the
+  // Enhance Faces is-off precedent) so the off state reads at the values.
+  return <div className={bypassed ? 'selective-mask is-off' : 'selective-mask'} data-testid="selective-mask">
     {assist.state === 'idle' && !assist.applied &&
       <p className="inspector-note">Finds the subject with ML and applies instantly — drag either side&apos;s sliders and watch the photo. Changes save automatically.</p>
     }
     {assist.applied && <>
       <div className="auto-enhance-row selective-mask-row">
-        <Toggle checked={assist.applied.enabled !== false} onChange={assist.onToggle} label="Enable subject and background enhance" />
         <div className="suggestion-actions">
           <button className="text-button" data-testid="selective-mask-redetect" data-tooltip="Segment the subject again (keeps your slider values)" onClick={assist.onDetect}>Rescan</button>
           <button className="text-button" data-testid="selective-mask-clear" data-tooltip="Remove the subject mask and its adjustments" onClick={assist.onClear}>Clear</button>
@@ -1007,6 +1009,12 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   // toggle stays off — it lights only when faces were found and the
   // enhancement was actually applied.
   const faceChanged = Boolean(faceAssist?.applied && faceAssist.applied.faces > 0);
+  // Subject & Background keeps a single switch, in the header: it segments
+  // when no mask is stored, and bypasses/restores the stored params while
+  // one lives (Clear in the content removes the mask). The header reads the
+  // enabled flag, not just mask presence, so bypass shows as off.
+  const selectiveApplied = selectiveAssist?.applied ?? null;
+  const selectiveOn = selectiveApplied != null && selectiveApplied.enabled !== false;
   // Slider-section toggles read dirtiness straight from the recipe: an
   // auto apply lights the toggle, and so does any hand tweak — no
   // highlight bookkeeping. (The toggle-off resets live in the editor hook
@@ -1046,7 +1054,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       </div>
       <IconButton label="Hide editing inspector" className="inspector-close" onClick={onClose}><X size={15} /></IconButton>
     </div>
-    <div className="inspector-scroll">{tool === 'adjust' ? <><Histogram data={histogram} photo={photo} />{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} toggle={{ id: 'scene-enhance', checked: sceneRevert, onToggle: sceneRevert ? onRevertEnhance : onAutoScene, hint: sceneRevert ? 'Scene enhance on — click to revert' : 'Apply scene enhance automatically' }}><SceneEnhanceControl edit={edit} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} badge={<MlBadge hint="Face detection runs a machine-learning model" />} toggle={{ id: 'face-enhance', checked: faceChanged, onToggle: faceChanged ? faceAssist.onClear : faceAssist.onDetect, hint: faceChanged ? 'Face enhance on — click to clear' : 'Detect faces with ML' }}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} badge={<MlBadge hint="Subject segmentation runs a machine-learning model" />} toggle={{ id: 'selective-mask', checked: Boolean(selectiveAssist.applied), onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect, hint: selectiveAssist.applied ? 'Subject & Background on — click to clear' : 'Find the subject with ML' }}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <DenoiseSection assist={denoiseAssist} photo={photo} />}
+    <div className="inspector-scroll">{tool === 'adjust' ? <><Histogram data={histogram} photo={photo} />{onAutoScene && <AdjustmentSection title="Scene Enhance" icon={<Sparkles size={14} />} toggle={{ id: 'scene-enhance', checked: sceneRevert, onToggle: sceneRevert ? onRevertEnhance : onAutoScene, hint: sceneRevert ? 'Scene enhance on — click to revert' : 'Apply scene enhance automatically' }}><SceneEnhanceControl edit={edit} /></AdjustmentSection>}{faceAssist && <AdjustmentSection title="Enhance Faces" icon={<ScanFace size={14} />} badge={<MlBadge hint="Face detection runs a machine-learning model" />} toggle={{ id: 'face-enhance', checked: faceChanged, onToggle: faceChanged ? faceAssist.onClear : faceAssist.onDetect, hint: faceChanged ? 'Face enhance on — click to clear' : 'Detect faces with ML' }}><FaceEnhanceControl assist={faceAssist} /></AdjustmentSection>}{selectiveAssist && <AdjustmentSection title="Subject & Background" icon={<Layers size={14} />} badge={<MlBadge hint="Subject segmentation runs a machine-learning model" />} toggle={{ id: 'selective-mask', checked: selectiveOn, onToggle: selectiveApplied ? selectiveAssist.onToggle : selectiveAssist.onDetect, hint: !selectiveApplied ? 'Find the subject with ML' : selectiveOn ? 'Subject & Background on — click to turn off' : 'Subject & Background off — click to turn on' }}><SelectiveMaskControl assist={selectiveAssist} /></AdjustmentSection>}{denoiseAssist && <DenoiseSection assist={denoiseAssist} photo={photo} />}
       <AdjustmentSection title="White Balance" icon={<Thermometer size={14} />} toggle={{ id: 'white-balance', checked: whiteBalanceDirty, onToggle: whiteBalanceDirty ? onResetWhiteBalance : onAutoWhiteBalance, hint: whiteBalanceDirty ? 'White Balance on — click to reset to defaults' : 'Apply white balance automatically' }}>
         {rangeEnabled('whiteBalanceEnabled', 'temperature', 'Temperature', { min: 2000, max: 10000, step: 50, defaultValue: 5500, suffix: 'K', color: 'temperature', signed: false })}
         {rangeEnabled('whiteBalanceEnabled', 'tint', 'Tint', { color: 'tint' })}

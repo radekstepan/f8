@@ -162,7 +162,10 @@ describe('auto/ml toggle contract', () => {
     expect(inspector).toContain("onToggle: colorDirty ? onResetColor : onAutoColor");
     expect(inspector).toContain("onToggle: sceneRevert ? onRevertEnhance : onAutoScene");
     expect(inspector).toContain("onToggle: faceChanged ? faceAssist.onClear : faceAssist.onDetect");
-    expect(inspector).toContain("onToggle: selectiveAssist.applied ? selectiveAssist.onClear : selectiveAssist.onDetect");
+    // Subject & Background is the one header switch that bypasses instead
+    // of clearing: off keeps the mask and slider values (Clear removes).
+    expect(inspector).toContain("onToggle: selectiveApplied ? selectiveAssist.onToggle : selectiveAssist.onDetect");
+    expect(inspector).toContain("const selectiveOn = selectiveApplied != null && selectiveApplied.enabled !== false");
     expect(inspector).toContain("onToggle: () => { if (applied) assist.onClear(); else { setSlider(suggestion); setAuto(true); } }");
     // The manual sections reset straight to defaults (no auto to cancel,
     // so no editor-owned reset needed) and disable while clean.

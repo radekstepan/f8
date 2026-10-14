@@ -262,8 +262,9 @@ describe('adjustment styling consistency', () => {
     // Every Color Adjustments header carries exactly the one shared
     // switch — the automatic ones apply on and reset off, the manual
     // Curves/Details/Effects light on tweaks and reset on click. The
-    // content bypass switches (faces, subject) keep their own labels,
-    // distinct from the header switches.
+    // faces content bypass switch keeps its own label, distinct from
+    // the header switches; subject drives bypass from its header
+    // switch, so its content holds no switch at all.
     const applied: NonNullable<FaceEnhanceAssist['applied']> = { faces: 2, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 1 };
     const adjust = renderAdjust({ ...DEFAULT_EDIT }, { faceApplied: applied, selectiveApplied: { ...APPLIED_SELECTIVE, enabled: true } });
     const rows = actionsRows(adjust);
@@ -277,7 +278,7 @@ describe('adjustment styling consistency', () => {
       expect(row).not.toContain('auto-small');
     }
     expect(adjust).toContain('aria-label="Enable face enhance"');
-    expect(adjust).toContain('aria-label="Enable subject and background enhance"');
+    expect(adjust).not.toContain('Enable subject and background enhance');
     // The panel header's Auto group follows its own rule: pill plus
     // revert icon, no switch.
     const headerGroup = adjust.match(/<div class="inspector-auto-wrap">[\s\S]*?<\/div>/)?.[0] ?? '';

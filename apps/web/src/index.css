@@ -469,13 +469,13 @@ its chevron glyph off the toggle edge. */
 .face-enhance-row .suggestion-actions { margin: 0 0 0 auto; }
 .face-enhance-row .suggestion-actions > button { flex: none; height: auto; }
 .selective-mask-row { padding: 0; height: auto; border-bottom: 0; }
-.selective-mask-row > .toggle { flex: none; }
 .selective-mask-row .suggestion-actions { margin: 0 0 0 auto; }
 .selective-mask-row .suggestion-actions > button { flex: none; height: auto; }
 .selective-group { margin-top: 10px; }
 .selective-group-label { display: inline-flex; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #a2a2ac; }
 .selective-group .range-control { margin-top: 6px; }
 .selective-mask .range-control { margin-top: 8px; }
+.selective-mask.is-off .selective-group { opacity: .45; }
 .dust-spots .retouch-group-list { max-height: 220px; }
 .denoise-suggest-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; font-size: 9.5px; color: #a9a9b3; }
 .denoise .range-control { margin-top: 8px; }
