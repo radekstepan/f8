@@ -1,11 +1,13 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Bandage, ChevronLeft, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, RotateCcw, Share, SlidersHorizontal, SwatchBook, Undo2 } from 'lucide-react';
-import type { DialogType, Tool, VisionWorkerStatus } from '@f8/core';
-import { APP_EDITION_SHORT, APP_NAME } from '@f8/core';
+import { Bandage, Check, ChevronLeft, ChevronRight, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, RotateCcw, Share, SlidersHorizontal, SwatchBook, Undo2 } from 'lucide-react';
+import type { DialogType, Tool, VisionWorkerStatus, ZoomLensMagnification } from '@f8/core';
+import { APP_EDITION_SHORT, APP_NAME, ZOOM_LENS_MAGNIFICATIONS } from '@f8/core';
 import { BrandMark, IconButton, MenuItem, MenuSeparator, MlBadge } from './EditorUI.js';
 import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
 
-export type MenuAction = 'import' | 'import-local-folder' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'enhance-scene' | 'enhance-faces' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'back' | 'fit' | 'zoom-lens' | 'fullscreen' | 'shortcuts' | 'about';
+export type MenuAction = 'import' | 'import-local-folder' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'enhance-scene' | 'enhance-faces' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'back' | 'fit' | 'zoom-lens-4' | 'zoom-lens-8' | 'zoom-lens-16' | 'fullscreen' | 'shortcuts' | 'about';
+
+const zoomLensActions: Record<ZoomLensMagnification, MenuAction> = { 4: 'zoom-lens-4', 8: 'zoom-lens-8', 16: 'zoom-lens-16' };
 
 interface MenuBarProps {
   onAction: (action: MenuAction) => void;
@@ -19,19 +21,30 @@ interface MenuBarProps {
   filmstrip: boolean;
   /** True while the zoom-in-view preview is toggled on (photo view only). Defaults to false. */
   zoomLens?: boolean;
+  /** Active zoom-in-view magnification; the submenu checks it. Defaults to 8. */
+  zoomLensMagnification?: ZoomLensMagnification;
 }
 
-export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled, sidebar, inspector, presets, filmstrip, zoomLens = false }: MenuBarProps) {
+export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled, sidebar, inspector, presets, filmstrip, zoomLens = false, zoomLensMagnification = 8 }: MenuBarProps) {
   const [open, setOpen] = useState<string | null>(null);
+  const [submenu, setSubmenu] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  useMenuDismiss(ref, () => setOpen(null));
-  const action = (value: MenuAction) => { onAction(value); setOpen(null); };
+  const openMenu = (name: string | null) => { setOpen(name); setSubmenu(null); };
+  useMenuDismiss(ref, () => openMenu(null));
+  const action = (value: MenuAction) => { onAction(value); openMenu(null); };
   const item = (name: string, value: MenuAction, shortcut?: string, disabled?: boolean, checked?: boolean, danger?: boolean) => <MenuItem key={value} onClick={() => action(value)} shortcut={shortcut} disabled={disabled} checked={checked} danger={danger}>{name}</MenuItem>;
+  // Zoom-in-view lives with the Show toggles (not at the dropdown's
+  // bottom): a checked parent with a 4x/8x/16x flyout. Hover opens it;
+  // click toggles for touch. Only the 8x default carries the Z shortcut.
+  const zoomLensSubmenu = <div className="menu-submenu-anchor" onMouseEnter={() => setSubmenu('zoom-lens')} onMouseLeave={() => setSubmenu(null)}>
+    <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={submenu === 'zoom-lens'} className="menu-item has-submenu" onClick={() => setSubmenu(submenu === 'zoom-lens' ? null : 'zoom-lens')}><span className="menu-check">{zoomLens && <Check size={13} />}</span><span>Zoom in View</span><ChevronRight size={13} className="menu-chevron" /></button>
+    {submenu === 'zoom-lens' && <div className="dropdown-menu dropdown-submenu" role="menu">{ZOOM_LENS_MAGNIFICATIONS.map((mag) => <MenuItem key={mag} onClick={() => action(zoomLensActions[mag])} shortcut={mag === 8 ? 'Z' : undefined} checked={zoomLens && zoomLensMagnification === mag}>{`${mag}×`}</MenuItem>)}</div>}
+  </div>;
   const menus: Record<string, ReactNode> = {
     File: <>{item('Import Photos...', 'import', 'Ctrl O')}{item('Import Folder as Album...', 'import-local-folder')}{item('Import from Folder...', 'import-folder', 'Ctrl Shift O')}{item('New Album...', 'album')}<MenuSeparator />{item('Export Photo...', 'export', 'Ctrl Shift E')}</>,
     Edit: <>{item('Undo', 'undo', 'Ctrl Z', !canUndo)}{item('Redo', 'redo', 'Ctrl Shift Z', !canRedo)}<MenuSeparator />{item('Copy Adjustments', 'copy', 'Ctrl Shift C')}{item('Paste Adjustments', 'paste', 'Ctrl Shift V', !canPaste)}<MenuSeparator />{item('Reset All Adjustments', 'reset')}</>,
     Image: <>{item('Auto Enhance', 'enhance', 'A')}<MenuItem key="enhance-scene" onClick={() => action('enhance-scene')} shortcut="Shift A"><span>Scene Enhance <MlBadge hint="The scene is classified by a machine-learning model on your device" /></span></MenuItem><MenuItem key="enhance-faces" onClick={() => action('enhance-faces')} shortcut="Shift E"><span>Enhance Faces <MlBadge hint="Faces are detected by a machine-learning model on the photo server" /></span></MenuItem>{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<MenuSeparator />{item('Compare with Original', 'compare', 'B', compareDisabled)}<MenuSeparator />{item('Remove from Library…', 'remove', 'Del', false, undefined, true)}</>,
-    View: <>{item('Show Library', 'sidebar', undefined, false, sidebar)}{item('Show Adjustments', 'inspector', undefined, false, inspector)}{item('Show Presets', 'presets', undefined, false, presets)}{item('Show Filmstrip', 'filmstrip', undefined, false, filmstrip)}<MenuSeparator />{item('Photo Browser', 'grid', 'G')}{item('Zoom to Fit', 'fit', '0')}{item('Zoom in View', 'zoom-lens', 'Z', false, zoomLens)}</>,
+    View: <>{item('Show Library', 'sidebar', undefined, false, sidebar)}{item('Show Adjustments', 'inspector', undefined, false, inspector)}{item('Show Presets', 'presets', undefined, false, presets)}{item('Show Filmstrip', 'filmstrip', undefined, false, filmstrip)}{zoomLensSubmenu}<MenuSeparator />{item('Photo Browser', 'grid', 'G')}{item('Zoom to Fit', 'fit', '0')}</>,
     Window: <>{item('Focus Mode', 'fullscreen', 'Shift F')}{item('Photo Browser', 'grid')}</>,
     Help: <>{item('Keyboard Shortcuts', 'shortcuts', '?')}{item(`About ${APP_NAME}`, 'about')}</>,
   };
@@ -41,7 +54,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
       if (event.key === 'ArrowDown' && (event.target as HTMLElement).classList.contains('menu-trigger')) {
         event.preventDefault();
         event.stopPropagation();
-        setOpen((event.target as HTMLElement).textContent);
+        openMenu((event.target as HTMLElement).textContent);
         focusFirstItem();
       }
       return;
@@ -55,12 +68,25 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
     } else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
       event.preventDefault();
       event.stopPropagation();
+      const focused = document.activeElement as HTMLElement | null;
+      // Into/out of the flyout: ArrowRight on a closed submenu parent
+      // opens it, ArrowLeft inside a flyout closes back to the parent.
+      if (event.key === 'ArrowRight' && focused?.getAttribute('aria-haspopup') === 'menu' && focused?.getAttribute('aria-expanded') === 'false') {
+        (focused as HTMLButtonElement).click();
+        window.requestAnimationFrame(() => ref.current?.querySelector<HTMLButtonElement>('.dropdown-submenu button:not([disabled])')?.focus());
+        return;
+      }
+      if (event.key === 'ArrowLeft' && focused?.closest('.dropdown-submenu')) {
+        setSubmenu(null);
+        ref.current?.querySelector<HTMLButtonElement>('.menu-item.has-submenu')?.focus();
+        return;
+      }
       const names = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('.menu-trigger') || []).filter((button) => button.offsetParent !== null).map((button) => button.textContent || '');
-      setOpen(names[(names.indexOf(open) + (event.key === 'ArrowRight' ? 1 : -1) + names.length) % names.length] ?? null);
+      openMenu(names[(names.indexOf(open) + (event.key === 'ArrowRight' ? 1 : -1) + names.length) % names.length] ?? null);
       focusFirstItem();
     } else if (event.key === 'Escape') {
       ref.current?.querySelector<HTMLButtonElement>('.menu-trigger.is-open')?.focus();
-      setOpen(null);
+      openMenu(null);
     }
   };
 
@@ -74,8 +100,8 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
               className={`menu-trigger ${open === name ? 'is-open' : ''}`}
               aria-haspopup="menu"
               aria-expanded={open === name}
-              onClick={() => setOpen(open === name ? null : name)}
-              onMouseEnter={() => { if (open) setOpen(name); }}
+              onClick={() => openMenu(open === name ? null : name)}
+              onMouseEnter={() => { if (open) openMenu(name); }}
             >{name}</button>
             {open === name && <div className="dropdown-menu" role="menu">{content}</div>}
           </div>

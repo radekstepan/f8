@@ -32,7 +32,7 @@ The full function catalogue of f/8. The README lists the same functions in short
 
 - Per-photo undo/redo with up to fifty history entries. Consecutive slider changes are grouped into a single edit.
 - Draggable before/after comparison and hold-to-preview-original behavior.
-- Zoom-in-view magnifier: a View-menu toggle that follows the cursor with a 16x loupe in photo view.
+- Zoom-in-view magnifier: a View-menu submenu under the Show items (4x/8x/16x, 8x default on Z) that previews the cursor region in a fixed corner pane in photo view, matching the Compare split and showing the repair brush circle when the magnified brush fits the pane.
 
 ## Crop and repair
 

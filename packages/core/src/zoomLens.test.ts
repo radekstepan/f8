@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   ZOOM_LENS_MAGNIFICATION,
+  ZOOM_LENS_MAGNIFICATIONS,
   ZOOM_LENS_SIZE_PX,
   shouldShowZoomLens,
+  zoomLensBrushRadius,
+  zoomLensDestPoint,
+  zoomLensOriginalOverlay,
   zoomLensSourceRect,
 } from "./zoomLens.js";
 
@@ -24,6 +28,11 @@ describe("shouldShowZoomLens", () => {
 describe("ZOOM_LENS_MAGNIFICATION", () => {
   it("magnifies 8x", () => {
     expect(ZOOM_LENS_MAGNIFICATION).toBe(8);
+  });
+
+  it("offers 4x/8x/16x with 8x as the default", () => {
+    expect([...ZOOM_LENS_MAGNIFICATIONS]).toEqual([4, 8, 16]);
+    expect(ZOOM_LENS_MAGNIFICATIONS).toContain(ZOOM_LENS_MAGNIFICATION);
   });
 });
 
@@ -71,5 +80,121 @@ describe("zoomLensSourceRect", () => {
     expect(zoomLensSourceRect({ fx: 0.5, fy: 0.5 }, { width: 0, height: 800 }, frame)).toEqual({ sx: 0, sy: 0, sw: 0, sh: 0 });
     expect(zoomLensSourceRect({ fx: 0.5, fy: 0.5 }, canvas, { width: 0, height: 400 })).toEqual({ sx: 0, sy: 0, sw: 0, sh: 0 });
     expect(zoomLensSourceRect({ fx: 0.5, fy: 0.5 }, canvas, frame, ZOOM_LENS_SIZE_PX, 0)).toEqual({ sx: 0, sy: 0, sw: 0, sh: 0 });
+  });
+
+  it("scales the source extent with the submenu magnification", () => {
+    // Same cursor and frame: 4x previews twice the region of 8x, 16x
+    // half of it.
+    const at4 = zoomLensSourceRect({ fx: 0.5, fy: 0.5 }, canvas, frame, ZOOM_LENS_SIZE_PX, 4);
+    const at8 = zoomLensSourceRect({ fx: 0.5, fy: 0.5 }, canvas, frame, ZOOM_LENS_SIZE_PX, 8);
+    const at16 = zoomLensSourceRect({ fx: 0.5, fy: 0.5 }, canvas, frame, ZOOM_LENS_SIZE_PX, 16);
+    expect(at4.sw).toBeCloseTo(at8.sw * 2, 6);
+    expect(at16.sw).toBeCloseTo(at8.sw / 2, 6);
+    expect(at4.sh).toBeCloseTo(at8.sh * 2, 6);
+    expect(at16.sh).toBeCloseTo(at8.sh / 2, 6);
+  });
+});
+
+describe("zoomLensDestPoint", () => {
+  const canvas = { width: 1200, height: 800 };
+  const lens = { width: 360, height: 360 };
+
+  it("lands a centered cursor in the pane center", () => {
+    const rect = zoomLensSourceRect({ fx: 0.5, fy: 0.5 }, canvas, { width: 600, height: 400 });
+    const point = zoomLensDestPoint({ fx: 0.5, fy: 0.5 }, canvas, rect, lens);
+    expect(point.dx).toBeCloseTo(180, 6);
+    expect(point.dy).toBeCloseTo(180, 6);
+  });
+
+  it("slides off-center where the source clamps at the frame edges", () => {
+    const rect = zoomLensSourceRect({ fx: 0, fy: 0 }, canvas, { width: 600, height: 400 });
+    const point = zoomLensDestPoint({ fx: 0, fy: 0 }, canvas, rect, lens);
+    // The source clamps at the origin while the cursor sits at the very
+    // edge, so the cursor maps left/above the pane center.
+    expect(point.dx).toBeCloseTo(180 - (rect.sw / 2 / rect.sw) * 360, 6);
+    expect(point.dx).toBeLessThan(180);
+    expect(point.dy).toBeLessThan(180);
+  });
+
+  it("falls back to the pane center for degenerate inputs instead of NaN", () => {
+    const rect = zoomLensSourceRect({ fx: 0.5, fy: 0.5 }, canvas, { width: 600, height: 400 });
+    expect(zoomLensDestPoint({ fx: 0.5, fy: 0.5 }, canvas, { ...rect, sw: 0 }, lens)).toEqual({ dx: 180, dy: 180 });
+    expect(zoomLensDestPoint({ fx: 0.5, fy: 0.5 }, { width: 0, height: 800 }, rect, lens)).toEqual({ dx: 180, dy: 180 });
+  });
+});
+
+describe("zoomLensOriginalOverlay", () => {
+  const canvas = { width: 1200, height: 800 };
+  const lens = { width: 360, height: 360 };
+  const frame = { width: 600, height: 400 };
+
+  it("paints nothing when the divider sits right of the pane source", () => {
+    // Cursor on the edited (right) side with the divider left of the
+    // pane's source: the whole pane shows edited pixels.
+    const rect = zoomLensSourceRect({ fx: 0.9, fy: 0.5 }, canvas, frame);
+    expect(zoomLensOriginalOverlay(50, canvas, rect, lens)).toBeNull();
+  });
+
+  it("paints the full pane when its source sits fully left of the divider", () => {
+    const rect = zoomLensSourceRect({ fx: 0.1, fy: 0.5 }, canvas, frame);
+    expect(zoomLensOriginalOverlay(50, canvas, rect, lens)).toEqual({
+      sx: rect.sx, sy: rect.sy, sw: rect.sw, sh: rect.sh,
+      dx: 0, dy: 0, dw: 360, dh: 360,
+    });
+  });
+
+  it("paints the divider's left slice when the pane straddles the split", () => {
+    // Cursor exactly on the divider: the pane splits down the middle —
+    // original left, edited right.
+    const rect = zoomLensSourceRect({ fx: 0.5, fy: 0.5 }, canvas, frame);
+    const overlay = zoomLensOriginalOverlay(50, canvas, rect, lens);
+    expect(overlay).not.toBeNull();
+    expect(overlay!.dx).toBe(0);
+    expect(overlay!.dy).toBe(0);
+    expect(overlay!.dw).toBeCloseTo(180, 6);
+    expect(overlay!.dh).toBe(360);
+    expect(overlay!.sx).toBeCloseTo(rect.sx, 6);
+    expect(overlay!.sw).toBeCloseTo(rect.sw / 2, 6);
+    expect(overlay!.sh).toBeCloseTo(rect.sh, 6);
+  });
+
+  it("returns null for degenerate inputs instead of NaN", () => {
+    const rect = zoomLensSourceRect({ fx: 0.5, fy: 0.5 }, canvas, frame);
+    expect(zoomLensOriginalOverlay(50, { width: 0, height: 800 }, rect, lens)).toBeNull();
+    expect(zoomLensOriginalOverlay(50, canvas, { ...rect, sw: 0 }, lens)).toBeNull();
+    expect(zoomLensOriginalOverlay(Number.NaN, canvas, rect, lens)).toBeNull();
+  });
+});
+
+describe("zoomLensBrushRadius", () => {
+  // Backing store is 2x the 180px CSS pane.
+  const lensBacking = ZOOM_LENS_SIZE_PX * 2;
+
+  it("returns the magnified brush radius in backing pixels when it fits", () => {
+    // brushSize 45 on a 600px frame: 33.75px diameter, 270px at 8x —
+    // too big. brushSize 20: 15px diameter, 120px at 8x — fits.
+    expect(zoomLensBrushRadius(45, 600, 8, lensBacking)).toBeNull();
+    const radius = zoomLensBrushRadius(20, 600, 8, lensBacking);
+    // 15px * 8 = 120 CSS px diameter → 60 CSS px radius → 120 backing px.
+    expect(radius).toBeCloseTo(120, 6);
+  });
+
+  it("draws a brush exactly the pane's size", () => {
+    // brushSize 30 on a 600px frame: 22.5px diameter, exactly 180px at
+    // 8x — same size as the preview, so the circle shows.
+    const radius = zoomLensBrushRadius(30, 600, 8, lensBacking);
+    expect(radius).toBeCloseTo(180, 6);
+  });
+
+  it("shrinks the fitted brush with the magnification", () => {
+    // brushSize 20 on a 600px frame at 4x: 15px * 4 = 60px diameter.
+    expect(zoomLensBrushRadius(20, 600, 4, lensBacking)).toBeCloseTo(60, 6);
+  });
+
+  it("returns null for degenerate inputs", () => {
+    expect(zoomLensBrushRadius(0, 600, 8, lensBacking)).toBeNull();
+    expect(zoomLensBrushRadius(20, 0, 8, lensBacking)).toBeNull();
+    expect(zoomLensBrushRadius(20, 600, 0, lensBacking)).toBeNull();
+    expect(zoomLensBrushRadius(20, 600, 8, 0)).toBeNull();
   });
 });

@@ -3,7 +3,7 @@ import { Check, CloudOff, FolderSearch, ImagePlus, RefreshCw, X } from 'lucide-r
 import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isInspectorVisible, isRecentlyEdited, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
-import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode } from '@f8/core';
+import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
 import { Sidebar } from '@f8/ui';
 import { AppStatus, MenuBar, Toolbar, type MenuAction } from '@f8/ui';
 import { PhotoCanvas, type HistogramData } from '@f8/ui';
@@ -122,12 +122,14 @@ export default function App() {
   const [compare, setCompare] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [zoom, setZoom] = useState(1);
-  // View-menu "Zoom in View" toggle (shortcut Z): a fixed 8x square in the
-  // photo's bottom-right corner shows the region under the cursor in photo
-  // view only (PhotoCanvas receives it gated on the editor view, so toggling
-  // off — or leaving the photo — restores the normal view). A persistent
-  // mode like Compare, not per-photo state: switching photos keeps it.
+  // View-menu "Zoom in View" submenu (shortcut Z on the 8x default): a
+  // fixed square in the photo's bottom-right corner shows the region under
+  // the cursor magnified in photo view only (PhotoCanvas receives it gated
+  // on the editor view, so toggling off — or leaving the photo — restores
+  // the normal view). A persistent mode like Compare, not per-photo state:
+  // switching photos keeps it, at the last-picked magnification.
   const [zoomLens, setZoomLens] = useState(false);
+  const [zoomLensMag, setZoomLensMag] = useState<ZoomLensMagnification>(8);
   const [sortKey, setSortKey] = useState<AlbumSortKey>(() => readToolPrefs().albumSortKey);
   const [sortDir, setSortDir] = useState<AlbumSortDir>(() => readToolPrefs().albumSortDir);
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
@@ -985,7 +987,16 @@ export default function App() {
       case 'grid': setView((current) => current === 'editor' ? 'library' : 'editor'); break;
       case 'back': setView('library'); break;
       case 'fit': setZoom(1); break;
-      case 'zoom-lens': setZoomLens((current) => !current); break;
+      case 'zoom-lens-4':
+      case 'zoom-lens-8':
+      case 'zoom-lens-16': {
+        // Each submenu option enables the preview at its factor; picking
+        // the active factor again turns the preview off.
+        const mag = Number(action.slice('zoom-lens-'.length)) as ZoomLensMagnification;
+        if (zoomLens && zoomLensMag === mag) setZoomLens(false);
+        else { setZoomLensMag(mag); setZoomLens(true); }
+        break;
+      }
       case 'fullscreen': { const showing = sidebarOpen || inspectorOpen; setSidebarOpen(!showing); setInspectorOpen(!showing); break; }
       case 'shortcuts': setDialog('shortcuts'); break;
       case 'about': setDialog('about'); break;
@@ -1027,7 +1038,7 @@ export default function App() {
       }
       if (key === 'a' && event.shiftKey) { event.preventDefault(); actionRef.current('enhance-scene'); return; }
       if (key === 'e' && event.shiftKey) { event.preventDefault(); actionRef.current('enhance-faces'); return; }
-      const actions: Record<string, MenuAction> = { a: 'enhance', f: 'favorite', b: 'compare', g: 'grid', r: 'rotate', z: 'zoom-lens' };
+      const actions: Record<string, MenuAction> = { a: 'enhance', f: 'favorite', b: 'compare', g: 'grid', r: 'rotate', z: 'zoom-lens-8' };
       const tools: Record<string, Tool> = { v: 'adjust', c: 'crop', j: 'repair' };
       if (actions[key]) actionRef.current(actions[key]);
       if (tools[key]) toolRef.current(tools[key]);
@@ -1202,7 +1213,7 @@ export default function App() {
     : null;
   return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importDrop(event.dataTransfer); }}>
     <TooltipHost />
-    <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} zoomLens={zoomLens} />
+    <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} zoomLens={zoomLens} zoomLensMagnification={zoomLensMag} />
     <Toolbar collectionName={backlinkName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />
     <div className="workspace">
       {sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onMoveToAlbum={movePhotosToAlbum} />}
@@ -1224,7 +1235,7 @@ export default function App() {
             ) : (
               <PhotoCanvas
                 photo={viewPhoto ?? photo} edit={editor.edit} tool={tool} zoom={zoom}
-                compare={compare} showOriginal={showOriginal} originalSrc={photo.src} zoomLens={shouldShowZoomLens(view, zoomLens)}
+                compare={compare} showOriginal={showOriginal} originalSrc={photo.src} zoomLens={shouldShowZoomLens(view, zoomLens)} zoomLensMagnification={zoomLensMag}
                 brushSize={brushSize} brushStrength={brushStrength} fineGrid={straightenDragging} straightenFlash={straightenFlash}
                 inpaintRepair={canvasRepairBinding}
                 highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke} highlightRegion={removalPreview}

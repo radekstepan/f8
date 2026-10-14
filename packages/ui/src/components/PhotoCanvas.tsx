@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Check, ChevronsLeftRight, Columns2, Copy, Heart, ImageOff, Info, Maximize, Minus, Plus, Star, Trash2 } from 'lucide-react';
 import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
-import { LibraryError, ZOOM_LENS_MAGNIFICATION, ZOOM_LENS_SIZE_PX, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, frameAspectForPhoto, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint, zoomLensSourceRect } from '@f8/core';
-import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool } from '@f8/core';
+import { LibraryError, ZOOM_LENS_MAGNIFICATION, ZOOM_LENS_SIZE_PX, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, frameAspectForPhoto, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint, zoomLensBrushRadius, zoomLensDestPoint, zoomLensOriginalOverlay, zoomLensSourceRect } from '@f8/core';
+import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool, ZoomLensMagnification } from '@f8/core';
 import { IconButton } from './EditorUI.js';
 import { ToolHint } from './ToolHint.js';
 import { copyTextToClipboard } from '../utils/clipboard.js';
@@ -51,8 +51,10 @@ interface PhotoCanvasProps {
   fineGrid?: boolean;
   /** Transient no-horizon notice: flashed over the photo through the shared tool-hint overlay. */
   straightenFlash?: { runId: number; message: string } | null;
-  /** Zoom-in-view preview: while true a fixed 8x square shows the region under the cursor in the photo's bottom-right corner. Defaults to false. */
+  /** Zoom-in-view preview: while true a fixed square shows the region under the cursor magnified in the photo's bottom-right corner. Defaults to false. */
   zoomLens?: boolean;
+  /** Zoom-in-view magnification from the View submenu. Defaults to 8. */
+  zoomLensMagnification?: ZoomLensMagnification;
   onHighlightStroke?: (stroke: number | null) => void;
   onZoom: (zoom: number) => void;
   onCompare: () => void;
@@ -66,7 +68,7 @@ interface PhotoCanvasProps {
   onHistogram: (data: HistogramData) => void;
 }
 
-export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, originalSrc, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, straightenFlash = null, zoomLens = false, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onRemove, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
+export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, originalSrc, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, straightenFlash = null, zoomLens = false, zoomLensMagnification = ZOOM_LENS_MAGNIFICATION, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onRemove, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1297,7 +1299,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   // adjustments, crop, and rotation match the frame. Runs after every
   // render like the minimap mirror, so the pane stays in sync with
   // repaints and follows the cursor. Backing store is 2x the CSS size
-  // for a crisp pane on retina.
+  // for a crisp pane on retina. While Compare splits the frame the pane
+  // composites the same split (original left of the divider, edit right
+  // of it); holding Show Original previews the original alone. With the
+  // Repair tool the brush circle draws over the pane — but only when the
+  // magnified brush fits inside it.
   useEffect(() => {
     if (!showLens) return;
     const lens = lensCanvasRef.current;
@@ -1305,16 +1311,59 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
     if (!lens || !source || !source.width || !source.height) return;
     const ctx = lens.getContext('2d');
     if (!ctx) return;
+    const canvas = { width: source.width, height: source.height };
     const rect = zoomLensSourceRect(
       { fx: lensCursor.x / frameWidth, fy: lensCursor.y / frameHeight },
-      { width: source.width, height: source.height },
+      canvas,
       { width: frameWidth, height: frameHeight },
+      ZOOM_LENS_SIZE_PX,
+      zoomLensMagnification,
     );
     if (rect.sw <= 0 || rect.sh <= 0) return;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.clearRect(0, 0, lens.width, lens.height);
     ctx.drawImage(source, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, lens.width, lens.height);
+    // Compare/hold-original: the original canvas shares the edited
+    // canvas's geometry (same backing size), so the same source rect
+    // maps original pixels onto the pane. A size mismatch (a paint still
+    // in flight) falls back to the edited pixels painted above.
+    const original = originalRef.current;
+    const originalReady = original && original.width === source.width && original.height === source.height;
+    if (originalReady) {
+      if (showOriginal) {
+        ctx.drawImage(original, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, lens.width, lens.height);
+      } else if (compare) {
+        const overlay = zoomLensOriginalOverlay(split, canvas, rect, { width: lens.width, height: lens.height });
+        if (overlay) ctx.drawImage(original, overlay.sx, overlay.sy, overlay.sw, overlay.sh, overlay.dx, overlay.dy, overlay.dw, overlay.dh);
+      }
+    }
+    // Repair brush circle: the same visibility conditions as the frame
+    // cursor (no painting means no circle), centered on the cursor's pane
+    // position — off-center near the frame edges, where the source rect
+    // clamps. Skipped when the magnified brush exceeds the pane.
+    if (isBrush && !compare && !showOriginal && !mlRepairBlocked) {
+      const radius = zoomLensBrushRadius(brushSize, frameWidth, zoomLensMagnification, lens.width);
+      if (radius !== null && radius > 0) {
+        const center = zoomLensDestPoint(
+          { fx: lensCursor.x / frameWidth, fy: lensCursor.y / frameHeight },
+          canvas,
+          rect,
+          { width: lens.width, height: lens.height },
+        );
+        const scale = lens.width / ZOOM_LENS_SIZE_PX;
+        ctx.beginPath();
+        ctx.arc(center.dx, center.dy, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.lineWidth = 3 * scale;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(center.dx, center.dy, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5 * scale;
+        ctx.stroke();
+      }
+    }
   });
 
   return <section className="photo-workspace" aria-label="Photo editor"><div className="photo-heading"><div className="photo-filename"><button type="button" className={`filename-copy${filenameCopied ? ' is-copied' : ''}`} data-testid="filename-copy" data-tooltip={filenameCopied ? 'Copied!' : 'Copy filename'} aria-label={filenameCopied ? `Copied ${photo.name}` : `Copy filename ${photo.name}`} onClick={copyFilename}><span>{photo.name}</span>{filenameCopied ? <Check size={11} /> : <Copy size={11} />}</button><span className="file-type">{photo.raw ? 'RAW' : 'JPEG'}</span>{!isDefaultEdit(edit) && <span className="edited-indicator">Edited</span>}</div><div className="photo-rating">{[1, 2, 3, 4, 5].map((value) => <button key={value} aria-label={`Rate ${value} stars`} data-tooltip={`Rate ${value} stars`} onClick={() => onRating(photo.rating === value ? 0 : value)}><Star size={11} fill={photo.rating >= value ? 'currentColor' : 'none'} className={photo.rating >= value ? 'rated' : ''} /></button>)}<span className="heading-divider" /><IconButton label={photo.favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'} active={photo.favorite} onClick={onFavorite}><Heart size={15} fill={photo.favorite ? 'currentColor' : 'none'} strokeWidth={1.5} /></IconButton>{onRemove && <IconButton label="Remove from library (Del)" className="photo-remove" onClick={onRemove}><Trash2 size={15} strokeWidth={1.5} /></IconButton>}</div></div><div className="canvas-stage-wrap"><div className="canvas-stage" ref={stageRef}><div className="canvas-stage-inner"><div className={`photo-frame ${isBrush && !compare ? 'brush-active' : ''} ${pannableCursor ? 'is-pannable' : ''} ${panning ? 'is-panning' : ''} ${loading ? 'is-loading' : ''}`} ref={frameRef} data-testid="photo-frame" style={{ width: frameWidth, height: frameHeight }} onPointerDown={pointerDown} onMouseDown={swallowMiddleClick} onPointerMove={(event) => { const pan = panDrag.current; if (pan && event.pointerId === pan.pointerId) { const stage = stageRef.current; if (stage) { const next = panScrollFromDrag(pan, { clientX: event.clientX, clientY: event.clientY }); stage.scrollLeft = next.scrollLeft; stage.scrollTop = next.scrollTop; } return; } if (isBrush || showLens) { const point = position(event); setCursor({ x: point.x * frameWidth, y: point.y * frameHeight }); if (isBrush && !painting.current && onHighlightStroke && !compare && !showOriginal) { const found = strokeAt(point, frameHeight, frameWidth); if (found !== highlightStroke) onHighlightStroke(found); } } if (painting.current) paint(event); }} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { setCursor(null); if (!painting.current && highlightStroke !== null) onHighlightStroke?.(null); }}>
@@ -1335,7 +1384,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
         ? <div className="crop-grid is-fine" aria-hidden="true" data-testid="crop-grid-fine">{Array.from({ length: 8 }, (_, index) => <i key={`v${index}`} className={(index + 1) % 3 === 0 ? 'is-major' : ''} style={{ left: `${((index + 1) * 100) / 9}%`, top: 0, height: '100%', width: '1px' }} />)}{Array.from({ length: 8 }, (_, index) => <i key={`h${index}`} className={(index + 1) % 3 === 0 ? 'is-major' : ''} style={{ top: `${((index + 1) * 100) / 9}%`, left: 0, width: '100%', height: '1px' }} />)}</div>
         : <div className="crop-grid" aria-hidden="true"><i /><i /><i /><i /></div>)}
       {showBrushCursor && <div className="brush-cursor" style={{ left: cursor!.x, top: cursor!.y, width: brushSize / 800 * frameWidth, height: brushSize / 800 * frameWidth }} />}
-      {showLens && <div className="zoom-lens" data-testid="zoom-lens" role="img" aria-label={`Zoomed preview at ${ZOOM_LENS_MAGNIFICATION}x magnification`} style={{ width: ZOOM_LENS_SIZE_PX, height: ZOOM_LENS_SIZE_PX }}><canvas ref={lensCanvasRef} width={ZOOM_LENS_SIZE_PX * 2} height={ZOOM_LENS_SIZE_PX * 2} /><span className="zoom-lens-label">{ZOOM_LENS_MAGNIFICATION}×</span></div>}
+      {showLens && <div className="zoom-lens" data-testid="zoom-lens" role="img" aria-label={`Zoomed preview at ${zoomLensMagnification}x magnification`} style={{ width: ZOOM_LENS_SIZE_PX, height: ZOOM_LENS_SIZE_PX }}><canvas ref={lensCanvasRef} width={ZOOM_LENS_SIZE_PX * 2} height={ZOOM_LENS_SIZE_PX * 2} /><span className="zoom-lens-label">{zoomLensMagnification}×</span></div>}
       {(activePoints.length > 0 || hoverPoints.length > 0 || previewGeometry !== null) && <svg className="retouch-overlay" viewBox={`0 0 ${frameWidth} ${frameHeight}`} aria-hidden="true">{hoverPoints.length > 0 && <g className="retouch-highlight-group">{hoverPoints.map((point, index) => maskCircle(point, `h-${index}`))}</g>}{activePoints.length > 0 && <g className="retouch-active-group">{activePoints.map((point, index) => maskCircle(point, `a-${index}`))}</g>}{previewGeometry && <g className="retouch-preview-group" data-testid="removal-preview">{previewGeometry.kind === 'rect' ? <rect x={previewGeometry.x} y={previewGeometry.y} width={previewGeometry.width} height={previewGeometry.height} rx={3} /> : <circle cx={previewGeometry.cx} cy={previewGeometry.cy} r={previewGeometry.r} />}</g>}</svg>}
     </div></div>
     </div>

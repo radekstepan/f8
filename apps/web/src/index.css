@@ -61,6 +61,13 @@ which share .dropdown-menu, keep their own anchoring. */
 .menu-item kbd { color: #98989e; font: inherit; font-size: 10px; margin-left: auto; }
 .menu-item:hover kbd { color: #d5c9b3; }
 .menu-check { width: 12px; margin-right: -12px; }
+.menu-submenu-anchor { position: relative; }
+.menu-item .menu-chevron { color: #98989e; margin-left: auto; flex-shrink: 0; }
+.menu-item:hover .menu-chevron { color: #fff7e7; }
+/* Flyout submenu: opens right of the parent item with full rounding
+(the menu-bar flush-top rule above must not apply to it). */
+.dropdown-menu.dropdown-submenu { top: -6px; left: calc(100% - 2px); min-width: 120px; }
+.menu-bar .dropdown-menu.dropdown-submenu { top: -6px; border-top-left-radius: 7px; border-top-right-radius: 7px; }
 .menu-separator { height: 1px; margin: 5px 6px; background: #4b4b50; }
 .photo-context-menu { position: fixed; top: auto; min-width: 200px; z-index: 120; }
 .icon-button { width: 29px; height: 29px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: #a9a9b0; border-radius: 5px; }

@@ -33,7 +33,7 @@ Compare and history:
 - Undo and redo each change (up to 50 steps).
 - Drag the divider to compare before and after.
 - Hold `\` to see the original photo.
-- Use zoom-in view (Z) to preview the cursor region at 8x in the corner.
+- Use zoom-in view (Z) to preview the cursor region magnified in the corner (4x, 8x, or 16x from the View menu).
 
 Crop and repair:
 

@@ -8,14 +8,17 @@ import type { Photo } from '@f8/core';
 import { MenuBar } from './Topbar.js';
 import { PhotoCanvas } from './PhotoCanvas.js';
 
-// Zoom in View: a View-menu toggle (shortcut Z) that shows a fixed 8x
-// square preview in the photo's bottom-right corner in photo (editor)
-// view only. The pane paints from the edited canvas in an effect
-// (unreachable from server rendering, like the minimap mirror), so the
-// paint math is unit-tested in packages/core/src/zoomLens.test.ts and
-// this file pins the wiring: the menu item with its checked state and
-// shortcut, the App state/action/shortcut/props plumbing, the pane
-// markup gate, and the stylesheet.
+// Zoom in View: a View-menu submenu under the Show items with 4x/8x/16x
+// options (8x is the default and the only one with a shortcut, Z) that
+// shows a fixed square preview in the photo's bottom-right corner in
+// photo (editor) view only. The pane paints from the edited canvas in an
+// effect (unreachable from server rendering, like the minimap mirror),
+// compositing the original side while Compare is on and the repair brush
+// circle while Repair is on — so the paint math is unit-tested in
+// packages/core/src/zoomLens.test.ts and this file pins the wiring: the
+// submenu with its checked states and shortcut, the App
+// state/action/shortcut/props plumbing, the pane markup gate, and the
+// stylesheet.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cssPath = resolve(here, '../../../../apps/web/src/index.css');
@@ -102,17 +105,33 @@ function menuBarBlock(): string {
   return source.slice(start, end);
 }
 
-describe('zoom-in-view menu toggle', () => {
-  it('lives under the View menu next to Zoom to Fit, with a checked state and the Z shortcut', () => {
+describe('zoom-in-view menu submenu', () => {
+  it('lives under the Show items with a checked parent, not at the bottom of the dropdown', () => {
     const line = viewMenuLine();
-    expect(line).toContain("'Zoom in View', 'zoom-lens', 'Z'");
-    expect(line).toContain('zoomLens');
-    expect(line.indexOf("'fit'")).toBeLessThan(line.indexOf("'zoom-lens'"));
+    expect(line).toContain('{zoomLensSubmenu}');
+    expect(line.indexOf('{zoomLensSubmenu}')).toBeGreaterThan(line.indexOf("'filmstrip'"));
+    expect(line.indexOf('{zoomLensSubmenu}')).toBeLessThan(line.indexOf('<MenuSeparator />'));
+    expect(line.indexOf('<MenuSeparator />')).toBeLessThan(line.indexOf("'fit'"));
+    expect(line).not.toContain("'zoom-lens'");
+  });
+
+  it('opens a 4x/8x/16x flyout from the submenu map with per-option checked state', () => {
+    const source = topbarSource();
+    expect(source).toContain('const zoomLensActions: Record<ZoomLensMagnification, MenuAction> = { 4: \'zoom-lens-4\', 8: \'zoom-lens-8\', 16: \'zoom-lens-16\' };');
+    expect(source).toContain('aria-haspopup="menu"');
+    expect(source).toContain('{ZOOM_LENS_MAGNIFICATIONS.map((mag)');
+    expect(source).toContain('checked={zoomLens && zoomLensMagnification === mag}');
+  });
+
+  it('gives only the 8x default the Z shortcut', () => {
+    const source = topbarSource();
+    expect(source).toContain("shortcut={mag === 8 ? 'Z' : undefined}");
+    expect(source).not.toMatch(/zoom-lens-(4|16)', 'Z'/);
   });
 
   it('adds no top-level menu', () => {
     const html = renderToStaticMarkup(
-      <MenuBar onAction={noop} canUndo canRedo={false} canPaste sidebar inspector presets={false} filmstrip zoomLens />,
+      <MenuBar onAction={noop} canUndo canRedo={false} canPaste sidebar inspector presets={false} filmstrip zoomLens zoomLensMagnification={8} />,
     );
     const labels = Array.from(html.matchAll(/class="menu-trigger[^"]*"[^>]*>([^<]+)</g)).map((match) => match[1] ?? '');
     expect(labels).toEqual(['File', 'Edit', 'Image', 'View', 'Window', 'Help']);
@@ -124,20 +143,29 @@ describe('zoom-in-view menu toggle', () => {
 });
 
 describe('zoom-in-view app wiring', () => {
-  it('toggles the mode from the menu action', () => {
-    expect(appSource()).toContain("case 'zoom-lens': setZoomLens((current) => !current); break;");
+  it('enables the preview at the picked factor, re-picking the active factor turns it off', () => {
+    const source = appSource();
+    expect(source).toContain("case 'zoom-lens-4':");
+    expect(source).toContain("case 'zoom-lens-8':");
+    expect(source).toContain("case 'zoom-lens-16':");
+    expect(source).toContain('if (zoomLens && zoomLensMag === mag) setZoomLens(false);');
+    expect(source).toContain('else { setZoomLensMag(mag); setZoomLens(true); }');
   });
 
-  it('toggles the mode from the Z shortcut', () => {
-    expect(appSource()).toContain("z: 'zoom-lens'");
+  it('toggles the 8x default from the Z shortcut', () => {
+    expect(appSource()).toContain("z: 'zoom-lens-8'");
   });
 
-  it('shows the checked state in the menu bar', () => {
-    expect(menuBarBlock()).toContain('zoomLens={zoomLens}');
+  it('shows the checked state and magnification in the menu bar', () => {
+    const block = menuBarBlock();
+    expect(block).toContain('zoomLens={zoomLens}');
+    expect(block).toContain('zoomLensMagnification={zoomLensMag}');
   });
 
-  it('gates the preview on photo view', () => {
-    expect(photoCanvasBlock()).toContain('zoomLens={shouldShowZoomLens(view, zoomLens)}');
+  it('gates the preview on photo view and passes the magnification to the canvas', () => {
+    const block = photoCanvasBlock();
+    expect(block).toContain('zoomLens={shouldShowZoomLens(view, zoomLens)}');
+    expect(block).toContain('zoomLensMagnification={zoomLensMag}');
   });
 });
 
@@ -157,11 +185,29 @@ describe('zoom-in-view preview pane', () => {
     expect(canvasSource()).toContain('cursor ?? { x: frameWidth / 2, y: frameHeight / 2 }');
   });
 
-  it('paints the preview from the edited canvas at the 8x source rect', () => {
+  it('paints the preview from the edited canvas at the submenu magnification with a matching badge', () => {
     const source = canvasSource();
     expect(source).toContain('zoomLensSourceRect(');
+    expect(source).toContain('ZOOM_LENS_SIZE_PX,\n      zoomLensMagnification,');
     expect(source).toContain('drawImage(source, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, lens.width, lens.height)');
-    expect(source).toContain('{ZOOM_LENS_MAGNIFICATION}×');
+    expect(source).toContain('{zoomLensMagnification}×');
+    expect(source).toContain('Zoomed preview at ${zoomLensMagnification}x magnification');
+  });
+
+  it('composites the original side while Compare is on and previews it alone while held', () => {
+    const source = canvasSource();
+    expect(source).toContain('zoomLensOriginalOverlay(split, canvas, rect,');
+    expect(source).toContain('drawImage(original, overlay.sx, overlay.sy, overlay.sw, overlay.sh, overlay.dx, overlay.dy, overlay.dw, overlay.dh)');
+    expect(source).toContain('if (showOriginal) {');
+    expect(source).toContain('} else if (compare) {');
+  });
+
+  it('draws the repair brush circle over the pane when the magnified brush fits', () => {
+    const source = canvasSource();
+    expect(source).toContain('if (isBrush && !compare && !showOriginal && !mlRepairBlocked) {');
+    expect(source).toContain('zoomLensBrushRadius(brushSize, frameWidth, zoomLensMagnification, lens.width)');
+    expect(source).toContain('zoomLensDestPoint(');
+    expect(source).toContain('ctx.arc(center.dx, center.dy, radius, 0, Math.PI * 2)');
   });
 
   it('tracks the cursor over the photo while the preview is on', () => {
@@ -178,5 +224,13 @@ describe('zoom-in-view preview pane', () => {
     expect(rule).toMatch(/overflow\s*:\s*hidden/);
     expect(cssRule('.zoom-lens canvas')).toMatch(/width\s*:\s*100%/);
     expect(cssRule('.zoom-lens-label')).toMatch(/position\s*:\s*absolute/);
+  });
+
+  it('styles the flyout right of the parent item with full rounding', () => {
+    expect(cssRule('.menu-submenu-anchor')).toMatch(/position\s*:\s*relative/);
+    const flyout = cssRule('.dropdown-menu.dropdown-submenu');
+    expect(flyout).toMatch(/left\s*:\s*calc\(100%/);
+    expect(cssRule('.menu-bar .dropdown-menu.dropdown-submenu')).toMatch(/border-top-left-radius\s*:\s*7px/);
+    expect(cssRule('.menu-item .menu-chevron')).toMatch(/margin-left\s*:\s*auto/);
   });
 });
