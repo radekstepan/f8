@@ -65,13 +65,20 @@ describe('filmstrip single row', () => {
 
   it('renders one list with every photo in order and the selection marked', () => {
     const html = renderToStaticMarkup(
-      <Filmstrip photos={[makePhoto('p1'), makePhoto('p2'), makePhoto('p3')]} selectedId="p2" collectionName="Road Trip" onSelect={noop} onGrid={noop} onSort={noop} reversed={false} showPresets={false} onShowPresets={noop} />,
+      <Filmstrip photos={[makePhoto('p1'), makePhoto('p2'), makePhoto('p3')]} selectedId="p2" collectionName="Road Trip" onSelect={noop} onSort={noop} reversed={false} showPresets={false} onShowPresets={noop} />,
     );
     expect(html.match(/class="filmstrip-list"/g)).toHaveLength(1);
     const order = [...html.matchAll(/data-photo-id="(p\d)"/g)].map((match) => match[1]);
     expect(order).toEqual(['p1', 'p2', 'p3']);
     expect(html).toContain('filmstrip-item is-selected');
     expect(html).toContain('aria-pressed="true"');
+  });
+
+  it('renders no photo-browser button in the footer actions', () => {
+    const html = renderToStaticMarkup(
+      <Filmstrip photos={[makePhoto('p1')]} selectedId="p1" collectionName="Road Trip" onSelect={noop} onSort={noop} reversed={false} showPresets={false} onShowPresets={noop} />,
+    );
+    expect(html).not.toContain('Show photo browser');
   });
 
   it('walks the single row linearly with Left/Right/Home/End only', () => {

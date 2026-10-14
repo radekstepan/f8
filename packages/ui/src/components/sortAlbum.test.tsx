@@ -63,18 +63,18 @@ describe('sort album', () => {
 
   it('labels the filmstrip direction toggle for the active sort key', () => {
     const filename = renderToStaticMarkup(
-      <Filmstrip photos={[makePhoto()]} selectedId="p1" collectionName="Road Trip" onSelect={noop} onGrid={noop} onSort={noop} reversed={false} sortKey="filename" showPresets={false} onShowPresets={noop} />,
+      <Filmstrip photos={[makePhoto()]} selectedId="p1" collectionName="Road Trip" onSelect={noop} onSort={noop} reversed={false} sortKey="filename" showPresets={false} onShowPresets={noop} />,
     );
     expect(filename).toContain('Sort filenames A to Z');
     const imported = renderToStaticMarkup(
-      <Filmstrip photos={[makePhoto()]} selectedId="p1" collectionName="Road Trip" onSelect={noop} onGrid={noop} onSort={noop} reversed sortKey="imported" showPresets={false} onShowPresets={noop} />,
+      <Filmstrip photos={[makePhoto()]} selectedId="p1" collectionName="Road Trip" onSelect={noop} onSort={noop} reversed sortKey="imported" showPresets={false} onShowPresets={noop} />,
     );
     expect(imported).toContain('Sort by import, oldest first');
   });
 
   it('keeps the legacy newest/oldest filmstrip label for the default captured sort', () => {
     const html = renderToStaticMarkup(
-      <Filmstrip photos={[makePhoto()]} selectedId="p1" collectionName="Road Trip" onSelect={noop} onGrid={noop} onSort={noop} reversed={false} showPresets={false} onShowPresets={noop} />,
+      <Filmstrip photos={[makePhoto()]} selectedId="p1" collectionName="Road Trip" onSelect={noop} onSort={noop} reversed={false} showPresets={false} onShowPresets={noop} />,
     );
     expect(html).toContain('Sort photos newest first');
   });

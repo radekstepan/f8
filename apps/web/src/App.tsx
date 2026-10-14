@@ -1260,7 +1260,7 @@ export default function App() {
             />}
             {filmstripOpen && <Filmstrip
               photos={filteredPhotos} selectedId={photo.id} collectionName={collectionName} edits={liveEdits}
-              onSelect={selectPhoto} onGrid={() => setView('library')}
+              onSelect={selectPhoto}
               onSort={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')} reversed={sortDir === 'desc'} sortKey={sortKey}
               showPresets={presetsOpen} onShowPresets={() => setPresetsOpen(true)}
               onFavorite={toggleFavorite} onRemove={requestRemove}
