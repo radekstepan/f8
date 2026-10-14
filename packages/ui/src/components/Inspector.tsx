@@ -712,12 +712,13 @@ function DenoiseControl({ assist, photo, slider, auto, onDraft }: { assist: Deno
 
 /**
  * The Denoise section: the draft strength lives here (not in the control)
- * so the shared header Auto button drives the same ISO suggestion the old
- * content Auto pill did — it highlights while the draft is the ISO
- * suggestion, and engaging it sets the suggestion. The reset follows the
- * Enhance Faces pattern: present exactly while a denoise is stored, and
- * clearing it (no pre-apply snapshot exists, so canRevert stays false and
- * the reset always runs onClear).
+ * so the shared header Auto button fills the same ISO suggestion the old
+ * content Auto pill did. The button highlights only while the stored
+ * denoise IS the untouched auto suggestion — never for the mere draft (a
+ * fresh high-ISO capture used to open with Auto lit although nothing was
+ * applied). The reset follows the Enhance Faces pattern: present exactly
+ * while a denoise is stored, and clearing it (no pre-apply snapshot
+ * exists, so canRevert stays false and the reset always runs onClear).
  */
 function DenoiseSection({ assist, photo }: { assist: DenoiseAssist; photo: Photo }) {
   const working = assist.state === 'previewing' || assist.state === 'applying';
@@ -731,18 +732,22 @@ function DenoiseSection({ assist, photo }: { assist: DenoiseAssist; photo: Photo
   }, [photo.id]);
   const suggestion = denoiseStrengthForIso(photo.iso);
   const applied = assist.applied !== null;
+  // Stored-auto only: the draft being the suggestion must not light the
+  // button — every other section highlights its action solely for a stored
+  // effect, and the lit toggle otherwise reads as "denoise is on".
+  const autoApplied = assist.applied?.auto === true;
   const mlHint = suggestion <= 0
     ? `ISO ${photo.iso} needs no denoise`
-    : auto
-      ? `Auto suggestion ${suggestion} — click to go manual, or drag the slider to fine-tune`
+    : autoApplied
+      ? `Auto denoise ${assist.applied!.strength} applied — click to turn off`
       : `Set strength to the ISO ${photo.iso} suggestion (${suggestion})`;
   return <AdjustmentSection title="Denoise" icon={<Waves size={14} />}
     ml={{
       id: 'denoise',
       kind: 'auto',
-      applied: auto,
+      applied: autoApplied,
       canRevert: false,
-      onToggle: () => { if (auto) setAuto(false); else { setSlider(suggestion); setAuto(true); } },
+      onToggle: () => { if (autoApplied) assist.onClear(); else { setSlider(suggestion); setAuto(true); } },
       onRevert: () => setAuto(false),
       disabled: working || suggestion <= 0,
       hint: mlHint,

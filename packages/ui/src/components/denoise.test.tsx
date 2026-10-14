@@ -20,10 +20,10 @@ const cssRule = (selector: string): string => {
   return css().match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
 };
 
-function makePhoto(iso = 3200): Photo {
+function makePhoto(iso = 3200, name = 'DSC06308.ARW'): Photo {
   return {
     id: 'p1',
-    name: 'DSC06308.ARW',
+    name,
     title: 'Alpine morning',
     src: 'http://localhost/photo.jpg',
     thumbnail: 'http://localhost/thumb.jpg',
@@ -103,21 +103,53 @@ describe('denoise control', () => {
     expect(renderAdjust({ ...DEFAULT_EDIT }, makePhoto())).not.toContain('data-testid="denoise"');
   });
 
-  it('starts high-ISO captures on the auto suggestion with the slider still editable', () => {
+  it('starts high-ISO captures on the auto suggestion with Auto off until applied', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(3200), assist());
     expect(html).toContain('data-testid="denoise"');
     expect(html).toContain('data-testid="denoise-strength"');
     expect(html).toContain('data-testid="denoise-preview"');
     expect(html).toContain('Suggested for ISO 3200: 50');
     expect(html).toContain('Auto 50 — drag the slider to fine-tune');
-    // The ISO suggestion runs from the shared header Auto button (a
-    // heuristic, not a model run): pressed while the draft is the
-    // suggestion, and the slider stays enabled so auto flows into
-    // fine-tuning.
-    expect(html).toContain('class="auto-small is-active" data-testid="denoise-auto"');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).not.toContain('disabled');
+    // The draft starts on the ISO suggestion, but the shared header Auto
+    // button (a heuristic, not a model run) stays OFF: nothing is stored
+    // yet, and a lit toggle would read as "denoise is on". The slider
+    // stays enabled so the suggestion flows into fine-tuning.
+    expect(html).toContain('class="auto-small" data-testid="denoise-auto"');
+    const autoTag = html.match(/<button[^>]*data-testid="denoise-auto"[^>]*>/)?.[0] ?? '';
+    expect(autoTag).toContain('aria-pressed="false"');
+    expect(autoTag).not.toContain('disabled');
+    expect(html).toContain('data-tooltip="Set strength to the ISO 3200 suggestion (50)"');
     expect(html).toContain('>Auto</button>');
+  });
+
+  it('lights Auto only while the stored denoise is the untouched suggestion', () => {
+    // The reported case: DSC06322.ARW at ISO 6400 with an auto denoise
+    // stored — the lit toggle now means a stored effect, like every other
+    // section, and offers to turn it off.
+    const stored = renderAdjust(
+      { ...DEFAULT_EDIT, denoise: APPLIED },
+      makePhoto(6400, 'DSC06322.ARW'),
+      assist({ state: 'applied', applied: APPLIED, hasBase: true }),
+    );
+    expect(stored).toContain('class="auto-small is-active" data-testid="denoise-auto"');
+    expect(stored).toContain('aria-pressed="true"');
+    expect(stored).toContain('data-tooltip="Auto denoise 65 applied — click to turn off"');
+    // Same photo, nothing stored: Auto stays off even at ISO 6400.
+    const fresh = renderAdjust({ ...DEFAULT_EDIT }, makePhoto(6400, 'DSC06322.ARW'), assist());
+    expect(fresh).toContain('class="auto-small" data-testid="denoise-auto"');
+    expect(fresh).toContain('data-tooltip="Set strength to the ISO 6400 suggestion (65)"');
+  });
+
+  it('leaves Auto off for a stored manual denoise', () => {
+    const manual: DenoiseState = { strength: 65, auto: false, source: 'onnx' };
+    const html = renderAdjust(
+      { ...DEFAULT_EDIT, denoise: manual },
+      makePhoto(3200),
+      assist({ state: 'applied', applied: manual, hasBase: true }),
+    );
+    expect(html).toContain('data-testid="denoise-applied"');
+    expect(html).toContain('class="auto-small" data-testid="denoise-auto"');
+    expect(html).toContain('data-tooltip="Set strength to the ISO 3200 suggestion (50)"');
   });
 
   it('starts clean captures on a manual strength with auto disabled', () => {
@@ -299,11 +331,11 @@ describe('denoise control', () => {
     expect(header).not.toContain('ml-badge');
     const after = html.slice(html.indexOf('data-testid="denoise-auto"'), html.indexOf('data-testid="denoise-auto"') + 400);
     expect(after).toMatch(/data-testid="denoise-auto"[^>]*>Auto<\/button><\/div>/);
-    // The row itself is pushed right, and the engaged tooltip names the
-    // suggestion plus its toggle-off.
+    // The row itself is pushed right, and the idle tooltip names the
+    // suggestion the button fills into the draft.
     const actions = cssRule('.section-actions');
     expect(actions).toMatch(/margin-left\s*:\s*auto/);
-    expect(html).toContain('data-tooltip="Auto suggestion 50 — click to go manual, or drag the slider to fine-tune"');
+    expect(html).toContain('data-tooltip="Set strength to the ISO 3200 suggestion (50)"');
   });
 
   it('offers a persistent header reset exactly while a denoise is stored', () => {

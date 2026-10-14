@@ -7,8 +7,8 @@
 // holds the deterministic pieces:
 //
 // - denoiseStrengthForIso / shouldAutoDenoise: the EXIF-ISO-keyed auto
-//   suggestion (the Auto button sets it, the slider then fine-tunes — any
-//   manual move clears the auto mark).
+//   suggestion (high-ISO drafts start on it, the Auto button fills it, the
+//   slider then fine-tunes — any manual move clears the auto mark).
 // - packDenoiseInput / parseDenoiseOutput: the ONNX wire contract (RGB
 //   float32 NCHW 0..1 in, denoised image same shape out — verified against
 //   the npuscale DnCNN export, whose output is the clean image directly,
@@ -49,7 +49,7 @@ export const DENOISE_OFFLINE_ENV = "F8_DENOISE_OFFLINE";
 export const DENOISE_PREVIEW_WIDTH = 512;
 /** Apply long edge: full-res apply/exports run at up to 2048px (~9s CPU). */
 export const DENOISE_APPLY_WIDTH = 2048;
-/** EXIF ISO at/above which the Auto toggle engages. */
+/** EXIF ISO at/above which drafts start on the Auto suggestion. */
 export const DENOISE_AUTO_ISO_THRESHOLD = 1600;
 /** Hard ceiling for denoise payloads (both routes reject above this). */
 export const DENOISE_MAX_DIM = 2048;
@@ -82,7 +82,7 @@ export function denoiseStrengthForIso(iso: number): number {
   return 0;
 }
 
-/** True when the capture ISO engages the Auto toggle (ISO ≥ 1600). */
+/** True when the capture ISO seeds the draft with the Auto suggestion (ISO ≥ 1600). */
 export function shouldAutoDenoise(iso: number): boolean {
   return Number.isFinite(iso) && iso >= DENOISE_AUTO_ISO_THRESHOLD;
 }
