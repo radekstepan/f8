@@ -1,6 +1,6 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across eleven
+Distilled from per-task writeups and subagent learnings across twelve
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, menus, zoom, or library UI so we don't repeat the
 same mistakes.
@@ -33,6 +33,8 @@ same mistakes.
 - **R11** = eleventh run, 2026-10-14 (11 tasks). Writeups continue
   the running log in `docs/tasks/01-version-top-right.md` and
   `docs/tasks/22-*.md`–`31-*.md`.
+- **R12** = twelfth run, 2026-10-14 (11 tasks). Writeups continue
+  the running log in `docs/tasks/32-*.md`–`42-*.md`.
 
 ## 1. Honest labels and naming
 
@@ -108,6 +110,17 @@ same mistakes.
   header Auto/ML button; the little `MlBadge` by the tool name is
   now the only ML marking on Enhance Faces and Subject &
   Background. (R11-11)
+- **A switch that can't act yet describes its state, not an
+  action.** Suggestion-less toggles (Curves/Details/Effects, the
+  Denoise no-suggestion precedent) are disabled while off with
+  "at defaults" tooltips and light with "on — click to reset to
+  defaults" once tweaked; the tri-state Subject & Background
+  switch names all three states (empty/active/bypassed) in its
+  tooltips. (R12-2, R12-4)
+- **Relocated controls keep verbatim copy.** The toolbar remove
+  button reuses the heading's exact `Remove from library (Del)`
+  label, glyph, and dispatch — position moves, nothing else.
+  (R12-8; cf. R1-14, R2-2)
 
 ## 2. Header and component contracts
 
@@ -327,6 +340,38 @@ same mistakes.
   Midtones slider takes `disableReset` — the R1-3
   dirty-mirrors-reset invariant extended to the new keys, and
   the only slider in the inspector with the opt-out. (R11-5)
+- **One switch per header, with no reset left to render**
+  (supersedes the R11-11 no-suggestion carve-out):
+  Curves/Details/Effects/B&W all converted — disabled-while-off
+  where there is no suggestion to apply, bidirectional only for
+  B&W (off-to-on genuinely converts). The shared header lost
+  its `onReset`/`dirty` props and the latent snapshot-revert
+  path, so a reset is unrenderable by construction; the panel
+  Auto-Enhance revert, crop straighten row, menu Reset All,
+  and slider double-click resets deliberately stay. (R12-2)
+- **A single toggle owns on/off end to end by bypassing, never
+  clearing.** The Subject & Background header switch segments
+  when empty and bypasses/restores while a mask lives, so
+  toggle-off destroys nothing; the labeled Clear stays as the
+  explicit destructive path, and bypassed slider groups dim
+  via `is-off` (the Faces precedent) so off reads at the
+  values. (R12-4)
+- **New toolbar buttons dispatch existing menu actions.**
+  Toolbar remove fires the Image-menu `remove` case (confirm
+  dialog, Del shortcut, copy all unchanged), stays photo-only
+  via `showPhotoTools`, and carries its danger hover tint to
+  the new hook. (R12-8; cf. R3-1)
+- **Menu moves keep actions, labels, and shortcuts stable.**
+  Focus Mode moved to the top of View in its own section
+  (item + separator ahead of the Show toggles) with the
+  `fullscreen` action untouched; the empty Window menu died
+  with its shortcut-less duplicate Photo Browser entry while
+  the canonical `Photo Browser (G)` stayed. (R12-6; cf. R9-1)
+- **Album menus group Generate above a separator from
+  Delete, plus Remove while a cover is set.** Sidebar
+  Generate disables on empty albums; the grid header's copy
+  never disables (a filtered-empty grid is not an empty
+  album) — same items, honestly different gates. (R12-9)
 
 ## 3. Spacing, layout, and motion
 
@@ -518,6 +563,26 @@ same mistakes.
   the frame — the canvas stays square (compare divider and crop
   grid assume it) with no `overflow: hidden`, which would also
   clip the outside-docked zoom lens. (R11-3)
+- **Long near-black gradients band; wide blurs draw
+  silhouettes.** The R11-3 ambient (50px blur, 67% black over
+  `#151517`) quantized into visible 8-bit steps and reached
+  far enough past the frame to draw a rounded corner on the
+  stage. The fix halves gradient length (the banding lever)
+  and alpha (the silhouette lever) while keeping the
+  keyline — soften, don't remove, or the frame looks
+  pasted-on. A banding-guard test caps max blur/alpha so a
+  future "richer shadow" can't regress it. (R12-1)
+- **Reorders kill positional selectors — replace them with
+  class hooks.** The narrow-viewport `:nth-of-type(2)` rule
+  silently changed victims on every toolbar reorder (info →
+  compare → reset, and this move would have hidden compare);
+  reset now hides by `.toolbar-reset` class and survives
+  future insertions. (R12-7; extends R1-5, R2-9)
+- **Removing a menu renumbers every positional menu rule.**
+  Deleting Window made Help the 5th trigger, so the rule
+  hiding the 5th menu at ≤460px was removed outright —
+  re-pointing it would have stranded About + Shortcuts with
+  no alternative route. (R12-6; cf. R2-9)
 
 ## 4. Navigation and state
 
@@ -844,6 +909,45 @@ same mistakes.
   turns two global autos local with no new model. Model
   outputs never bypass the caps and dead zones — they are
   load-bearing UX. (R11-6)
+- **Async→recipe sync effects are sync-once-per-base, never
+  equality-guarded.** Denoise's recipe/base-equality guard
+  re-stored the strength right after undo (wiping redo and
+  re-firing the toast) because hook pixels survive undo; the
+  fix tracks each applied base by identity through a pure
+  core step helper (`nextDenoiseRecipeSync`, mirroring the
+  straighten `runId:angle` keying) so every base syncs
+  exactly once. Sibling syncs were audited clean (ready-only,
+  self-dismissing, or user-triggered). (R12-11)
+- **Undo keeps hook pixels; the recipe is the truth.**
+  Clearing hook pixels on undo would force a server re-run
+  on redo — keeping them makes redo instant while the
+  cleared recipe flips the canvas back immediately. And undo
+  never auto re-runs ML when it lands on a mismatched
+  recipe: a multi-second run on Cmd+Z would surprise, so
+  the one-click Restore path owns recipe-without-pixels
+  (same as after reload) — with the corner (Inspector
+  right, pixels pending) recorded in the writeup. (R12-11)
+- **Sort presentation at render, keyed off the same
+  condition the render uses.** Sidebar albums sort covered-
+  first + numeric-aware name order in the `Sidebar` render
+  (one order for load/create/generate/remove, no reorder
+  bookkeeping); empty-string cover counts as no thumbnail
+  because the row's `<img>`-vs-glyph gate keys off the same
+  truthiness. `updateAlbum` merges by id (no refetch, no
+  scroll jump). (R12-10)
+- **Representative picks rank existing user signals.**
+  Album cover = first favorite, else highest-rated, else
+  first by filename — skipping missing/imageless records,
+  preferring the thumbnail URL. Deterministic, one click,
+  no picker. (R12-9)
+- **Multi-press gestures must clear transient drag state.**
+  Each double-click press sets `dragIndex` via the dot's
+  pointerdown, so the removal handler clears it first or a
+  post-removal pointermove drags a neighbor under the stale
+  index. Double-click is safe against the add-on-press
+  gesture (dot pointerdown stops propagation), and a
+  `preventDefault`-only `onContextMenu` stays for habitual
+  right-clicks. (R12-3)
 
 ## 5. Testing practices (repo-specific)
 
@@ -1083,6 +1187,40 @@ same mistakes.
 - **Docs-only changes still run the closest suite.** No new
   tests for the ML writeup, but the full core suite confirms
   the analyzed code is untouched and green. (R11-6)
+- **Order pins assert adjacency on both sides, in both
+  toggle states.** Presets-between-compare-and-info and
+  remove-between-presets-and-info pin "directly between, no
+  button in between" for Show and Hide presets alike —
+  single-neighbor assertions would pass with a drifter on
+  the other side. (R12-7, R12-8)
+- **Structural pins prove the absence can't regress.**
+  The shared header owns no reset by construction (props
+  deleted, not just unused); no positional
+  `toolbar-actions > .icon-button:nth-of-type` selector
+  remains; the heading is remove-free; the filmstrip
+  footer contains no browser button. (R12-2, R12-5,
+  R12-7, R12-8)
+- **Style guards parse values, not just literals.** The
+  banding guard parses `box-shadow` layers and caps max
+  blur at 24px and black alpha at `#0006`, so any future
+  shadow retune trips it — the R3-7 relational-pin
+  instinct applied to a gradient defect. (R12-1)
+- **Undo/redo flows script through the pure step
+  helper.** Six core cases drive write-once, no-rewrite-
+  after-undo, no-write-on-redo, second-apply, restore-
+  without-write, and null-reset through
+  `nextDenoiseRecipeSync` — the App effect stays a thin
+  wiring, per the R8-2 core-seam rule. (R12-11)
+- **Sort helpers pin total order, not just examples.**
+  Covered-before-plain with per-group names, empty-cover
+  as plain, numeric names, id tiebreak, non-mutating
+  input, and comparator consistency — plus an SSR row-
+  order pin proving selection highlight survives the
+  reorder. (R12-10)
+- **New test seams match existing conventions.**
+  `initialOpenMenu`/`initialAlbumMenu` mirror
+  `initialDropTarget`/`initialContextMenu` — the next
+  reader finds the pattern, not a one-off. (R12-9)
 
 ## 6. Tooling gotchas
 
@@ -1110,7 +1248,7 @@ same mistakes.
   commit `dist/`.
   (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6,
   R4-4, R4-5, R4-6, R4-7, R4-8, R5-1, R6-6, R7-4, R8-2, R8-3,
-  R9-1, R9-2, R9-3, R10-1, R10-2, R10-3)
+  R9-1, R9-2, R9-3, R10-1, R10-2, R10-3, R12)
 - **Commit by explicit paths, never `git add -A`.** Stray files
   (e.g. `.DS_Store` under `docs/`) get swept in otherwise. (R1)
 - **No CI, no configured linter** — both packages' `lint` scripts
@@ -1338,6 +1476,44 @@ same mistakes.
   and docs-only.** The task rule holds at `patch` with no
   user-visible effect; the `fixed` group moves all four
   workspaces together anyway. (R11-1, R11-6)
+- **Deleting a control deletes its dead props.** The
+  filmstrip's `onGrid` and the photo heading's `onRemove`
+  went with their buttons — a surviving callback invites a
+  second button to drift back in. Typecheck + full suite
+  confirm nothing else referenced them. (R12-5, R12-8;
+  cf. R5-7)
+- **Removing one route keeps every other route.** The
+  filmstrip button died while the G shortcut, the `grid`
+  menu action, and the Photo Browser menu entry stayed —
+  the task named only the button. (R12-5)
+- **Named-scope siblings stay untouched.** Enhance Faces
+  keeps its header/content pairing (only Subject &
+  Background was named), View > Show Presets stays (only
+  the toolbar icon moved), and no slider-drag re-enable
+  or App behavior change rides along a pure layout move.
+  (R12-4, R12-6, R12-7; cf. R8-2)
+- **A "find/generate" ask gets an automatic pick plus its
+  inverse.** One click regenerates the album cover from
+  ranked signals — and Remove ships alongside so the
+  no-thumbnail state (which the follow-up sort task
+  needs) is reachable in the UI. Both album menus (sidebar
+  row, grid header) get the items, and the pick runs over
+  the full library, never the filtered grid. (R12-9)
+- **Check the existing backend before building one.**
+  PATCH `/api/albums/:id` with `cover`, the `albums.cover`
+  column, and the sidebar's cropping `<img>` all existed —
+  the thumbnail feature was client-only. The R2-8/R6-6
+  instinct, applied to the server. (R12-9)
+- **Sub-perceptual geometry stays out of scope.** Subpixel
+  `frameWidth` softens the 1px keyline slightly, but
+  full-pixel rounding would ripple through the lens/minimap
+  math for an imperceptible gain at 8% white — recorded,
+  untouched. (R12-1; cf. R4-3)
+- **Relocations and bug fixes skip the README.** Pure
+  control moves, single-button removals, and the undo
+  fix needed no doc change — no behavior or architecture
+  shift, per the R11-5 one-question-per-file rule.
+  (R12-4–R12-8, R12-11)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -1476,3 +1652,19 @@ same mistakes.
 | 9 | `5fdb64a` | `29-ml-auto-icon-audit.md` | Scene Enhance + Dust Spots demoted to Auto; S&B keeps ML |
 | 10 | `6f4b990` | `30-global-auto-highlight.md` | Global Auto lights the per-section Autos it drove |
 | 11 | `c18753e` | `31-auto-ml-toggle.md` | Color Adjustments Auto/ML buttons become header toggles |
+
+## Per-task index, R12 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `71a7739` | `32-photo-frame-banding.md` | Ambient shadow softened to kill banding + halo silhouette |
+| 2 | `d7a98b4` | `33-curves-effects-details-toggles.md` | Curves/Details/Effects/B&W get header toggles; section reset retired |
+| 3 | `5be7f5a` | `34-curves-double-click-remove.md` | Curves points remove on double-click, not right-click |
+| 4 | `bb8af84` | `35-subject-background-single-toggle.md` | Subject & Background keep one bypassing header toggle |
+| 5 | `9aee3d7` | `36-filmstrip-browser-button.md` | Filmstrip photo-browser button + dead `onGrid` removed |
+| 6 | `2fb730b` | `37-focus-mode-view-menu.md` | Focus Mode opens View in its own section; Window menu dropped |
+| 7 | `47010ba` | `38-presets-toggle-order.md` | Presets toggle sits between compare and info; reset hides by class |
+| 8 | `5bce8c5` | `39-toolbar-remove-action.md` | Delete moves from photo heading to left of info |
+| 9 | `a5610e8` | `40-album-thumbnail.md` | Album (...) menus gain Generate/Remove thumbnail |
+| 10 | `063a0e6` | `41-album-sidebar-sort.md` | Sidebar albums sort covered-first, then by name |
+| 11 | `55f3f4b` | `42-undo-denoise-immediate.md` | Undo of Denoise clears the recipe via sync-once-per-base |
