@@ -13,8 +13,8 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-In the PResets on a portrait photo the preset box not wide enough. All the preset names need to show and right now Golden Hour and Soft Light (and potentially others) are truncated.
+The zoom in View should show under "Show", not at the bottom of the dropdown. And it should respect if we have the compare with original on. If we have Repair on, we should see the circle inthe zoom in view IF it's the same size or smaller than the preview. The zoom in view in the dropdown should also be a submenu where the 8x is the default but we also have 4x and 16x. Only the 8x, the default, has the keyboard shortcut.
 
-Clciking "Cancel" under Denoise does nothing. Also the alignment of the actions is suspicious. Left align, some right aligned. PReview denoise is center aligned. Align (sic) across this tool and others in the app.
+If we star some photos, create "smart albums" in the sidebar library group for the star "counts" we have saved. 
 
-Zoom in view is something with a toggle (checkbox) in the dropdown, has a shortcut and show (like on Photoshop) a square in the bottom right corner and be 8x zoom.
+Instead of "Local-first edition", show the app's overall version in its place. Use changesets and start bumping versions of the packages and the app overall.
