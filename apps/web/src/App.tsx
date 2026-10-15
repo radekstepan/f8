@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, Minimize2, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PHOTO_PRELOAD_DELAY_MS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isFilmstripVisible, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, preloadImages, preloadNeighborSrcs, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, resolveFocusView, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
+import { CROP_RATIOS, PHOTO_PRELOAD_DELAY_MS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isFilmstripVisible, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoEndTargetId, photoInCollection, preloadImages, preloadNeighborSrcs, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, resolveFocusView, rotateRetouches, shouldEscapeToLibrary, shouldNavigateToPhotoEnd, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, pickAlbumCover, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
@@ -1104,6 +1104,16 @@ export default function App() {
         const index = filteredPhotos.findIndex((item) => item.id === selectedId);
         const next = filteredPhotos[(index + (key === 'arrowright' ? 1 : -1) + filteredPhotos.length) % filteredPhotos.length];
         if (next) selectPhoto(next.id);
+        return;
+      }
+      // Home/End jump to the first/last photo of the album. Editor-only:
+      // in the library the keys keep scrolling the grid natively. When
+      // focus sits in the filmstrip its own handler moves focus to the same
+      // end (both key on event.key), so focus and selection stay together.
+      if (shouldNavigateToPhotoEnd(event.key, view)) {
+        event.preventDefault();
+        const targetId = photoEndTargetId(event.key, filteredPhotos, selectedId);
+        if (targetId) selectPhoto(targetId);
         return;
       }
       if (key === 'a' && event.shiftKey) { event.preventDefault(); actionRef.current('enhance-scene'); return; }

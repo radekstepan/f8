@@ -21,6 +21,7 @@ export * from "./libraryUrl.js";
 export * from "./menuAnchor.js";
 export * from "./mlCategories.js";
 export * from "./photoBacklink.js";
+export * from "./photoEndNavigation.js";
 export * from "./photoMeta.js";
 export * from "./photoPreload.js";
 export * from "./photoTools.js";
