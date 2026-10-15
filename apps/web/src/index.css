@@ -159,6 +159,8 @@ its chevron glyph off the toggle edge. */
 .file-type { font-size: 7px; line-height: 13px; letter-spacing: .3px; padding: 0 4px; border: 1px solid #54545d; border-radius: 3px; color: #c0c0c8; font-weight: 500; }
 .edited-indicator { display: flex; align-items: center; gap: 5px; color: #76767f; font-size: 9px; font-weight: 400; }
 .edited-indicator::before { content: ''; height: 3px; width: 3px; background: #7b7b83; border-radius: 50%; }
+/* Photo-view blur hint: the same ML cull-assist signal as the grid badge, deliberately softer than the severe red fill — a muted amber outline in the file-type chip shape. */
+.photo-blurry-hint { font-size: 7px; line-height: 13px; letter-spacing: .3px; padding: 0 4px; border: 1px solid #6b5f45; border-radius: 3px; color: #d8c49a; font-weight: 500; white-space: nowrap; }
 .photo-rating { display: flex; align-items: center; gap: 4px; }
 .photo-rating > button:not(.icon-button) { color: #59595f; display: flex; padding: 2px 0; }
 .photo-rating .rated { color: #a89a76; }

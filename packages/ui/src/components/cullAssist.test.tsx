@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
 import type { Album, Photo } from '@f8/core';
 import { EditorDialogs } from './EditorDialogs.js';
+import { PhotoCanvas } from './PhotoCanvas.js';
 import { PhotoBrowser } from './PhotoStrips.js';
 
 // Cull-assist surfaces, rendered on the server (no jsdom): effects never
@@ -111,4 +112,46 @@ describe('cull assist', () => {
     expect(cssRule('.thumb-cull.is-duplicate')).toMatch(/background\s*:/);
     expect(cssRule('.thumb-cull.is-keeper')).toBe('');
   });
+
+  it('hints at blur in the photo-view heading and leaves clean photos bare', () => {
+    const flagged = renderCanvas(makePhoto({ labels: [{ label: 'blurry', score: 0.8, source: 'ml' }] }));
+    expect(flagged).toContain('data-testid="photo-blurry-hint"');
+    expect(flagged).toContain('Might be blurry · ML');
+    expect(flagged).toContain('Flagged blurry by ML cull assist');
+    const clean = renderCanvas(makePhoto());
+    expect(clean).not.toContain('photo-blurry-hint');
+    const other = renderCanvas(makePhoto({ labels: [{ label: 'beach', score: 0.9, source: 'ml' }] }));
+    expect(other).not.toContain('photo-blurry-hint');
+  });
+
+  it('styles the photo-view hint softer than the severe red grid badge', () => {
+    const hint = cssRule('.photo-blurry-hint');
+    expect(hint).toMatch(/border\s*:/);
+    expect(hint).not.toMatch(/background\s*:/);
+    // The severe red fill stays on the grid badge only.
+    expect(hint).not.toContain('#7c4534');
+    expect(cssRule('.thumb-cull.is-blurry')).toContain('#7c4534');
+  });
 });
+
+function renderCanvas(photo: Photo): string {
+  return renderToStaticMarkup(
+    <PhotoCanvas
+      photo={photo}
+      edit={{ ...DEFAULT_EDIT }}
+      tool="adjust"
+      zoom={1}
+      compare={false}
+      showOriginal={false}
+      brushSize={45}
+      brushStrength={100}
+      onZoom={noop}
+      onCompare={noop}
+      onFavorite={noop}
+      onRating={noop}
+      onInfo={noop}
+      onChange={noop}
+      onHistogram={noop}
+    />,
+  );
+}
