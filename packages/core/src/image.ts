@@ -28,7 +28,7 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
       const image = new Image();
       image.crossOrigin = 'anonymous';
       image.onload = () => resolve(image);
-      image.onerror = () => { imageCache.delete(src); reject(new Error('This photo could not be loaded. Check your connection and try again.')); };
+      image.onerror = () => { imageCache.delete(src); reject(new Error('This photo could not be loaded. Check your connection.')); };
       image.src = src;
     }));
   }

@@ -36,7 +36,7 @@ const cssRule = (selector: string): string => {
 const resetEffect = (): string => {
   const source = canvasSource();
   const start = source.indexOf('useEffect(() => { flushPreviewCache();');
-  const end = source.indexOf('}, [photo.id, photo.src, retry]);', start);
+  const end = source.indexOf('}, [photo.id, photo.src]);', start);
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return source.slice(start, end);

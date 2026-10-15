@@ -122,3 +122,25 @@ describe("library client updateAlbum", () => {
     expect(init?.body).toBe(JSON.stringify({ cover: album.cover }));
   });
 });
+
+describe("library client ping", () => {
+  it("probes the health endpoint without caching", async () => {
+    const fetch = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetch);
+    const result = await createLibraryClient().ping();
+    expect(result).toEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [input, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(input).toBe("/api/health");
+    expect(init?.cache).toBe("no-store");
+  });
+
+  it("reports an unreachable server as status 0", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    }));
+    const failure = await createLibraryClient().ping().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(LibraryError);
+    expect((failure as LibraryError).status).toBe(0);
+  });
+});

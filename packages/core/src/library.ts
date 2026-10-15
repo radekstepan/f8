@@ -175,6 +175,8 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
 
 export interface LibraryClient {
   getLibrary: () => Promise<LibrarySnapshot>;
+  /** Lightweight liveness probe (GET /api/health) for the offline poller. */
+  ping: () => Promise<{ ok: boolean }>;
   upload: (file: Blob, filename: string, albumId?: string) => Promise<{ photo: LibraryPhoto; deduplicated: boolean }>;
   importByPath: (paths: string[], albumId?: string) => Promise<ImportReport>;
   updatePhoto: (id: string, patch: PhotoPatch) => Promise<{ photo: LibraryPhoto }>;
@@ -209,6 +211,8 @@ export function createLibraryClient(baseUrl = ""): LibraryClient {
   });
   return {
     getLibrary: () => request<LibrarySnapshot>(url("/api/library")),
+    // no-store: a cached 200 would read as "back online" while down.
+    ping: () => request<{ ok: boolean }>(url("/api/health"), { cache: "no-store" }),
     upload: (file, filename, albumId) =>
       request<{ photo: LibraryPhoto; deduplicated: boolean }>(url("/api/imports/upload"), {
         method: "POST",

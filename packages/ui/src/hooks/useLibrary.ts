@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LibraryError,
   MAX_IMPORTS_PER_REQUEST,
+  OFFLINE_PING_INTERVAL_MS,
   applyPhotoMetaPatch,
   createLibraryClient,
   createPendingPhotoMeta,
+  noteImageFailure,
   resolveImportSelection,
   sanitizeActionStack,
 } from "@f8/core";
@@ -39,6 +41,11 @@ export interface UploadSummary {
 // grid empty until the whole batch lands.
 const IMPORT_STATE_FLUSH_EVERY = 10;
 
+// Gate detail when the browser itself reports no network (the ping then only
+// confirms it): the server may be fine, so the copy names the connection.
+const BROWSER_OFFLINE_MESSAGE =
+  "The network connection is down. This page reloads automatically when you're back online.";
+
 export function useLibrary() {
   const client = useMemo(() => createLibraryClient(), []);
   const [status, setStatus] = useState<LibraryStatus>("loading");
@@ -55,10 +62,39 @@ export function useLibrary() {
   const [pendingMeta] = useState(createPendingPhotoMeta);
   const photosRef = useRef(photos);
   photosRef.current = photos;
+  const statusRef = useRef(status);
+  statusRef.current = status;
+  // Recent image load-failure timestamps for the offline burst detector.
+  const imageFailures = useRef<number[]>([]);
+  const verifying = useRef(false);
 
   const markOfflineIfDown = useCallback((reason: unknown) => {
-    if (reason instanceof LibraryError && reason.status === 0) setStatus("offline");
+    if (!(reason instanceof LibraryError) || reason.status !== 0) return;
+    setError(reason.message);
+    setStatus("offline");
   }, []);
+
+  // Verify a suspected outage with a cheap health ping before flipping the
+  // takeover: one corrupt photo (or a localhost server surviving a dropped
+  // uplink) must not take down the app. `offlineMessage` overrides the gate
+  // detail when the trigger already names the cause (browser offline event).
+  const verifyConnection = useCallback(async (offlineMessage?: string) => {
+    if (verifying.current) return;
+    verifying.current = true;
+    try {
+      await client.ping();
+      imageFailures.current = [];
+    } catch (reason) {
+      if (reason instanceof LibraryError && reason.status === 0) {
+        setError(offlineMessage ?? reason.message);
+        setStatus("offline");
+      } else {
+        imageFailures.current = [];
+      }
+    } finally {
+      verifying.current = false;
+    }
+  }, [client]);
 
   const upsertPhotos = useCallback((incoming: LibraryPhoto[]) => {
     if (!incoming.length) return;
@@ -103,6 +139,52 @@ export function useLibrary() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // The browser's own signal: verify (a localhost server survives a
+    // dropped uplink) and reload immediately on the way back up.
+    const onOffline = () => void verifyConnection(BROWSER_OFFLINE_MESSAGE);
+    const onOnline = () => {
+      if (statusRef.current === "offline") void load();
+    };
+    // Broken thumbnails are the visible symptom of an outage no API call
+    // noticed (a quiet album grid makes none): a burst of image errors —
+    // capture phase, since error events don't bubble — verifies too, so
+    // the grid flips to the offline takeover instead of broken <img>s.
+    const onResourceError = (event: Event) => {
+      if (!(event.target instanceof HTMLImageElement)) return;
+      const burst = noteImageFailure(imageFailures.current, Date.now());
+      imageFailures.current = burst.recent;
+      if (burst.burst) void verifyConnection();
+    };
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("error", onResourceError, true);
+    return () => {
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("error", onResourceError, true);
+    };
+  }, [load, verifyConnection]);
+
+  // While offline, ping until the server answers, then reload the library:
+  // the takeover resolves itself without the Try again button. A failed
+  // reload keeps the status (and this interval) untouched for the next tick.
+  useEffect(() => {
+    if (status !== "offline" || typeof window === "undefined") return;
+    let stopped = false;
+    const timer = window.setInterval(() => {
+      void client.ping().then(
+        () => { if (!stopped) void load(); },
+        () => undefined,
+      );
+    }, OFFLINE_PING_INTERVAL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [client, load, status]);
 
   const uploadFiles = useCallback(
     async (

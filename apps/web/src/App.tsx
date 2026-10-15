@@ -1281,6 +1281,7 @@ export default function App() {
       <h2>The application server is not running.</h2>
       <p>{library.error || 'Start it with yarn dev, then try again.'}</p>
       <button className="primary-button" onClick={() => void library.retry()}><RefreshCw size={14} />Try again</button>
+      <p>Retrying automatically — this page reloads when the server is back.</p>
     </div>;
   }
 

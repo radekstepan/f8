@@ -142,7 +142,6 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   const [aspect, setAspect] = useState(1200 / 627);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [retry, setRetry] = useState(0);
   const [split, setSplit] = useState(50);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   /** Filename just copied: the heading button flashes its confirmation. */
@@ -250,7 +249,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
   // is-loading CSS above its layer): it repaints in a passive effect after
   // loading clears, so without the wipe one frame could flash the previous
   // photo's original pixels CSS-stretched into the new frame.
-  useEffect(() => { flushPreviewCache(); setLoading(true); setError(''); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; healGeometry.current = null; healStraightenAnchor.current.clear(); paintLog.current = []; overlayStore.current = []; purgedOverlayIds.current = new Set(); healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; paintedPhotoId.current = null; originalSource.current = null; originalPaintedKey.current = null; if (originalRef.current) { originalRef.current.width = 0; originalRef.current.height = 0; } lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src, retry]);
+  useEffect(() => { flushPreviewCache(); setLoading(true); setError(''); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; healGeometry.current = null; healStraightenAnchor.current.clear(); paintLog.current = []; overlayStore.current = []; purgedOverlayIds.current = new Set(); healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; paintedPhotoId.current = null; originalSource.current = null; originalPaintedKey.current = null; if (originalRef.current) { originalRef.current.width = 0; originalRef.current.height = 0; } lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src]);
 
   // A new photo clears any stale "Copied" flash; unmount clears the timer.
   useEffect(() => { setFilenameCopied(false); }, [photo.id]);
@@ -314,7 +313,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
         image = await imagePromise;
       } catch (reason) {
         if (!cancelled && repairGeneration.current === generation) {
-          setError(reason instanceof Error ? reason.message : 'This photo could not be loaded. Check your connection and try again.');
+          setError(reason instanceof Error ? reason.message : 'This photo could not be loaded. Check your connection.');
           setLoading(false);
         }
         return;
@@ -1006,7 +1005,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
       }
     })();
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
-  }, [photo.src, originalSrc, edit, tool, activeStroke, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.seamlessLight, inpaintRepair?.featherPx, inpaintRepair?.status]);
+  }, [photo.src, originalSrc, edit, tool, activeStroke, onHistogram, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.seamlessLight, inpaintRepair?.featherPx, inpaintRepair?.status]);
 
   // Compare "Original" layer, painted on demand: the layer is clipped to
   // zero width unless Compare splits the frame or Show Original holds it, so
@@ -1475,7 +1474,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
       <div className="original-layer" style={{ clipPath: `inset(0 ${showOriginal ? 0 : compare ? 100 - split : 100}% 0 0)` }}><canvas ref={originalRef} role="img" aria-label="Original photo" />{compare && !showOriginal && !loading && <span className="comparison-label original-label">Original</span>}</div>
       {compare && !showOriginal && !loading && <div className="edited-layer" style={{ clipPath: `inset(0 0 0 ${split}%)` }}><span className="comparison-label edited-label">Edited</span></div>}
       {loading && !previewUrl && <div className="photo-loading"><span className="loading-spinner" /><span>Developing your photo...</span></div>}
-      {error && <div className="photo-error"><ImageOff size={28} /><p>{error}</p><button className="secondary-button" onClick={() => setRetry((value) => value + 1)}>Try again</button></div>}
+      {error && <div className="photo-error"><ImageOff size={28} /><p>{error}</p></div>}
       {compare && !showOriginal && !loading && <><div className="comparison-divider" role="slider" aria-label="Before and after comparison" aria-valuemin={2} aria-valuemax={98} aria-valuenow={Math.round(split)} tabIndex={0} style={{ left: `${split}%` }} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setSplit(Math.max(2, Math.min(98, position(event).x * 100))); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); setSplit((value) => Math.max(2, Math.min(98, value + (event.key === 'ArrowRight' ? 2 : -2)))); } }}><span><ChevronsLeftRight size={17} /></span></div></>}
       {showOriginal && <span className="comparison-label original-label">Original</span>}
       {tool === 'crop' && !loading && (fineGrid
