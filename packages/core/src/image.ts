@@ -35,6 +35,17 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
   return imageCache.get(src)!;
 }
 
+// Fire-and-forget neighbor preload: warms the browser HTTP cache and the
+// decode cache above, so the next arrow step finds its photo ready. Never
+// throws or rejects — a failed preload just means that photo loads on demand
+// like before. Empty srcs are skipped.
+export function preloadImages(srcs: readonly string[]): void {
+  for (const src of srcs) {
+    if (!src) continue;
+    loadImage(src).catch(() => undefined);
+  }
+}
+
 export interface ImportSize {
   width: number;
   height: number;

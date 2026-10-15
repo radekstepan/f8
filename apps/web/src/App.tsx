@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, Minimize2, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isFilmstripVisible, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, resolveFocusView, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
+import { CROP_RATIOS, PHOTO_PRELOAD_DELAY_MS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isFilmstripVisible, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoInCollection, preloadImages, preloadNeighborSrcs, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, resolveFocusView, rotateRetouches, shouldEscapeToLibrary, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, pickAlbumCover, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
 import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
@@ -373,6 +373,20 @@ export default function App() {
     setShowOriginal(false);
     setHighlightStroke(null);
   }, [semantic]);
+
+  // Neighbor preload for fast arrowing: once navigation settles, fetch +
+  // decode the photos around the selection so the next arrow step finds them
+  // ready (browser HTTP cache and the in-memory decode cache alike). The
+  // delay resets on every step, so rapid arrowing never steals bandwidth
+  // from the photo being opened — the current photo always wins the race.
+  useEffect(() => {
+    const index = filteredPhotos.findIndex((item) => item.id === selectedId);
+    if (index === -1) return;
+    const srcs = preloadNeighborSrcs(filteredPhotos, index);
+    if (!srcs.length) return;
+    const timer = window.setTimeout(() => preloadImages(srcs), PHOTO_PRELOAD_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [filteredPhotos, selectedId]);
 
   // Library shortcuts turn on the same chip filters used within each
   // album, so the grid always shows why it is narrowed. Recently Edited

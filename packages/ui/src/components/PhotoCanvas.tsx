@@ -163,6 +163,12 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
    * from what's on screen — robust even if edits arrive in phases.
    */
   const paintedKey = useRef<string | null>(null);
+  /** Photo id the last canvas paint belongs to; paired with paintedKey for the switch-flush below. */
+  const paintedPhotoId = useRef<string | null>(null);
+  /** Last decoded full-res inputs, kept so the Compare "Original" layer can paint on demand (see below). */
+  const originalSource = useRef<{ image: HTMLImageElement; trueOriginal: HTMLImageElement | null } | null>(null);
+  /** Geometry key the Compare "Original" canvas currently holds; avoids repainting it for non-geometry edits. */
+  const originalPaintedKey = useRef<string | null>(null);
   /** Object URL of the cached last render shown instantly while the pipeline prepares. */
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const previewUrlRef = useRef<string | null>(null);
@@ -216,7 +222,25 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => { setLoading(true); setError(''); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; healGeometry.current = null; healStraightenAnchor.current.clear(); paintLog.current = []; overlayStore.current = []; purgedOverlayIds.current = new Set(); healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src, retry]);
+  // Flush the previous photo's final pixels into the preview cache on the
+  // way out: fast arrowing never idles 2 s on one photo, so the idle save
+  // below would never run for visited photos and arrowing back would always
+  // re-render. The canvas still holds the previous photo here (the new run
+  // has not painted yet), and stale runs can never overwrite the stashed key
+  // afterwards — every one of their paints is generation-guarded — so the
+  // stashed pair always describes exactly these pixels.
+  const flushPreviewCache = () => {
+    const key = paintedKey.current;
+    const id = paintedPhotoId.current;
+    const canvas = canvasRef.current;
+    if (!key || !id || !canvas || !canvas.width || !canvas.height) return;
+    if (lastSavedPreviewKey.current === key) return;
+    lastSavedPreviewKey.current = key;
+    void previewBlobFromCanvas(canvas).then((blob) => {
+      if (blob) void savePreviewRender(id, key, blob);
+    });
+  };
+  useEffect(() => { flushPreviewCache(); setLoading(true); setError(''); setPendingRepairIds([]); strokeCounter.current = 1; activeStrokeRef.current = null; setActiveStroke(null); healCache.current.clear(); healCachePhoto.current = null; healGeometry.current = null; healStraightenAnchor.current.clear(); paintLog.current = []; overlayStore.current = []; purgedOverlayIds.current = new Set(); healEpoch.current += 1; healQueue.current?.clear(); paintedKey.current = null; paintedPhotoId.current = null; originalSource.current = null; originalPaintedKey.current = null; lastSavedPreviewKey.current = null; setPreviewUrlTracked(null); const myPhotoId = photo.id; overlayPromise.current = loadStoredHealOverlays(overlayClient, myPhotoId); return () => { healEpoch.current += 1; setPreviewUrlTracked(null); if (overlayPromise.current) { const stale = overlayPromise.current; void stale.then(() => { if (overlayPromise.current === stale) overlayPromise.current = null; }); } }; }, [photo.id, photo.src, retry]);
 
   // A new photo clears any stale "Copied" flash; unmount clears the timer.
   useEffect(() => { setFilenameCopied(false); }, [photo.id]);
@@ -255,9 +279,11 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
       // version key matches, so it shows immediately while the pipeline
       // prepares behind it and swaps in invisibly. Shows whenever the canvas
       // doesn't already hold this exact state — even if an earlier run
-      // painted something else first.
+      // painted something else first. Every photo reads it, not just
+      // repaired ones: arrowing back to a visited photo skips the visible
+      // re-render either way (the key still has to match exactly).
       const repairsAtStart = edit.retouches.filter((point) => point.kind === 'repair');
-      if (paintedKey.current !== runKey && repairsAtStart.length > 0 && canvasRef.current) {
+      if (paintedKey.current !== runKey && canvasRef.current) {
         try {
           const cached = await loadPreviewRender(photo.id, runKey);
           if (cached && !cancelled && repairGeneration.current === generation && paintedKey.current !== runKey && canvasRef.current) {
@@ -572,14 +598,14 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
       // composited below before the only paint. One geometry
       // pass feeds seeding, partitioning, and rendering alike.
       const baseEditSync = { ...edit, retouches: edit.retouches.filter((point) => point.kind !== 'repair') };
-      const paintOriginal = () => {
-        const original = geometryCanvas(trueOriginal ?? image, { ...DEFAULT_EDIT, cropRatio: edit.cropRatio, rotation: edit.rotation, flipH: edit.flipH, flipV: edit.flipV, straighten: edit.straighten });
-        originalRef.current!.width = original.width;
-        originalRef.current!.height = original.height;
-        originalRef.current!.getContext('2d')!.drawImage(original, 0, 0);
-      };
+      // The Compare "Original" layer paints on demand (the effect below owns
+      // it): while Compare and Show Original are off the layer is clipped to
+      // zero width, so the pipeline skips its geometry pass on every
+      // navigation and only stashes the decoded inputs here.
+      originalSource.current = { image, trueOriginal };
       const finishPaint = () => {
         paintedKey.current = runKey;
+        paintedPhotoId.current = photo.id;
         setPreviewUrlTracked(null);
         setLoading(false);
         setPaintCount((count) => count + 1);
@@ -659,7 +685,6 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
               syncCtx.putImageData(new ImageData(bytes, syncWidth, syncHeight), 0, 0);
             }
             renderBase(cleanOne, 'sync-heal');
-            paintOriginal();
             // Only still-dirty groups stay red; cached groups already show healed.
             const dirtyIds = syncPart.dirty.map((group) => group.id);
             setPendingRepairIds((prev) => (prev.length === dirtyIds.length && prev.every((id) => dirtyIds.includes(id)) ? prev : dirtyIds));
@@ -702,7 +727,6 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
         // Telea/NS keep the single full-pass path: clean single paint now,
         // worker upgrade when it lands.
         renderBase(geometryCanvas(image, baseEditSync), 'sync-fullpass');
-        paintOriginal();
         const allIds = [...new Set(repairs.map((point) => strokeIdForPoint(point)))];
         setPendingRepairIds((prev) => (prev.length === allIds.length && prev.every((id) => allIds.includes(id)) ? prev : allIds));
         finishPaint();
@@ -713,7 +737,6 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
         // With live repairs (e.g. no repair method bound) this is a noop.
         sweepOrphanOverlays(new Set(edit.retouches.filter((point) => point.kind === 'repair').map((point) => strokeIdForPoint(point))));
         renderBase(geometryCanvas(image, edit), 'sync-fallback');
-        paintOriginal();
         setPendingRepairIds((prev) => (prev.length ? [] : prev));
         finishPaint();
       }
@@ -969,6 +992,28 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
     })();
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
   }, [photo.src, originalSrc, edit, tool, activeStroke, onHistogram, retry, inpaintRepair?.method, inpaintRepair?.quality, inpaintRepair?.seamlessLight, inpaintRepair?.featherPx, inpaintRepair?.status]);
+
+  // Compare "Original" layer, painted on demand: the layer is clipped to
+  // zero width unless Compare splits the frame or Show Original holds it, so
+  // painting it inside the pipeline wastes a full geometry pass on every
+  // navigation. The pipeline only stashes its decoded inputs; this effect
+  // paints from them when the layer becomes visible (and repaints after
+  // geometry edits while it stays visible — the key skips non-geometry
+  // ticks). The zoom lens reads this canvas only for the same two states,
+  // so gating here never starves it.
+  useEffect(() => {
+    if (!compare && !showOriginal) return;
+    const input = originalSource.current;
+    const target = originalRef.current;
+    if (!input || !target) return;
+    const key = `${photo.id}\n${photo.src}\n${edit.rotation}|${edit.cropRatio}|${edit.flipH}|${edit.flipV}|${edit.straighten}`;
+    if (originalPaintedKey.current === key) return;
+    originalPaintedKey.current = key;
+    const original = geometryCanvas(input.trueOriginal ?? input.image, { ...DEFAULT_EDIT, cropRatio: edit.cropRatio, rotation: edit.rotation, flipH: edit.flipH, flipV: edit.flipV, straighten: edit.straighten });
+    target.width = original.width;
+    target.height = original.height;
+    target.getContext('2d')!.drawImage(original, 0, 0);
+  }, [compare, showOriginal, paintCount, photo.id, photo.src, edit]);
 
   // Idle persistence: once the pipeline settles (painted, nothing healing,
   // nothing queued, not painting), stash the on-screen pixels under the
