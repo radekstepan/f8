@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_EDIT, INITIAL_EDIT, PRESETS, RESET_PATCH, isDefaultEdit, isOriginalLook, patchBreaksEnhancePure, presetForPatch } from "./data.js";
+import { DEFAULT_EDIT, INITIAL_EDIT, PRESETS, RESET_PATCH, isDefaultEdit, isOriginalLook, patchBreaksEnhancePure, presetForPatch, presetValuesForEdit } from "./data.js";
 import type { EditState } from "./types.js";
 
 const stroke = { x: 0.5, y: 0.5, size: 0.05, strength: 100, kind: "repair" } as const;
@@ -189,5 +189,49 @@ describe("preset categories", () => {
   it("keeps Original in the default Essentials category", () => {
     const original = PRESETS.find((preset) => preset.id === "original");
     expect(original?.category).toBe("Essentials");
+  });
+});
+
+describe("presetValuesForEdit", () => {
+  const edited: EditState = {
+    ...DEFAULT_EDIT,
+    exposure: 0.4,
+    saturation: 12,
+    blackAndWhite: true,
+    curvePoints: [{ x: 0.25, y: 0.3 }],
+    selectiveColor: [{ range: "reds", hue: 10, saturation: 0, luminance: 0 }],
+    rotation: -90,
+    flipH: true,
+    straighten: 1.5,
+    cropRatio: "1:1",
+    retouches: [{ ...stroke }],
+    denoise: { strength: 40, auto: true, source: "onnx" },
+  };
+
+  it("strips geometry, heal strokes, and denoise", () => {
+    const values = presetValuesForEdit(edited);
+    expect(values).not.toHaveProperty("rotation");
+    expect(values).not.toHaveProperty("flipH");
+    expect(values).not.toHaveProperty("flipV");
+    expect(values).not.toHaveProperty("straighten");
+    expect(values).not.toHaveProperty("cropRatio");
+    expect(values).not.toHaveProperty("retouches");
+    expect(values).not.toHaveProperty("denoise");
+  });
+
+  it("keeps the basic adjustments", () => {
+    const values = presetValuesForEdit(edited);
+    expect(values.exposure).toBe(0.4);
+    expect(values.saturation).toBe(12);
+    expect(values.blackAndWhite).toBe(true);
+    expect(values.curvePoints).toEqual([{ x: 0.25, y: 0.3 }]);
+    expect(values.selectiveColor).toEqual([{ range: "reds", hue: 10, saturation: 0, luminance: 0 }]);
+    expect(values.whiteBalanceEnabled).toBe(true);
+  });
+
+  it("omits denoise even when the recipe never had it", () => {
+    const values = presetValuesForEdit({ ...DEFAULT_EDIT, exposure: 0.2 });
+    expect(values).not.toHaveProperty("denoise");
+    expect(values.exposure).toBe(0.2);
   });
 });

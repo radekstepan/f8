@@ -218,10 +218,14 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
   }, [writeStack]);
 
   const applyPreset = useCallback((preset: Preset) => {
-    const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
+    // Presets carry basic looks only: the target keeps its geometry, heal
+    // strokes, and denoise. Denoise reads from the current recipe (not the
+    // preset values) so even a legacy custom preset saved with denoise
+    // cannot overwrite the target photo's own strength.
+    const { rotation, flipH, flipV, straighten, cropRatio, retouches, denoise } = history.present;
     invalidateMlRuns(photoId);
     clearEnhance(photoId);
-    change({ ...DEFAULT_EDIT, ...preset.values, rotation, flipH, flipV, straighten, cropRatio, retouches, preset: preset.name });
+    change({ ...DEFAULT_EDIT, ...preset.values, rotation, flipH, flipV, straighten, cropRatio, retouches, denoise, preset: preset.name });
   }, [change, invalidateMlRuns, clearEnhance, history.present, photoId]);
 
   const reset = useCallback(() => {

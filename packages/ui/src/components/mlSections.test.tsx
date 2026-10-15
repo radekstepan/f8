@@ -308,7 +308,11 @@ describe('ml enhance sections', () => {
     expect(html).not.toContain('data-testid="face-enhance-detect"');
     expect(html).not.toContain('data-testid="selective-mask-detect"');
     expect(html).toContain('<div class="suggestion-actions"><button class="text-button" data-testid="denoise-preview"');
-    expect(html).not.toContain('secondary-button');
+    // No ML content-bar buttons: the only secondary button is Black &
+    // White's labeled action (always rendered since "Add Adjustment"
+    // retired), not a model run bar.
+    expect(html.match(/secondary-button/g)?.length).toBe(1);
+    expect(html).toContain('class="secondary-button full-width">Make Black &amp; White</button>');
   });
 
   it('leaves no grouping wrapper behind: sections divide themselves', () => {

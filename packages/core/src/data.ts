@@ -64,6 +64,25 @@ export function isDefaultEdit(edit: EditState): boolean {
 const PRESET_PRESERVING_KEYS = new Set(['rotation', 'flipH', 'flipV', 'straighten', 'cropRatio', 'retouches']);
 
 /**
+ * Edit keys a preset never carries. Presets are basic color/detail looks:
+ * geometry and heal strokes were already stripped on save (and preserved
+ * on apply); denoise joins them — its strength is per-photo (ISO-keyed
+ * and re-run on reopen), so a preset must neither store it nor overwrite
+ * the target photo's own.
+ */
+const PRESET_EXCLUDED_KEYS = new Set([...PRESET_PRESERVING_KEYS, 'denoise']);
+
+/**
+ * The basic-adjustment values a preset (or the copy/paste clipboard)
+ * carries: the full recipe minus geometry, heal strokes, and denoise.
+ */
+export function presetValuesForEdit(edit: EditState): Partial<EditState> {
+  return Object.fromEntries(
+    Object.entries(edit).filter(([key]) => !PRESET_EXCLUDED_KEYS.has(key)),
+  ) as Partial<EditState>;
+}
+
+/**
  * Resolve the preset label for an edit patch: an explicit preset in the
  * patch wins (apply/reset/save flows), color changes mark the recipe
  * Custom, and geometry/retouch-only patches keep the current preset.

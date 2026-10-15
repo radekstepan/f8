@@ -50,9 +50,12 @@ describe('topbar dropdown flush alignment', () => {
     // Base rule still anchors at the anchor bottom for inspector /
     // browser menus; the scoped topbar override must not leak.
     expect(cssRule('.dropdown-menu')).toMatch(/top:\s*100%/);
-    expect(cssRule('.add-adjustment-menu')).toMatch(/bottom:\s*calc\(100% \+ 3px\)/);
     expect(cssRule('.sidebar-album-menu')).toMatch(/position:\s*fixed/);
     expect(cssRule('.sidebar-album-menu')).toMatch(/top:\s*auto/);
     expect(cssRule('.inspector-options')).not.toContain('top:');
+    // Flyout submenus (zoom, presets) open right of the parent item,
+    // above the menu-bar flush-top rule.
+    expect(cssRule('.dropdown-menu.dropdown-submenu')).toMatch(/top:\s*-6px/);
+    expect(cssRule('.dropdown-menu.dropdown-submenu')).toMatch(/left:\s*calc\(100% - 2px\)/);
   });
 });

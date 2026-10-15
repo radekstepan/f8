@@ -270,7 +270,9 @@ describe('adjustment styling consistency', () => {
     const rows = actionsRows(adjust);
     expect(rows.length).toBeGreaterThan(0);
     const withSwitch = rows.filter((row) => row.includes('role="switch"'));
-    expect(withSwitch).toHaveLength(10);
+    // Ten with assists but no Black & White; eleven since the section
+    // always renders ("Add Adjustment" retired).
+    expect(withSwitch).toHaveLength(11);
     for (const row of withSwitch) {
       expect(row.match(/role="switch"/g)).toHaveLength(1);
       expect(row).not.toContain('section-reset');

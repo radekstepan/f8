@@ -180,8 +180,10 @@ describe('zoom-in-view parent clears the preview', () => {
 
   it('opens the flyout from ArrowRight without firing the parent clear', () => {
     const source = topbarSource();
-    expect(source).toContain("if (focused.classList.contains('has-submenu')) setSubmenu('zoom-lens');");
+    expect(source).toContain('const target = (focused as HTMLElement).dataset.submenu;');
+    expect(source).toContain("if (focused.classList.contains('has-submenu') && target) setSubmenu(target);");
     expect(source).toContain('else (focused as HTMLButtonElement).click();');
+    expect(source).toContain('data-submenu="zoom-lens"');
   });
 });
 

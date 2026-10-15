@@ -1,12 +1,12 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Bandage, Check, ChevronLeft, ChevronRight, Columns2, Crop, Info, Maximize2, PanelLeft, Redo2, RotateCcw, Share, SlidersHorizontal, SwatchBook, Trash2, Undo2 } from 'lucide-react';
-import type { DialogType, Tool, VisionWorkerStatus, ZoomLensMagnification } from '@f8/core';
+import type { DialogType, Preset, Tool, VisionWorkerStatus, ZoomLensMagnification } from '@f8/core';
 import { APP_NAME, APP_VERSION, ZOOM_LENS_MAGNIFICATIONS } from '@f8/core';
 import { BrandMark, IconButton, MenuItem, MenuSeparator, MlBadge } from './EditorUI.js';
 import { useCompareHold } from '../hooks/useCompareHold.js';
 import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
 
-export type MenuAction = 'import' | 'import-local-folder' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'enhance-scene' | 'enhance-faces' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'back' | 'fit' | 'zoom-lens-4' | 'zoom-lens-8' | 'zoom-lens-16' | 'fullscreen' | 'shortcuts' | 'about';
+export type MenuAction = 'import' | 'import-local-folder' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'enhance-scene' | 'enhance-faces' | 'save-preset' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'back' | 'fit' | 'zoom-lens-4' | 'zoom-lens-8' | 'zoom-lens-16' | 'fullscreen' | 'shortcuts' | 'about';
 
 const zoomLensActions: Record<ZoomLensMagnification, MenuAction> = { 4: 'zoom-lens-4', 8: 'zoom-lens-8', 16: 'zoom-lens-16' };
 
@@ -24,9 +24,17 @@ interface MenuBarProps {
   zoomLens?: boolean;
   /** Active zoom-in-view magnification; the submenu checks it. Defaults to 8. */
   zoomLensMagnification?: ZoomLensMagnification;
+  /** Presets listed in the Image > Presets flyout (built-in plus custom). Defaults to []. */
+  presetList?: Preset[];
+  /** Active preset name; the flyout checks it and the parent while non-Original. Defaults to 'Original'. */
+  selectedPreset?: string;
+  /** Fires when a flyout preset is picked; omit to leave the flyout unselectable. */
+  onSelectPreset?: (preset: Preset) => void;
 }
 
-export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled, sidebar, inspector, presets, filmstrip, zoomLens = false, zoomLensMagnification = 8 }: MenuBarProps) {
+const PRESET_SUBMENU_CATEGORIES = ['Essentials', 'Cinematic', 'Black & White', 'My Presets'] as const;
+
+export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled, sidebar, inspector, presets, filmstrip, zoomLens = false, zoomLensMagnification = 8, presetList = [], selectedPreset = 'Original', onSelectPreset }: MenuBarProps) {
   const [open, setOpen] = useState<string | null>(null);
   const [submenu, setSubmenu] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -34,6 +42,7 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
   useMenuDismiss(ref, () => openMenu(null));
   const action = (value: MenuAction) => { onAction(value); openMenu(null); };
   const item = (name: string, value: MenuAction, shortcut?: string, disabled?: boolean, checked?: boolean, danger?: boolean) => <MenuItem key={value} onClick={() => action(value)} shortcut={shortcut} disabled={disabled} checked={checked} danger={danger}>{name}</MenuItem>;
+  const selectPreset = (preset: Preset) => { onSelectPreset?.(preset); openMenu(null); };
   // Zoom-in-view sits in its own section under the Show toggles (not
   // at the dropdown's bottom): a checked parent with a 4x/8x/16x flyout. Hover opens it;
   // clicking the parent itself while the preview is on clears it (re-picks
@@ -41,13 +50,24 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
   // the menu like any other item; while off, click toggles the flyout for
   // touch. Only the 8x default carries the Z shortcut.
   const zoomLensSubmenu = <div className="menu-submenu-anchor" onMouseEnter={() => setSubmenu('zoom-lens')} onMouseLeave={() => setSubmenu(null)}>
-    <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={submenu === 'zoom-lens'} className="menu-item has-submenu" onClick={() => zoomLens ? action(zoomLensActions[zoomLensMagnification]) : setSubmenu(submenu === 'zoom-lens' ? null : 'zoom-lens')}><span className="menu-check">{zoomLens && <Check size={13} />}</span><span>Zoom in View</span><ChevronRight size={13} className="menu-chevron" /></button>
+    <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={submenu === 'zoom-lens'} data-submenu="zoom-lens" className="menu-item has-submenu" onClick={() => zoomLens ? action(zoomLensActions[zoomLensMagnification]) : setSubmenu(submenu === 'zoom-lens' ? null : 'zoom-lens')}><span className="menu-check">{zoomLens && <Check size={13} />}</span><span>Zoom in View</span><ChevronRight size={13} className="menu-chevron" /></button>
     {submenu === 'zoom-lens' && <div className="dropdown-menu dropdown-submenu" role="menu">{ZOOM_LENS_MAGNIFICATIONS.map((mag) => <MenuItem key={mag} onClick={() => action(zoomLensActions[mag])} shortcut={mag === 8 ? 'Z' : undefined} checked={zoomLens && zoomLensMagnification === mag}>{`${mag}×`}</MenuItem>)}</div>}
+  </div>;
+  // Presets live in the Image menu with the other looks (after Enhance
+  // Faces): a checked-while-non-Original parent with a flyout grouped by
+  // the strip's categories, the active preset checked, and Save as
+  // Preset... in its own section at the bottom. Hover opens it; click
+  // toggles the flyout for touch. The parent carries data-submenu so
+  // ArrowRight/ArrowLeft can move in and out of either flyout.
+  const presetGroups = PRESET_SUBMENU_CATEGORIES.map((category) => ({ category, items: presetList.filter((preset) => preset.category === category) })).filter((group) => group.items.length > 0);
+  const presetsSubmenu = <div className="menu-submenu-anchor" onMouseEnter={() => setSubmenu('presets')} onMouseLeave={() => setSubmenu(null)}>
+    <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={submenu === 'presets'} data-submenu="presets" className="menu-item has-submenu" onClick={() => setSubmenu(submenu === 'presets' ? null : 'presets')}><span className="menu-check">{selectedPreset !== 'Original' && <Check size={13} />}</span><span>Presets</span><ChevronRight size={13} className="menu-chevron" /></button>
+    {submenu === 'presets' && <div className="dropdown-menu dropdown-submenu presets-submenu" role="menu">{presetGroups.map((group, index) => <div key={group.category} role="group" aria-label={`${group.category} presets`}>{index > 0 && <MenuSeparator />}<div className="menu-section-label" role="presentation">{group.category}</div>{group.items.map((preset) => <MenuItem key={preset.id} onClick={() => selectPreset(preset)} checked={selectedPreset === preset.name}>{preset.name}</MenuItem>)}</div>)}<MenuSeparator /><MenuItem onClick={() => action('save-preset')}>Save as Preset...</MenuItem></div>}
   </div>;
   const menus: Record<string, ReactNode> = {
     File: <>{item('Import Photos...', 'import', 'Ctrl O')}{item('Import Folder as Album...', 'import-local-folder')}{item('Import from Folder...', 'import-folder', 'Ctrl Shift O')}{item('New Album...', 'album')}<MenuSeparator />{item('Export Photo...', 'export', 'Ctrl Shift E')}</>,
     Edit: <>{item('Undo', 'undo', 'Ctrl Z', !canUndo)}{item('Redo', 'redo', 'Ctrl Shift Z', !canRedo)}<MenuSeparator />{item('Copy Adjustments', 'copy', 'Ctrl Shift C')}{item('Paste Adjustments', 'paste', 'Ctrl Shift V', !canPaste)}<MenuSeparator />{item('Reset All Adjustments', 'reset')}</>,
-    Image: <>{item('Auto Enhance', 'enhance', 'A')}<MenuItem key="enhance-scene" onClick={() => action('enhance-scene')} shortcut="Shift A">Scene Enhance</MenuItem><MenuItem key="enhance-faces" onClick={() => action('enhance-faces')} shortcut="Shift E"><span>Enhance Faces <MlBadge hint="Faces are detected by a machine-learning model on the photo server" /></span></MenuItem>{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<MenuSeparator />{item('Compare with Original', 'compare', 'B', compareDisabled)}<MenuSeparator />{item('Remove from Library…', 'remove', 'Del', false, undefined, true)}</>,
+    Image: <>{item('Auto Enhance', 'enhance', 'A')}<MenuItem key="enhance-scene" onClick={() => action('enhance-scene')} shortcut="Shift A">Scene Enhance</MenuItem><MenuItem key="enhance-faces" onClick={() => action('enhance-faces')} shortcut="Shift E"><span>Enhance Faces <MlBadge hint="Faces are detected by a machine-learning model on the photo server" /></span></MenuItem>{presetsSubmenu}{item('Rotate Left', 'rotate', 'R')}{item('Toggle Favorite', 'favorite', 'F')}<MenuSeparator />{item('Compare with Original', 'compare', 'B', compareDisabled)}<MenuSeparator />{item('Remove from Library…', 'remove', 'Del', false, undefined, true)}</>,
     View: <>{item('Focus Mode', 'fullscreen', 'Shift F')}<MenuSeparator />{item('Show Library', 'sidebar', undefined, false, sidebar)}{item('Show Adjustments', 'inspector', undefined, false, inspector)}{item('Show Presets', 'presets', undefined, false, presets)}{item('Show Filmstrip', 'filmstrip', undefined, false, filmstrip)}<MenuSeparator />{zoomLensSubmenu}<MenuSeparator />{item('Photo Browser', 'grid', 'G')}{item('Zoom to Fit', 'fit', '0')}</>,
     Help: <>{item('Keyboard Shortcuts', 'shortcuts', '?')}{item(`About ${APP_NAME}`, 'about')}</>,
   };
@@ -74,17 +94,21 @@ export function MenuBar({ onAction, canUndo, canRedo, canPaste, compareDisabled,
       const focused = document.activeElement as HTMLElement | null;
       // Into/out of the flyout: ArrowRight on a closed submenu parent
       // opens it, ArrowLeft inside a flyout closes back to the parent.
+      // Each parent names its flyout in data-submenu so the two submenus
+      // (zoom, presets) share the one handler.
       if (event.key === 'ArrowRight' && focused?.getAttribute('aria-haspopup') === 'menu' && focused?.getAttribute('aria-expanded') === 'false') {
         // Submenu parents open the flyout directly: clicking one would fire
         // its clear action instead. Triggers still open via click.
-        if (focused.classList.contains('has-submenu')) setSubmenu('zoom-lens');
+        const target = (focused as HTMLElement).dataset.submenu;
+        if (focused.classList.contains('has-submenu') && target) setSubmenu(target);
         else (focused as HTMLButtonElement).click();
         window.requestAnimationFrame(() => ref.current?.querySelector<HTMLButtonElement>('.dropdown-submenu button:not([disabled])')?.focus());
         return;
       }
       if (event.key === 'ArrowLeft' && focused?.closest('.dropdown-submenu')) {
+        const parent = submenu ? ref.current?.querySelector<HTMLButtonElement>(`[data-submenu="${submenu}"]`) : null;
         setSubmenu(null);
-        ref.current?.querySelector<HTMLButtonElement>('.menu-item.has-submenu')?.focus();
+        (parent ?? ref.current?.querySelector<HTMLButtonElement>('.menu-item.has-submenu'))?.focus();
         return;
       }
       const names = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('.menu-trigger') || []).filter((button) => button.offsetParent !== null).map((button) => button.textContent || '');

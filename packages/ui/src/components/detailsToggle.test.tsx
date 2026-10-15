@@ -149,8 +149,9 @@ describe('Details header toggle', () => {
     // converts, on-to-off restores color), so the switch is the state
     // indicator every other section has — the explicit content button
     // ("Make Black & White"/"Restore Color") stays as the labeled action,
-    // and the old header reset is gone. The section renders only after
-    // "Add Adjustment" (client state), so the wiring pins at source level.
+    // and the old header reset is gone. The section always renders (the
+    // retired "Add Adjustment" gate is gone), so the wiring pins at
+    // source level.
     const inspector = source('Inspector.tsx');
     const start = inspector.indexOf('title="Black & White"');
     expect(start).toBeGreaterThan(-1);

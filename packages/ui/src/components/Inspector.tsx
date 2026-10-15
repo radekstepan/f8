@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Bandage, Brush, ChevronDown, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, Pipette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, SunMoon, Thermometer, Trash2, Waves, X } from 'lucide-react';
+import { Bandage, Brush, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, Pipette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, SunMoon, Thermometer, Trash2, Waves, X } from 'lucide-react';
 import { CROP_RATIOS, SCENE_DISPLAY_NAMES, SELECTIVE_CLARITY_RANGES, SELECTIVE_COLOR_RANGES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, isSelectiveClarityActive, isSelectiveClarityParamsNeutral, isSelectiveColorActive, isSelectiveColorParamsNeutral, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, selectiveClarityParams, selectiveColorParams, setSelectiveClarityRange, setSelectiveColorRange, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
 import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveClarityParams, SelectiveClarityRange, SelectiveColorParams, SelectiveColorRange, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
@@ -1075,15 +1075,9 @@ interface InspectorProps {
 
 export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, enhanceMode = null, enhancePure = false, enhanceCanRevert, onRevertEnhance, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, onResetWhiteBalance, onResetLightness, onResetColor, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
-  const [addMenu, setAddMenu] = useState(false);
-  const [extraSections, setExtraSections] = useState<string[]>([]);
-  const [openedExtra, setOpenedExtra] = useState('');
-  const [extraRevision, setExtraRevision] = useState(0);
   const ref = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const addMenuRef = useRef<HTMLDivElement>(null);
   useMenuDismiss(menuRef, () => setMenu(false));
-  useMenuDismiss(addMenuRef, () => setAddMenu(false));
 
   const range = (key: NumericAdjustment, label: string, options: Partial<React.ComponentProps<typeof RangeControl>> = {}) => <RangeControl key={key} label={label} value={edit[key]} signed onChange={(value) => onChange({ [key]: value }, key)} {...options} />;
   // Legacy recipes can carry a disabled category (the header toggle used to
@@ -1093,14 +1087,6 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   const title = tool === 'crop' ? 'Crop & Straighten' : tool === 'repair' ? 'Repair' : 'Color Adjustments';
   const TitleIcon = tool === 'crop' ? Crop : tool === 'repair' ? Bandage : SlidersHorizontal;
   const closeAction = (callback: () => void) => { callback(); setMenu(false); };
-  const addSection = (name: string) => {
-    setExtraSections((current) => current.includes(name) ? current : [...current, name]);
-    setOpenedExtra(name);
-    setExtraRevision((value) => value + 1);
-    setAddMenu(false);
-    if (name === 'Black & White') onChange({ blackAndWhite: true });
-    window.setTimeout(() => ref.current?.querySelector('.inspector-scroll')?.scrollTo({ top: 2000, behavior: 'smooth' }), 50);
-  };
   // Whole-photo enhance UI: the header pill highlights only the pure
   // classic state, and the last-used mode carries the shared revert icon —
   // manual look edits clear the highlight but keep the revert. The revert
@@ -1181,19 +1167,18 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
         {rangeEnabled('colorEnabled', 'hue', 'Hue', { min: -180, max: 180, color: 'hue' })}
       </AdjustmentSection>
       <SelectiveColorSection edit={edit} onChange={onChange} />
-      <AdjustmentSection key={`curves-${openedExtra === 'Curves' ? extraRevision : 0}`} title="Curves" icon={<Spline size={14} />} initiallyOpen={openedExtra === 'Curves'} toggle={{ id: 'curves', checked: curvesDirty, onToggle: () => onChange({ curve: 0, curvePoints: [] }), disabled: !curvesDirty, hint: curvesDirty ? 'Curves on — click to reset to defaults' : 'Curves at defaults' }}>
+      <AdjustmentSection title="Curves" icon={<Spline size={14} />} initiallyOpen={false} toggle={{ id: 'curves', checked: curvesDirty, onToggle: () => onChange({ curve: 0, curvePoints: [] }), disabled: !curvesDirty, hint: curvesDirty ? 'Curves on — click to reset to defaults' : 'Curves at defaults' }}>
         <ToneCurveEditor points={edit.curvePoints} midtone={edit.curve} onChange={onChange} />{range('curve', 'Midtones', { disableReset: true })}
       </AdjustmentSection>
-      <AdjustmentSection key={`details-${openedExtra === 'Details' ? extraRevision : 0}`} title="Details" icon={<Focus size={14} />} initiallyOpen={openedExtra === 'Details'} toggle={{ id: 'details', checked: detailsDirty, onToggle: () => onChange({ clarity: 0, sharpness: 0, grain: 0 }), disabled: !detailsDirty, hint: detailsDirty ? 'Details on — click to reset to defaults' : 'Details at defaults' }}>
+      <AdjustmentSection title="Details" icon={<Focus size={14} />} initiallyOpen={false} toggle={{ id: 'details', checked: detailsDirty, onToggle: () => onChange({ clarity: 0, sharpness: 0, grain: 0 }), disabled: !detailsDirty, hint: detailsDirty ? 'Details on — click to reset to defaults' : 'Details at defaults' }}>
         {rangeEnabled('detailsEnabled', 'clarity', 'Clarity')}{rangeEnabled('detailsEnabled', 'sharpness', 'Sharpness', { min: 0 })}{rangeEnabled('detailsEnabled', 'grain', 'Grain', { min: 0 })}
       </AdjustmentSection>
       <SelectiveClaritySection edit={edit} onChange={onChange} />
-      <AdjustmentSection key={`effects-${openedExtra === 'Effects' ? extraRevision : 0}`} title="Effects" icon={<CircleDashed size={14} />} initiallyOpen={openedExtra === 'Effects'} toggle={{ id: 'effects', checked: effectsDirty, onToggle: () => onChange({ vignette: 0, fade: 0 }), disabled: !effectsDirty, hint: effectsDirty ? 'Effects on — click to reset to defaults' : 'Effects at defaults' }}>
+      <AdjustmentSection title="Effects" icon={<CircleDashed size={14} />} initiallyOpen={false} toggle={{ id: 'effects', checked: effectsDirty, onToggle: () => onChange({ vignette: 0, fade: 0 }), disabled: !effectsDirty, hint: effectsDirty ? 'Effects on — click to reset to defaults' : 'Effects at defaults' }}>
         {range('vignette', 'Vignette', { min: 0 })}{range('fade', 'Fade', { min: 0 })}
       </AdjustmentSection>
-      {extraSections.includes('Black & White') && <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} toggle={{ id: 'black-and-white', checked: edit.blackAndWhite, onToggle: () => onChange({ blackAndWhite: !edit.blackAndWhite }), hint: edit.blackAndWhite ? 'Black & White on — click to restore color' : 'Convert to black & white' }}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>}
+      <AdjustmentSection title="Black & White" icon={<Contrast size={14} />} toggle={{ id: 'black-and-white', checked: edit.blackAndWhite, onToggle: () => onChange({ blackAndWhite: !edit.blackAndWhite }), hint: edit.blackAndWhite ? 'Black & White on — click to restore color' : 'Convert to black & white' }}><p className="inspector-note">A timeless look, without the distraction of color.</p><button className="secondary-button full-width" onClick={() => onChange({ blackAndWhite: !edit.blackAndWhite })}>{edit.blackAndWhite ? 'Restore Color' : 'Make Black & White'}</button></AdjustmentSection>
       <div className="inspector-end-note"><Circle size={10} />Every change. Always reversible.</div>
     </> : tool === 'crop' ? <div className="tool-inspector crop-inspector"><div className="tool-intro"><Crop size={28} strokeWidth={1.3} /><h3>A fresh point of view.</h3><p>Find the right balance. Keep the best bits.</p></div><SelectField label="Aspect Ratio" value={edit.cropRatio} options={Object.keys(CROP_RATIOS).map((ratio) => ({ value: ratio, label: ratio === 'Original' ? 'Original proportions' : ratio }))} onChange={(cropRatio) => onChange({ cropRatio })} /><div className="ratio-presets">{['Original', '1:1', '4:3', '16:9'].map((ratio) => <button key={ratio} className={edit.cropRatio === ratio ? 'is-active' : ''} onClick={() => onChange({ cropRatio: ratio })}><span style={{ aspectRatio: CROP_RATIOS[ratio] || 1.5 }} />{ratio}</button>)}</div><div className="tool-divider" /><h4>Rotate & Flip</h4><div className="transform-buttons"><button aria-label="Rotate left 90 degrees" data-tooltip="Rotate left 90 degrees" onClick={() => onRotate(-1)}><RotateCcw size={18} /><span>Left</span></button><button aria-label="Rotate right 90 degrees" data-tooltip="Rotate right 90 degrees" onClick={() => onRotate(1)}><RotateCw size={18} /><span>Right</span></button><button className={edit.flipH ? 'is-active' : ''} aria-label="Flip horizontally" data-tooltip="Flip horizontally" onClick={() => onChange({ flipH: !edit.flipH })}><FlipHorizontal2 size={18} /><span>Horizontal</span></button><button className={edit.flipV ? 'is-active' : ''} aria-label="Flip vertically" data-tooltip="Flip vertically" onClick={() => onChange({ flipV: !edit.flipV })}><FlipVertical2 size={18} /><span>Vertical</span></button></div>{straightenAssist ? <StraightenControl value={edit.straighten} assist={straightenAssist} onStraighten={onStraighten} onDraggingChange={onStraightenDragging} /> : <RangeControl label="Straighten" value={edit.straighten} min={-15} max={15} step={0.1} suffix="deg" signed onDraggingChange={onStraightenDragging} onChange={(next) => onStraighten(next, 'straighten')} />}<p className="inspector-note">Cropping is non-destructive. Your original photo is always kept safe.</p></div> : <><AdjustmentSection title="Brush" icon={<Brush size={14} />}><RangeControl label="Brush Size" value={brushSize} min={5} max={160} defaultValue={45} suffix="px" testId="brush-size" onChange={onBrushSize} /><RangeControl label="Strength" value={brushStrength} min={1} max={100} defaultValue={100} suffix="%" testId="brush-strength" onChange={onBrushStrength} /></AdjustmentSection>{repairAssist && <AdjustmentSection title="Reconstruction" icon={<Layers size={14} />}><RepairMethodControl assist={repairAssist} /></AdjustmentSection>}{repairAssist?.removal && <RemovalSection assist={repairAssist.removal} />}{repairAssist?.dustSpots && <DustSpotsSection assist={repairAssist.dustSpots} />}<AdjustmentSection title="Repairs" icon={<Bandage size={14} />}><RetouchGroups edit={edit} highlightStroke={highlightStroke} onHighlightStroke={onHighlightStroke} onChange={onChange} /></AdjustmentSection></>}</div>
-    {tool === 'adjust' && <div className="inspector-footer" ref={addMenuRef}><button className="add-adjustment" onClick={() => setAddMenu(!addMenu)} aria-expanded={addMenu}>Add Adjustment<ChevronDown size={12} /></button>{addMenu && <div className="dropdown-menu add-adjustment-menu" role="menu">{['Black & White'].filter((name) => !extraSections.includes(name)).map((name) => <MenuItem key={name} onClick={() => addSection(name)}>{name}</MenuItem>)}{!extraSections.includes('Black & White') && <MenuSeparator />}<MenuItem onClick={() => { onSavePreset(); setAddMenu(false); }}>Save as Preset...</MenuItem></div>}</div>}
   </aside>;
 }

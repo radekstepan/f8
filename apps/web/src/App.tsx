@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, Minimize2, RefreshCw, X } from 'lucide-react';
-import { CROP_RATIOS, PHOTO_PRELOAD_DELAY_MS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isFilmstripVisible, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoEndTargetId, photoInCollection, preloadImages, preloadNeighborSrcs, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, resolveFocusView, rotateRetouches, shouldEscapeToLibrary, shouldNavigateToPhotoEnd, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
+import { CROP_RATIOS, PHOTO_PRELOAD_DELAY_MS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isFilmstripVisible, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoEndTargetId, photoInCollection, preloadImages, preloadNeighborSrcs, presetValuesForEdit, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, resolveFocusView, rotateRetouches, shouldEscapeToLibrary, shouldNavigateToPhotoEnd, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, pickAlbumCover, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary } from '@f8/ui';
-import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
+import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Preset, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
 import { Sidebar } from '@f8/ui';
 import { AppStatus, IconButton, MenuBar, Toolbar, type MenuAction } from '@f8/ui';
 import { PhotoCanvas, type HistogramData } from '@f8/ui';
@@ -153,7 +153,7 @@ export default function App() {
   // Removal candidate hovered in the repair sidebar (person or dust-spot
   // list row); the canvas previews its region in red like a healed area.
   const [highlightRemoval, setHighlightRemoval] = useState<{ source: 'removal' | 'dust'; index: number } | null>(null);
-  const [clipboard, setClipboard] = useState<EditState | null>(null);
+  const [clipboard, setClipboard] = useState<Partial<EditState> | null>(null);
   const [dialog, setDialog] = useState<DialogType>(null);
   const [removeTargetId, setRemoveTargetId] = useState<string | null>(null);
   const [removeAlbumTargetId, setRemoveAlbumTargetId] = useState<string | null>(null);
@@ -856,11 +856,25 @@ export default function App() {
     }, mergeKey);
   }, [editor, handleEditChange, photo]);
 
-  const copyAdjustments = () => { setClipboard({ ...editor.edit, retouches: [] }); notify('Adjustments copied. Pick another photo to paste them.'); };
+  const copyAdjustments = () => { setClipboard(presetValuesForEdit(editor.edit)); notify('Adjustments copied. Pick another photo to paste them.'); };
   const pasteAdjustments = () => {
     if (!clipboard) return;
     editor.applyPreset({ id: 'clipboard', name: 'Pasted Adjustments', category: 'My Presets', values: clipboard });
     notify('Adjustments pasted onto this photo.');
+  };
+
+  // Shared by the preset strip and the Image > Presets submenu: picking
+  // the active preset reverts to Original (the strip's long-standing
+  // toggle-off), and a menu pick from the library lands in the editor so
+  // the result is visible.
+  const selectPreset = (preset: Preset) => {
+    if (editor.edit.preset === preset.name && preset.id !== 'original' && preset.name !== 'Original') {
+      const original = availablePresets.find((item) => item.id === 'original') ?? availablePresets.find((item) => item.name === 'Original');
+      if (original) editor.applyPreset(original);
+    } else {
+      editor.applyPreset(preset);
+    }
+    setView('editor');
   };
 
   // Upload picked or dropped files. Files carrying folder context (a folder
@@ -1049,6 +1063,7 @@ export default function App() {
       case 'enhance': editor.autoEnhance(photo?.src); setView('editor'); break;
       case 'enhance-scene': editor.autoEnhanceScene(photo?.src); setView('editor'); break;
       case 'enhance-faces': if (photo) faceEnhance.detect(photo.src); setView('editor'); setTool('adjust'); break;
+      case 'save-preset': setDialog('preset'); break;
       case 'rotate': rotateImage(-1); break;
       case 'favorite': toggleFavorite(); break;
       case 'remove': if (photo) requestRemove(photo.id); break;
@@ -1224,8 +1239,9 @@ export default function App() {
   };
 
   const savePreset = (name: string) => {
-    const { rotation: _rotation, flipH: _flipH, flipV: _flipV, straighten: _straighten, cropRatio: _cropRatio, retouches: _retouches, ...values } = editor.edit;
-    void library.createPreset(name, values).then(
+    // Basic adjustments only: geometry, heal strokes, and denoise stay
+    // with the photo (see presetValuesForEdit).
+    void library.createPreset(name, presetValuesForEdit(editor.edit)).then(
       () => {
         editor.change({ preset: name });
         setPresetsOpen(true);
@@ -1307,7 +1323,7 @@ export default function App() {
   const hasEdits = !isDefaultEdit(editor.edit);
   return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''} ${focusMode ? 'is-focus' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importDrop(event.dataTransfer); }}>
     <TooltipHost />
-    {!focusMode && <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop' || !hasEdits} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} zoomLens={zoomLens} zoomLensMagnification={zoomLensMag} />}
+    {!focusMode && <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop' || !hasEdits} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} zoomLens={zoomLens} zoomLensMagnification={zoomLensMag} presetList={availablePresets} selectedPreset={editor.edit.preset} onSelectPreset={selectPreset} />}
     {!focusMode && <Toolbar collectionName={backlinkName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} canCompare={hasEdits} onHoldOriginal={setShowOriginal} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />}
     {focusMode && <div className="focus-exit"><IconButton label="Exit focus mode (Shift F)" onClick={() => handleAction('fullscreen')}><Minimize2 size={17} /></IconButton></div>}
     <div className="workspace">
@@ -1341,7 +1357,7 @@ export default function App() {
             )}
             {!focusMode && presetsOpen && <PresetStrip
               photo={photo} presets={availablePresets} selected={editor.edit.preset}
-              onSelect={editor.applyPreset} onAdd={() => setDialog('preset')} onToggle={() => setPresetsOpen(false)}
+              onSelect={selectPreset} onAdd={() => setDialog('preset')} onToggle={() => setPresetsOpen(false)}
             />}
             {showFilmstrip && <Filmstrip
               photos={filteredPhotos} selectedId={photo.id} collectionName={collectionName} edits={liveEdits}
