@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Bandage, Brush, ChevronDown, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Waves, X } from 'lucide-react';
-import { CROP_RATIOS, SCENE_DISPLAY_NAMES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
-import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
+import { Bandage, Brush, ChevronDown, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, Pipette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Waves, X } from 'lucide-react';
+import { CROP_RATIOS, SCENE_DISPLAY_NAMES, SELECTIVE_COLOR_RANGES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, isSelectiveColorActive, isSelectiveColorParamsNeutral, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, selectiveColorParams, setSelectiveColorRange, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
+import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveColorParams, SelectiveColorRange, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { AdjustmentSection } from './AdjustmentSection.js';
 import { CheckField, IconButton, MenuItem, MenuSeparator, MlBadge, RangeControl, RevertButton, SegmentedControl, SelectField, Toggle } from './EditorUI.js';
@@ -841,6 +841,53 @@ function RetouchGroups({ edit, highlightStroke, onHighlightStroke, onChange }: {
 }
 
 /**
+ * The Selective Color section (Photomator's per-range HSL): a swatch row
+ * picks one of the eleven ranges — eight hues plus whites, neutrals, and
+ * blacks — and the three sliders below tune that range's hue, saturation,
+ * and luminance. Adjusted ranges keep a dot on their swatch so past edits
+ * stay visible while another range is selected. The header toggle follows
+ * the manual Curves/Details/Effects contract: it lights on the first tweak
+ * and resets every range on click (disabled while off — with no suggestion
+ * to apply, there is nothing to turn on). Each slider drag coalesces to
+ * one undo step through its range+param merge key.
+ */
+function SelectiveColorSection({ edit, onChange }: { edit: EditState; onChange: ChangeEdit }) {
+  const [range, setRange] = useState<SelectiveColorRange>('reds');
+  const params = selectiveColorParams(edit.selectiveColor, range);
+  const dirty = isSelectiveColorActive(edit.selectiveColor);
+  const label = SELECTIVE_COLOR_RANGES.find((meta) => meta.range === range)?.label ?? range;
+  const setParam = (patch: Partial<SelectiveColorParams>, param: 'hue' | 'saturation' | 'luminance') => {
+    onChange({ selectiveColor: setSelectiveColorRange(edit.selectiveColor, range, patch) }, `selective-color:${range}:${param}`);
+  };
+  return <AdjustmentSection title="Selective Color" icon={<Pipette size={14} />}
+    toggle={{
+      id: 'selective-color',
+      checked: dirty,
+      onToggle: () => onChange({ selectiveColor: [] }),
+      disabled: !dirty,
+      hint: dirty ? 'Selective Color on — click to reset to defaults' : 'Selective Color at defaults',
+    }}>
+    <div className="selective-color-swatches" role="group" aria-label="Selective color range" data-testid="selective-color-ranges">
+      {SELECTIVE_COLOR_RANGES.map((meta) => {
+        const active = meta.range === range;
+        const touched = !isSelectiveColorParamsNeutral(selectiveColorParams(edit.selectiveColor, meta.range));
+        return <button key={meta.range} type="button" data-testid={`selective-color-range-${meta.range}`}
+          className={`selective-color-swatch${active ? ' is-active' : ''}${touched ? ' is-dirty' : ''}`}
+          aria-pressed={active} aria-label={touched ? `${meta.label} (adjusted)` : meta.label}
+          data-tooltip={touched ? `${meta.label} — adjusted` : meta.label}
+          onClick={() => setRange(meta.range)}>
+          <span className="selective-color-dot" style={{ background: meta.swatch }} />
+        </button>;
+      })}
+    </div>
+    <p className="selective-color-range-name" data-testid="selective-color-range-name">{label}</p>
+    <RangeControl label="Hue" value={params.hue} signed color="hue" testId="selective-color-hue" onChange={(hue) => setParam({ hue }, 'hue')} />
+    <RangeControl label="Saturation" value={params.saturation} signed testId="selective-color-saturation" onChange={(saturation) => setParam({ saturation }, 'saturation')} />
+    <RangeControl label="Luminance" value={params.luminance} signed testId="selective-color-luminance" onChange={(luminance) => setParam({ luminance }, 'luminance')} />
+  </AdjustmentSection>;
+}
+
+/**
  * The interactive RGB tone-curve graph. The drawn line is the real render
  * mapping (anchor spline over the Midtones bend); the dots are the recipe's
  * anchors: press on the line to drop a new one and keep dragging it in the
@@ -1087,6 +1134,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
         {rangeEnabled('colorEnabled', 'vibrance', 'Vibrance')}
         {rangeEnabled('colorEnabled', 'hue', 'Hue', { min: -180, max: 180, color: 'hue' })}
       </AdjustmentSection>
+      <SelectiveColorSection edit={edit} onChange={onChange} />
       <AdjustmentSection key={`curves-${openedExtra === 'Curves' ? extraRevision : 0}`} title="Curves" icon={<Spline size={14} />} initiallyOpen={openedExtra === 'Curves'} toggle={{ id: 'curves', checked: curvesDirty, onToggle: () => onChange({ curve: 0, curvePoints: [] }), disabled: !curvesDirty, hint: curvesDirty ? 'Curves on — click to reset to defaults' : 'Curves at defaults' }}>
         <ToneCurveEditor points={edit.curvePoints} midtone={edit.curve} onChange={onChange} />{range('curve', 'Midtones', { disableReset: true })}
       </AdjustmentSection>

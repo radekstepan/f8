@@ -115,10 +115,10 @@ describe('auto/ml toggle contract', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
     const rows = actionsRows(html);
     // Scene, faces, subject, denoise, white balance, lightness, color,
-    // curves, details, effects.
-    expect(rows).toHaveLength(10);
+    // selective color, curves, details, effects.
+    expect(rows).toHaveLength(11);
     const withSwitch = rows.filter((row) => row.includes('role="switch"'));
-    expect(withSwitch).toHaveLength(10);
+    expect(withSwitch).toHaveLength(11);
     for (const row of withSwitch) {
       expect(row.match(/role="switch"/g)).toHaveLength(1);
       expect(row).not.toContain('section-reset');
@@ -127,7 +127,7 @@ describe('auto/ml toggle contract', () => {
     }
     // The manual sections light their own switches on dirt — no resets.
     const dirty = renderAdjust({ ...DEFAULT_EDIT, curve: 25, clarity: 20, vignette: 40 });
-    expect(dirty.match(/role="switch"/g)).toHaveLength(10);
+    expect(dirty.match(/role="switch"/g)).toHaveLength(11);
     expect(dirty).toContain('class="toggle is-on" data-testid="curves-toggle"');
     expect(dirty).toContain('class="toggle is-on" data-testid="details-toggle"');
     expect(dirty).toContain('class="toggle is-on" data-testid="effects-toggle"');

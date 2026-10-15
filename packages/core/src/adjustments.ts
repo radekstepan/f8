@@ -9,11 +9,12 @@
 //   exposure gain -> white-balance gains -> luminance-masked tonal offsets
 //   (highlights / shadows / blacks) -> brightness lift -> contrast pivot ->
 //   midtone curve -> anchor curve LUT -> vibrance / saturation chroma scale ->
-//   hue rotation -> black & white. Clarity (wide radius, midtone-weighted)
-//   and Sharpness (narrow radius) then add luminance-detail deltas to all
-//   channels.
+//   hue rotation -> selective color (per-range HSL) -> black & white.
+//   Clarity (wide radius, midtone-weighted) and Sharpness (narrow radius)
+//   then add luminance-detail deltas to all channels.
 
 import { MIDTONE_CURVE_RESPONSE, buildToneCurveTable, isCurvePointsActive } from "./toneCurve.js";
+import { applySelectiveColor, isSelectiveColorActive, resolveSelectiveColor } from "./selective-color.js";
 import type { EditState } from "./types.js";
 import type { PixelImage } from "./vision/analyze.js";
 import { assertValidImage } from "./vision/analyze.js";
@@ -130,6 +131,8 @@ export interface PointParameters {
   saturationFactor: number;
   vibrance: number;
   hueMatrix: readonly [number, number, number, number, number, number, number, number, number] | null;
+  /** Packed per-range HSL triples (null while Selective Color is neutral). */
+  selectiveColor: Float32Array | null;
   blackAndWhite: boolean;
 }
 
@@ -153,6 +156,7 @@ export function pointParameters(edit: EditState): PointParameters {
     saturationFactor: colorEnabled ? Math.max(0, 1 + clamp(edit.saturation, -100, 100) / 100) : 1,
     vibrance: colorEnabled ? clamp(edit.vibrance, -100, 100) : 0,
     hueMatrix: colorEnabled && edit.hue !== 0 ? hueRotationMatrix(edit.hue) : null,
+    selectiveColor: resolveSelectiveColor(edit.selectiveColor),
     blackAndWhite: edit.blackAndWhite,
   };
 }
@@ -229,6 +233,16 @@ export function applyPointAdjustments(
     blue = hb;
   }
 
+  // Per-range HSL on the color-corrected pixel: the global hue rotation
+  // above may have moved hues across range boundaries, and Black & White
+  // below still wins outright.
+  if (params.selectiveColor) {
+    const [sr, sg, sb] = applySelectiveColor(red, green, blue, params.selectiveColor);
+    red = sr;
+    green = sg;
+    blue = sb;
+  }
+
   if (params.blackAndWhite) {
     const gray = luminanceOf(red, green, blue);
     red = gray;
@@ -299,7 +313,8 @@ export function isNeutralEdit(edit: EditState): boolean {
   const detailNeutral = !edit.detailsEnabled || (edit.clarity === 0 && edit.sharpness === 0);
   const faceNeutral = !isFaceAdjustActive(edit.faceAdjust);
   const selectiveNeutral = !isSelectiveAdjustActive(edit.selectiveAdjust);
-  return whiteBalanced && lightNeutral && colorNeutral && edit.curve === 0 && !isCurvePointsActive(edit.curvePoints) && !edit.blackAndWhite && detailNeutral && faceNeutral && selectiveNeutral;
+  const selectiveColorNeutral = !isSelectiveColorActive(edit.selectiveColor);
+  return whiteBalanced && lightNeutral && colorNeutral && edit.curve === 0 && !isCurvePointsActive(edit.curvePoints) && !edit.blackAndWhite && detailNeutral && faceNeutral && selectiveNeutral && selectiveColorNeutral;
 }
 
 /**

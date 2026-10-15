@@ -189,7 +189,7 @@ describe('adjustment styling consistency', () => {
     // (scene enhance, denoise, the slider autos) carry none. The
     // whole-photo header pill is not a section control and stays.
     const html = renderAdjust({ ...DEFAULT_EDIT }, { scene: true, denoise: true, faceApplied: null, selectiveApplied: null });
-    for (const id of ['scene-enhance', 'face-enhance', 'selective-mask', 'denoise', 'white-balance', 'lightness', 'color', 'curves', 'details', 'effects'] as const) {
+    for (const id of ['scene-enhance', 'face-enhance', 'selective-mask', 'denoise', 'white-balance', 'lightness', 'color', 'selective-color', 'curves', 'details', 'effects'] as const) {
       expect(html).toContain(`data-testid="${id}-toggle"`);
       expect(html).not.toContain(`data-testid="${id}-auto"`);
       expect(html).not.toContain(`data-testid="${id}-ml"`);
@@ -261,16 +261,16 @@ describe('adjustment styling consistency', () => {
   it('keeps one switch per adjust header; repair headers and the panel Auto group stay switch-free', () => {
     // Every Color Adjustments header carries exactly the one shared
     // switch — the automatic ones apply on and reset off, the manual
-    // Curves/Details/Effects light on tweaks and reset on click. The
-    // faces content bypass switch keeps its own label, distinct from
-    // the header switches; subject drives bypass from its header
+    // Selective Color/Curves/Details/Effects light on tweaks and reset on
+    // click. The faces content bypass switch keeps its own label, distinct
+    // from the header switches; subject drives bypass from its header
     // switch, so its content holds no switch at all.
     const applied: NonNullable<FaceEnhanceAssist['applied']> = { faces: 2, source: 'onnx', enabled: true, liftAmount: 0.4, redEyeCount: 1 };
     const adjust = renderAdjust({ ...DEFAULT_EDIT }, { faceApplied: applied, selectiveApplied: { ...APPLIED_SELECTIVE, enabled: true } });
     const rows = actionsRows(adjust);
     expect(rows.length).toBeGreaterThan(0);
     const withSwitch = rows.filter((row) => row.includes('role="switch"'));
-    expect(withSwitch).toHaveLength(8);
+    expect(withSwitch).toHaveLength(9);
     for (const row of withSwitch) {
       expect(row.match(/role="switch"/g)).toHaveLength(1);
       expect(row).not.toContain('section-reset');

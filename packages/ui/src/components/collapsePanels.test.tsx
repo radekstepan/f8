@@ -155,7 +155,7 @@ describe('shared collapse panels', () => {
     // No assists passed, so no ML sections; Curves/Effects/Details
     // start collapsed but their headings still render. Auto Enhance is no
     // panel at all — it lives in the Color Adjustments header.
-    const titles = ['White Balance', 'Lightness', 'Hue &amp; Saturation', 'Curves', 'Details', 'Effects'];
+    const titles = ['White Balance', 'Lightness', 'Hue &amp; Saturation', 'Selective Color', 'Curves', 'Details', 'Effects'];
     expect(html.match(/class="adjustment-section[ "]/g)?.length).toBe(titles.length);
     expect(html.match(/class="section-disclosure"/g)?.length).toBe(titles.length);
     for (const title of titles) {

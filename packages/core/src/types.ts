@@ -200,6 +200,30 @@ export interface CurvePoint {
   y: number;
 }
 
+/**
+ * One Selective Color range, in Photomator's order: eight chromatic hues
+ * plus the three achromatic bands (whites, neutrals, blacks).
+ */
+export type SelectiveColorRange =
+  | 'reds' | 'oranges' | 'yellows' | 'greens'
+  | 'aquas' | 'blues' | 'purples' | 'magentas'
+  | 'whites' | 'neutrals' | 'blacks';
+
+/** Per-range HSL tweak, each slider -100..100 (0 is neutral). */
+export interface SelectiveColorParams {
+  /** Hue shift, -100..100 (scaled to degrees at render). */
+  hue: number;
+  /** Saturation scale, -100..100 (same units as the global slider). */
+  saturation: number;
+  /** Lightness lift, -100..100 (scaled to a lightness offset at render). */
+  luminance: number;
+}
+
+/** One range's stored tweak: the range plus its HSL params. */
+export interface SelectiveColorEntry extends SelectiveColorParams {
+  range: SelectiveColorRange;
+}
+
 export interface EditState {
   temperature: number;
   tint: number;
@@ -220,6 +244,12 @@ export interface EditState {
   curve: number;
   /** User-placed tone-curve anchors (normalized 0..1); empty is the identity curve. */
   curvePoints: CurvePoint[];
+  /**
+   * Sparse Selective Color tweaks, one entry per touched range (Photomator's
+   * eight hues plus whites/neutrals/blacks); empty is the identity. Neutral
+   * entries are pruned on write, so length alone tells active from default.
+   */
+  selectiveColor: SelectiveColorEntry[];
   whiteBalanceEnabled: boolean;
   lightnessEnabled: boolean;
   colorEnabled: boolean;

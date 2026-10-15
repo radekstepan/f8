@@ -18,7 +18,7 @@ Library:
 Adjust:
 
 - Use 14 built-in presets, or make your own.
-- Change temperature, tint, lightness, hue, saturation, vibrance, detail, tone, grain, vignette, and fade.
+- Change temperature, tint, lightness, hue, saturation, vibrance, selective color, detail, tone, grain, vignette, and fade.
 - Watch a live RGB histogram.
 - Use one-click Enhance, ML scene enhance, ML face enhance, and ML subject and background enhance.
 - Copy adjustments from one photo and paste them to another.

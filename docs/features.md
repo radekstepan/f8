@@ -11,9 +11,10 @@ The full function catalogue of f/8. The README lists the same functions in short
 ## Adjust
 
 - Fourteen built-in presets across Essentials, Cinematic, and Black & White, plus persistent custom presets.
-- Live temperature, tint, lightness, hue, saturation, vibrance, detail, tone, grain, vignette, and fade adjustments.
+- Live temperature, tint, lightness, hue, saturation, vibrance, selective color, detail, tone, grain, vignette, and fade adjustments.
 - Editable numeric values, keyboard-accessible sliders, per-section header toggles (toggling on applies the suggested change, toggling off resets to defaults — hand tweaks light the toggle too), and double-click slider resets (every slider but Curves' Midtones, which resets from its header reset like the other manual sections).
 - A tone-curve editor: click the curve to add control points (up to sixteen), drag them to reshape, Shift-click, right-click, or Delete to remove; the Curves header reset clears points and Midtones together.
+- Selective Color: pick one of eleven ranges (Reds, Oranges, Yellows, Greens, Aquas, Blues, Purples, Magentas, plus Whites, Neutrals, and Blacks) from the swatch row and tune its hue, saturation, and luminance; adjusted ranges keep a dot on their swatch, and the header toggle resets every range.
 - A live RGB histogram derived from the rendered image.
 - One-click Enhance (histogram-based) and Auto Scene Enhance: an on-device scene classifier (portrait / landscape / night / document) picks per-scene enhance parameters over the 160px analysis image — portraits protect skin tones, landscapes allow stronger contrast. Available from the Image menu, the inspector, the Shift+A shortcut, or a photo's right-click menu; the result always labels the detected scene and confidence.
 - ML Enhance Faces: a small YuNet face detector (~227KB, photo server, cached for offline use) finds faces with eye landmarks, then anchors white balance on face skin tones, lifts underexposed faces through a softly masked exposure recipe, and suppresses flash red-eye pupils. Available from the Image menu, the inspector, the Shift+E shortcut, or a photo's right-click menu; results always say whether ML or the classical fallback served.
