@@ -14,6 +14,18 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-Side-effect of trying to improve the performance of image loading - you can see some photos load stretched across the canvas only to "snap" to their correct dimensions a second later.
+Side-effect of trying to improve the performance of image loading - you can see some photos load stretched across the canvas only to "snap" to their correct dimensions a second later. Some photos still briefly load "stretched" on the canvas. This was not fixed in a recent commit.
 
-Blurry and "Might be blurry" ugh. Standardize how we show this information. Use a little warning icon (not colored) and say "Blurry" on both album and photo view. Onhover on the photo you might say more info including confidence score if we haev it.
+"Blurry" tag in the album view should match how "RAW" shows so remove the border and match the text color. Say "Flagged as blurry...", you are missing the "as".
+
+Implement "Selective Color" adjustment just like Photomator shows it.
+
+"Compare with Original" shows a tool to compare side by side. If you hold clicking on the button instead, it'll show the original version while holding the button. And the button should be disabled if there were no edits on the picture.
+
+Implement Selective Clarity adjusments like in Photomator being able to target Shadows, Midtones and Highlights adjusting their Texture and Clarity.
+
+Remove the "Add Adjusment" button, I presume that's what Save as Preset does, showing a menu of presets (in a submenu like we show zoom options in the menu at the top) do. And make sure we don't copy denoise or heal as an adjusments, it should just do the basic adjustments.
+
+Is it possible to learn from the adjustments I've made, have a "train" action somewhere or just do it on the fly and in Adjustments in the ... menu have an ML Auto Enhance action? Writeup if there is any benefit to this.
+
+This photo could not be loaded should not show the "Try again" button. And be better at detecting when we ar eoffline, e.g. in the album view the thumbnails are all broken. Instead I should see the standard offline UI takeover message. ANd we should ping if we are back online and then reload.

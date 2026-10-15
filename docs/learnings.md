@@ -1,6 +1,6 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across fourteen
+Distilled from per-task writeups and subagent learnings across sixteen
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, menus, zoom, navigation, or library UI so we don't
 repeat the same mistakes.
@@ -39,6 +39,12 @@ repeat the same mistakes.
   the running log in `docs/tasks/43-*.md`–`48-*.md`.
 - **R14** = fourteenth run, 2026-10-14 (3 tasks). Writeups continue
   the running log in `docs/tasks/49-*.md`–`51-*.md`.
+- **R15** = fifteenth run, 2026-10-15 (2 tasks). Writeups in
+  `docs/tasks/01-stretched-photo-loading.md` and
+  `02-blurry-badge-standard.md` (a fresh 01- numbering, not a
+  continuation of the running log).
+- **R16** = sixteenth run, 2026-10-15 (8 tasks). Writeups continue
+  the running log in `docs/tasks/52-*.md`–`59-*.md`.
 
 ## 1. Honest labels and naming
 
@@ -131,7 +137,42 @@ repeat the same mistakes.
   muted amber outline chip with "Might be" copy — in the
   photo view you are already looking at the pixels, so the
   hint is a nudge, and "might" matches the heuristic
-  fixed-threshold detector behind it. (R14-3)
+  fixed-threshold detector behind it. (R14-3; superseded by
+  R15-2 below.)
+- **One shared badge kills drift by construction**
+  (supersedes the R14-3 severity-by-context rule). Both
+  views render the same neutral `BlurryBadge` (9px lucide
+  `TriangleAlert` inheriting the badge's text color, plus
+  the word "Blurry") — the per-view costumes ("Blurry ·
+  ML" red-brown pill vs "Might be blurry" amber chip)
+  were exactly the drift that standardization exists to
+  remove. (R15-2)
+- **Placeholder scores are not measurements.**
+  Hand-added labels land as `{ score: 1, source: 'user' }`
+  (a server-store placeholder), so the tooltip branches
+  on source: ML flags get "· {pct}% confidence",
+  hand-added flags get "Marked blurry by hand" with no
+  percentage — which also fixed the old tooltip
+  crediting ML for flags the user added themselves.
+  (R15-2)
+- **Copy fixes follow the sibling that already got it
+  right.** "Flagged blurry by" gained its missing "as"
+  from the Duplicate badge's existing "Flagged as a
+  near-duplicate" — grep the parallel surface before
+  inventing the corrected wording. (R16-2)
+- **Statistical learning called ML needs its Boundaries
+  note.** Per-user medians are honest ML only in the
+  statistical-learning sense, so the docs say so
+  outright (no neural net, no weights); and the menu
+  item takes no `MlBadge` — the badge marks tools
+  where a model runs, and the name already says ML.
+  (R16-7; cf. R11-9)
+- **A standard takeover keeps its heading; only the
+  detail line varies.** The offline gate's heading and
+  manual Try again are untouched — cause-specific
+  copy (browser-offline vs unreachable server) plus
+  the auto-retry note live in the second line.
+  (R16-8)
 
 ## 2. Header and component contracts
 
@@ -403,6 +444,75 @@ repeat the same mistakes.
   Navigation section of `EditorDialogs.tsx` in the same
   commit — a shortcut nobody can discover is half a
   feature. (R14-2)
+- **"Standardize" means one shared component, not two
+  matching snippets.** `BlurryBadge` lives in
+  `EditorUI.tsx` next to the existing shared `MlBadge`;
+  matching copy pasted in two places re-drifts on the
+  next touch. (R15-2)
+- **Hover detail attaches to the indicator, not the
+  canvas.** The blurry tooltip rides the badge's
+  existing `data-tooltip` — hovering photo pixels for
+  the same info would fight brush, pan, and zoom-lens
+  interactions. (R15-2)
+- **New per-range sections copy the Selective Color
+  contract whole.** Range picker (swatches/chips) +
+  dirty dots on touched ranges + the manual Curves/
+  Details/Effects toggle (lights on first tweak,
+  resets all, disabled while off) + one undo step
+  per slider drag via a `<feature>:<range>:<param>`
+  merge key. Selective Clarity is the second
+  instance; a third per-range tool starts by
+  copying it. (R16-3, R16-5)
+- **The same action in two places holds in both.**
+  Toolbar and canvas-status Compare buttons share
+  one press-and-hold state machine (400 ms
+  threshold, injectable scheduler, one-shot
+  release-click suppression) — holding one while
+  the other click-toggles would be incoherent.
+  Keyboard activation stays click-only: hold is a
+  pointer gesture and `\` already covers keyboard
+  peek. (R16-4)
+- **Hint text must not become the accessible name.**
+  `IconButton` takes a `data-tooltip` override so
+  the hold hint ("hold to peek") shows without
+  renaming the button for existing order/gating
+  tests and assistive tech. (R16-4; cf. R4-4, R6-3)
+- **The second submenu generalizes the first one's
+  handler.** The Image > Presets flyout copies the
+  zoom-options pattern (hover opens, click toggles,
+  `data-submenu` parent, active check), and the
+  ArrowRight/Left handler now reads the focused
+  parent's `data-submenu` instead of hardcoding
+  `zoom-lens` — one keyboard path for both flyouts.
+  (R16-6; cf. R9-1)
+- **One shared picker keeps two surfaces
+  identical.** The strip's toggle-off (re-pick
+  reverts to Original) moved into App's shared
+  `selectPreset` so the menu behaves exactly like
+  the strip; removing the Add Adjustment footer
+  left Black & White always rendered (a one-toggle
+  basic section needs no second home). (R16-6)
+- **Tooltips on disabled items ride a wrapper span.**
+  Mouse events pass through disabled buttons, so
+  the not-ready ML Auto Enhance ("N of 3 edited
+  photos", "no consistent habit yet") puts its
+  `data-tooltip` on a block wrapper via the shared
+  `.menu-disabled-tip` rule. (R16-7)
+- **New enhance modes join the shared stack, not a
+  side channel.** Taste is the third `EnhanceMode`
+  with the full contract (pure-taste toggles back,
+  other modes apply fresh keeping the earliest
+  snapshot, in-flight async invalidates) and
+  surfaces through the same header revert icon —
+  so the single-reset pin holds untouched.
+  (R16-7)
+- **Remove the wrong-layer affordance instead of
+  fixing it.** The photo Try again died rather
+  than being repaired: retrying a dead server
+  photo-by-photo was the wrong layer — outages
+  surface as the auto-recovering takeover, leaving
+  the photo error for single broken images.
+  (R16-8; cf. R2-12)
 
 ## 3. Spacing, layout, and motion
 
@@ -631,6 +741,48 @@ repeat the same mistakes.
   carries a plain two-layer drop shadow (contact + short
   downward falloff); dark edges melting slightly into
   the stage is the accepted trade. (R13-2)
+- **Every layer stretched into the frame needs
+  `object-fit: cover`.** The thumbnail hold had it but
+  the cached preview didn't, so any frame/bitmap aspect
+  mismatch (the predictor ignores straighten) distorted
+  the preview itself; residual mismatches now crop a
+  sliver instead of stretching the photo. (R15-1)
+- **Outline chips are unreadable over thumbnails —
+  scrim them neutrally.** The grid blurry pill keeps a
+  dark translucent scrim matching the duplicate pill
+  (`#000a` + gray border), not a color; the photo-view
+  hint takes the neutral `file-type` chip outline. Both
+  rules carry `inline-flex` + gap for icon/text pairing.
+  (R15-2)
+- **Stale content hides instantly; fresh content
+  fades in.** The loading frame snaps to the new
+  photo's aspect while the old canvas was still
+  fading out over 350 ms — visibly stretching the
+  previous photo into the new frame. `transition:
+  none` under `is-loading` kills the fade-out, and
+  removing the class restores the base transition
+  so the 0→1 settle still animates. Same asymmetry
+  for the Compare layer: one CSS hide rule covers
+  both Compare and hold-for-original with no JSX
+  change. (R16-1)
+- **Wipe the backing store when repaint lands a
+  frame late.** The original canvas repaints in a
+  passive effect *after* the loading-clears commit,
+  so one frame could flash stale stretched pixels —
+  `width = 0; height = 0` on switch renders nothing
+  until the repaint. The edited canvas needs no
+  wipe: it repaints synchronously in `renderBase`
+  before loading clears in the same batch. (R16-1)
+- **Align only what the request names.** The album
+  Blurry pill took RAW's borderlessness + text
+  color only — not its background, size, or
+  position (bottom-left vs the top-left cull
+  stack) — and the photo-view hint and duplicate
+  pill were left alone. (R16-2)
+- **Long flyouts scroll inside the viewport.**
+  The presets submenu caps at `min(60vh, 420px)`
+  with a scroll so big preset lists never run off
+  screen. (R16-6)
 
 ## 4. Navigation and state
 
@@ -1080,6 +1232,112 @@ repeat the same mistakes.
   library keeps native grid scroll (arrows only ever took
   Left/Right, so there was no scroll-theft precedent to
   follow). (R14-2)
+- **Gate the divergent consumer; never flip shared
+  state for one of them.** `loading` gates frame aspect
+  + canvas visibility + the spinner pill: the R14-1
+  preview branch cleared it to hide the spinner, which
+  also flipped the frame to the previous photo's
+  measured aspect and revealed the stale stretched
+  canvas. Loading now stays true until `finishPaint`;
+  only the spinner gates on `!previewUrl`. (R15-1; fixes
+  an R14-1 regression)
+- **An `<img>` overlay does not instantly cover what's
+  beneath it.** Blob-URL decode is async, so the layer
+  underneath must already be correct or hidden —
+  holding `loading` keeps the predicted frame and hides
+  the stale canvas during the gap. (R15-1)
+- **Fix with hiding, not repaint timing.** Stale
+  pixels are never the right content during loading,
+  so instant-hiding both canvas layers beats trying
+  to paint the new pixels earlier — simpler and
+  robust to every pipeline duration. (R16-1)
+- **"Edited" is the Reset predicate, not the look
+  predicate.** Compare disables on `isDefaultEdit`
+  (geometry-only edits and retouches still compare
+  meaningfully), so Reset and Compare agree — and
+  Reset exits the split, since it would strand two
+  identical halves behind a disabled button.
+  (R16-4)
+- **Sparse per-range recipes mirror `curvePoints`.**
+  One entry per touched range, empty is the
+  identity, neutral entries pruned on write; only
+  the three length-vs-reference comparisons
+  (`isDefaultEdit`, `isOriginalLook`,
+  `isNeutralEdit`) learn the new key — every
+  spread-based downstream (server merge, preview
+  key, copy/paste, enhance snapshots,
+  `patchBreaksEnhancePure`) flows through
+  untouched. Accepted trade-off, shared with
+  curves: a hand-edited all-neutral list reads
+  non-default while rendering neutral. (R16-3,
+  R16-5)
+- **Point ops and neighborhood ops land in
+  different passes of the one pipeline.**
+  Selective Color rides the point pass (after
+  global hue so the picker names post-correction
+  hues, before B&W so B&W still wins outright);
+  Selective Clarity extends the detail passes
+  (wide blur plane shared with global clarity,
+  medium-blur plane for texture). Both still
+  land in the shared pipeline, so canvas,
+  Compare, histogram, and export agree — while
+  the CSS-filter thumbnails honestly approximate
+  without them. (R16-3, R16-5)
+- **Gates keep ranges from grabbing what they
+  don't own.** Chromatic ranges ignore near-grays
+  (hue is degenerate at zero saturation) and the
+  Whites/Neutrals/Blacks bands ignore vivid colors,
+  via crossfading saturation gates; selective
+  clarity skips the global midtone weight (the
+  range bells already localize — weighting would
+  mute Shadows exactly where it should bite).
+  (R16-3, R16-5)
+- **Sections own their toggles; no cross-gating.**
+  Selective Color ignores `colorEnabled` and
+  Selective Clarity ignores `detailsEnabled` —
+  bypassing a section via a sibling's toggle would
+  surprise. (R16-3, R16-5)
+- **Duplicated formulas get a pinning test, not an
+  import.** The clarity range bells copy the global
+  tonal weights locally (importing from
+  `adjustments.ts` would cycle) with equality
+  pinned across all luminances — drift fails
+  loudly. Same reason the texture radius is
+  banded 1..5 between sharpness (1) and clarity
+  (2..10): each detail control owns a frequency
+  band. (R16-5)
+- **Presets carry looks, never per-photo state.**
+  `presetValuesForEdit` (one helper shared by
+  save + copy) strips geometry, heal strokes, and
+  denoise; `applyPreset` preserves the target's
+  own denoise even against legacy presets saved
+  with it — denoise is ISO-keyed per-photo, so
+  applying a look keeps it rather than wiping or
+  adopting the preset's. (R16-6)
+- **A taste profile replaces samples, never
+  accumulates.** One sample per photo id; a key
+  joins the patch only when touched on half the
+  photos (min two) with 3+ photos overall; the
+  value is the median (robust to the one
+  experimental edit), snapped and clamped. Pure
+  auto output never records — the enhance
+  stack's pure flag is the human-signal
+  detector, so the profile can't converge on
+  the app's own suggestions. Only the seventeen
+  numeric look sliders learn; geometry,
+  retouching, denoise, and structured state
+  (curves, selective entries, flags) stay out.
+  (R16-7)
+- **Ping verifies; events and bursts only
+  suspect.** Every offline trigger (browser
+  event, 3-broken-images-in-10s burst via a
+  capture-phase window listener — resource
+  errors don't bubble) must fail a live
+  `GET /api/health` (`cache: no-store`) before
+  the takeover flips, because a localhost server
+  survives a dropped uplink. The `online` event
+  reloads immediately; while offline a 5s ping
+  reloads on first success. (R16-8)
 
 ## 5. Testing practices (repo-specific)
 
@@ -1398,6 +1656,64 @@ repeat the same mistakes.
   badge's `#7c4534` red — so a future "richer chip"
   cannot silently reintroduce the verdict look. (R14-3;
   cf. R13-2)
+- **Standardization tests assert the old copy is
+  gone.** Grid + photo views pin the "Blurry" text,
+  warning icon, and confidence tooltip — and pin
+  "Blurry · ML" / "Might be blurry" absent, with CSS
+  rejecting red `#7c4534` and amber on both rules
+  (extends the R14-3 absence-pin; the grid red it
+  referenced no longer exists). (R15-2)
+- **Pin every clearing site of a shared flag.** The
+  preview branch must never clear `loading`, so the
+  suite pins exactly two remaining `setLoading(false)`
+  calls (decode-error path + `finishPaint`) — a third
+  clearer fails loudly instead of reintroducing the
+  stretch-snap. (R15-1)
+- **Every new Inspector section re-enumerates six
+  suites.** `collapsePanels` titles, switch counts
+  in `adjustmentConsistency` / `autoMlToggle`,
+  `singleResetIcon`'s fully-applied fixture,
+  `mlSections`, `detailsToggle` — each panel bumps
+  them (8→9→10→11 switches, 11→12→13 rows this
+  run). Global absence pins (`>Clarity</label>`)
+  must be re-scoped to their section slice when a
+  sibling legitimately owns the same label.
+  (R16-3, R16-5, R16-6)
+- **Read the reference declaration from the
+  stylesheet, don't hardcode it.** The blurry
+  badge pins that its rule contains RAW's exact
+  `color` declaration read live from CSS — a
+  future RAW recolor fails loudly instead of
+  drifting apart. (R16-2; cf. R15-2 absence-pins)
+- **Removed UI gets absence pins in three
+  layers.** No Add Adjustment markup, no source
+  references, no orphaned CSS rules — deletion
+  of `addAdjustmentLayout.test.tsx` came with
+  its inverse in the new suite. (R16-6)
+- **Inject the scheduler behind gesture timing.**
+  The hold state machine takes its timer as a
+  parameter, so tests drive the 400 ms delay,
+  release suppression, and re-arm with no fake
+  timers. (R16-4)
+- **Targeting tests prove the untouched pixel is
+  byte-identical.** Blue-only tweak leaves red
+  pixels untouched; shadows-clarity bites only
+  its checkerboard half; neutral renders are
+  byte-identical — plus full-hue/luminance
+  coverage so no input falls in a dead gap.
+  (R16-3, R16-5)
+- **Pinned literals resist reuse refactors.**
+  `canReset` keeps its inline
+  `!isDefaultEdit(editor.edit)` instead of
+  reusing the new `hasEdits` — the toolbar test
+  pins that literal expression as its contract.
+  (R16-4)
+- **Persistence helpers ship garbage-tolerant.**
+  The taste profile's localStorage parse never
+  throws (29-test suite incl. corrupt-payload
+  cases), and seed-backfill + forget paths are
+  covered behaviorally through static markup.
+  (R16-7)
 
 ## 6. Tooling gotchas
 
@@ -1467,6 +1783,17 @@ repeat the same mistakes.
 - **Unscoped `grep -rn` over the repo hangs.** It descends
   into `apps/server/data` binaries — always scope greps
   with `--include` and explicit paths. (R14-2)
+- **`yarn changeset` needs an interactive TTY — hand-write
+  in its exact format.** Headless subagents write the
+  `.changeset/*.md` file by hand (front-matter package
+  bumps + summary); reviewers check the format matches
+  what the CLI would emit. (R16-7, R16-8)
+- **Rebuild `dist/` before tests/typecheck, then leave it
+  untracked.** `dist/` is gitignored but is what `@f8/*`
+  imports (and the UI typecheck's `@f8/core` types)
+  resolve to locally — stale dist reads as phantom
+  failures; rebuilt output stays out of the commit.
+  (R16-6, R16-8)
 
 ## 7. Scope and ambiguity discipline
 
@@ -1760,6 +2087,41 @@ repeat the same mistakes.
   concepts or architecture, per the R11-5
   one-question-per-file rule. (R14-1–R14-3; cf.
   R12-4–R12-8, R12-11)
+- **Scope the restyle to the named view.** The album
+  Blurry pill changed; the photo-view hint (already
+  matching its own RAW counterpart) and the
+  duplicate pill sat out — the request named the
+  album view only. (R16-2)
+- **Entry points gated, exotic exits deferred.**
+  Compare gates every entry (buttons, menu, B
+  shortcut) plus the reset case, but undo-to-default
+  doesn't auto-exit the split — recorded as out of
+  scope, not half-fixed. (R16-4)
+- **The task's exclusion list is exhaustive, not a
+  starting point.** "Don't copy denoise or heal"
+  left face/selective ML masks and enhance
+  bookkeeping untouched on their own flows — no
+  scope expansion by analogy. (R16-6)
+- **Resilience UX behind an existing gate needs no
+  README.** Offline detection adds no feature
+  surface or architecture, so writeup + changeset
+  carry it; the pre-existing ~500ms-edit-loss
+  window is recorded as a known limitation with
+  its follow-up (queued-while-offline replay),
+  not fixed. (R16-8)
+- **Learning taste is worth it, with honest
+  bounds.** Photographers re-apply a house look
+  photo after photo; medians over 3+ photos
+  reproduce it in one click, track drift
+  automatically, and stay silent without
+  evidence — no preset authoring, no neural net
+  (dozens of photos × seventeen numbers never
+  justifies one). Bounds: global taste only
+  (warm-portraits/cool-landscapes needs the
+  per-scene follow-up), noisy with few photos,
+  mirrors habits rather than judging them.
+  Full analysis in `58-ml-taste-enhance.md`.
+  (R16-7)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -1933,3 +2295,23 @@ repeat the same mistakes.
 | 1 | `bb49961` | `49-fast-album-arrowing.md` | Neighbor preload + preview flush + on-demand Compare layer |
 | 2 | `b15c96c` | `50-home-end-photo-navigation.md` | Home/End jump to first/last photo (editor-only) |
 | 3 | `aab306a` | `51-photo-view-blurry-hint.md` | Soft "Might be blurry" hint pill in the photo heading |
+
+## Per-task index, R15 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `bcbb00b` | `01-stretched-photo-loading.md` | Preview holds loading; spinner gates on !previewUrl; preview cover |
+| 2 | `1459bd0` | `02-blurry-badge-standard.md` | Shared neutral BlurryBadge both views; source-branched tooltip |
+
+## Per-task index, R16 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `967a1c9` | `52-stale-canvas-stretch.md` | Instant-hide stale canvases on switch; wipe original backing store |
+| 2 | `fac4690` | `53-blurry-badge-raw-match.md` | Blurry pill matches RAW; "Flagged as blurry" copy |
+| 3 | `5ede446` | `54-selective-color.md` | Selective Color: 11 ranges × Hue/Saturation/Luminance |
+| 4 | `43084b2` | `55-compare-hold.md` | Hold Compare to peek original; disabled with no edits |
+| 5 | `e69eb2c` | `56-selective-clarity.md` | Selective Clarity: 3 tonal ranges × Texture/Clarity |
+| 6 | `5bbc559` | `57-presets-submenu.md` | Add Adjustment removed; Image > Presets submenu; presets basic-only |
+| 7 | `ae2c43a` | `58-ml-taste-enhance.md` | On-the-fly taste profile + ML Auto Enhance menu action |
+| 8 | `d12ece7` | `59-offline-recovery.md` | Ping-verified offline takeover + auto-reload; photo Try again dropped |
