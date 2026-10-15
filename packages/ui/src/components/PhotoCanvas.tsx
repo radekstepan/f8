@@ -4,6 +4,7 @@ import { DEFAULT_EDIT, isDefaultEdit } from '@f8/core';
 import { CULL_LABEL_BLURRY, LibraryError, ZOOM_LENS_MAGNIFICATION, ZOOM_LENS_SIZE_PX, applyInpaintRepair, clearTestHealCalls, clockwiseStepsForRotation, createHealQueue, createLibraryClient, drawEffects, enforceHealCacheLimit, frameAspectForPhoto, geometryCanvas, geometryKeyForHealCache, groupRetouchStrokes, isLiveRepairDrag, loadImage, loadPreviewRender, loadStoredHealOverlays, mergeFetchedHealOverlays, nextRetouchStrokeId, overlayBodyFromPatch, panScrollFromDrag, partitionHealGroups, pasteHealPatches, planHealOrphanSweep, previewBlobFromCanvas, repairedBaseForHealJob, previewFrameGeometry, previewRenderKey, readTestHealCalls, renderAdjustedCanvas, resampleHealPatchForStraighten, resolveCanvasDrag, reusableOverlayForGroup, rotateHealPatch, savePreviewRender, separateOriginalSrc, shouldDockZoomLensOutside, signatureForHealGroup, straightenResampleAllowed, strokeIdForPoint, zoomLensBrushRadius, zoomLensDestPoint, zoomLensOriginalOverlay, zoomLensSourceRect } from '@f8/core';
 import type { CachedHealPatch, ChangeEdit, DetectionPreview, EditState, HealCacheParams, InpaintMethod, Photo, RepairInpaintBinding, RetouchPoint, RetouchStrokeGroup, RunInpaint, StoredHealPatch, Tool, ZoomLensMagnification } from '@f8/core';
 import { BlurryBadge, IconButton } from './EditorUI.js';
+import { useCompareHold } from '../hooks/useCompareHold.js';
 import { ToolHint } from './ToolHint.js';
 import { copyTextToClipboard } from '../utils/clipboard.js';
 
@@ -55,6 +56,10 @@ interface PhotoCanvasProps {
   zoomLens?: boolean;
   /** Zoom-in-view magnification from the View submenu. Defaults to 8. */
   zoomLensMagnification?: ZoomLensMagnification;
+  /** False when the photo has no edits, so there is nothing to compare. Defaults to true. */
+  canCompare?: boolean;
+  /** Fires while the Compare button is held down: App shows the full original until release. */
+  onHoldOriginal?: (holding: boolean) => void;
   onHighlightStroke?: (stroke: number | null) => void;
   onZoom: (zoom: number) => void;
   onCompare: () => void;
@@ -66,7 +71,8 @@ interface PhotoCanvasProps {
   onHistogram: (data: HistogramData) => void;
 }
 
-export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, originalSrc, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, straightenFlash = null, zoomLens = false, zoomLensMagnification = ZOOM_LENS_MAGNIFICATION, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
+export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, originalSrc, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, straightenFlash = null, zoomLens = false, zoomLensMagnification = ZOOM_LENS_MAGNIFICATION, canCompare = true, onHoldOriginal, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
+  const compareHold = useCompareHold(onHoldOriginal);
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1515,7 +1521,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
         <span>{photo.width.toLocaleString()} <span className="dimension-x">x</span> {photo.height.toLocaleString()} px</span>
         <span className="dimension-separator" />{Math.round(photo.width * photo.height / 1000000)} MP
       </button>
-      <button className={`compare-button ${compare ? 'is-active' : ''}`} onClick={onCompare} disabled={tool === 'crop'} data-tooltip={tool === 'crop' ? 'Compare is unavailable while cropping' : 'Compare with original (B)'}>
+      <button className={`compare-button ${compare ? 'is-active' : ''}`} onClick={compareHold.filterClick(onCompare)} {...compareHold.holdProps} disabled={tool === 'crop' || !canCompare} data-tooltip={tool === 'crop' ? 'Compare is unavailable while cropping' : !canCompare ? 'Compare is unavailable until you edit the photo' : 'Compare with original (B) — hold to peek at the original'}>
         <Columns2 size={14} /><span>Compare</span><kbd>B</kbd>
       </button>
       <div className="zoom-controls">

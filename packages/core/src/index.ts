@@ -6,6 +6,7 @@ export * from "./albumSort.js";
 export * from "./branding.js";
 export * from "./canvasPan.js";
 export * from "./collections.js";
+export * from "./compareHold.js";
 export * from "./data.js";
 export * from "./detectionPreview.js";
 export * from "./escapeNavigation.js";

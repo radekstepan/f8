@@ -1033,6 +1033,9 @@ export default function App() {
         const groups = groupRetouchStrokes(editor.edit.retouches);
         const changed = editor.reset();
         denoise.clearApplied();
+        // A reset leaves nothing to compare: exit the split instead of
+        // showing two identical halves behind a disabled button.
+        setCompare(false);
         // Deterministic overlay purge: the canvas orphan-sweep only runs on
         // the next paint, so a reset-then-close would leak server files.
         for (const group of groups) {
@@ -1053,7 +1056,7 @@ export default function App() {
       case 'inspector': setInspectorOpen((current) => !current); break;
       case 'presets': setPresetsOpen((current) => !current); break;
       case 'filmstrip': setFilmstripOpen((current) => !current); break;
-      case 'compare': if (tool === 'crop') break; setCompare((current) => !current); setView('editor'); break;
+      case 'compare': if (tool === 'crop' || isDefaultEdit(editor.edit)) break; setCompare((current) => !current); setView('editor'); break;
       case 'grid': setFocusMode(false); setView((current) => current === 'editor' ? 'library' : 'editor'); break;
       case 'back': setView('library'); break;
       case 'fit': setZoom(1); break;
@@ -1297,10 +1300,15 @@ export default function App() {
   const straightenFlash = straighten.state === 'ready' && !hasStraightenHorizon(straighten.confidence)
     ? { runId: straighten.runId, message: 'No clear horizon found — adjust Straighten manually.' }
     : null;
+  // Compare needs something to compare against: the menu item, both
+  // Compare buttons, and the B shortcut all stay disabled until the
+  // recipe moves off the factory default (same predicate Reset uses;
+  // Reset keeps its inline form below, pinned by toolbarReset.test.tsx).
+  const hasEdits = !isDefaultEdit(editor.edit);
   return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''} ${focusMode ? 'is-focus' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importDrop(event.dataTransfer); }}>
     <TooltipHost />
-    {!focusMode && <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop'} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} zoomLens={zoomLens} zoomLensMagnification={zoomLensMag} />}
-    {!focusMode && <Toolbar collectionName={backlinkName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />}
+    {!focusMode && <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop' || !hasEdits} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} zoomLens={zoomLens} zoomLensMagnification={zoomLensMag} />}
+    {!focusMode && <Toolbar collectionName={backlinkName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} canCompare={hasEdits} onHoldOriginal={setShowOriginal} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />}
     {focusMode && <div className="focus-exit"><IconButton label="Exit focus mode (Shift F)" onClick={() => handleAction('fullscreen')}><Minimize2 size={17} /></IconButton></div>}
     <div className="workspace">
       {!focusMode && sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onGenerateAlbumThumbnail={generateAlbumThumbnail} onRemoveAlbumThumbnail={removeAlbumThumbnail} onMoveToAlbum={movePhotosToAlbum} />}
@@ -1322,7 +1330,7 @@ export default function App() {
             ) : (
               <PhotoCanvas
                 photo={viewPhoto ?? photo} edit={editor.edit} tool={tool} zoom={zoom}
-                compare={compare} showOriginal={showOriginal} originalSrc={photo.src} zoomLens={shouldShowZoomLens(view, zoomLens)} zoomLensMagnification={zoomLensMag}
+                compare={compare} showOriginal={showOriginal} originalSrc={photo.src} canCompare={hasEdits} onHoldOriginal={setShowOriginal} zoomLens={shouldShowZoomLens(view, zoomLens)} zoomLensMagnification={zoomLensMag}
                 brushSize={brushSize} brushStrength={brushStrength} fineGrid={straightenDragging} straightenFlash={straightenFlash}
                 inpaintRepair={canvasRepairBinding}
                 highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke} highlightRegion={removalPreview}

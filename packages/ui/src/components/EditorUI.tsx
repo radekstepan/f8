@@ -21,6 +21,8 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   ref?: Ref<HTMLButtonElement>;
   /** Stable e2e selector; passed through to the button. */
   'data-testid'?: string;
+  /** Tooltip override; defaults to the label (e.g. a hold-to-peek hint that must not change the accessible name). */
+  'data-tooltip'?: string;
   children: ReactNode;
 }
 
