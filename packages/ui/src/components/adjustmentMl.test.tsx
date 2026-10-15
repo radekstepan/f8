@@ -211,7 +211,10 @@ describe('adjustment header controls', () => {
 
   it('starts Details collapsed behind its disclosure, switch in the header', () => {
     const html = renderAdjust({ ...DEFAULT_EDIT });
-    expect(html).not.toContain('>Clarity</label>');
+    // Scoped to Details: the open Selective Clarity section below owns
+    // its own Texture/Clarity sliders.
+    const detailsOnly = html.slice(html.indexOf('<h3>Details</h3>'), html.indexOf('<h3>Selective Clarity</h3>'));
+    expect(detailsOnly).not.toContain('>Clarity</label>');
     const heading = html.indexOf('<h3>Details</h3>');
     const details = html.slice(html.lastIndexOf('<section', heading), html.indexOf('<h3>Effects</h3>'));
     expect(details).toContain('class="toggle" data-testid="details-toggle"');

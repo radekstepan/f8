@@ -11,9 +11,11 @@
 //   midtone curve -> anchor curve LUT -> vibrance / saturation chroma scale ->
 //   hue rotation -> selective color (per-range HSL) -> black & white.
 //   Clarity (wide radius, midtone-weighted) and Sharpness (narrow radius)
-//   then add luminance-detail deltas to all channels.
+//   then add luminance-detail deltas to all channels, alongside Selective
+//   Clarity's per-range texture (medium radius) and clarity (wide radius).
 
 import { MIDTONE_CURVE_RESPONSE, buildToneCurveTable, isCurvePointsActive } from "./toneCurve.js";
+import { SELECTIVE_DETAIL_RESPONSE, isSelectiveClarityActive, resolveSelectiveClarity, selectiveDetailScales } from "./selective-clarity.js";
 import { applySelectiveColor, isSelectiveColorActive, resolveSelectiveColor } from "./selective-color.js";
 import type { EditState } from "./types.js";
 import type { PixelImage } from "./vision/analyze.js";
@@ -297,6 +299,15 @@ export function clarityRadiusForSize(width: number, height: number): number {
 /** Narrow sharpening radius: a 3x3 neighborhood at any resolution. */
 export const SHARPNESS_RADIUS = 1;
 
+/**
+ * Medium texture radius for Selective Clarity's Texture slider: between
+ * sharpness (1, fine edges) and clarity (2..10, broad local contrast) at
+ * every size, so the three detail controls each own a frequency band.
+ */
+export function textureRadiusForSize(width: number, height: number): number {
+  return clamp(Math.round(Math.min(width, height) / 400), 1, 5);
+}
+
 /** True when the pixel pipeline would leave every pixel unchanged. */
 export function isNeutralEdit(edit: EditState): boolean {
   const whiteBalanced = !edit.whiteBalanceEnabled || (edit.temperature === TEMPERATURE_NEUTRAL && edit.tint === 0);
@@ -314,14 +325,16 @@ export function isNeutralEdit(edit: EditState): boolean {
   const faceNeutral = !isFaceAdjustActive(edit.faceAdjust);
   const selectiveNeutral = !isSelectiveAdjustActive(edit.selectiveAdjust);
   const selectiveColorNeutral = !isSelectiveColorActive(edit.selectiveColor);
-  return whiteBalanced && lightNeutral && colorNeutral && edit.curve === 0 && !isCurvePointsActive(edit.curvePoints) && !edit.blackAndWhite && detailNeutral && faceNeutral && selectiveNeutral && selectiveColorNeutral;
+  const selectiveClarityNeutral = !isSelectiveClarityActive(edit.selectiveClarity);
+  return whiteBalanced && lightNeutral && colorNeutral && edit.curve === 0 && !isCurvePointsActive(edit.curvePoints) && !edit.blackAndWhite && detailNeutral && faceNeutral && selectiveNeutral && selectiveColorNeutral && selectiveClarityNeutral;
 }
 
 /**
- * Render the full adjustment pipeline into a new buffer. Clarity and
- * Sharpness are luminance-detail passes: each adds the difference between
- * the point-adjusted luminance and its blurred self back into all three
- * channels, so detail work never shifts hues. Alpha is preserved.
+ * Render the full adjustment pipeline into a new buffer. Clarity,
+ * Sharpness, and Selective Clarity are luminance-detail passes: each adds
+ * the difference between the point-adjusted luminance and its blurred
+ * self back into all three channels, so detail work never shifts hues.
+ * Alpha is preserved.
  */
 export function renderAdjustedPixels(source: PixelImage, edit: EditState): PixelImage {
   assertValidImage(source);
@@ -361,18 +374,51 @@ export function renderAdjustedPixels(source: PixelImage, edit: EditState): Pixel
 
   const clarity = edit.detailsEnabled ? clamp(edit.clarity, -100, 100) : 0;
   const sharpness = edit.detailsEnabled ? clamp(edit.sharpness, -100, 100) : 0;
-  if (clarity === 0 && sharpness === 0) return { width, height, data: output };
+  // Selective Clarity is its own section with its own toggle, not part of
+  // Details — bypassing it via the Details toggle would surprise (the
+  // Selective Color / Hue & Saturation precedent).
+  const selective = resolveSelectiveClarity(edit.selectiveClarity);
+  let selectiveTexture = false;
+  let selectiveClarity = false;
+  if (selective) {
+    for (let i = 0; i < selective.length; i += 2) {
+      if ((selective[i] ?? 0) !== 0) selectiveTexture = true;
+      if ((selective[i + 1] ?? 0) !== 0) selectiveClarity = true;
+    }
+  }
+  if (clarity === 0 && sharpness === 0 && !selective) return { width, height, data: output };
   const luma = new Float32Array(pixels);
   for (let p = 0, i = 0; p < pixels; p += 1, i += 4) {
     luma[p] = luminanceOf(output[i] ?? 0, output[i + 1] ?? 0, output[i + 2] ?? 0);
   }
-  if (clarity !== 0) {
+  // The wide blur is shared: global clarity and per-range clarity work
+  // the same radius, so one double-blurred plane serves both loops.
+  const needWideBlur = clarity !== 0 || selectiveClarity;
+  let wideBlur: Float32Array | null = null;
+  if (needWideBlur) {
     // Two blur iterations approximate a gaussian response, hiding box edges.
-    let blurred = boxBlurPlane(luma, width, height, clarityRadiusForSize(width, height));
-    blurred = boxBlurPlane(blurred, width, height, clarityRadiusForSize(width, height));
+    wideBlur = boxBlurPlane(luma, width, height, clarityRadiusForSize(width, height));
+    wideBlur = boxBlurPlane(wideBlur, width, height, clarityRadiusForSize(width, height));
+  }
+  if (clarity !== 0 && wideBlur) {
+    const blurred = wideBlur;
     const amount = (clarity / 100) * 1.5;
     for (let p = 0, i = 0; p < pixels; p += 1, i += 4) {
       const delta = ((luma[p] ?? 0) - (blurred[p] ?? 0)) * amount * midtoneWeight((luma[p] ?? 0) / 255);
+      output[i] = (output[i] ?? 0) + delta;
+      output[i + 1] = (output[i + 1] ?? 0) + delta;
+      output[i + 2] = (output[i + 2] ?? 0) + delta;
+    }
+  }
+  if (selective && selectiveClarity && wideBlur) {
+    const packed = selective;
+    const blurred = wideBlur;
+    for (let p = 0, i = 0; p < pixels; p += 1, i += 4) {
+      // No midtone gate on top of the range weights: the ranges already
+      // localize, and gating would mute Shadows where it should bite.
+      const [, clarityScale] = selectiveDetailScales((luma[p] ?? 0) / 255, packed);
+      if (clarityScale === 0) continue;
+      const delta = ((luma[p] ?? 0) - (blurred[p] ?? 0)) * clarityScale * SELECTIVE_DETAIL_RESPONSE;
       output[i] = (output[i] ?? 0) + delta;
       output[i + 1] = (output[i + 1] ?? 0) + delta;
       output[i + 2] = (output[i + 2] ?? 0) + delta;
@@ -383,6 +429,18 @@ export function renderAdjustedPixels(source: PixelImage, edit: EditState): Pixel
     const amount = (sharpness / 100) * 1.2;
     for (let p = 0, i = 0; p < pixels; p += 1, i += 4) {
       const delta = ((luma[p] ?? 0) - (blurred[p] ?? 0)) * amount;
+      output[i] = (output[i] ?? 0) + delta;
+      output[i + 1] = (output[i + 1] ?? 0) + delta;
+      output[i + 2] = (output[i + 2] ?? 0) + delta;
+    }
+  }
+  if (selective && selectiveTexture) {
+    const packed = selective;
+    const blurred = boxBlurPlane(luma, width, height, textureRadiusForSize(width, height));
+    for (let p = 0, i = 0; p < pixels; p += 1, i += 4) {
+      const [textureScale] = selectiveDetailScales((luma[p] ?? 0) / 255, packed);
+      if (textureScale === 0) continue;
+      const delta = ((luma[p] ?? 0) - (blurred[p] ?? 0)) * textureScale * SELECTIVE_DETAIL_RESPONSE;
       output[i] = (output[i] ?? 0) + delta;
       output[i + 1] = (output[i + 1] ?? 0) + delta;
       output[i + 2] = (output[i + 2] ?? 0) + delta;

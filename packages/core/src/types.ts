@@ -224,6 +224,25 @@ export interface SelectiveColorEntry extends SelectiveColorParams {
   range: SelectiveColorRange;
 }
 
+/**
+ * One Selective Clarity tonal range, in Photomator's order: shadows,
+ * midtones, and highlights.
+ */
+export type SelectiveClarityRange = 'shadows' | 'midtones' | 'highlights';
+
+/** Per-range detail tweak, each slider -100..100 (0 is neutral). */
+export interface SelectiveClarityParams {
+  /** Fine-detail unsharp, -100..100 (medium radius, same gain as clarity). */
+  texture: number;
+  /** Broad-detail unsharp, -100..100 (same radius and gain as global clarity). */
+  clarity: number;
+}
+
+/** One range's stored tweak: the range plus its texture/clarity params. */
+export interface SelectiveClarityEntry extends SelectiveClarityParams {
+  range: SelectiveClarityRange;
+}
+
 export interface EditState {
   temperature: number;
   tint: number;
@@ -250,6 +269,13 @@ export interface EditState {
    * entries are pruned on write, so length alone tells active from default.
    */
   selectiveColor: SelectiveColorEntry[];
+  /**
+   * Sparse Selective Clarity tweaks, one entry per touched tonal range
+   * (Photomator's shadows/midtones/highlights); empty is the identity.
+   * Neutral entries are pruned on write, so length alone tells active
+   * from default.
+   */
+  selectiveClarity: SelectiveClarityEntry[];
   whiteBalanceEnabled: boolean;
   lightnessEnabled: boolean;
   colorEnabled: boolean;

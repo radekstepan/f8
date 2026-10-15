@@ -106,9 +106,12 @@ describe('Details header toggle', () => {
       expect(section).toContain('lucide-chevron-right');
       expect(section).toContain(`class="toggle" data-testid="${toggle}"`);
     }
-    expect(html).not.toContain('>Clarity</label>');
-    expect(html).not.toContain('>Sharpness</label>');
-    expect(html).not.toContain('>Grain</label>');
+    // Scoped to the Details slice: the open Selective Clarity section
+    // below owns its own Texture/Clarity sliders.
+    const detailsOnly = sectionSlice(html, 'Details', 'Selective Clarity');
+    expect(detailsOnly).not.toContain('>Clarity</label>');
+    expect(detailsOnly).not.toContain('>Sharpness</label>');
+    expect(detailsOnly).not.toContain('>Grain</label>');
   });
 
   it('lights the Details switch with dirty sliders (no reset beside it)', () => {

@@ -492,6 +492,13 @@ its chevron glyph off the toggle edge. */
 .selective-color-dot { display: block; width: 100%; height: 100%; border-radius: 50%; border: 1px solid #00000088; }
 .selective-color-swatch.is-dirty::after { content: ''; position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%); width: 3px; height: 3px; border-radius: 50%; background: #e4c67d; }
 .selective-color-range-name { margin: 12px 0 0; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #a2a2ac; }
+.selective-clarity-swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.selective-clarity-swatch { position: relative; width: 26px; height: 26px; padding: 3px; border-radius: 50%; border: 1px solid transparent; background: none; cursor: pointer; }
+.selective-clarity-swatch:hover { border-color: #55555e; }
+.selective-clarity-swatch.is-active { border-color: var(--accent); }
+.selective-clarity-dot { display: block; width: 100%; height: 100%; border-radius: 50%; border: 1px solid #00000088; }
+.selective-clarity-swatch.is-dirty::after { content: ''; position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%); width: 3px; height: 3px; border-radius: 50%; background: #e4c67d; }
+.selective-clarity-range-name { margin: 12px 0 0; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #a2a2ac; }
 .dust-spots .retouch-group-list { max-height: 220px; }
 .denoise-suggest-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; font-size: 9.5px; color: #a9a9b3; }
 .denoise .range-control { margin-top: 8px; }

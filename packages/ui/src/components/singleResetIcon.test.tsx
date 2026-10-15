@@ -81,6 +81,7 @@ function fullyAppliedEdit(): EditState {
     shadows: -20, blacks: 5, saturation: 8, vibrance: 16, hue: -30, curve: 25,
     clarity: 20, sharpness: 30, grain: 10, vignette: 40, fade: 15,
     selectiveColor: [{ range: 'blues', hue: 0, saturation: -40, luminance: 0 }],
+    selectiveClarity: [{ range: 'shadows', texture: 30, clarity: 0 }],
     autoEnhanced: true, sceneEnhance: { scene: 'night', confidence: 0.9 },
     retouches: [{ x: 0.5, y: 0.5, size: 20, strength: 100, kind: 'repair' }],
   };
@@ -272,7 +273,7 @@ describe('single reset icon', () => {
     // Every section shows its toggle on instead — including the manual
     // Curves, Details, and Effects, whose resets the toggles replaced.
     // (The scene toggle stays off: classic is the last-used enhance mode.)
-    for (const toggle of ['face-enhance-toggle', 'selective-mask-toggle', 'denoise-toggle', 'white-balance-toggle', 'lightness-toggle', 'color-toggle', 'selective-color-toggle', 'curves-toggle', 'details-toggle', 'effects-toggle'] as const) {
+    for (const toggle of ['face-enhance-toggle', 'selective-mask-toggle', 'denoise-toggle', 'white-balance-toggle', 'lightness-toggle', 'color-toggle', 'selective-color-toggle', 'curves-toggle', 'details-toggle', 'selective-clarity-toggle', 'effects-toggle'] as const) {
       expect(html).toContain(`class="toggle is-on" data-testid="${toggle}"`);
     }
     expect(html).toContain('class="toggle" data-testid="scene-enhance-toggle"');

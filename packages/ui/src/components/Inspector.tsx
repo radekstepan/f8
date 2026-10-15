@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Bandage, Brush, ChevronDown, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, Pipette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, Thermometer, Trash2, Waves, X } from 'lucide-react';
-import { CROP_RATIOS, SCENE_DISPLAY_NAMES, SELECTIVE_COLOR_RANGES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, isSelectiveColorActive, isSelectiveColorParamsNeutral, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, selectiveColorParams, setSelectiveColorRange, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
-import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveColorParams, SelectiveColorRange, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
+import { Bandage, Brush, ChevronDown, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, Pipette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, SunMoon, Thermometer, Trash2, Waves, X } from 'lucide-react';
+import { CROP_RATIOS, SCENE_DISPLAY_NAMES, SELECTIVE_CLARITY_RANGES, SELECTIVE_COLOR_RANGES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, isSelectiveClarityActive, isSelectiveClarityParamsNeutral, isSelectiveColorActive, isSelectiveColorParamsNeutral, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, selectiveClarityParams, selectiveColorParams, setSelectiveClarityRange, setSelectiveColorRange, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
+import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveClarityParams, SelectiveClarityRange, SelectiveColorParams, SelectiveColorRange, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { AdjustmentSection } from './AdjustmentSection.js';
 import { CheckField, IconButton, MenuItem, MenuSeparator, MlBadge, RangeControl, RevertButton, SegmentedControl, SelectField, Toggle } from './EditorUI.js';
@@ -888,6 +888,52 @@ function SelectiveColorSection({ edit, onChange }: { edit: EditState; onChange: 
 }
 
 /**
+ * The Selective Clarity section (Photomator's per-range detail): a
+ * three-chip picker selects Shadows, Midtones, or Highlights, and the
+ * two sliders below tune that range's texture (fine detail) and clarity
+ * (broad detail). Adjusted ranges keep a dot on their chip so past edits
+ * stay visible while another range is selected. The header toggle follows
+ * the manual Selective Color contract: it lights on the first tweak and
+ * resets every range on click (disabled while off — with no suggestion
+ * to apply, there is nothing to turn on). Each slider drag coalesces to
+ * one undo step through its range+param merge key.
+ */
+function SelectiveClaritySection({ edit, onChange }: { edit: EditState; onChange: ChangeEdit }) {
+  const [range, setRange] = useState<SelectiveClarityRange>('shadows');
+  const params = selectiveClarityParams(edit.selectiveClarity, range);
+  const dirty = isSelectiveClarityActive(edit.selectiveClarity);
+  const label = SELECTIVE_CLARITY_RANGES.find((meta) => meta.range === range)?.label ?? range;
+  const setParam = (patch: Partial<SelectiveClarityParams>, param: 'texture' | 'clarity') => {
+    onChange({ selectiveClarity: setSelectiveClarityRange(edit.selectiveClarity, range, patch) }, `selective-clarity:${range}:${param}`);
+  };
+  return <AdjustmentSection title="Selective Clarity" icon={<SunMoon size={14} />}
+    toggle={{
+      id: 'selective-clarity',
+      checked: dirty,
+      onToggle: () => onChange({ selectiveClarity: [] }),
+      disabled: !dirty,
+      hint: dirty ? 'Selective Clarity on — click to reset to defaults' : 'Selective Clarity at defaults',
+    }}>
+    <div className="selective-clarity-swatches" role="group" aria-label="Selective clarity range" data-testid="selective-clarity-ranges">
+      {SELECTIVE_CLARITY_RANGES.map((meta) => {
+        const active = meta.range === range;
+        const touched = !isSelectiveClarityParamsNeutral(selectiveClarityParams(edit.selectiveClarity, meta.range));
+        return <button key={meta.range} type="button" data-testid={`selective-clarity-range-${meta.range}`}
+          className={`selective-clarity-swatch${active ? ' is-active' : ''}${touched ? ' is-dirty' : ''}`}
+          aria-pressed={active} aria-label={touched ? `${meta.label} (adjusted)` : meta.label}
+          data-tooltip={touched ? `${meta.label} — adjusted` : meta.label}
+          onClick={() => setRange(meta.range)}>
+          <span className="selective-clarity-dot" style={{ background: meta.swatch }} />
+        </button>;
+      })}
+    </div>
+    <p className="selective-clarity-range-name" data-testid="selective-clarity-range-name">{label}</p>
+    <RangeControl label="Texture" value={params.texture} signed testId="selective-clarity-texture" onChange={(texture) => setParam({ texture }, 'texture')} />
+    <RangeControl label="Clarity" value={params.clarity} signed testId="selective-clarity-clarity" onChange={(clarity) => setParam({ clarity }, 'clarity')} />
+  </AdjustmentSection>;
+}
+
+/**
  * The interactive RGB tone-curve graph. The drawn line is the real render
  * mapping (anchor spline over the Midtones bend); the dots are the recipe's
  * anchors: press on the line to drop a new one and keep dragging it in the
@@ -1141,6 +1187,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       <AdjustmentSection key={`details-${openedExtra === 'Details' ? extraRevision : 0}`} title="Details" icon={<Focus size={14} />} initiallyOpen={openedExtra === 'Details'} toggle={{ id: 'details', checked: detailsDirty, onToggle: () => onChange({ clarity: 0, sharpness: 0, grain: 0 }), disabled: !detailsDirty, hint: detailsDirty ? 'Details on — click to reset to defaults' : 'Details at defaults' }}>
         {rangeEnabled('detailsEnabled', 'clarity', 'Clarity')}{rangeEnabled('detailsEnabled', 'sharpness', 'Sharpness', { min: 0 })}{rangeEnabled('detailsEnabled', 'grain', 'Grain', { min: 0 })}
       </AdjustmentSection>
+      <SelectiveClaritySection edit={edit} onChange={onChange} />
       <AdjustmentSection key={`effects-${openedExtra === 'Effects' ? extraRevision : 0}`} title="Effects" icon={<CircleDashed size={14} />} initiallyOpen={openedExtra === 'Effects'} toggle={{ id: 'effects', checked: effectsDirty, onToggle: () => onChange({ vignette: 0, fade: 0 }), disabled: !effectsDirty, hint: effectsDirty ? 'Effects on — click to reset to defaults' : 'Effects at defaults' }}>
         {range('vignette', 'Vignette', { min: 0 })}{range('fade', 'Fade', { min: 0 })}
       </AdjustmentSection>
