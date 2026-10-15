@@ -281,7 +281,13 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
       // doesn't already hold this exact state — even if an earlier run
       // painted something else first. Every photo reads it, not just
       // repaired ones: arrowing back to a visited photo skips the visible
-      // re-render either way (the key still has to match exactly).
+      // re-render either way (the key still has to match exactly). Loading
+      // stays true until the real paint lands: clearing it here would unhide
+      // the stale canvas (the previous photo's pixels, CSS-stretched into
+      // this frame, visible until the <img> blob decodes) and flip the frame
+      // to the previous photo's measured aspect — a stretched flash that
+      // snaps correct on paint. The spinner pill hides behind the preview
+      // instead (see the render below), so the instant pixels stay clean.
       const repairsAtStart = edit.retouches.filter((point) => point.kind === 'repair');
       if (paintedKey.current !== runKey && canvasRef.current) {
         try {
@@ -290,7 +296,6 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
             setPreviewUrlTracked(URL.createObjectURL(cached));
             paintLog.current.push({ source: 'preview-cache', key: runKey, at: Date.now() });
             if (paintLog.current.length > 60) paintLog.current.splice(0, paintLog.current.length - 60);
-            setLoading(false);
           }
         } catch { /* The pipeline paint below is the fallback. */ }
       }
@@ -1457,7 +1462,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
       {previewUrl && <img className="cached-preview" src={previewUrl} alt="" aria-hidden="true" draggable={false} />}
       <div className="original-layer" style={{ clipPath: `inset(0 ${showOriginal ? 0 : compare ? 100 - split : 100}% 0 0)` }}><canvas ref={originalRef} role="img" aria-label="Original photo" />{compare && !showOriginal && !loading && <span className="comparison-label original-label">Original</span>}</div>
       {compare && !showOriginal && !loading && <div className="edited-layer" style={{ clipPath: `inset(0 0 0 ${split}%)` }}><span className="comparison-label edited-label">Edited</span></div>}
-      {loading && <div className="photo-loading"><span className="loading-spinner" /><span>Developing your photo...</span></div>}
+      {loading && !previewUrl && <div className="photo-loading"><span className="loading-spinner" /><span>Developing your photo...</span></div>}
       {error && <div className="photo-error"><ImageOff size={28} /><p>{error}</p><button className="secondary-button" onClick={() => setRetry((value) => value + 1)}>Try again</button></div>}
       {compare && !showOriginal && !loading && <><div className="comparison-divider" role="slider" aria-label="Before and after comparison" aria-valuemin={2} aria-valuemax={98} aria-valuenow={Math.round(split)} tabIndex={0} style={{ left: `${split}%` }} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setSplit(Math.max(2, Math.min(98, position(event).x * 100))); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); setSplit((value) => Math.max(2, Math.min(98, value + (event.key === 'ArrowRight' ? 2 : -2)))); } }}><span><ChevronsLeftRight size={17} /></span></div></>}
       {showOriginal && <span className="comparison-label original-label">Original</span>}
