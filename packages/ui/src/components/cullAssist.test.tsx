@@ -60,7 +60,7 @@ describe('cull assist', () => {
       <PhotoBrowser photos={[makePhoto()]} title="Road Trip" search="" album={makeAlbum()} editedFilter="all" favoriteFilter="all" onEditedFilter={noop} onFavoriteFilter={noop} onClearFilters={noop} cullFilter="blurry" onCullFilter={noop} onSelect={noop} onFavorite={noop} onImport={noop} />,
     );
     expect(html).toContain('Cull status');
-    expect(html).toContain('Show only photos flagged blurry by ML cull assist');
+    expect(html).toContain('Show only photos flagged as blurry by ML cull assist');
     expect(html).not.toContain('Keepers');
     expect(html).toContain('filter-chip is-active');
     expect(html).toContain('filter-clear');
@@ -88,7 +88,7 @@ describe('cull assist', () => {
     expect(html).not.toContain('Might be blurry');
     expect(html).toContain('Duplicate · ML');
     expect(html).toContain('lucide-triangle-alert');
-    expect(html).toContain('Flagged blurry by ML cull assist · 80% confidence');
+    expect(html).toContain('Flagged as blurry by ML cull assist · 80% confidence');
     expect(html.match(/thumb-cull-badges/g)).toHaveLength(1);
   });
 
@@ -125,7 +125,7 @@ describe('cull assist', () => {
     expect(flagged).not.toContain('Might be blurry');
     expect(flagged).not.toContain('Blurry · ML');
     expect(flagged).toContain('lucide-triangle-alert');
-    expect(flagged).toContain('Flagged blurry by ML cull assist · 80% confidence');
+    expect(flagged).toContain('Flagged as blurry by ML cull assist · 80% confidence');
     const clean = renderCanvas(makePhoto());
     expect(clean).not.toContain('photo-blurry-hint');
     const other = renderCanvas(makePhoto({ labels: [{ label: 'beach', score: 0.9, source: 'ml' }] }));
@@ -148,13 +148,25 @@ describe('cull assist', () => {
     expect(grid).not.toMatch(/#7c4534|amber|red/i);
   });
 
+  it('matches the grid blurry badge to the RAW tag — no border, same text color', () => {
+    const blurry = cssRule('.thumb-cull.is-blurry');
+    const raw = cssRule('.thumb-raw');
+    // Like .thumb-raw, the grid badge is a borderless scrim pill.
+    expect(raw).not.toMatch(/border\s*:/);
+    expect(blurry).not.toMatch(/border\s*:/);
+    // The text color is pinned to the RAW tag's, whatever that value is.
+    const rawColor = raw.match(/color\s*:\s*[^;]+/)?.[0];
+    expect(rawColor).toBeTruthy();
+    expect(blurry).toContain(rawColor!);
+  });
+
   it('tooltips hand-added blurry flags without a fake confidence', () => {
     expect(blurryBadgeTooltip({ label: 'blurry', score: 1, source: 'user' })).toBe('Marked blurry by hand');
     expect(blurryBadgeTooltip({ label: 'blurry', score: 0.8, source: 'ml' })).toBe(
-      'Flagged blurry by ML cull assist · 80% confidence',
+      'Flagged as blurry by ML cull assist · 80% confidence',
     );
     expect(blurryBadgeTooltip({ label: 'blurry', score: Number.NaN, source: 'ml' })).toBe(
-      'Flagged blurry by ML cull assist',
+      'Flagged as blurry by ML cull assist',
     );
     const html = renderToStaticMarkup(
       <PhotoBrowser photos={[makePhoto({ labels: [{ label: 'blurry', score: 1, source: 'user' }] })]} title="Road Trip" search="" album={makeAlbum()} onSelect={noop} onFavorite={noop} onImport={noop} />,

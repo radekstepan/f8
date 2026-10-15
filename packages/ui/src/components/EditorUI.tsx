@@ -147,7 +147,7 @@ export function MlBadge({ hint }: { hint?: string }) {
 /** Hover detail for the shared blurry badge: ML flags name the detector plus its confidence when known; hand-added flags say so (their score is a placeholder 1, not a measurement). */
 export function blurryBadgeTooltip(entry: PhotoLabel): string {
   if (entry.source === 'user') return 'Marked blurry by hand';
-  const base = 'Flagged blurry by ML cull assist';
+  const base = 'Flagged as blurry by ML cull assist';
   return Number.isFinite(entry.score) ? `${base} · ${Math.round(entry.score * 100)}% confidence` : base;
 }
 

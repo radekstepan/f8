@@ -109,7 +109,7 @@ export async function assessPhoto(
 }
 
 export interface CullGroup {
-  /** Group best (spared the duplicate flag); may itself be flagged blurry. */
+  /** Group best (spared the duplicate flag); may itself be flagged as blurry. */
   best: string;
   members: string[];
 }
