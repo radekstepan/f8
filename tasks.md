@@ -14,8 +14,6 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-Can we make quickly arrowing through photos in an album quicker? There is a bit of a lag. With and without cache.
+Side-effect of trying to improve the performance of image loading - you can see some photos load stretched across the canvas only to "snap" to their correct dimensions a second later.
 
-Home and End keys while being on a photo should navigate to the first/last photo. Right now it just highlights the item in the strip at the bottom.
-
-Show the fact that a photo might be blurry on the photo view as well. Make it less severe than the current "red".
+Blurry and "Might be blurry" ugh. Standardize how we show this information. Use a little warning icon (not colored) and say "Blurry" on both album and photo view. Onhover on the photo you might say more info including confidence score if we haev it.

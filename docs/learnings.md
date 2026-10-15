@@ -1,9 +1,9 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across thirteen
+Distilled from per-task writeups and subagent learnings across fourteen
 `tasks.md` runs. Read this before touching the inspector, repair,
-toolbar, export, menus, zoom, or library UI so we don't repeat the
-same mistakes.
+toolbar, export, menus, zoom, navigation, or library UI so we don't
+repeat the same mistakes.
 
 - **R1** = first run (16 tasks). Its `docs/tasks/` writeups were removed
   during the task reset; the index below is preserved for archaeology.
@@ -37,6 +37,8 @@ same mistakes.
   the running log in `docs/tasks/32-*.md`–`42-*.md`.
 - **R13** = thirteenth run, 2026-10-14 (6 tasks). Writeups continue
   the running log in `docs/tasks/43-*.md`–`48-*.md`.
+- **R14** = fourteenth run, 2026-10-14 (3 tasks). Writeups continue
+  the running log in `docs/tasks/49-*.md`–`51-*.md`.
 
 ## 1. Honest labels and naming
 
@@ -123,6 +125,13 @@ same mistakes.
   button reuses the heading's exact `Remove from library (Del)`
   label, glyph, and dispatch — position moves, nothing else.
   (R12-8; cf. R1-14, R2-2)
+- **Severity follows the viewing context, not just the
+  signal.** The grid's blurry badge is a filled red-brown
+  verdict, but the photo view reuses the same label as a
+  muted amber outline chip with "Might be" copy — in the
+  photo view you are already looking at the pixels, so the
+  hint is a nudge, and "might" matches the heuristic
+  fixed-threshold detector behind it. (R14-3)
 
 ## 2. Header and component contracts
 
@@ -384,6 +393,16 @@ same mistakes.
   leaves the mode before compare/tool/album exits; Shift F
   toggles, and `grid` (G) plus browser Back/forward leave
   it too. (R13-5)
+- **Photo-level status lives in the heading, never over
+  the pixels.** The blurry hint sits with its file-type/
+  Edited chip peers in the filename row — an overlay on
+  the frame would compete with compare labels, the zoom
+  lens, and retouch overlays. (R14-3)
+- **New shortcuts land in the shortcuts dialog.** Home/End
+  navigation ships its `First / last photo` row in the
+  Navigation section of `EditorDialogs.tsx` in the same
+  commit — a shortcut nobody can discover is half a
+  feature. (R14-2)
 
 ## 3. Spacing, layout, and motion
 
@@ -1020,6 +1039,47 @@ same mistakes.
   tier when the cover was the whole top tier and to the
   lone photo when every candidate shares one URL.
   (R13-6)
+- **Neighbor preloads wait for navigation to settle.**
+  Radius-2, forward-first alternating outward (`n+1, n-1,
+  n+2, n-2`), wrapping exactly like the arrow handler —
+  behind an 80 ms debounce whose timer resets on every
+  step, so rapid arrowing never steals bandwidth from the
+  photo being opened and the current photo always wins
+  the race. Covers a fast double-tap without fetching the
+  album. (R14-1)
+- **Flush confirmed pixels on switch instead of
+  shortening the idle save.** The 2 s idle preview-cache
+  save never fires for quickly-visited photos, but
+  shortening it would write half-settled states during
+  slider drags — so the photo-change reset stashes the
+  previous photo's final canvas pixels while the canvas
+  still holds them. Safe only because every paint is
+  generation-guarded; verify that invariant before adding
+  any new async paint path. (R14-1)
+- **Hidden layers paint on demand, not in the
+  pipeline.** The Compare "Original" layer repainted every
+  navigation while clipped to zero width — now the
+  pipeline stashes decoded inputs and a demand effect
+  paints only while Compare/Show Original is visible
+  (skipping non-geometry ticks). The first Compare toggle
+  per photo pays one GPU pass instead of every navigation
+  paying it. (R14-1)
+- **Focus and selection compose by sharing `event.key`.**
+  The strip moves *focus*, the global handler moves the
+  *selection*, and the strip never calls
+  `stopPropagation` — so Home/End land together exactly
+  how arrows already compose, with no filmstrip change.
+  Fix focus-outside-the-strip by adding to the global
+  handler, not by teaching the strip to select. (R14-2)
+- **Already-there navigation is a silent no-op.** Not
+  even `selectPhoto` with the same id — it resets zoom
+  and clears search state — so the resolver returns null
+  at the open end. (R14-2)
+- **View-scoped shortcuts keep native meanings
+  elsewhere.** Home/End navigate only in the editor; the
+  library keeps native grid scroll (arrows only ever took
+  Left/Right, so there was no scroll-theft precedent to
+  follow). (R14-2)
 
 ## 5. Testing practices (repo-specific)
 
@@ -1324,6 +1384,20 @@ same mistakes.
   future "richer shadow" cannot silently reintroduce the
   rigid ring or the oval halo; the banding guard
   tightened (max blur 24→18px). (R13-2; extends R12-1)
+- **Effect-resident behavior pins via source, agreed
+  behavior pins via both helpers.** App-effect wiring
+  (preload effect + cleanup, unconditioned preview load,
+  switch flush, on-demand original paint) follows the
+  `focusMode.test.tsx` source-pin precedent — and when
+  two handlers must land together, a core test ties the
+  selection target to the strip focus target for the same
+  key. (R14-1, R14-2)
+- **Soft treatments pin the absence of the severe
+  style.** The photo-view blurry hint asserts an outline
+  border, no background fill, and none of the grid
+  badge's `#7c4534` red — so a future "richer chip"
+  cannot silently reintroduce the verdict look. (R14-3;
+  cf. R13-2)
 
 ## 6. Tooling gotchas
 
@@ -1352,8 +1426,12 @@ same mistakes.
   (R1-7, R1-8, R1-12, R1-16, R2-4, R2-11, R2-12, R3-1, R3-5, R3-6,
   R4-4, R4-5, R4-6, R4-7, R4-8, R5-1, R6-6, R7-4, R8-2, R8-3,
   R9-1, R9-2, R9-3, R10-1, R10-2, R10-3, R12, R13-1, R13-5,
-  R13-6 — and e2e resolves core from `dist` too, so a core
-  build is needed before the next e2e run sees new exports)
+  R13-6, R14-1, R14-2 — and e2e resolves core from `dist` too, so a core
+  build is needed before the next e2e run sees new exports.
+  Conversely no rebuild is needed when touching only
+  already-exported core constants (R14-3 reused
+  `CULL_LABEL_BLURRY` with none) — the rule triggers on
+  new exports.)
 - **Commit by explicit paths, never `git add -A`.** Stray files
   (e.g. `.DS_Store` under `docs/`) get swept in otherwise. (R1)
 - **No CI, no configured linter** — both packages' `lint` scripts
@@ -1369,8 +1447,8 @@ same mistakes.
   build. (R6-6)
 - **`yarn changeset` needs an interactive TTY for package
   selection.** In headless sessions, hand-write the changeset
-  in the CLI's exact format instead — every R11 commit did.
-  (R11)
+  in the CLI's exact format instead — every R11 commit did,
+  and R14-2 again. (R11, R14-2)
 - **Never run `yarn version-packages` to verify.** It is a
   release action that would consume other tasks' pending
   changesets; it stays a maintainer step. (R11-1)
@@ -1386,6 +1464,9 @@ same mistakes.
   spec/helper files, plus a scratch check of constructed
   `evaluate` strings against present/missing hook
   states. (R13-1)
+- **Unscoped `grep -rn` over the repo hangs.** It descends
+  into `apps/server/data` binaries — always scope greps
+  with `--include` and explicit paths. (R14-2)
 
 ## 7. Scope and ambiguity discipline
 
@@ -1656,6 +1737,29 @@ same mistakes.
   retry shape but fail for API reasons, not a missing
   test hook — left alone and recorded, not swept into
   the hook-tolerance fix. (R13-1)
+- **Rule out the network before optimizing the client.**
+  Server HTTP caching was already correct (content-
+  addressed `immutable` previews) and the per-photo ML
+  hooks fire no network on photo change — so the
+  arrowing fix stayed purely client-side. The R12-9
+  check-the-backend instinct, applied to the wire.
+  (R14-1)
+- **Performance follow-ups get deferred with a note, not
+  fixed.** Filmstrip item memoization and an in-memory
+  LRU of final renders would help, but both add
+  memory/complexity risk beyond a "bit of a lag" —
+  recorded as future work in the writeup. (R14-1)
+- **Relationship flags don't follow single-photo
+  signals.** The photo view gained only the blurry hint:
+  duplicate is a between-photos relationship that makes
+  sense on the grid, not on a single open photo. The
+  task named only the blurry fact. (R14-3)
+- **Perf, shortcut, and one-pill tasks skip the
+  README.** Faster arrowing, Home/End navigation, and
+  the blurry hint needed no doc change — no new UI
+  concepts or architecture, per the R11-5
+  one-question-per-file rule. (R14-1–R14-3; cf.
+  R12-4–R12-8, R12-11)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -1821,3 +1925,11 @@ same mistakes.
 | 4 | `7daaea8` | `46-filmstrip-heading-centering.md` | Filmstrip name + count share one baseline |
 | 5 | `2b81dfe` | `47-focus-mode.md` | Focus mode keeps only the photo and the filmstrip |
 | 6 | `dd1ea05` | `48-album-thumbnail-random.md` | Generate thumbnail randomizes within the most interesting tier |
+
+## Per-task index, R14 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `bb49961` | `49-fast-album-arrowing.md` | Neighbor preload + preview flush + on-demand Compare layer |
+| 2 | `b15c96c` | `50-home-end-photo-navigation.md` | Home/End jump to first/last photo (editor-only) |
+| 3 | `aab306a` | `51-photo-view-blurry-hint.md` | Soft "Might be blurry" hint pill in the photo heading |
