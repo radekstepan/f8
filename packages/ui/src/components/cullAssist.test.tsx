@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDIT } from '@f8/core';
 import type { Album, Photo } from '@f8/core';
 import { EditorDialogs } from './EditorDialogs.js';
+import { blurryBadgeTooltip } from './EditorUI.js';
 import { PhotoCanvas } from './PhotoCanvas.js';
 import { PhotoBrowser } from './PhotoStrips.js';
 
@@ -81,9 +82,13 @@ describe('cull assist', () => {
       <PhotoBrowser photos={[flagged, makePhoto({ id: 'p-clean' })]} title="Road Trip" search="" album={makeAlbum()} onSelect={noop} onFavorite={noop} onImport={noop} />,
     );
     expect(html).toContain('thumb-cull-badges');
-    expect(html).toContain('Blurry · ML');
+    expect(html).toContain('thumb-cull is-blurry');
+    expect(html).toContain('>Blurry</span>');
+    expect(html).not.toContain('Blurry · ML');
+    expect(html).not.toContain('Might be blurry');
     expect(html).toContain('Duplicate · ML');
-    expect(html).toContain('Flagged blurry by ML cull assist');
+    expect(html).toContain('lucide-triangle-alert');
+    expect(html).toContain('Flagged blurry by ML cull assist · 80% confidence');
     expect(html.match(/thumb-cull-badges/g)).toHaveLength(1);
   });
 
@@ -113,24 +118,50 @@ describe('cull assist', () => {
     expect(cssRule('.thumb-cull.is-keeper')).toBe('');
   });
 
-  it('hints at blur in the photo-view heading and leaves clean photos bare', () => {
+  it('badges blur in the photo-view heading and leaves clean photos bare', () => {
     const flagged = renderCanvas(makePhoto({ labels: [{ label: 'blurry', score: 0.8, source: 'ml' }] }));
     expect(flagged).toContain('data-testid="photo-blurry-hint"');
-    expect(flagged).toContain('Might be blurry · ML');
-    expect(flagged).toContain('Flagged blurry by ML cull assist');
+    expect(flagged).toContain('>Blurry</span>');
+    expect(flagged).not.toContain('Might be blurry');
+    expect(flagged).not.toContain('Blurry · ML');
+    expect(flagged).toContain('lucide-triangle-alert');
+    expect(flagged).toContain('Flagged blurry by ML cull assist · 80% confidence');
     const clean = renderCanvas(makePhoto());
     expect(clean).not.toContain('photo-blurry-hint');
     const other = renderCanvas(makePhoto({ labels: [{ label: 'beach', score: 0.9, source: 'ml' }] }));
     expect(other).not.toContain('photo-blurry-hint');
   });
 
-  it('styles the photo-view hint softer than the severe red grid badge', () => {
+  it('styles the blurry badge neutral in both views — no red, no amber', () => {
+    const grid = cssRule('.thumb-cull.is-blurry');
     const hint = cssRule('.photo-blurry-hint');
-    expect(hint).toMatch(/border\s*:/);
-    expect(hint).not.toMatch(/background\s*:/);
-    // The severe red fill stays on the grid badge only.
+    // Neither surface keeps a colored treatment.
+    expect(grid).not.toContain('#7c4534');
     expect(hint).not.toContain('#7c4534');
-    expect(cssRule('.thumb-cull.is-blurry')).toContain('#7c4534');
+    expect(hint).not.toContain('#6b5f45');
+    expect(hint).not.toContain('#d8c49a');
+    // Both lay the warning icon out beside the text.
+    expect(grid).toMatch(/display\s*:\s*inline-flex/);
+    expect(hint).toMatch(/display\s*:\s*inline-flex/);
+    // The hint stays an outline chip; the grid pill keeps a neutral dark scrim for legibility over thumbs.
+    expect(hint).not.toMatch(/background\s*:/);
+    expect(grid).not.toMatch(/#7c4534|amber|red/i);
+  });
+
+  it('tooltips hand-added blurry flags without a fake confidence', () => {
+    expect(blurryBadgeTooltip({ label: 'blurry', score: 1, source: 'user' })).toBe('Marked blurry by hand');
+    expect(blurryBadgeTooltip({ label: 'blurry', score: 0.8, source: 'ml' })).toBe(
+      'Flagged blurry by ML cull assist · 80% confidence',
+    );
+    expect(blurryBadgeTooltip({ label: 'blurry', score: Number.NaN, source: 'ml' })).toBe(
+      'Flagged blurry by ML cull assist',
+    );
+    const html = renderToStaticMarkup(
+      <PhotoBrowser photos={[makePhoto({ labels: [{ label: 'blurry', score: 1, source: 'user' }] })]} title="Road Trip" search="" album={makeAlbum()} onSelect={noop} onFavorite={noop} onImport={noop} />,
+    );
+    expect(html).toContain('>Blurry</span>');
+    expect(html).toContain('Marked blurry by hand');
+    expect(html).not.toContain('% confidence');
   });
 });
 

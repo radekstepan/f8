@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ChangeEvent, type CSSProperties, type ReactNode, type Ref } from 'react';
-import { Check, ChevronDown, Undo2, X } from 'lucide-react';
+import { Check, ChevronDown, TriangleAlert, Undo2, X } from 'lucide-react';
+import type { PhotoLabel } from '@f8/core';
 
 export function BrandMark({ size = 24 }: { size?: number }) {
   return (
@@ -141,6 +142,18 @@ export function MenuSeparator() {
 /** The shared "ML" badge marking machine-learning features. The hint names the model in a tooltip. */
 export function MlBadge({ hint }: { hint?: string }) {
   return <span className="ml-badge" {...(hint ? { 'data-tooltip': hint } : {})}>ML</span>;
+}
+
+/** Hover detail for the shared blurry badge: ML flags name the detector plus its confidence when known; hand-added flags say so (their score is a placeholder 1, not a measurement). */
+export function blurryBadgeTooltip(entry: PhotoLabel): string {
+  if (entry.source === 'user') return 'Marked blurry by hand';
+  const base = 'Flagged blurry by ML cull assist';
+  return Number.isFinite(entry.score) ? `${base} · ${Math.round(entry.score * 100)}% confidence` : base;
+}
+
+/** The shared blurry flag: a monochrome warning icon + "Blurry", identical on the grid and in the photo view. The icon inherits the badge's neutral text color (never red/amber); hover shows the detector detail via data-tooltip. */
+export function BlurryBadge({ entry, className, testId }: { entry: PhotoLabel; className: string; testId?: string }) {
+  return <span className={className} data-tooltip={blurryBadgeTooltip(entry)} {...(testId ? { 'data-testid': testId } : {})}><TriangleAlert size={9} aria-hidden="true" />Blurry</span>;
 }
 
 /** The shared small undo icon beside ML/auto actions (the revert affordance next to an applied state). */
