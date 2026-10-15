@@ -320,6 +320,35 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
     });
   }, [runEnhance]);
 
+  // ML Auto Enhance: the taste mode of the shared enhance slot. Unlike
+  // classic/scene it needs no pixel analysis — the patch is the user's
+  // learned medians (see tasteEnhancePatch), computed by the caller — so
+  // the apply is synchronous. The stack contract matches runEnhance: a
+  // pure taste entry toggles back to the pre-enhance look, any other mode
+  // applies fresh while keeping the earliest snapshot, and the run bump
+  // drops an in-flight async enhance so it cannot land on top. The base is
+  // the factory default (not INITIAL_EDIT): taste medians are absolute
+  // values learned from default-based recipes, so layering them over the
+  // Natural base would double-apply a look the user never chose.
+  const autoEnhanceTaste = useCallback((patch: Partial<EditState>) => {
+    const { rotation, flipH, flipV, straighten, cropRatio, retouches } = history.present;
+    const geometry = { rotation, flipH, flipV, straighten, cropRatio, retouches };
+    const entry = actionEntry(stacksRef.current[photoId] ?? [], 'enhance');
+    if (entry?.mode === 'taste' && entry.pure) {
+      revertEnhance();
+      return;
+    }
+    invalidateMlRuns(photoId);
+    writeStack(photoId, pushEnhanceAction(stacksRef.current[photoId] ?? [], 'taste', history.present, new Date().toISOString()));
+    enhanceRuns.current[photoId] = (enhanceRuns.current[photoId] ?? 0) + 1;
+    autoApplyRef.current = true;
+    try {
+      change({ ...DEFAULT_EDIT, ...geometry, ...patch, autoEnhanced: true, preset: 'ML Auto Enhance', sceneEnhance: null });
+    } finally {
+      autoApplyRef.current = false;
+    }
+  }, [change, history.present, invalidateMlRuns, photoId, revertEnhance, writeStack]);
+
   // Per-category auto actions are apply-only: the header toggle reads
   // dirtiness straight from the recipe (on = non-default values, whether
   // auto-applied or hand-tweaked), so applies push no stack entries — and
@@ -382,5 +411,5 @@ export function useEditor(photoId: string, persistence?: EditorPersistence) {
   const resetColor = useCallback(() => resetCategory('color'), [resetCategory]);
 
   const enhanceCanRevert = enhance != null;
-  return { edit: history.present, ready: seedApplied, histories, change, endMerge, flushPersist, undo, redo, reset, autoEnhance, autoEnhanceScene, revertEnhance, autoWhiteBalance, autoLightness, autoColor, resetWhiteBalance, resetLightness, resetColor, enhanceMode: enhance?.mode ?? null, enhancePure: enhance?.pure ?? false, enhanceCanRevert, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
+  return { edit: history.present, ready: seedApplied, histories, change, endMerge, flushPersist, undo, redo, reset, autoEnhance, autoEnhanceScene, autoEnhanceTaste, revertEnhance, autoWhiteBalance, autoLightness, autoColor, resetWhiteBalance, resetLightness, resetColor, enhanceMode: enhance?.mode ?? null, enhancePure: enhance?.pure ?? false, enhanceCanRevert, applyPreset, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
 }

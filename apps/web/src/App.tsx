@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { Check, CloudOff, FolderSearch, ImagePlus, Minimize2, RefreshCw, X } from 'lucide-react';
 import { CROP_RATIOS, PHOTO_PRELOAD_DELAY_MS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isFilmstripVisible, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoEndTargetId, photoInCollection, preloadImages, preloadNeighborSrcs, presetValuesForEdit, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, resolveFocusView, rotateRetouches, shouldEscapeToLibrary, shouldNavigateToPhotoEnd, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens } from '@f8/core';
 import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, pickAlbumCover, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
-import { useEditor, useLibrary } from '@f8/ui';
-import type { AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Preset, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
+import { useEditor, useLibrary, useTasteProfile } from '@f8/ui';
+import type { ActionStack, AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Preset, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
 import { Sidebar } from '@f8/ui';
 import { AppStatus, IconButton, MenuBar, Toolbar, type MenuAction } from '@f8/ui';
 import { PhotoCanvas, type HistogramData } from '@f8/ui';
@@ -167,7 +167,15 @@ export default function App() {
   const importRun = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const photo = photos.find((item) => item.id === selectedId) || photos[0];
-  const editor = useEditor(photo?.id ?? selectedId, { initial: library.editsSeed, onPersist: library.saveEdit });
+  // The learned taste profile: every settled recipe teaches it (pure auto
+  // output is skipped — only human-shaped recipes record), and the first
+  // load backfills from the library seed so existing edits count.
+  const taste = useTasteProfile(library.editsSeed);
+  const persistEdit = useCallback((photoId: string, present: EditState, actions: ActionStack) => {
+    library.saveEdit(photoId, present, actions);
+    taste.record(photoId, present, actions);
+  }, [library.saveEdit, taste.record]);
+  const editor = useEditor(photo?.id ?? selectedId, { initial: library.editsSeed, onPersist: persistEdit });
   const vision = useVisionWorker();
   const straighten = useStraighten(photo?.id ?? selectedId);
   const objectRemoval = useObjectRemoval(photo?.id ?? selectedId);
@@ -556,11 +564,13 @@ export default function App() {
     void library.removePhoto(id).then(
       () => {
         if (next && next.id !== id) setSelectedId(next.id);
+        // The photo's edits leave the taste profile with it.
+        taste.forget(id);
         notify('Removed from your library. The original file is untouched.');
       },
       (reason: unknown) => notifyError(reason, 'Could not remove the photo.'),
     );
-  }, [filteredPhotos, photos, library, notify, notifyError]);
+  }, [filteredPhotos, photos, library, notify, notifyError, taste.forget]);
 
   const selectTool = (next: Tool) => {
     setTool(next);
@@ -856,6 +866,7 @@ export default function App() {
     }, mergeKey);
   }, [editor, handleEditChange, photo]);
 
+  const applyTasteEnhance = () => { const patch = taste.patch; if (patch) editor.autoEnhanceTaste(patch); };
   const copyAdjustments = () => { setClipboard(presetValuesForEdit(editor.edit)); notify('Adjustments copied. Pick another photo to paste them.'); };
   const pasteAdjustments = () => {
     if (!clipboard) return;
@@ -1377,7 +1388,7 @@ export default function App() {
         onStraightenDragging={setStraightenDragging}
         highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke}
         onChange={handleEditChange} onRotate={rotateImage} onStraighten={changeStraighten} onReset={() => handleAction('reset')}
-        onAuto={() => editor.autoEnhance(photo.src)} onAutoScene={() => editor.autoEnhanceScene(photo.src)} enhanceMode={editor.enhanceMode} enhancePure={editor.enhancePure} enhanceCanRevert={editor.enhanceCanRevert} onRevertEnhance={editor.revertEnhance} faceAssist={{ state: faceEnhance.state, faces: faceEnhance.result?.faces.length ?? 0, source: faceEnhance.result?.source ?? null, whiteBalance: faceEnhance.result ? (faceEnhance.result.skinWhiteBalance ?? faceEnhance.result.classicWhiteBalance) : null, skinAnchored: Boolean(faceEnhance.result?.skinWhiteBalance), liftAmount: faceEnhance.result?.faceAdjust?.amount ?? 0, redEyeCount: faceEnhance.result?.faceAdjust?.redEye.length ?? 0, progress: faceEnhance.progress, note: faceEnhance.note, message: faceEnhance.message, applied: isFaceAdjustStored(editor.edit.faceAdjust) ? { faces: editor.edit.faceAdjust.boxes.length, source: editor.edit.faceAdjust.source, enabled: editor.edit.faceAdjust.enabled !== false, liftAmount: editor.edit.faceAdjust.amount, redEyeCount: editor.edit.faceAdjust.redEye.length } : null, onDetect: () => faceEnhance.detect(photo.src), onApply: applyFaceEnhance, onToggle: toggleFaceEnhance, onClear: clearFaceEnhance, onDismiss: faceEnhance.dismiss }} selectiveAssist={{ state: selectiveMask.state, found: Boolean(selectiveMask.result?.mask), coverage: selectiveMask.result?.coverage ?? 0, source: selectiveMask.result?.source ?? null, progress: selectiveMask.progress, note: selectiveMask.note, message: selectiveMask.message, applied: normalizeSelectiveAdjust(editor.edit.selectiveAdjust), onDetect: () => selectiveMask.detect(photo.src), onAdjust: adjustSelectiveMask, onToggle: toggleSelectiveMask, onClear: clearSelectiveMask, onDismiss: selectiveMask.dismiss }} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onAutoColor={() => editor.autoColor(photo.src)} onResetWhiteBalance={editor.resetWhiteBalance} onResetLightness={editor.resetLightness} onResetColor={editor.resetColor} onCopy={copyAdjustments} onPaste={pasteAdjustments}
+        onAuto={() => editor.autoEnhance(photo.src)} onAutoScene={() => editor.autoEnhanceScene(photo.src)} enhanceMode={editor.enhanceMode} enhancePure={editor.enhancePure} enhanceCanRevert={editor.enhanceCanRevert} onRevertEnhance={editor.revertEnhance} onAutoTaste={applyTasteEnhance} tasteReady={taste.ready} tastePhotos={taste.summary.photos} faceAssist={{ state: faceEnhance.state, faces: faceEnhance.result?.faces.length ?? 0, source: faceEnhance.result?.source ?? null, whiteBalance: faceEnhance.result ? (faceEnhance.result.skinWhiteBalance ?? faceEnhance.result.classicWhiteBalance) : null, skinAnchored: Boolean(faceEnhance.result?.skinWhiteBalance), liftAmount: faceEnhance.result?.faceAdjust?.amount ?? 0, redEyeCount: faceEnhance.result?.faceAdjust?.redEye.length ?? 0, progress: faceEnhance.progress, note: faceEnhance.note, message: faceEnhance.message, applied: isFaceAdjustStored(editor.edit.faceAdjust) ? { faces: editor.edit.faceAdjust.boxes.length, source: editor.edit.faceAdjust.source, enabled: editor.edit.faceAdjust.enabled !== false, liftAmount: editor.edit.faceAdjust.amount, redEyeCount: editor.edit.faceAdjust.redEye.length } : null, onDetect: () => faceEnhance.detect(photo.src), onApply: applyFaceEnhance, onToggle: toggleFaceEnhance, onClear: clearFaceEnhance, onDismiss: faceEnhance.dismiss }} selectiveAssist={{ state: selectiveMask.state, found: Boolean(selectiveMask.result?.mask), coverage: selectiveMask.result?.coverage ?? 0, source: selectiveMask.result?.source ?? null, progress: selectiveMask.progress, note: selectiveMask.note, message: selectiveMask.message, applied: normalizeSelectiveAdjust(editor.edit.selectiveAdjust), onDetect: () => selectiveMask.detect(photo.src), onAdjust: adjustSelectiveMask, onToggle: toggleSelectiveMask, onClear: clearSelectiveMask, onDismiss: selectiveMask.dismiss }} onAutoWhiteBalance={() => editor.autoWhiteBalance(photo.src)} onAutoLightness={() => editor.autoLightness(photo.src)} onAutoColor={() => editor.autoColor(photo.src)} onResetWhiteBalance={editor.resetWhiteBalance} onResetLightness={editor.resetLightness} onResetColor={editor.resetColor} onCopy={copyAdjustments} onPaste={pasteAdjustments}
         onSavePreset={() => setDialog('preset')} onBrushSize={setBrushSize} onBrushStrength={setBrushStrength}
         onClose={() => setInspectorOpen(false)}
       />}

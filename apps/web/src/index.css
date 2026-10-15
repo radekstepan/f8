@@ -313,6 +313,10 @@ its chevron glyph off the toggle edge. */
 .inspector-auto { display: inline-flex; align-items: center; gap: 4px; }
 .inspector-close { display: none; }
 .inspector-options { left: auto; right: -4px; min-width: 252px; }
+/* Tooltip carrier for a disabled menu item: mouse events pass through
+   disabled buttons, so the hint lives on this block wrapper (same box as
+   the unwrapped item) instead of the button itself. */
+.menu-disabled-tip { display: block; }
 .inspector-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
 .auto-enhance-row { display: flex; align-items: center; gap: 12px; padding: 0 19px; height: 44px; border-bottom: 1px solid #3a3a3e; }
 /* No :first-child button rule here: the Subject & Background row starts

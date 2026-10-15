@@ -1,10 +1,10 @@
 /** Persisted action stack for the Adjust-tool whole-photo enhance.
  *
- * Whole-photo enhance (classic + scene) used to keep its pre-apply snapshot
- * in a session-only ref: after a reload the recipe still held the enhanced
- * values, but the revert was gone. The stack below is the persisted
- * replacement — one entry carrying the snapshot its revert restores — so
- * the enhance stays revertible across a hard reload.
+ * Whole-photo enhance (classic + scene + taste) used to keep its pre-apply
+ * snapshot in a session-only ref: after a reload the recipe still held the
+ * enhanced values, but the revert was gone. The stack below is the
+ * persisted replacement — one entry carrying the snapshot its revert
+ * restores — so the enhance stays revertible across a hard reload.
  *
  * The per-category autos (white balance, lightness, color) deliberately
  * keep no entries: their header toggles read dirtiness straight from the
@@ -27,8 +27,12 @@ import { ML_CATEGORIES, touchedMlCategories } from "./mlCategories.js";
 import type { MlCategory } from "./mlCategories.js";
 import type { EditState } from "./types.js";
 
-/** Whole-photo enhance modes sharing the single enhance stack slot. */
-export type EnhanceMode = "classic" | "scene";
+/**
+ * Whole-photo enhance modes sharing the single enhance stack slot: the
+ * classic histogram auto, the scene-aware auto, and the taste auto (the
+ * user's learned medians — see tasteProfile.ts).
+ */
+export type EnhanceMode = "classic" | "scene" | "taste";
 
 /** Auto actions with a persisted revert: the enhance, plus the per-category autos as legacy stack values only. */
 export type AutoActionKind = "enhance" | MlCategory;
@@ -194,7 +198,7 @@ export function sanitizeActionStack(value: unknown): ActionStack {
     seen.add(kind);
     stack.push({
       kind,
-      ...(kind === "enhance" ? { mode: record.mode === "scene" ? "scene" : "classic" } : {}),
+      ...(kind === "enhance" ? { mode: record.mode === "scene" || record.mode === "taste" ? record.mode : "classic" } : {}),
       pure: record.pure === true,
       snapshot: clean,
       appliedAt: record.appliedAt,

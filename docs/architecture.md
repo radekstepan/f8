@@ -28,6 +28,7 @@ How f/8 is built. This file holds the deep technical notes that used to live in 
 | `packages/core/src/library.ts` | Library API contract and framework-free HTTP client. |
 | `packages/core/src/libraryUrl.ts` | Shareable URL scheme: path parsing/building for album and photo deep-links. |
 | `packages/core/src/actionStack.ts` | Persisted enhance-action stack: the applied whole-photo enhance with its revert snapshot, plus stack transitions and sanitizing. |
+| `packages/core/src/tasteProfile.ts` | Learned taste profile: per-photo samples, per-adjustment medians, the ML Auto Enhance patch, and the library-seed backfill. |
 | `packages/ui/src/hooks/useEditor.ts` | Non-destructive per-photo edits, grouped history, server persistence, and preset application. |
 | `packages/ui/src/hooks/useLibrary.ts` | Server library state: loading, uploads, folder import, and metadata. |
 | `packages/ui/src/components/EditorUI.tsx` | Reusable buttons, sliders, switches, selects, menus, and accessible dialogs. |
@@ -102,7 +103,7 @@ Configuration is all environment variables:
 
 ## Persistence and privacy
 
-Photos, edits, favorites, ratings, albums, and custom presets live in the server's SQLite database, as does each photo's enhance-action stack (the applied enhance plus its revert snapshot); only undo/redo history is session-only. The browser keeps no photo state — everything survives reloads, and edits reapply to the referenced originals every time.
+Photos, edits, favorites, ratings, albums, and custom presets live in the server's SQLite database, as does each photo's enhance-action stack (the applied enhance plus its revert snapshot); only undo/redo history is session-only. The browser keeps no photo state — everything survives reloads, and edits reapply to the referenced originals every time. The one browser-local exception is the taste profile behind ML Auto Enhance (per-photo adjustment samples in localStorage): it is per-device, never synced, and never affects recipes, presets, or export.
 
 Views are deep-linkable path URLs: `/album/<id>` opens an album grid and `/photo/<id>/<tool>` opens a photo in an editing tool (`adjust`, `crop`, or `repair`), so any view survives a reload and can be shared as a link. Legacy `?photo=` / `?album=` links still open and are rewritten to the path form.
 

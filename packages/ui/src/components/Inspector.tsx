@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Bandage, Brush, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, Pipette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, SunMoon, Thermometer, Trash2, Waves, X } from 'lucide-react';
-import { CROP_RATIOS, SCENE_DISPLAY_NAMES, SELECTIVE_CLARITY_RANGES, SELECTIVE_COLOR_RANGES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, isSelectiveClarityActive, isSelectiveClarityParamsNeutral, isSelectiveColorActive, isSelectiveColorParamsNeutral, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, selectiveClarityParams, selectiveColorParams, setSelectiveClarityRange, setSelectiveColorRange, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
-import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveClarityParams, SelectiveClarityRange, SelectiveColorParams, SelectiveColorRange, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
+import { CROP_RATIOS, MIN_TASTE_PHOTOS, SCENE_DISPLAY_NAMES, SELECTIVE_CLARITY_RANGES, SELECTIVE_COLOR_RANGES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, isSelectiveClarityActive, isSelectiveClarityParamsNeutral, isSelectiveColorActive, isSelectiveColorParamsNeutral, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, selectiveClarityParams, selectiveColorParams, setSelectiveClarityRange, setSelectiveColorRange, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
+import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, EnhanceMode, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveClarityParams, SelectiveClarityRange, SelectiveColorParams, SelectiveColorRange, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { AdjustmentSection } from './AdjustmentSection.js';
 import { CheckField, IconButton, MenuItem, MenuSeparator, MlBadge, RangeControl, RevertButton, SegmentedControl, SelectField, Toggle } from './EditorUI.js';
@@ -1044,7 +1044,13 @@ interface InspectorProps {
   /** Auto subject-aware enhance; omit to hide the scene row. */
   onAutoScene?: () => void;
   /** Last enhance mode with a stored snapshot; null when no enhance revert is available. */
-  enhanceMode?: 'classic' | 'scene' | null;
+  enhanceMode?: EnhanceMode | null;
+  /** ML taste enhance; omit to hide the menu item. Disabled until tasteReady. */
+  onAutoTaste?: () => void;
+  /** True when the taste profile holds an enhance patch (enough edited photos + a consistent habit). */
+  tasteReady?: boolean;
+  /** Edited photos the taste profile learned from (drives the disabled hint). */
+  tastePhotos?: number;
   /** True while the recipe still holds exactly the last enhance's values. */
   enhancePure?: boolean;
   /** True while a pre-enhance snapshot exists for the last mode. Stays true after manual edits (the revert outlives the highlight) and across reloads (the stack persists with the recipe). Defaults to mode presence — a mode always accompanies its stack entry. */
@@ -1073,7 +1079,7 @@ interface InspectorProps {
   onClose: () => void;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, enhanceMode = null, enhancePure = false, enhanceCanRevert, onRevertEnhance, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, onResetWhiteBalance, onResetLightness, onResetColor, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, enhanceMode = null, enhancePure = false, enhanceCanRevert, onRevertEnhance, onAutoTaste, tasteReady = false, tastePhotos = 0, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, onResetWhiteBalance, onResetLightness, onResetColor, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -1098,6 +1104,17 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   const classicActive = enhanceMode === 'classic' && enhancePure;
   const classicRevert = enhanceMode === 'classic' && enhanceSnapshot;
   const sceneRevert = enhanceMode === 'scene' && enhanceSnapshot;
+  // The taste mode lives in the ... menu (no header pill of its own), so
+  // its applied state surfaces through the shared header revert icon —
+  // same icon and label as classic, which keeps the single-reset pin.
+  const tasteRevert = enhanceMode === 'taste' && enhanceSnapshot;
+  // The disabled menu item names what is missing: photo count below the
+  // minimum, or no majority habit across enough photos. The tooltip sits
+  // on a wrapper span — mouse events pass through disabled buttons, so a
+  // data-tooltip on the button itself would never fire.
+  const tasteHint = tastePhotos < MIN_TASTE_PHOTOS
+    ? `ML Auto Enhance learns your taste as you edit — ${tastePhotos} of ${MIN_TASTE_PHOTOS} edited photos`
+    : 'No consistent habit across your edits yet — ML Auto Enhance unlocks when one emerges';
   // A recorded no-face scan (faces 0) is information, not an applied
   // change: it keeps its content row with Rescan/Clear, but the header
   // toggle stays off — it lights only when faces were found and the
@@ -1134,11 +1151,14 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   return <aside className="adjustments-sidebar" ref={ref} aria-label="Editing inspector">
     <div className="inspector-title">
       <TitleIcon size={15} strokeWidth={1.7} /><h2>{title}</h2>
-      {tool === 'adjust' && <div className="inspector-auto-wrap">{classicRevert && <IconButton className="section-reset is-dirty" label="Reset auto enhance" onClick={onRevertEnhance}><RotateCcw size={11} /></IconButton>}<button className={`auto-small inspector-auto${classicActive ? ' is-active' : ''}`} data-testid="auto-enhance-auto" aria-pressed={classicActive} data-tooltip={autoHint} onClick={onAuto}><Sparkles size={10} />Auto</button></div>}
+      {tool === 'adjust' && <div className="inspector-auto-wrap">{(classicRevert || tasteRevert) && <IconButton className="section-reset is-dirty" label="Reset auto enhance" onClick={onRevertEnhance}><RotateCcw size={11} /></IconButton>}<button className={`auto-small inspector-auto${classicActive ? ' is-active' : ''}`} data-testid="auto-enhance-auto" aria-pressed={classicActive} data-tooltip={autoHint} onClick={onAuto}><Sparkles size={10} />Auto</button></div>}
       <div className="inspector-menu-anchor" ref={menuRef}>
         <IconButton label="Adjustment options" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><MoreHorizontal size={18} /></IconButton>
         {menu && <div className="dropdown-menu inspector-options" role="menu">
           {tool === 'adjust' && <MenuItem onClick={() => closeAction(onAuto)} shortcut="A">Auto Enhance</MenuItem>}
+          {tool === 'adjust' && onAutoTaste && (tasteReady
+            ? <MenuItem onClick={() => closeAction(onAutoTaste)}>ML Auto Enhance</MenuItem>
+            : <span className="menu-disabled-tip" data-tooltip={tasteHint}><MenuItem disabled onClick={() => closeAction(onAutoTaste)}>ML Auto Enhance</MenuItem></span>)}
           <MenuItem onClick={() => closeAction(onCopy)} shortcut="Ctrl Shift C">Copy Adjustments</MenuItem>
           <MenuItem onClick={() => closeAction(onPaste)} disabled={!canPaste} shortcut="Ctrl Shift V">Paste Adjustments</MenuItem>
           <MenuItem onClick={() => closeAction(onSavePreset)}>Save as Preset...</MenuItem>

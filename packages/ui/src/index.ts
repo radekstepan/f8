@@ -9,6 +9,7 @@ export * from "./components/ToolHint.js";
 export * from "./components/Tooltip.js";
 export * from "./components/Topbar.js";
 export * from "./hooks/useEditor.js";
+export * from "./hooks/useTasteProfile.js";
 export * from "./hooks/useIsomorphicLayoutEffect.js";
 export * from "./hooks/useLibrary.js";
 export * from "./hooks/useCompareHold.js";

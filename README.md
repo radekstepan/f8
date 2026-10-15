@@ -21,6 +21,7 @@ Adjust:
 - Change temperature, tint, lightness, hue, saturation, vibrance, selective color, detail, selective clarity, tone, grain, vignette, and fade.
 - Watch a live RGB histogram.
 - Use one-click Enhance, ML scene enhance, ML face enhance, and ML subject and background enhance.
+- Use ML auto enhance, which learns your taste from the photos you edit.
 - Copy adjustments from one photo and paste them to another.
 
 Find problems:

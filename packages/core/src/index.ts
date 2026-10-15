@@ -32,6 +32,7 @@ export * from "./retouch.js";
 export * from "./selective-clarity.js";
 export * from "./selective-color.js";
 export * from "./sidebarAlbums.js";
+export * from "./tasteProfile.js";
 export * from "./tiffThumb.js";
 export * from "./toneCurve.js";
 export * from "./toolHints.js";
