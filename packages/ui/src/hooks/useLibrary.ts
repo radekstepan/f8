@@ -143,6 +143,39 @@ export function useLibrary() {
     void load();
   }, [load]);
 
+  // Background photo refresh: the snapshot loads once, but another tab can
+  // persist edits (a preset applied elsewhere, a second window side by
+  // side) while this one sits open. Without a refresh this tab's grid and
+  // filmstrip would show the old look forever — the persisted recipe is
+  // what untouched photos' thumbnails read. Refreshing when the tab
+  // regains visibility (tab switch) or focus (side-by-side window click)
+  // picks those saves up. Photos only: albums and presets have no
+  // reported cross-tab staleness, and leaving them alone keeps the refresh
+  // append-safe against in-flight creates. Failures stay silent — the
+  // offline machinery owns takeovers, a failed refresh just keeps state.
+  const refreshPhotos = useCallback(async () => {
+    try {
+      const snapshot = await client.getLibrary();
+      upsertPhotos(snapshot.photos);
+    } catch {
+      // Keep current state; the offline pinger takes over when truly down.
+    }
+  }, [client, upsertPhotos]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const onVisible = () => {
+      if (!document.hidden) void refreshPhotos();
+    };
+    const onFocus = () => void refreshPhotos();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [refreshPhotos]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     // The browser's own signal: verify (a localhost server survives a

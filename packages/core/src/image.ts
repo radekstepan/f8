@@ -1,6 +1,6 @@
 import { isNeutralEdit, renderAdjustedPixels } from './adjustments.js';
 import { CROP_RATIOS, DEFAULT_EDIT } from './data.js';
-import type { EditState, RetouchPoint } from './types.js';
+import type { EditState, HistoryState, RetouchPoint } from './types.js';
 import type { PixelImage } from './vision/analyze.js';
 import type { HealProgress, HealQuality } from './vision/heal.js';
 import { INPAINT_DEFAULT_METHOD, INPAINT_DILATE_PX, blendInpainted, dilateRepairMask, featherRepairMask, hasRepairStrokes, inpaintRadiusForStrokes, rasterizeRepairMask, resolveFeatherPx } from './vision/inpaint.js';
@@ -161,6 +161,30 @@ export function thumbnailFilterForPhoto(
   if (!edit) return undefined;
   const filter = getPhotoFilter(edit);
   return filter === DEFAULT_PHOTO_FILTER ? undefined : filter;
+}
+
+/**
+ * Live session recipes per photo for album-grid and filmstrip thumbnails:
+ * only photos with session history (an undo past, or a redo future after
+ * an undo-all) override the persisted recipe. Pristine entries (empty past
+ * and future, exactly as seeded) are omitted so the thumbnail falls
+ * through to the photo's persisted edit.
+ *
+ * The narrowing is the point: every history change in this session pushes
+ * an undo step (or keeps one), so the editing photo is always covered and
+ * the grid still matches the canvas through the 500 ms save debounce —
+ * while untouched photos keep reading the persisted recipe, which
+ * background refreshes (another tab's saves) can update. Seeding every
+ * photo into the override instead would shadow those refreshes forever:
+ * the live edit always wins the `??` in thumbnailFilterForPhoto, so a
+ * stale seed would pin the old look even after the server moved on.
+ */
+export function liveEditsForSession(histories: Record<string, HistoryState>): Record<string, EditState> {
+  return Object.fromEntries(
+    Object.entries(histories)
+      .filter(([, history]) => history.past.length > 0 || history.future.length > 0)
+      .map(([id, history]) => [id, history.present] as const),
+  );
 }
 
 // The input image is already upright (orientation 1): imports are decoded

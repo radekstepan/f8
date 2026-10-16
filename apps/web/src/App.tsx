@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, Minimize2, RefreshCw, X } from 'lucide-react';
 import { CROP_RATIOS, PHOTO_PRELOAD_DELAY_MS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isFilmstripVisible, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoEndTargetId, photoInCollection, preloadImages, preloadNeighborSrcs, presetValuesForEdit, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, resolveFocusView, rotateRetouches, shouldEscapeToLibrary, shouldNavigateToPhotoEnd, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens, topTasteLabel } from '@f8/core';
-import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, pickAlbumCover, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
+import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, liveEditsForSession, pickAlbumCover, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
 import { useEditor, useLibrary, useTasteProfile } from '@f8/ui';
 import type { ActionStack, AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Preset, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
 import { Sidebar } from '@f8/ui';
@@ -319,11 +319,14 @@ export default function App() {
   const removeAlbumRow = dialog === 'remove-album' ? albums.find((album) => album.id === removeAlbumTargetId) ?? null : null;
   const removeAlbumTarget = removeAlbumRow ? { id: removeAlbumRow.id, name: removeAlbumRow.name, count: photos.filter((item) => item.albumId === removeAlbumRow.id).length } : null;
   const availablePresets = useMemo(() => [...PRESETS, ...customPresets], [customPresets]);
-  // Live session recipes per photo: thumbnails prefer these over the last
-  // persisted edit so the grid and filmstrip match the canvas immediately
-  // instead of lagging the 500 ms save debounce.
+  // Live session recipes per photo: only session-diverged photos override
+  // the persisted edit, so the grid and filmstrip match the canvas
+  // immediately instead of lagging the 500 ms save debounce — while
+  // untouched photos keep reading the persisted recipe, which background
+  // refreshes (another tab's saves) update. Overriding every photo would
+  // shadow those refreshes with the stale load-time seed forever.
   const liveEdits = useMemo(
-    () => Object.fromEntries(Object.entries(editor.histories).map(([id, history]) => [id, history.present] as const)),
+    () => liveEditsForSession(editor.histories),
     [editor.histories],
   );
 

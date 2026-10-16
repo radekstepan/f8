@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_EDIT } from "./data.js";
-import { frameAspectForPhoto, getPhotoFilter, isPortraitPhoto, thumbnailFilterForPhoto } from "./image.js";
+import { frameAspectForPhoto, getPhotoFilter, isPortraitPhoto, liveEditsForSession, thumbnailFilterForPhoto } from "./image.js";
+import type { EditState, HistoryState } from "./types.js";
 
 describe("thumbnailFilterForPhoto", () => {
   it("returns undefined when the photo has no stored edit", () => {
@@ -39,6 +40,56 @@ describe("thumbnailFilterForPhoto", () => {
   it("clears a stale persisted look when the live edit is reset to default", () => {
     const saved = { ...DEFAULT_EDIT, blackAndWhite: true };
     expect(thumbnailFilterForPhoto({ edit: saved }, { ...DEFAULT_EDIT })).toBeUndefined();
+  });
+});
+
+describe("liveEditsForSession", () => {
+  const present = (overrides: Partial<EditState> = {}): EditState => ({ ...DEFAULT_EDIT, ...overrides });
+  const history = (present: EditState, past: EditState[] = [], future: EditState[] = []): HistoryState => ({ past, present, future });
+
+  it("omits pristine seeded entries so thumbnails read the persisted recipe", () => {
+    // Every photo seeds with empty past/future: none of them may shadow
+    // photo.edit, or a background refresh could never show through.
+    const histories = {
+      p1: history(present()),
+      p2: history(present({ exposure: 1.26, preset: "Apple" })),
+    };
+    expect(liveEditsForSession(histories)).toEqual({});
+  });
+
+  it("includes photos with an undo past (the save-debounce override)", () => {
+    // Applying a preset pushes an undo step: the grid must match the
+    // canvas immediately, ahead of the persisted recipe.
+    const vivid = present({ saturation: 30, preset: "Vivid" });
+    const histories = { p1: history(vivid, [present()]) };
+    expect(liveEditsForSession(histories)).toEqual({ p1: vivid });
+  });
+
+  it("includes photos with only a redo future (undo-all keeps canvas parity)", () => {
+    // Undo-all empties the past but the session still owns the recipe:
+    // keep overriding so the grid matches the canvas, not the server.
+    const original = present();
+    const histories = { p1: history(original, [], [present({ saturation: 30 })]) };
+    expect(liveEditsForSession(histories)).toEqual({ p1: original });
+  });
+
+  it("passes the session present through by identity", () => {
+    const vivid = present({ saturation: 30 });
+    const histories = { p1: history(vivid, [present()]) };
+    expect(liveEditsForSession(histories).p1).toBe(vivid);
+  });
+
+  it("mixes dirty and pristine photos independently", () => {
+    const vivid = present({ saturation: 30, preset: "Vivid" });
+    const histories = {
+      edited: history(vivid, [present()]),
+      untouched: history(present()),
+    };
+    expect(liveEditsForSession(histories)).toEqual({ edited: vivid });
+  });
+
+  it("returns an empty map for empty histories", () => {
+    expect(liveEditsForSession({})).toEqual({});
   });
 });
 
