@@ -1,6 +1,6 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across sixteen
+Distilled from per-task writeups and subagent learnings across seventeen
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, menus, zoom, navigation, or library UI so we don't
 repeat the same mistakes.
@@ -45,6 +45,10 @@ repeat the same mistakes.
   continuation of the running log).
 - **R16** = sixteenth run, 2026-10-15 (8 tasks). Writeups continue
   the running log in `docs/tasks/52-*.md`–`59-*.md`.
+- **R17** = seventeenth run, 2026-10-15 (4 tasks). Writeups in
+  `docs/tasks/01-selective-color-slider-lag-and-swatch-ring.md`,
+  `02-compare-original.md`, `03-saved-presets-submenu.md`, and
+  `04-ml-enhance-conditional.md` (a fresh 01- numbering like R15).
 
 ## 1. Honest labels and naming
 
@@ -173,6 +177,20 @@ repeat the same mistakes.
   copy (browser-offline vs unreachable server) plus
   the auto-retry note live in the second line.
   (R16-8)
+- **Scoped learning names its scope in the UI.**
+  The subject-scoped enhance hint names the subject
+  ("No consistent habit across your grapes photos
+  yet") and the ready tooltip cites the evidence
+  ("Learned from 3 photos like this (grapes)") —
+  while the global fallback stays silent, exactly
+  as before. (R17-4)
+- **Gesture tooltips teach; accessible names stay
+  stable.** The immediate-hold + pin tooltip reads
+  "Compare with original (B) — hold to peek,
+  Shift+click for full original" while the button's
+  accessible name is unchanged — the R16-4
+  hint-not-name rule for a second gesture on one
+  control. (R17-2)
 
 ## 2. Header and component contracts
 
@@ -513,6 +531,30 @@ repeat the same mistakes.
   surface as the auto-recovering takeover, leaving
   the photo error for single broken images.
   (R16-8; cf. R2-12)
+- **The third submenu copies the flyout contract
+  whole.** The ... menu's Saved Presets parent
+  follows the Image > Presets pattern (hover opens,
+  click toggles for touch, `data-submenu` parent,
+  active preset checked, parent checked while a
+  saved preset is the active look) — the R9-1 /
+  R16-6 pattern now has three instances. An empty
+  library renders a disabled "No saved presets
+  yet" item instead of an empty flyout. (R17-3)
+- **Transient and persistent views compose by
+  OR, with unpin-first exits.** The whole-original
+  pin ORs into the same `showOriginal` layer the
+  transient hold uses (no canvas paint changes);
+  the pin survives photo switches like the split
+  while `\`/button hold clears; a plain click
+  while pinned unpins without toggling the split,
+  and reset, crop entry, and Escape all exit it.
+  (R17-2)
+- **Tooltips on enabled items get their own
+  wrapper class.** The ready subject-scoped
+  enhance carries its tooltip on a layout-neutral
+  `.menu-tip` wrapper — reusing the disabled
+  wrapper's class name would lie on an enabled
+  item. (R17-4; cf. R16-7)
 
 ## 3. Spacing, layout, and motion
 
@@ -783,6 +825,22 @@ repeat the same mistakes.
   The presets submenu caps at `min(60vh, 420px)`
   with a scroll so big preset lists never run off
   screen. (R16-6)
+- **Selection is one tight ring on the dot, never
+  a padded border.** The swatch button hugs the
+  color dot (no padding/border) and selection /
+  hover / keyboard focus all draw the same
+  `box-shadow` ring directly on it — the padded
+  accent border read as color circle, gap, yellow
+  outline, and the global `button:focus-visible`
+  offset outline added a third ring. Applied
+  identically to the Selective Clarity chips,
+  which shared the structure. (R17-1)
+- **Edge-docked flyouts open inward.** The
+  inspector docks at the right edge, so its
+  submenu opens left of the parent (the generic
+  rule opens right, off the viewport) and caps
+  at `min(60vh, 320px)` with a scroll like the
+  Image > Presets flyout. (R17-3)
 
 ## 4. Navigation and state
 
@@ -1338,6 +1396,69 @@ repeat the same mistakes.
   survives a dropped uplink. The `online` event
   reloads immediately; while offline a 5s ping
   reloads on first success. (R16-8)
+- **Hot pixel loops render from a per-render
+  plan.** Selective Color resolves its packed
+  triples once per render to the active slots
+  only (slot order, chromatic/achromatic gate
+  flags), and the loop inlines the HSL
+  round-trip scalar (no allocations), reads
+  range metadata from a static slot table (no
+  `Map` lookups), folds hue distance without
+  modulo, and evaluates each saturation gate
+  once per pixel — ~1.8x at 1800px with
+  byte-identical output. The plan derives from
+  the packed bits, not rescaled from the
+  recipe, so float32 rounding cannot disagree
+  — and the public packed API stays over the
+  same core so the two cannot drift. (R17-1)
+- **Classify the gesture on release, never
+  delay the feedback on press.** Immediate
+  hold-to-compare fires on pointer down; the
+  400 ms timer survives only as a click window
+  (quick release clicks through to the split
+  toggle, late release suppresses it). The
+  protocol and injectable scheduler are
+  unchanged — the value was repurposed, not
+  removed. (R17-2; cf. R16-4)
+- **Alternate gestures skip the primary press,
+  never ride it.** Shift+click never enters the
+  hold (no flash, release is a safe no-op) and
+  non-primary buttons never peek; Shift+B gives
+  keyboard parity before the plain-key map so
+  it can never hit `compare`. (R17-2)
+- **Conditional learning scopes the whole
+  patch, and silence beats borrowing.** Each
+  taste sample carries its photo's top ML
+  label; three same-subject photos generalize
+  their medians onto the next one (majority
+  runs within the scope, so a 2-of-3 subject
+  habit counts as a global minority), thin
+  subjects fall back to the global medians —
+  but a subject with evidence and no habit
+  stays silent rather than borrowing the
+  global style, which would reintroduce the
+  exact leak scoping removes. Per-key backoff
+  would mix two styles into one unexplainable
+  patch. (R17-4; fulfills the R16-7 per-scene
+  follow-up)
+- **Similarity tags are model output, not
+  user text.** Hand-added labels are
+  organizational free text scoring 1, so they
+  would always win — only `source: "ml"`
+  labels group photos, and untagged photos
+  (offline import, legacy records) learn and
+  enhance globally, the pre-change behavior.
+  Retags are real changes: labels can land
+  after the edit, so a tag change on re-record
+  moves the sample's scope and forces the
+  write-through. (R17-4)
+- **Versioned payloads migrate in place under
+  the same storage key.** Bumping the key
+  would orphan learned taste and churn the
+  backfill; the payload version governs, old
+  readers fail safe (garbage in, empty out),
+  and the seed backfill tags samples from the
+  new per-photo labels map. (R17-4)
 
 ## 5. Testing practices (repo-specific)
 
@@ -1714,6 +1835,35 @@ repeat the same mistakes.
   cases), and seed-backfill + forget paths are
   covered behaviorally through static markup.
   (R16-7)
+- **Fast paths pin bit-identical output
+  against the reference, never approximate
+  equality.** The differential sweep (~2.8k
+  colors × 8 recipes, exact `toEqual`) caught
+  a 1-ulp drift from "simplifying" the
+  hue-distance modulo — the `+360` step rounds
+  and does not round-trip — so the fast path
+  replicates the exact rounding and any future
+  drift fails loudly. Plus a plan-shape test
+  (null while neutral, slot order, gate
+  flags). (R17-1)
+- **Closed menus get `initial*` test seams
+  matching the Filmstrip precedent.**
+  `initialMenuOpen`/`initialSubmenu` let the
+  saved-presets suite assert real open-menu
+  markup SSR can't otherwise reach — and the
+  byte-identical `closeAction`, already pinned
+  by the autoEnhance suite, stays untouched
+  while the flyout resets through the existing
+  dismiss paths. (R17-3)
+- **Conditional behavior pins both scopes plus
+  the no-borrow silence.** The taste suite
+  grows 29→52: tagging, user-label ignore,
+  retag moves, scope selection incl.
+  majority-within-subject, tag round-trip, v1
+  migration, sanitization, tagged backfill —
+  and the UI pins the subject hint, the ready
+  tooltip + `.menu-tip` rule, and App wiring.
+  (R17-4)
 
 ## 6. Tooling gotchas
 
@@ -1787,13 +1937,14 @@ repeat the same mistakes.
   in its exact format.** Headless subagents write the
   `.changeset/*.md` file by hand (front-matter package
   bumps + summary); reviewers check the format matches
-  what the CLI would emit. (R16-7, R16-8)
+  what the CLI would emit. (R16-7, R16-8, R17-4)
 - **Rebuild `dist/` before tests/typecheck, then leave it
   untracked.** `dist/` is gitignored but is what `@f8/*`
   imports (and the UI typecheck's `@f8/core` types)
   resolve to locally — stale dist reads as phantom
-  failures; rebuilt output stays out of the commit.
-  (R16-6, R16-8)
+  failures ("your new API does not exist"); rebuilt
+  output stays out of the commit. (R16-6, R16-8,
+  R17-4)
 
 ## 7. Scope and ambiguity discipline
 
@@ -2122,6 +2273,64 @@ repeat the same mistakes.
   mirrors habits rather than judging them.
   Full analysis in `58-ml-taste-enhance.md`.
   (R16-7)
+- **Benchmark the hot path before optimizing
+  it.** The slider-lag fix started by timing
+  `renderAdjustedPixels` (neutral 43 ms,
+  selective 1-range 334 ms): per-pixel
+  allocation, `Map` lookups, modulo hue
+  distance, an eleven-slot scan, and a gate
+  evaluation per range — each named waste
+  became one line of the fix, and scratch
+  benchmarks (kept out of the repo) proved
+  the ~1.8x. (R17-1)
+- **Fix the sibling sharing the defect.**
+  Selective Clarity chips had the same
+  double-circle structure as the Selective
+  Color swatches — leaving them double-ringed
+  while fixing their sibling would be
+  inconsistent. The R1-5 audit-all-consumers
+  instinct, applied to a visual defect.
+  (R17-1)
+- **Architectural follow-ups get recorded with
+  their hook, not attempted.** Full drag-jank
+  removal needs rAF coalescing or
+  reduced-res-while-dragging plus visual
+  verification — out of scope here, but the
+  writeup names the existing seam
+  (`RangeControl.onDraggingChange`) so the
+  follow-up starts concrete. Same for the
+  ... menu's missing arrow-key navigation
+  (a menu-wide change). (R17-1, R17-3)
+- **When the fallback turns out easy, ship
+  both.** Immediate hold was the ask and
+  Shift+click the fallback; classifying on
+  release made the hold trivial, and the pin
+  covers deliberate whole-picture compare
+  with zero hold ambiguity — plus Shift+B
+  parity for free. Record why both, not just
+  what. (R17-2)
+- **New gestures and small menu wiring land
+  in `features.md`, not the README.** Hold
+  timing and a submenu change no architecture
+  — the R11-5 one-question-per-file rule
+  deciding the target. (R17-2, R17-3)
+- **Similarity choices ship their rejected
+  candidates.** Subject = top ML label won
+  over scene (too coarse), pHash (near-dups
+  only), and embeddings (client clustering
+  for dozens of photos): already computed
+  server-side, synced, offline-capable, and
+  user-visible in the label chips. Label
+  granularity stays the vocabulary's —
+  embedding clustering is the recorded
+  escape hatch. (R17-4)
+- **New subjects wait for the same evidence
+  bar.** Three same-subject edits before
+  scoping kicks in — the original global
+  gate, deliberately unchanged — and weak top
+  tags still group, because trusting stored
+  tags keeps grouping identical to the
+  visible chips. (R17-4)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -2315,3 +2524,12 @@ repeat the same mistakes.
 | 6 | `5bbc559` | `57-presets-submenu.md` | Add Adjustment removed; Image > Presets submenu; presets basic-only |
 | 7 | `ae2c43a` | `58-ml-taste-enhance.md` | On-the-fly taste profile + ML Auto Enhance menu action |
 | 8 | `d12ece7` | `59-offline-recovery.md` | Ping-verified offline takeover + auto-reload; photo Try again dropped |
+
+## Per-task index, R17 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `5025630` | `01-selective-color-slider-lag-and-swatch-ring.md` | Per-render plan cuts Selective Color ~1.8x; single tight swatch ring |
+| 2 | `6515202` | `02-compare-original.md` | Immediate hold-to-compare + Shift+click/Shift+B whole-original pin |
+| 3 | `f044997` | `03-saved-presets-submenu.md` | Saved presets surface in the ... menu's Saved Presets submenu |
+| 4 | `44ae534` | `04-ml-enhance-conditional.md` | ML Auto Enhance learns per subject tag, not one global style |
