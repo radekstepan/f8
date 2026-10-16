@@ -1,6 +1,6 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across eighteen
+Distilled from per-task writeups and subagent learnings across nineteen
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, menus, zoom, navigation, or library UI so we don't
 repeat the same mistakes.
@@ -46,6 +46,11 @@ repeat the same mistakes.
   the running log in `docs/tasks/63-*.md`–`66-*.md`.
 - **R18** = eighteenth run, 2026-10-15 (2 tasks). Writeups continue
   the running log in `docs/tasks/67-*.md`–`68-*.md`.
+- **R19** = nineteenth run, 2026-10-16 (3 tasks). Writeups are the
+  changesets `.changeset/69-*.md`–`71-*.md` (no separate
+  `docs/tasks/` files — the changeset doubles as the writeup and is
+  consumed on release). `docs/tasks/` holds 01–18 only, so the
+  running-log position lives in this index.
 
 ## 1. Honest labels and naming
 
@@ -198,6 +203,19 @@ repeat the same mistakes.
   item bare exactly as before: silence means "no
   measurement", never "a scope we chose not to
   show". (R18-2)
+- **Hints advertise only the problem they
+  solve.** The album drop hint ("You can also
+  drop photos or a folder anywhere to import
+  them") lands on plain empties only — search
+  and filter empties describe no-matches, and
+  advertising drops there would read as a fix
+  for the wrong thing. (R19-2)
+- **A widened component gets a widened
+  name.** The import progress toast now drives
+  exports too, so `ImportProgressToast` became
+  `ProgressToast` with a `format` prop — the
+  old name would lie about its job on every
+  export. (R19-3; cf. R4-4)
 
 ## 2. Header and component contracts
 
@@ -573,6 +591,27 @@ repeat the same mistakes.
   exactly like any other checked item. No
   trailing chevron, no new CSS: one-icon slot,
   direction honest. (R18-1)
+- **New heading actions match the row's
+  rhythm and the donor glyph.** The album
+  Import button is icon-only (the header holds
+  sort, grid size, and the album menu) and
+  reuses the sidebar's `Import` lucide glyph
+  for recognition — a labeled button would
+  break the row. (R19-2)
+- **View actions disable on empty, hide
+  when unwired.** The Export album view button
+  disables when the grid is empty (clicking
+  would zip nothing) and hides entirely when
+  `onExportAlbum` is omitted — optional prop,
+  no call-site churn. (R19-3; cf. R7-4)
+- **Batch dialogs confirm only what the
+  task names.** The album-export dialog carries
+  format + lossy-only quality and nothing else
+  — no size picker (full resolution, the
+  pipeline's original-size sentinel), no
+  super-resolution, no preview — so the
+  confirm step can't drift into a second
+  export dialog. (R19-3)
 
 ## 3. Spacing, layout, and motion
 
@@ -1491,6 +1530,59 @@ repeat the same mistakes.
   medians, and provably trends up as edits
   converge — the requested behavior, from
   data already in the profile. (R18-2)
+- **An override map covers only
+  session-dirty entries.**
+  `liveEditsForSession` includes only
+  histories with an undo past or redo future
+  — mapping every seeded history to its
+  present shadowed even freshly refetched
+  `photo.edit` through
+  `thumbnailFilterForPhoto`'s `??` forever.
+  Dirtiness keys off past/future lengths
+  (every `useEditor` change pushes an undo
+  step), never a recipe deep-compare: no new
+  memo deps, no per-keystroke stringify cost.
+  Undo-all (future only) stays overriding so
+  the grid matches the canvas, not the
+  server. (R19-1)
+- **Cross-tab freshness is refresh-on-
+  return, photos-only, upsert-only,
+  silent.** The library snapshot loads once
+  per page, so returning to a tab re-reads
+  `/api/library` — on both `visibilitychange`
+  (tab switches keep window focus) and
+  `focus` (side-by-side clicks keep both tabs
+  visible); either listener alone misses a
+  real layout. Photos only (no reported
+  album/preset staleness), merged through the
+  pending-meta-safe upsert so in-flight
+  uploads survive and no photo is yanked from
+  under an open editor; failures stay silent
+  because the offline machinery owns
+  takeovers. (R19-1)
+- **"Current view" means the grid's own
+  memo, snapshotted once.** The export batch
+  reads `filteredPhotos` (album predicate,
+  search rank, chip filters, sort — smart
+  albums included) directly instead of
+  re-deriving anything, snapshotted at
+  confirm time so mid-run grid changes can't
+  skew the batch. (R19-3)
+- **Batch failures count and skip, never
+  abort.** One unrenderable photo must not
+  kill a hundred-photo export — per-photo
+  failures are counted, skipped, and reported
+  in the summary toast. (R19-3)
+- **Early-return gates outside the enabled
+  shell are dead surfaces.** The empty-library
+  gate (`if (!photo)`) returned before the
+  drop-enabled shell, so first-run drops
+  bounced off the welcome screen — the fix
+  gives the gate the same drop surface via a
+  shared `DropOverlay`, not a second import
+  path. Any gate that bypasses a capability
+  needs the audit: what does this return
+  skip? (R19-2)
 
 ## 5. Testing practices (repo-specific)
 
@@ -1914,6 +2006,32 @@ repeat the same mistakes.
   the UI pins the alignment clause in both
   tooltips plus the unscored-stays-bare
   rule. (R18-2)
+- **App.tsx wiring pins at source level
+  — now the standing precedent.** The UI
+  suite runs in node without jsdom and
+  apps/web has no unit harness (Playwright
+  forbidden by the task rules), so all three
+  R19 suites pin `App.tsx` wiring by reading
+  source. Third run on this pattern after
+  R14–R18's effect-wiring pins; the default
+  for any App-effect behavior. (R19-1,
+  R19-2, R19-3; cf. R14-1, R14-2)
+- **Mutation checks prove pins lock the
+  fix.** Temporarily restoring the old
+  derivation (all-histories `liveEdits`,
+  batch over `photos` instead of
+  `filteredPhotos`) must fail the new pin;
+  restored afterwards. The R3-6 stash
+  check, applied to source pins. (R19-1,
+  R19-3)
+- **Hand-rolled formats get independent
+  verification.** The dependency-free
+  stored-ZIP writer round-trips through a
+  minimal reader in unit tests, and a sample
+  archive from the built output opens clean
+  in Python's `zipfile.testzip()` and
+  `unzip -t` — two external oracles, not
+  just the author's own reader. (R19-3)
 
 ## 6. Tooling gotchas
 
@@ -1971,7 +2089,9 @@ repeat the same mistakes.
 - **New capability is `minor`, fixes and docs-only are
   `patch`.** The Curves editor and the toggle conversion
   shipped minor; the writeup and label audits shipped patch.
-  (R11-5, R11-6, R11-9, R11-11)
+  R19 repeats the split (import button and album export
+  minor, preset-refresh fix patch). (R11-5, R11-6, R11-9,
+  R11-11, R19)
 - **`apps/web/tsconfig.json` does not include `tests/`** —
   e2e edits need an ad-hoc strict `tsc --noEmit`
   (mirroring `tsconfig.base.json`: strict +
@@ -1987,7 +2107,7 @@ repeat the same mistakes.
   in its exact format.** Headless subagents write the
   `.changeset/*.md` file by hand (front-matter package
   bumps + summary); reviewers check the format matches
-  what the CLI would emit. (R16-7, R16-8, R17-4, R18)
+  what the CLI would emit. (R16-7, R16-8, R17-4, R18, R19)
 - **Rebuild `dist/` before tests/typecheck, then leave it
   untracked.** `dist/` is gitignored but is what `@f8/*`
   imports (and the UI typecheck's `@f8/core` types)
@@ -1995,6 +2115,13 @@ repeat the same mistakes.
   failures ("your new API does not exist"); rebuilt
   output stays out of the commit. (R16-6, R16-8,
   R17-4, R18-2)
+- **Changeset numbering reads this index, not just
+  the directories.** `.changeset` holds unnumbered
+  slugs and `docs/tasks` was pruned to 01–18, so
+  neither directory alone names the next number —
+  the R1–R18 running log above (through 68) placed
+  R19 at 69–71. Never restart, never reuse, never
+  leave gaps. (R19)
 
 ## 7. Scope and ambiguity discipline
 
@@ -2388,6 +2515,40 @@ repeat the same mistakes.
   goes to the per-feature docs — the R11-5
   one-question-per-file rule deciding the
   target in both cases. (R18-1, R18-2)
+- **Check what already imports before
+  building an import path.** The app shell
+  already dropped files into the viewed album
+  — R19-2 added only the header button, the
+  hint, and the gate fix, funneling both into
+  the existing `importDrop`/`importFiles` flow
+  (folder grouping, progress toast, summary).
+  The R11-1 check-first rule, applied to the
+  feature rather than the task. (R19-2)
+- **Stored ZIP for already-compressed
+  bytes, zero deps.** No zipping existed in
+  the codebase; DEFLATE on exported
+  JPEGs/WebPs would buy almost nothing while
+  bloating the single-file web bundle —
+  stored entries keep the download byte-exact
+  with a hand-rolled writer + CRC-32. (R19-3)
+- **Format lists name what the pipeline
+  can encode.** TIFF has no browser canvas
+  encoder, so the batch format list stays
+  JPEG/PNG/WebP like the single-photo dialog
+  — the task's "as appropriate" answered by
+  construction, not by a disabled option.
+  (R19-3)
+- **Repro scoping before fixing: same-tab
+  worked, cross-tab didn't.** The
+  preset-preview report reproduced only
+  across tabs — verified with a throwaway
+  React-shim probe driving the real
+  `useEditor.applyPreset` plus SSR grid
+  renders — which named the two-half root
+  cause (no invalidation + shadowing
+  override) instead of a single-tab repaint
+  bug. The R6-4/R7-3 breadth-check
+  instinct. (R19-1)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -2597,3 +2758,11 @@ repeat the same mistakes.
 |---|--------|---------|------------------|
 | 1 | `c039700` | `67-saved-presets-left-arrow.md` | Saved Presets parent left-aligned with a leading left arrow |
 | 2 | `3572aa4` | `68-ml-alignment-tooltip.md` | ML Auto Enhance tooltips report the alignment % with user edits |
+
+## Per-task index, R19 (writeups are changesets; consumed on release)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `875b171` | `69-preset-preview-refresh.md` | Album/filmstrip thumbnails refresh for cross-tab preset applies |
+| 2 | `8fbb3e9` | `70-album-import-button.md` | Album header Import button + first-run drop support |
+| 3 | `8cf4597` | `71-album-view-export.md` | Album header Export zips the current grid view with import-style progress |
