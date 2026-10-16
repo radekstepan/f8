@@ -30,7 +30,7 @@ per the task rules.
 - `apps/web/src/index.css` — `.photo-frame` `box-shadow` replaced.
 - `packages/ui/src/components/photoFrameShadow.test.tsx` — tests
   re-pinned to the new treatment plus shape guards.
-- `docs/tasks/44-canvas-shadow.md` — this writeup.
+- `docs/tasks/45-canvas-shadow.md` — this writeup.
 - `.changeset/canvas-drop-shadow.md` — patch changeset for `@f8/web`.
 
 ## Decisions

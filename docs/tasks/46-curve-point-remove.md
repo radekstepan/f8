@@ -50,7 +50,7 @@ any capture exists:
   svg menu suppression, retained dblclick fallback).
 - `docs/features.md` — tone-curve bullet reworded to the new
   gestures.
-- `docs/tasks/45-curve-point-remove.md` — this writeup.
+- `docs/tasks/46-curve-point-remove.md` — this writeup.
 - `.changeset/curves-point-remove-gestures.md` — patch changeset for
   `@f8/ui` (written manually in `yarn changeset` format; the CLI is
   interactive).

@@ -31,24 +31,19 @@ repeat the same mistakes.
 - **R10** = tenth run, 2026-10-14 (3 tasks). Writeups continue the
   running log in `docs/tasks/19-*.md`–`21-*.md`.
 - **R11** = eleventh run, 2026-10-14 (11 tasks). Writeups continue
-  the running log in `docs/tasks/01-version-top-right.md` and
-  `docs/tasks/22-*.md`–`31-*.md`.
+  the running log in `docs/tasks/22-*.md`–`32-*.md`.
 - **R12** = twelfth run, 2026-10-14 (11 tasks). Writeups continue
-  the running log in `docs/tasks/32-*.md`–`42-*.md`.
+  the running log in `docs/tasks/33-*.md`–`43-*.md`.
 - **R13** = thirteenth run, 2026-10-14 (6 tasks). Writeups continue
-  the running log in `docs/tasks/43-*.md`–`48-*.md`.
+  the running log in `docs/tasks/44-*.md`–`49-*.md`.
 - **R14** = fourteenth run, 2026-10-14 (3 tasks). Writeups continue
-  the running log in `docs/tasks/49-*.md`–`51-*.md`.
-- **R15** = fifteenth run, 2026-10-15 (2 tasks). Writeups in
-  `docs/tasks/01-stretched-photo-loading.md` and
-  `02-blurry-badge-standard.md` (a fresh 01- numbering, not a
-  continuation of the running log).
+  the running log in `docs/tasks/50-*.md`–`52-*.md`.
+- **R15** = fifteenth run, 2026-10-15 (2 tasks). Writeups continue
+  the running log in `docs/tasks/53-*.md`–`54-*.md`.
 - **R16** = sixteenth run, 2026-10-15 (8 tasks). Writeups continue
-  the running log in `docs/tasks/52-*.md`–`59-*.md`.
-- **R17** = seventeenth run, 2026-10-15 (4 tasks). Writeups in
-  `docs/tasks/01-selective-color-slider-lag-and-swatch-ring.md`,
-  `02-compare-original.md`, `03-saved-presets-submenu.md`, and
-  `04-ml-enhance-conditional.md` (a fresh 01- numbering like R15).
+  the running log in `docs/tasks/55-*.md`–`62-*.md`.
+- **R17** = seventeenth run, 2026-10-15 (4 tasks). Writeups continue
+  the running log in `docs/tasks/63-*.md`–`66-*.md`.
 
 ## 1. Honest labels and naming
 
@@ -2271,7 +2266,7 @@ repeat the same mistakes.
   (warm-portraits/cool-landscapes needs the
   per-scene follow-up), noisy with few photos,
   mirrors habits rather than judging them.
-  Full analysis in `58-ml-taste-enhance.md`.
+  Full analysis in `61-ml-taste-enhance.md`.
   (R16-7)
 - **Benchmark the hot path before optimizing
   it.** The slider-lag fix started by timing
@@ -2458,78 +2453,78 @@ repeat the same mistakes.
 
 | # | Commit | Writeup | One-line summary |
 |---|--------|---------|------------------|
-| 1 | `ea6aaef` | `01-version-top-right.md` | Top-right version pinned to changesets sync with script tests |
-| 2 | `4756a59` | `22-zoom-parent-clears.md` | Zoom in View parent click clears the preview |
-| 3 | `5032c3b` | `23-photo-frame-shadow.md` | Photo frame shadow becomes a subtle keyline lift |
-| 4 | `7e18b04` | `24-heal-overlay-delete.md` | Orphaned heal overlays purged once, not per slider tick |
-| 5 | `3ab8494` | `25-curves-reset-points.md` | Curves header reset + addable tone-curve points |
-| 6 | `ab08f7a` | `26-ml-white-balance-lightness.md` | ML prospects writeup for White Balance and Lightness |
-| 7 | `e6deb8b` | `27-subject-background-icons.md` | Avatar/picture icons for Subject/Background subgroups |
-| 8 | `5a4ec31` | `28-enhance-faces-no-faces.md` | Enhance Faces header quiet on no-face scans |
-| 9 | `5fdb64a` | `29-ml-auto-icon-audit.md` | Scene Enhance + Dust Spots demoted to Auto; S&B keeps ML |
-| 10 | `6f4b990` | `30-global-auto-highlight.md` | Global Auto lights the per-section Autos it drove |
-| 11 | `c18753e` | `31-auto-ml-toggle.md` | Color Adjustments Auto/ML buttons become header toggles |
+| 1 | `ea6aaef` | `22-version-top-right.md` | Top-right version pinned to changesets sync with script tests |
+| 2 | `4756a59` | `23-zoom-parent-clears.md` | Zoom in View parent click clears the preview |
+| 3 | `5032c3b` | `24-photo-frame-shadow.md` | Photo frame shadow becomes a subtle keyline lift |
+| 4 | `7e18b04` | `25-heal-overlay-delete.md` | Orphaned heal overlays purged once, not per slider tick |
+| 5 | `3ab8494` | `26-curves-reset-points.md` | Curves header reset + addable tone-curve points |
+| 6 | `ab08f7a` | `27-ml-white-balance-lightness.md` | ML prospects writeup for White Balance and Lightness |
+| 7 | `e6deb8b` | `28-subject-background-icons.md` | Avatar/picture icons for Subject/Background subgroups |
+| 8 | `5a4ec31` | `29-enhance-faces-no-faces.md` | Enhance Faces header quiet on no-face scans |
+| 9 | `5fdb64a` | `30-ml-auto-icon-audit.md` | Scene Enhance + Dust Spots demoted to Auto; S&B keeps ML |
+| 10 | `6f4b990` | `31-global-auto-highlight.md` | Global Auto lights the per-section Autos it drove |
+| 11 | `c18753e` | `32-auto-ml-toggle.md` | Color Adjustments Auto/ML buttons become header toggles |
 
 ## Per-task index, R12 (writeups in `docs/tasks/`)
 
 | # | Commit | Writeup | One-line summary |
 |---|--------|---------|------------------|
-| 1 | `71a7739` | `32-photo-frame-banding.md` | Ambient shadow softened to kill banding + halo silhouette |
-| 2 | `d7a98b4` | `33-curves-effects-details-toggles.md` | Curves/Details/Effects/B&W get header toggles; section reset retired |
-| 3 | `5be7f5a` | `34-curves-double-click-remove.md` | Curves points remove on double-click, not right-click |
-| 4 | `bb8af84` | `35-subject-background-single-toggle.md` | Subject & Background keep one bypassing header toggle |
-| 5 | `9aee3d7` | `36-filmstrip-browser-button.md` | Filmstrip photo-browser button + dead `onGrid` removed |
-| 6 | `2fb730b` | `37-focus-mode-view-menu.md` | Focus Mode opens View in its own section; Window menu dropped |
-| 7 | `47010ba` | `38-presets-toggle-order.md` | Presets toggle sits between compare and info; reset hides by class |
-| 8 | `5bce8c5` | `39-toolbar-remove-action.md` | Delete moves from photo heading to left of info |
-| 9 | `a5610e8` | `40-album-thumbnail.md` | Album (...) menus gain Generate/Remove thumbnail |
-| 10 | `063a0e6` | `41-album-sidebar-sort.md` | Sidebar albums sort covered-first, then by name |
-| 11 | `55f3f4b` | `42-undo-denoise-immediate.md` | Undo of Denoise clears the recipe via sync-once-per-base |
+| 1 | `71a7739` | `33-photo-frame-banding.md` | Ambient shadow softened to kill banding + halo silhouette |
+| 2 | `d7a98b4` | `34-curves-effects-details-toggles.md` | Curves/Details/Effects/B&W get header toggles; section reset retired |
+| 3 | `5be7f5a` | `35-curves-double-click-remove.md` | Curves points remove on double-click, not right-click |
+| 4 | `bb8af84` | `36-subject-background-single-toggle.md` | Subject & Background keep one bypassing header toggle |
+| 5 | `9aee3d7` | `37-filmstrip-browser-button.md` | Filmstrip photo-browser button + dead `onGrid` removed |
+| 6 | `2fb730b` | `38-focus-mode-view-menu.md` | Focus Mode opens View in its own section; Window menu dropped |
+| 7 | `47010ba` | `39-presets-toggle-order.md` | Presets toggle sits between compare and info; reset hides by class |
+| 8 | `5bce8c5` | `40-toolbar-remove-action.md` | Delete moves from photo heading to left of info |
+| 9 | `a5610e8` | `41-album-thumbnail.md` | Album (...) menus gain Generate/Remove thumbnail |
+| 10 | `063a0e6` | `42-album-sidebar-sort.md` | Sidebar albums sort covered-first, then by name |
+| 11 | `55f3f4b` | `43-undo-denoise-immediate.md` | Undo of Denoise clears the recipe via sync-once-per-base |
 
 ## Per-task index, R13 (writeups in `docs/tasks/`)
 
 | # | Commit | Writeup | One-line summary |
 |---|--------|---------|------------------|
-| 1 | `b282d2c` | `43-playwright-heal-brush.md` | Heal e2e waits tolerate a transiently missing test hook |
-| 2 | `24afa04` | `44-canvas-shadow.md` | Canvas shadow becomes a plain two-layer drop (keyline + halo removed) |
-| 3 | `e80487d` | `45-curve-point-remove.md` | Curves points remove on Shift-click/right-click at pointerdown |
-| 4 | `7daaea8` | `46-filmstrip-heading-centering.md` | Filmstrip name + count share one baseline |
-| 5 | `2b81dfe` | `47-focus-mode.md` | Focus mode keeps only the photo and the filmstrip |
-| 6 | `dd1ea05` | `48-album-thumbnail-random.md` | Generate thumbnail randomizes within the most interesting tier |
+| 1 | `b282d2c` | `44-playwright-heal-brush.md` | Heal e2e waits tolerate a transiently missing test hook |
+| 2 | `24afa04` | `45-canvas-shadow.md` | Canvas shadow becomes a plain two-layer drop (keyline + halo removed) |
+| 3 | `e80487d` | `46-curve-point-remove.md` | Curves points remove on Shift-click/right-click at pointerdown |
+| 4 | `7daaea8` | `47-filmstrip-heading-centering.md` | Filmstrip name + count share one baseline |
+| 5 | `2b81dfe` | `48-focus-mode.md` | Focus mode keeps only the photo and the filmstrip |
+| 6 | `dd1ea05` | `49-album-thumbnail-random.md` | Generate thumbnail randomizes within the most interesting tier |
 
 ## Per-task index, R14 (writeups in `docs/tasks/`)
 
 | # | Commit | Writeup | One-line summary |
 |---|--------|---------|------------------|
-| 1 | `bb49961` | `49-fast-album-arrowing.md` | Neighbor preload + preview flush + on-demand Compare layer |
-| 2 | `b15c96c` | `50-home-end-photo-navigation.md` | Home/End jump to first/last photo (editor-only) |
-| 3 | `aab306a` | `51-photo-view-blurry-hint.md` | Soft "Might be blurry" hint pill in the photo heading |
+| 1 | `bb49961` | `50-fast-album-arrowing.md` | Neighbor preload + preview flush + on-demand Compare layer |
+| 2 | `b15c96c` | `51-home-end-photo-navigation.md` | Home/End jump to first/last photo (editor-only) |
+| 3 | `aab306a` | `52-photo-view-blurry-hint.md` | Soft "Might be blurry" hint pill in the photo heading |
 
 ## Per-task index, R15 (writeups in `docs/tasks/`)
 
 | # | Commit | Writeup | One-line summary |
 |---|--------|---------|------------------|
-| 1 | `bcbb00b` | `01-stretched-photo-loading.md` | Preview holds loading; spinner gates on !previewUrl; preview cover |
-| 2 | `1459bd0` | `02-blurry-badge-standard.md` | Shared neutral BlurryBadge both views; source-branched tooltip |
+| 1 | `bcbb00b` | `53-stretched-photo-loading.md` | Preview holds loading; spinner gates on !previewUrl; preview cover |
+| 2 | `1459bd0` | `54-blurry-badge-standard.md` | Shared neutral BlurryBadge both views; source-branched tooltip |
 
 ## Per-task index, R16 (writeups in `docs/tasks/`)
 
 | # | Commit | Writeup | One-line summary |
 |---|--------|---------|------------------|
-| 1 | `967a1c9` | `52-stale-canvas-stretch.md` | Instant-hide stale canvases on switch; wipe original backing store |
-| 2 | `fac4690` | `53-blurry-badge-raw-match.md` | Blurry pill matches RAW; "Flagged as blurry" copy |
-| 3 | `5ede446` | `54-selective-color.md` | Selective Color: 11 ranges × Hue/Saturation/Luminance |
-| 4 | `43084b2` | `55-compare-hold.md` | Hold Compare to peek original; disabled with no edits |
-| 5 | `e69eb2c` | `56-selective-clarity.md` | Selective Clarity: 3 tonal ranges × Texture/Clarity |
-| 6 | `5bbc559` | `57-presets-submenu.md` | Add Adjustment removed; Image > Presets submenu; presets basic-only |
-| 7 | `ae2c43a` | `58-ml-taste-enhance.md` | On-the-fly taste profile + ML Auto Enhance menu action |
-| 8 | `d12ece7` | `59-offline-recovery.md` | Ping-verified offline takeover + auto-reload; photo Try again dropped |
+| 1 | `967a1c9` | `55-stale-canvas-stretch.md` | Instant-hide stale canvases on switch; wipe original backing store |
+| 2 | `fac4690` | `56-blurry-badge-raw-match.md` | Blurry pill matches RAW; "Flagged as blurry" copy |
+| 3 | `5ede446` | `57-selective-color.md` | Selective Color: 11 ranges × Hue/Saturation/Luminance |
+| 4 | `43084b2` | `58-compare-hold.md` | Hold Compare to peek original; disabled with no edits |
+| 5 | `e69eb2c` | `59-selective-clarity.md` | Selective Clarity: 3 tonal ranges × Texture/Clarity |
+| 6 | `5bbc559` | `60-presets-submenu.md` | Add Adjustment removed; Image > Presets submenu; presets basic-only |
+| 7 | `ae2c43a` | `61-ml-taste-enhance.md` | On-the-fly taste profile + ML Auto Enhance menu action |
+| 8 | `d12ece7` | `62-offline-recovery.md` | Ping-verified offline takeover + auto-reload; photo Try again dropped |
 
 ## Per-task index, R17 (writeups in `docs/tasks/`)
 
 | # | Commit | Writeup | One-line summary |
 |---|--------|---------|------------------|
-| 1 | `5025630` | `01-selective-color-slider-lag-and-swatch-ring.md` | Per-render plan cuts Selective Color ~1.8x; single tight swatch ring |
-| 2 | `6515202` | `02-compare-original.md` | Immediate hold-to-compare + Shift+click/Shift+B whole-original pin |
-| 3 | `f044997` | `03-saved-presets-submenu.md` | Saved presets surface in the ... menu's Saved Presets submenu |
-| 4 | `44ae534` | `04-ml-enhance-conditional.md` | ML Auto Enhance learns per subject tag, not one global style |
+| 1 | `5025630` | `63-selective-color-slider-lag-and-swatch-ring.md` | Per-render plan cuts Selective Color ~1.8x; single tight swatch ring |
+| 2 | `6515202` | `64-compare-original.md` | Immediate hold-to-compare + Shift+click/Shift+B whole-original pin |
+| 3 | `f044997` | `65-saved-presets-submenu.md` | Saved presets surface in the ... menu's Saved Presets submenu |
+| 4 | `44ae534` | `66-ml-enhance-conditional.md` | ML Auto Enhance learns per subject tag, not one global style |

@@ -31,7 +31,7 @@ Playwright, per the task rules.
 - `apps/web/src/index.css` — title-group `align-items` replaced.
 - `packages/ui/src/components/filmstripHeading.test.tsx` — new
   tests pinning the baseline alignment plus markup.
-- `docs/tasks/46-filmstrip-heading-centering.md` — this writeup.
+- `docs/tasks/47-filmstrip-heading-centering.md` — this writeup.
 - `.changeset/filmstrip-heading-baseline.md` — patch changeset for
   `@f8/web`.
 

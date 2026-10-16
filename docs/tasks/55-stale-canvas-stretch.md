@@ -5,7 +5,7 @@
 Side-effect of trying to improve the performance of image loading — some
 photos load stretched across the canvas only to "snap" to their correct
 dimensions a second later. Still reproducible after the recent
-`01-stretched-photo-loading` fix.
+`53-stretched-photo-loading` fix.
 
 ## Investigation
 
