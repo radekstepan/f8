@@ -99,6 +99,13 @@ function ImportProgressToast({ status }: { status: ImportStatus }) {
   </div>;
 }
 
+// Full-window file-drop affordance, shared by the app shell and the empty
+// library gate: the gate is an early return outside the shell, so without
+// its own copy a first-run drop would land on a dead surface.
+function DropOverlay() {
+  return <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos or a folder anywhere to start creating.</p><span>JPEG, PNG, WebP, RAW and more</span></div></div>;
+}
+
 export default function App() {
   const library = useLibrary();
   const { photos, albums, customPresets } = library;
@@ -1305,11 +1312,13 @@ export default function App() {
   }
 
   if (!photo) {
-    return <div className="library-gate">
+    // Same file-drop surface as the app shell below, so a first-run drop
+    // onto the empty library imports instead of bouncing off the gate.
+    return <div className="library-gate" onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importDrop(event.dataTransfer); }}>
       <TooltipHost />
       <ImagePlus size={40} strokeWidth={1.25} />
       <h2>A fresh perspective starts here.</h2>
-      <p>Import a few photos to make this space your own.</p>
+      <p>Import a few photos to make this space your own — or drop them anywhere.</p>
       <div className="gate-actions">
         <button className="primary-button" onClick={() => fileInput.current?.click()}>Import photos</button>
         <button className="secondary-button" onClick={() => setFolderDialog({ mode: 'import' })}>Import from folder</button>
@@ -1319,6 +1328,7 @@ export default function App() {
       {folderDialog && <FsBrowser title="Import from folder" subtitle="Referenced in place — nothing is copied." actionLabel="Import selected" onClose={() => setFolderDialog(null)} onSelect={(paths) => void importFromPaths(paths)} />}
       {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
       {importProgress && <ImportProgressToast status={importProgress} />}
+      {dragging && <DropOverlay />}
     </div>;
   }
 
@@ -1434,6 +1444,6 @@ export default function App() {
     />}
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
     {importProgress && <ImportProgressToast status={importProgress} />}
-    {dragging && <div className="drop-overlay"><div><ImagePlus size={43} strokeWidth={1.25} /><h2>A new perspective.</h2><p>Drop your photos or a folder anywhere to start creating.</p><span>JPEG, PNG, WebP, RAW and more</span></div></div>}
+    {dragging && <DropOverlay />}
   </div>;
 }
