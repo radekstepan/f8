@@ -16,7 +16,8 @@
 
 import { MIDTONE_CURVE_RESPONSE, buildToneCurveTable, isCurvePointsActive } from "./toneCurve.js";
 import { SELECTIVE_DETAIL_RESPONSE, isSelectiveClarityActive, resolveSelectiveClarity, selectiveDetailScales } from "./selective-clarity.js";
-import { applySelectiveColor, isSelectiveColorActive, resolveSelectiveColor } from "./selective-color.js";
+import { applySelectiveColorPlan, isSelectiveColorActive, planSelectiveColor, resolveSelectiveColor } from "./selective-color.js";
+import type { SelectiveColorPlan } from "./selective-color.js";
 import type { EditState } from "./types.js";
 import type { PixelImage } from "./vision/analyze.js";
 import { assertValidImage } from "./vision/analyze.js";
@@ -133,8 +134,8 @@ export interface PointParameters {
   saturationFactor: number;
   vibrance: number;
   hueMatrix: readonly [number, number, number, number, number, number, number, number, number] | null;
-  /** Packed per-range HSL triples (null while Selective Color is neutral). */
-  selectiveColor: Float32Array | null;
+  /** Per-render Selective Color plan (null while Selective Color is neutral). */
+  selectiveColor: SelectiveColorPlan | null;
   blackAndWhite: boolean;
 }
 
@@ -158,7 +159,7 @@ export function pointParameters(edit: EditState): PointParameters {
     saturationFactor: colorEnabled ? Math.max(0, 1 + clamp(edit.saturation, -100, 100) / 100) : 1,
     vibrance: colorEnabled ? clamp(edit.vibrance, -100, 100) : 0,
     hueMatrix: colorEnabled && edit.hue !== 0 ? hueRotationMatrix(edit.hue) : null,
-    selectiveColor: resolveSelectiveColor(edit.selectiveColor),
+    selectiveColor: planSelectiveColor(resolveSelectiveColor(edit.selectiveColor)),
     blackAndWhite: edit.blackAndWhite,
   };
 }
@@ -239,7 +240,7 @@ export function applyPointAdjustments(
   // above may have moved hues across range boundaries, and Black & White
   // below still wins outright.
   if (params.selectiveColor) {
-    const [sr, sg, sb] = applySelectiveColor(red, green, blue, params.selectiveColor);
+    const [sr, sg, sb] = applySelectiveColorPlan(red, green, blue, params.selectiveColor);
     red = sr;
     green = sg;
     blue = sb;

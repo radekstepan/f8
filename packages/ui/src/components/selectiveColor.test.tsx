@@ -158,9 +158,17 @@ describe('selective color section', () => {
     expect(toggle).not.toContain('disabled');
   });
 
-  it('styles the swatch row, active ring, dirty dot, and range caption', () => {
+  it('styles the swatch row, single active ring, dirty dot, and range caption', () => {
     expect(cssRule('.selective-color-swatches')).toMatch(/display\s*:\s*flex/);
-    expect(cssRule('.selective-color-swatch.is-active')).toMatch(/border-color\s*:/);
+    // One tight ring hugging the dot: no padding gap between the color
+    // circle and the selection ring (the old offset border read as double
+    // circles). Keyboard focus reuses the same tight ring instead of the
+    // global offset outline.
+    expect(cssRule('.selective-color-swatch')).toMatch(/padding\s*:\s*0/);
+    expect(cssRule('.selective-color-swatch:hover .selective-color-dot')).toMatch(/box-shadow[^;]*#55555e/);
+    expect(cssRule('.selective-color-swatch.is-active .selective-color-dot')).toMatch(/box-shadow[^;]*var\(--accent\)/);
+    expect(cssRule('.selective-color-swatch:focus-visible')).toMatch(/outline\s*:\s*none/);
+    expect(cssRule('.selective-color-swatch:focus-visible .selective-color-dot')).toMatch(/box-shadow[^;]*var\(--accent\)/);
     expect(cssRule('.selective-color-dot')).toMatch(/border-radius\s*:\s*50%/);
     expect(cssRule('.selective-color-swatch.is-dirty::after')).toMatch(/content\s*:\s*'[^']*'/);
     expect(cssRule('.selective-color-range-name')).toMatch(/text-transform\s*:\s*uppercase/);

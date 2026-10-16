@@ -55,6 +55,30 @@ const RANGE_ORDER = new Map<SelectiveColorRange, number>(
   SELECTIVE_COLOR_RANGES.map((meta, index) => [meta.range, index]),
 );
 
+/**
+ * Per-slot render metadata in SELECTIVE_COLOR_RANGES order (parallel to
+ * the packed triples), resolved once at module load so the per-pixel loop
+ * indexes a static table instead of doing a Map lookup plus a range-array
+ * hop for every pixel of every touched range. Built from
+ * SELECTIVE_COLOR_RANGES — never hand-duplicated — so the table cannot
+ * drift from the range order.
+ */
+interface SelectiveSlotMeta {
+  /** 0 = chromatic cosine falloff, 1 = whites, 2 = neutrals, 3 = blacks. */
+  readonly kind: 0 | 1 | 2 | 3;
+  /** Chromatic hue center in degrees; unused on achromatic slots. */
+  readonly center: number;
+  /** Chromatic cosine-falloff half-width in degrees; unused on achromatic slots. */
+  readonly halfWidth: number;
+}
+
+const SELECTIVE_SLOT_META: readonly SelectiveSlotMeta[] = SELECTIVE_COLOR_RANGES.map((meta) => {
+  if (meta.range === "whites") return { kind: 1, center: 0, halfWidth: 0 };
+  if (meta.range === "neutrals") return { kind: 2, center: 0, halfWidth: 0 };
+  if (meta.range === "blacks") return { kind: 3, center: 0, halfWidth: 0 };
+  return { kind: 0, center: meta.center ?? 0, halfWidth: meta.halfWidth ?? 30 };
+});
+
 /** Neutral params: every slider at 0. Returned copies are always fresh. */
 export function neutralSelectiveColorParams(): SelectiveColorParams {
   return { hue: 0, saturation: 0, luminance: 0 };
@@ -261,6 +285,170 @@ export function resolveSelectiveColor(value: unknown): Float32Array | null {
   return packed;
 }
 
+/** One non-neutral range in a per-render plan: metadata plus its packed triple, in slot order. */
+export interface SelectiveColorSlot {
+  /** 0 = chromatic cosine falloff, 1 = whites, 2 = neutrals, 3 = blacks. */
+  readonly kind: 0 | 1 | 2 | 3;
+  /** Chromatic hue center in degrees; unused on achromatic slots. */
+  readonly center: number;
+  /** Chromatic cosine-falloff half-width in degrees; unused on achromatic slots. */
+  readonly halfWidth: number;
+  /** Packed triple, read straight from the packed array (no rescaling). */
+  readonly hue: number;
+  readonly saturation: number;
+  readonly luminance: number;
+}
+
+/**
+ * Per-render selective-color plan: the active slots only, in slot order,
+ * plus which gate each pixel needs. The pixel loop iterates this instead
+ * of scanning all eleven packed slots per pixel — neutral slots are pure
+ * overhead once any range is touched, and the kind flags skip the unused
+ * saturation gate when only one kind is active.
+ */
+export interface SelectiveColorPlan {
+  readonly slots: readonly SelectiveColorSlot[];
+  readonly hasChromatic: boolean;
+  readonly hasAchromatic: boolean;
+}
+
+/**
+ * Resolve packed triples to a per-render plan (null while neutral, like
+ * the packed form). Values are read from the packed bits — never
+ * rescaled — so the plan path and the packed path cannot disagree.
+ */
+export function planSelectiveColor(packed: Float32Array | null | undefined): SelectiveColorPlan | null {
+  if (!packed) return null;
+  const slots: SelectiveColorSlot[] = [];
+  let hasChromatic = false;
+  let hasAchromatic = false;
+  const count = Math.min(SELECTIVE_SLOT_META.length, Math.floor(packed.length / 3));
+  for (let i = 0; i < count; i += 1) {
+    const base = i * 3;
+    const hue = packed[base] ?? 0;
+    const saturation = packed[base + 1] ?? 0;
+    const luminance = packed[base + 2] ?? 0;
+    if (hue === 0 && saturation === 0 && luminance === 0) continue;
+    const meta = SELECTIVE_SLOT_META[i];
+    if (!meta) continue;
+    if (meta.kind === 0) hasChromatic = true;
+    else hasAchromatic = true;
+    slots.push({ kind: meta.kind, center: meta.center, halfWidth: meta.halfWidth, hue, saturation, luminance });
+  }
+  if (slots.length === 0) return null;
+  return { slots, hasChromatic, hasAchromatic };
+}
+
+/**
+ * The shared per-pixel core behind applySelectiveColor and
+ * applySelectiveColorPlan — the only copy of this math, so the two entry
+ * points cannot drift apart.
+ *
+ * Hot path: the preview re-renders up to ~2M pixels per slider tick on the
+ * main thread, so this inlines the HSL round-trip (no array or closure
+ * allocations), folds hue distance without modulo, and evaluates each
+ * saturation gate once per pixel instead of once per range. The math is
+ * deliberately op-for-op identical to the rgbToHsl / selectiveColorWeight
+ * / hslToRgb reference above — a differential test pins that — including
+ * slot-order accumulation, so renders are bit-identical to before.
+ */
+function applySelectiveSlots(
+  r: number,
+  g: number,
+  b: number,
+  slots: readonly SelectiveColorSlot[],
+  hasChromatic: boolean,
+  hasAchromatic: boolean,
+): readonly [number, number, number] {
+  // Scalar RGB -> HSL, identical to rgbToHsl.
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const lightness = (max + min) / 2;
+  let hue = 0;
+  let saturation = 0;
+  if (max !== min) {
+    const span = max - min;
+    saturation = lightness > 0.5 ? span / (2 - max - min) : span / (max + min);
+    if (max === rn) hue = ((gn - bn) / span + (gn < bn ? 6 : 0)) * 60;
+    else if (max === gn) hue = ((bn - rn) / span + 2) * 60;
+    else hue = ((rn - gn) / span + 4) * 60;
+  }
+  const sat = Math.min(1, Math.max(0, saturation));
+  const lit = Math.min(1, Math.max(0, lightness));
+  // Shared gates, evaluated once: every chromatic range multiplies the
+  // saturation gate, every achromatic band the gray gate. An exactly-zero
+  // gate skips its ranges outright — the weight would be exactly ±0 and
+  // accumulating ±0 is the identity, so the skip is behavior-preserving.
+  // A kind with no active range skips its gate entirely.
+  const satGate = hasChromatic ? smoothstep(0.02, 0.12, sat) : 0;
+  const grayGate = hasAchromatic ? 1 - smoothstep(0.12, 0.38, sat) : 0;
+  let hueShift = 0;
+  let saturationDelta = 0;
+  let luminanceDelta = 0;
+  for (const slot of slots) {
+    const rangeHue = slot.hue;
+    const rangeSat = slot.saturation;
+    const rangeLum = slot.luminance;
+    let weight: number;
+    if (slot.kind === 0) {
+      if (satGate === 0) continue;
+      // Circular distance without modulo, bit-identical to
+      // selectiveHueDistance: hue is in [0, 360) by construction, so the
+      // inner % 360 there is the identity and only the + 360 rounds — this
+      // keeps that exact rounding, then folds [0, 720) with a conditional
+      // subtract (exact by Sterbenz, and fmod-exact anyway).
+      let distance = hue - slot.center + 360;
+      if (distance >= 360) distance -= 360;
+      if (distance > 180) distance = 360 - distance;
+      if (distance >= slot.halfWidth) continue;
+      weight = (0.5 + 0.5 * Math.cos((Math.PI * distance) / slot.halfWidth)) * satGate;
+    } else if (slot.kind === 1) {
+      if (grayGate === 0) continue;
+      weight = smoothstep(0.55, 0.92, lit) * grayGate;
+    } else if (slot.kind === 2) {
+      if (grayGate === 0) continue;
+      weight = Math.sin(Math.PI * lit) * grayGate;
+    } else {
+      if (grayGate === 0) continue;
+      weight = (1 - smoothstep(0.08, 0.42, lit)) * grayGate;
+    }
+    if (weight === 0) continue;
+    hueShift += weight * rangeHue;
+    saturationDelta += weight * rangeSat;
+    luminanceDelta += weight * rangeLum;
+  }
+  if (hueShift === 0 && saturationDelta === 0 && luminanceDelta === 0) return [r, g, b];
+  const nextHue = (((hue + hueShift) % 360) + 360) % 360;
+  const nextSaturation = saturation * Math.max(0, 1 + saturationDelta);
+  const nextLightness = lightness + luminanceDelta;
+  // Scalar HSL -> RGB, identical to hslToRgb with the channel closure
+  // inlined per channel.
+  const outSat = Math.min(1, Math.max(0, nextSaturation));
+  const outLit = Math.min(1, Math.max(0, nextLightness));
+  if (outSat === 0) {
+    const gray = Math.min(255, Math.max(0, outLit * 255));
+    return [gray, gray, gray];
+  }
+  const h = (((nextHue % 360) + 360) % 360) / 360;
+  const q = outLit < 0.5 ? outLit * (1 + outSat) : outLit + outSat - outLit * outSat;
+  const p = 2 * outLit - q;
+  const spread = q - p;
+  const wrappedR = (((h + 1 / 3) % 1) + 1) % 1;
+  const wrappedG = ((h % 1) + 1) % 1;
+  const wrappedB = (((h - 1 / 3) % 1) + 1) % 1;
+  const channelR = wrappedR < 1 / 6 ? p + spread * 6 * wrappedR : wrappedR < 1 / 2 ? q : wrappedR < 2 / 3 ? p + spread * (2 / 3 - wrappedR) * 6 : p;
+  const channelG = wrappedG < 1 / 6 ? p + spread * 6 * wrappedG : wrappedG < 1 / 2 ? q : wrappedG < 2 / 3 ? p + spread * (2 / 3 - wrappedG) * 6 : p;
+  const channelB = wrappedB < 1 / 6 ? p + spread * 6 * wrappedB : wrappedB < 1 / 2 ? q : wrappedB < 2 / 3 ? p + spread * (2 / 3 - wrappedB) * 6 : p;
+  return [
+    Math.min(255, Math.max(0, channelR * 255)),
+    Math.min(255, Math.max(0, channelG * 255)),
+    Math.min(255, Math.max(0, channelB * 255)),
+  ];
+}
+
 /**
  * Apply packed selective-color params to one pixel (0..255 floats).
  * Range weights accumulate into a single hue shift, saturation delta, and
@@ -273,32 +461,21 @@ export function applySelectiveColor(
   b: number,
   packed: Float32Array,
 ): readonly [number, number, number] {
-  const [hue, saturation, lightness] = rgbToHsl(r, g, b);
-  let hueShift = 0;
-  let saturationDelta = 0;
-  let luminanceDelta = 0;
-  for (let i = 0; i < SELECTIVE_COLOR_RANGES.length; i += 1) {
-    const base = i * 3;
-    const rangeHue = packed[base] ?? 0;
-    const rangeSat = packed[base + 1] ?? 0;
-    const rangeLum = packed[base + 2] ?? 0;
-    if (rangeHue === 0 && rangeSat === 0 && rangeLum === 0) continue;
-    const range = SELECTIVE_COLOR_RANGES[i]?.range;
-    if (!range) continue;
-    const weight = selectiveColorWeight(hue, saturation, lightness, range);
-    if (weight === 0) continue;
-    hueShift += weight * rangeHue;
-    saturationDelta += weight * rangeSat;
-    luminanceDelta += weight * rangeLum;
-  }
-  if (hueShift === 0 && saturationDelta === 0 && luminanceDelta === 0) return [r, g, b];
-  const nextHue = (((hue + hueShift) % 360) + 360) % 360;
-  const nextSaturation = saturation * Math.max(0, 1 + saturationDelta);
-  const nextLightness = lightness + luminanceDelta;
-  const [red, green, blue] = hslToRgb(nextHue, nextSaturation, nextLightness);
-  return [
-    Math.min(255, Math.max(0, red)),
-    Math.min(255, Math.max(0, green)),
-    Math.min(255, Math.max(0, blue)),
-  ];
+  const plan = planSelectiveColor(packed);
+  if (!plan) return [r, g, b];
+  return applySelectiveSlots(r, g, b, plan.slots, plan.hasChromatic, plan.hasAchromatic);
+}
+
+/**
+ * Apply a per-render plan to one pixel — the hot pipeline entry point.
+ * Identical to applySelectiveColor on the plan's packed source, minus the
+ * per-pixel plan rebuild: the caller resolves the plan once per render.
+ */
+export function applySelectiveColorPlan(
+  r: number,
+  g: number,
+  b: number,
+  plan: SelectiveColorPlan,
+): readonly [number, number, number] {
+  return applySelectiveSlots(r, g, b, plan.slots, plan.hasChromatic, plan.hasAchromatic);
 }

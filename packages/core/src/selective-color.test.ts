@@ -8,10 +8,12 @@ import {
   SELECTIVE_COLOR_LUMINANCE_RESPONSE,
   SELECTIVE_COLOR_RANGES,
   applySelectiveColor,
+  applySelectiveColorPlan,
   hslToRgb,
   isSelectiveColorActive,
   isSelectiveColorParamsNeutral,
   normalizeSelectiveColor,
+  planSelectiveColor,
   resolveSelectiveColor,
   rgbToHsl,
   selectiveColorParams,
@@ -221,6 +223,108 @@ describe("applySelectiveColor", () => {
   it("leaves vivid colors alone for achromatic tweaks", () => {
     const packed = resolveSelectiveColor([{ range: "neutrals", hue: 0, saturation: 0, luminance: -100 }])!;
     expect(applySelectiveColor(0, 0, 255, packed)).toEqual([0, 0, 255]);
+  });
+
+  it("matches the exported-primitive reference bit-for-bit", () => {
+    // The per-pixel fast path inlines rgbToHsl / selectiveColorWeight /
+    // hslToRgb and shares the saturation gates; this differential sweep
+    // recomputes the same pixel through those exported primitives (the
+    // pre-optimization algorithm, verbatim) and requires exact equality —
+    // any drift in the hot loop fails here, not as a subtle render shift.
+    const reference = (r: number, g: number, b: number, packed: Float32Array): readonly [number, number, number] => {
+      const [hue, saturation, lightness] = rgbToHsl(r, g, b);
+      let hueShift = 0;
+      let saturationDelta = 0;
+      let luminanceDelta = 0;
+      for (let i = 0; i < SELECTIVE_COLOR_RANGES.length; i += 1) {
+        const base = i * 3;
+        const rangeHue = packed[base] ?? 0;
+        const rangeSat = packed[base + 1] ?? 0;
+        const rangeLum = packed[base + 2] ?? 0;
+        if (rangeHue === 0 && rangeSat === 0 && rangeLum === 0) continue;
+        const range = SELECTIVE_COLOR_RANGES[i]?.range;
+        if (!range) continue;
+        const weight = selectiveColorWeight(hue, saturation, lightness, range);
+        if (weight === 0) continue;
+        hueShift += weight * rangeHue;
+        saturationDelta += weight * rangeSat;
+        luminanceDelta += weight * rangeLum;
+      }
+      if (hueShift === 0 && saturationDelta === 0 && luminanceDelta === 0) return [r, g, b];
+      const nextHue = (((hue + hueShift) % 360) + 360) % 360;
+      const nextSaturation = saturation * Math.max(0, 1 + saturationDelta);
+      const nextLightness = lightness + luminanceDelta;
+      const [red, green, blue] = hslToRgb(nextHue, nextSaturation, nextLightness);
+      return [
+        Math.min(255, Math.max(0, red)),
+        Math.min(255, Math.max(0, green)),
+        Math.min(255, Math.max(0, blue)),
+      ];
+    };
+    // Corners, edges, and mid-tones per channel, plus near-gray ramps that
+    // exercise the gate boundaries and the exact-gray skips.
+    const levels = [0, 1, 2, 5, 16, 64, 127, 128, 129, 200, 240, 253, 254, 255];
+    const colors: Array<readonly [number, number, number]> = [];
+    for (const r of levels) for (const g of levels) for (const b of levels) colors.push([r, g, b]);
+    for (let v = 0; v <= 255; v += 7) {
+      colors.push([v, v, v]);
+      colors.push([v, Math.min(255, v + 1), Math.max(0, v - 1)]);
+    }
+    const recipes = [
+      [{ range: "reds", hue: 100, saturation: 0, luminance: 0 }],
+      [{ range: "blues", hue: 0, saturation: -100, luminance: 0 }],
+      [{ range: "greens", hue: -45, saturation: 60, luminance: -25 }],
+      [{ range: "whites", hue: 30, saturation: 40, luminance: 100 }],
+      [{ range: "neutrals", hue: -100, saturation: 100, luminance: -100 }],
+      [{ range: "blacks", hue: 0, saturation: 0, luminance: 50 }],
+      [
+        { range: "reds", hue: 20, saturation: 10, luminance: 0 },
+        { range: "blues", hue: 0, saturation: -40, luminance: 0 },
+        { range: "neutrals", hue: 0, saturation: 0, luminance: -30 },
+      ],
+      SELECTIVE_COLOR_RANGES.map((meta, i) => ({
+        range: meta.range,
+        hue: ((i * 37) % 201) - 100,
+        saturation: ((i * 53) % 201) - 100,
+        luminance: ((i * 29) % 201) - 100,
+      })),
+    ] as const;
+    for (const recipe of recipes) {
+      const packed = resolveSelectiveColor(recipe)!;
+      expect(packed).not.toBeNull();
+      // The hot plan path must agree with the packed path on every pixel.
+      const plan = planSelectiveColor(packed)!;
+      expect(plan).not.toBeNull();
+      for (const [r, g, b] of colors) {
+        const expected = reference(r, g, b, packed);
+        expect(applySelectiveColor(r, g, b, packed)).toEqual(expected);
+        expect(applySelectiveColorPlan(r, g, b, plan)).toEqual(expected);
+      }
+    }
+  });
+
+  it("plans only the active slots in range order with gate flags", () => {
+    expect(planSelectiveColor(null)).toBeNull();
+    expect(planSelectiveColor(resolveSelectiveColor([]))).toBeNull();
+    expect(planSelectiveColor(new Float32Array(33))).toBeNull();
+    const plan = planSelectiveColor(
+      resolveSelectiveColor([
+        // Listed out of order on purpose: the plan sorts into slot order.
+        { range: "neutrals", hue: 0, saturation: 0, luminance: -30 },
+        { range: "blues", hue: 0, saturation: -40, luminance: 0 },
+      ]),
+    )!;
+    expect(plan.slots.map((slot) => slot.kind)).toEqual([0, 2]);
+    expect(plan.slots[0]?.saturation).toBeCloseTo(-0.4, 5);
+    expect(plan.slots[1]?.luminance).toBeCloseTo(-0.15, 5);
+    expect(plan.hasChromatic).toBe(true);
+    expect(plan.hasAchromatic).toBe(true);
+    const chromaticOnly = planSelectiveColor(resolveSelectiveColor([{ range: "reds", hue: 10, saturation: 0, luminance: 0 }]))!;
+    expect(chromaticOnly.hasChromatic).toBe(true);
+    expect(chromaticOnly.hasAchromatic).toBe(false);
+    const grayOnly = planSelectiveColor(resolveSelectiveColor([{ range: "blacks", hue: 0, saturation: 0, luminance: 50 }]))!;
+    expect(grayOnly.hasChromatic).toBe(false);
+    expect(grayOnly.hasAchromatic).toBe(true);
   });
 });
 

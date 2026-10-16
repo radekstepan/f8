@@ -158,9 +158,17 @@ describe('selective clarity section', () => {
     expect(toggle).not.toContain('disabled');
   });
 
-  it('styles the chip row, active ring, dirty dot, and range caption', () => {
+  it('styles the chip row, single active ring, dirty dot, and range caption', () => {
     expect(cssRule('.selective-clarity-swatches')).toMatch(/display\s*:\s*flex/);
-    expect(cssRule('.selective-clarity-swatch.is-active')).toMatch(/border-color\s*:/);
+    // One tight ring hugging the dot: no padding gap between the color
+    // circle and the selection ring (the old offset border read as double
+    // circles). Keyboard focus reuses the same tight ring instead of the
+    // global offset outline.
+    expect(cssRule('.selective-clarity-swatch')).toMatch(/padding\s*:\s*0/);
+    expect(cssRule('.selective-clarity-swatch:hover .selective-clarity-dot')).toMatch(/box-shadow[^;]*#55555e/);
+    expect(cssRule('.selective-clarity-swatch.is-active .selective-clarity-dot')).toMatch(/box-shadow[^;]*var\(--accent\)/);
+    expect(cssRule('.selective-clarity-swatch:focus-visible')).toMatch(/outline\s*:\s*none/);
+    expect(cssRule('.selective-clarity-swatch:focus-visible .selective-clarity-dot')).toMatch(/box-shadow[^;]*var\(--accent\)/);
     expect(cssRule('.selective-clarity-dot')).toMatch(/border-radius\s*:\s*50%/);
     expect(cssRule('.selective-clarity-swatch.is-dirty::after')).toMatch(/content\s*:\s*'[^']*'/);
     expect(cssRule('.selective-clarity-range-name')).toMatch(/text-transform\s*:\s*uppercase/);
