@@ -48,6 +48,7 @@ Import and export:
 - Import with the file picker, drag and drop, or folder import.
 - Open camera RAW files at full resolution.
 - Export JPEG, PNG, and WebP files. Set size and quality.
+- Export the whole album view — filters and search included — as one zip file.
 - Upscale exports 2x with ML super-resolution.
 
 For full details, read [Features](docs/features.md).

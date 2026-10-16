@@ -41,7 +41,7 @@ export interface Album {
 
 export type Tool = 'adjust' | 'crop' | 'repair';
 export type ViewMode = 'editor' | 'library';
-export type DialogType = 'export' | 'info' | 'shortcuts' | 'about' | 'album' | 'preset' | 'remove' | 'remove-album' | null;
+export type DialogType = 'export' | 'export-album' | 'info' | 'shortcuts' | 'about' | 'album' | 'preset' | 'remove' | 'remove-album' | null;
 
 /** Scenes the ML subject-aware enhance classifier distinguishes. */
 export type SceneLabel = 'portrait' | 'landscape' | 'night' | 'document';

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, CloudOff, FolderSearch, ImagePlus, Minimize2, RefreshCw, X } from 'lucide-react';
 import { CROP_RATIOS, PHOTO_PRELOAD_DELAY_MS, PRESETS, SELECTIVE_MASK_DEFAULT_EXPOSURE, buildLibraryUrl, collectionForPhoto, createLibraryClient, emptyFaceScan, groupRetouchStrokes, hasStraightenHorizon, isBuiltInCollection, isDeletableCollection, isDefaultEdit, isDenoiseActive, isEmptyFaceScanStored, isFaceAdjustStored, isFilmstripVisible, isInspectorVisible, nextDenoiseRecipeSync, normalizeSelectiveAdjust, parseLibraryUrl, photoEndTargetId, photoInCollection, preloadImages, preloadNeighborSrcs, presetValuesForEdit, ratingCollectionLabel, ratingForCollection, remapRetouchesForStraighten, resolveBacklinkCollection, resolveCollectionClick, resolveFocusView, rotateRetouches, shouldEscapeToLibrary, shouldNavigateToPhotoEnd, shouldShowPhotoBacklink, shouldShowPhotoTools, shouldShowZoomLens, topTasteLabel } from '@f8/core';
-import { MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, collectDroppedFiles, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, liveEditsForSession, pickAlbumCover, resolveImportSelection, sortAlbumPhotos } from '@f8/core';
+import { ALBUM_EXPORT_MAX_SIZE, MAX_IMPORTS_PER_REQUEST, RAW_ACCEPT, albumExportFilename, albumExportZipName, collectDroppedFiles, downloadBlob, exportPhoto, formatAlbumExportProgress, formatAlbumExportSummary, formatImportProgress, formatUploadSummary, groupFilesByFolder, importPercent, liveEditsForSession, loadStoredHealOverlays, pickAlbumCover, resolveImportSelection, sortAlbumPhotos, zipStoreFiles } from '@f8/core';
 import { useEditor, useLibrary, useTasteProfile } from '@f8/ui';
 import type { ActionStack, AlbumSortDir, AlbumSortKey, DetectionPreview, DialogType, EditState, FaceDetectSource, Preset, Tool, ViewMode, ZoomLensMagnification } from '@f8/core';
 import { Sidebar } from '@f8/ui';
@@ -77,10 +77,11 @@ interface ImportStatus {
 }
 
 // Persistent progress toast: unlike notify() toasts it never auto-dismisses,
-// so bulk imports keep their status line until the final summary lands.
-function ImportProgressToast({ status }: { status: ImportStatus }) {
+// so bulk imports (and album-view exports, via the format prop) keep their
+// status line until the final summary lands.
+function ProgressToast({ status, format = formatImportProgress }: { status: ImportStatus; format?: (done: number, total: number) => string }) {
   const determinate = status.total > 0;
-  const text = status.label ?? formatImportProgress(status.done, status.total);
+  const text = status.label ?? format(status.done, status.total);
   return <div
     className="toast importing"
     role="progressbar"
@@ -171,11 +172,13 @@ export default function App() {
   const [folderDialog, setFolderDialog] = useState<FolderDialog | null>(null);
   const [toast, setToast] = useState('');
   const [importProgress, setImportProgress] = useState<ImportStatus | null>(null);
+  const [exportProgress, setExportProgress] = useState<ImportStatus | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const dragCount = useRef(0);
   const importRun = useRef(0);
+  const exportRun = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const photo = photos.find((item) => item.id === selectedId) || photos[0];
   // The learned taste profile: every settled recipe teaches it (pure auto
@@ -1066,6 +1069,67 @@ export default function App() {
     }
   };
 
+  // Batch-export the current grid view — filteredPhotos, the same pipeline
+  // the grid renders (album + filters + search + sort, smart albums
+  // included), snapshotted at confirm time so mid-run grid changes cannot
+  // skew the batch. Each photo renders through the single-photo export
+  // pipeline at full resolution with import-style progress, then the batch
+  // zips into one download. Overlapping runs each complete; only the latest
+  // drives the toast (the import overlap rule).
+  const exportAlbumView = async (format: string, quality: number) => {
+    const batch = filteredPhotos;
+    const title = collectionName;
+    setDialog(null);
+    if (!batch.length) { notify('Nothing to export — this view is empty.'); return; }
+    const run = ++exportRun.current;
+    const alive = () => exportRun.current === run;
+    setExportProgress({ done: 0, total: batch.length });
+    const used = new Set<string>();
+    const members: { name: string; data: Uint8Array }[] = [];
+    let failed = 0;
+    for (const [index, item] of batch.entries()) {
+      try {
+        // The grid's look: session-diverged recipes override, untouched
+        // photos read the persisted edit (see liveEdits above).
+        const edit = liveEdits[item.id] ?? item.edit;
+        // Same repair resolution as the single-photo dialog: persisted
+        // per-group overlays first, worker heal for the rest.
+        const healOverlays = (inpaintRepair.method === 'ml-heal' || inpaintRepair.method === 'heal') && edit.retouches.some((point) => point.kind === 'repair')
+          ? await loadStoredHealOverlays(createLibraryClient(), item.id)
+          : undefined;
+        const blob = await exportPhoto(item.src, edit, format, quality, ALBUM_EXPORT_MAX_SIZE, {
+          method: inpaintRepair.method, runInpaint: inpaintRepair.run, quality: inpaintRepair.quality,
+          seamlessLight: inpaintRepair.seamlessLight, featherPx: inpaintRepair.featherPx,
+          ...(healOverlays?.length ? { healOverlays } : {}),
+        });
+        members.push({ name: albumExportFilename(item.name, format, used), data: new Uint8Array(await blob.arrayBuffer()) });
+      } catch {
+        failed += 1;
+      }
+      if (alive()) setExportProgress({ done: index + 1, total: batch.length });
+      // A yielded frame between photos keeps the progress bar painting
+      // across large albums (the uploadFiles pattern).
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    if (!members.length) {
+      if (alive()) setExportProgress(null);
+      notify(formatAlbumExportSummary(0, failed));
+      return;
+    }
+    // Zipping packs synchronously, so the label lands a frame early to paint.
+    if (alive()) setExportProgress({ done: batch.length, total: batch.length, label: `Zipping ${members.length} ${members.length === 1 ? 'photo' : 'photos'}…` });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    try {
+      downloadBlob(new Blob([zipStoreFiles(members)], { type: 'application/zip' }), albumExportZipName(title));
+    } catch (reason) {
+      if (alive()) setExportProgress(null);
+      notifyError(reason, 'Could not build the zip file.');
+      return;
+    }
+    if (alive()) setExportProgress(null);
+    notify(formatAlbumExportSummary(members.length, failed));
+  };
+
   const handleAction = (action: MenuAction) => {
     switch (action) {
       case 'import': fileInput.current?.click(); break;
@@ -1327,7 +1391,7 @@ export default function App() {
       <input className="hidden" ref={folderInput} type="file" {...{ webkitdirectory: '' }} accept={`image/*,${RAW_ACCEPT}`} aria-label="Import folder as album" onChange={(event) => { if (event.target.files?.length) void importFiles(event.target.files, (file) => file.webkitRelativePath || ''); event.target.value = ''; }} />
       {folderDialog && <FsBrowser title="Import from folder" subtitle="Referenced in place — nothing is copied." actionLabel="Import selected" onClose={() => setFolderDialog(null)} onSelect={(paths) => void importFromPaths(paths)} />}
       {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
-      {importProgress && <ImportProgressToast status={importProgress} />}
+      {importProgress && <ProgressToast status={importProgress} />}
       {dragging && <DropOverlay />}
     </div>;
   }
@@ -1371,7 +1435,7 @@ export default function App() {
       {!focusMode && sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onGenerateAlbumThumbnail={generateAlbumThumbnail} onRemoveAlbumThumbnail={removeAlbumThumbnail} onMoveToAlbum={movePhotosToAlbum} />}
       <main className="editor-column">
         {effectiveView === 'library' ? (
-          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} albums={albums} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onGenerateAlbumThumbnail={generateAlbumThumbnail} onRemoveAlbumThumbnail={removeAlbumThumbnail} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} selectedIds={selection} onSelectionChange={setSelection} onMoveToAlbum={movePhotosToAlbum} onImport={() => fileInput.current?.click()} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
+          <PhotoBrowser photos={filteredPhotos} title={collectionName} search={search} searchNote={searchNote} edits={liveEdits} album={albums.find((album) => album.id === collection) ?? null} albums={albums} editedFilter={editedFilter} favoriteFilter={favoriteFilter} onEditedFilter={handleEditedFilter} onFavoriteFilter={handleFavoriteFilter} onClearFilters={clearFilters} cullFilter={cullFilter} onCullFilter={handleCullFilter} onSelect={selectPhoto} onFavorite={toggleFavorite} onRemove={requestRemove} onRemoveAlbum={requestRemoveAlbum} onGenerateAlbumThumbnail={generateAlbumThumbnail} onRemoveAlbumThumbnail={removeAlbumThumbnail} onSceneEnhance={requestSceneEnhance} onFaceEnhance={requestFaceEnhance} onExport2x={requestExport2x} selectedIds={selection} onSelectionChange={setSelection} onMoveToAlbum={movePhotosToAlbum} onImport={() => fileInput.current?.click()} onExportAlbum={() => setDialog('export-album')} scrollKey={`${collection}|${search}|${editedFilter}|${favoriteFilter}|${cullFilter}|${sortKey}|${sortDir}`} sortKey={sortKey} sortDir={sortDir} onSortChange={(key, dir) => { setSortKey(key); setSortDir(dir); }} activeId={photo?.id} />
         ) : (
           <>
             {!editor.ready ? (
@@ -1434,7 +1498,7 @@ export default function App() {
     />}
     <input className="hidden" ref={fileInput} type="file" multiple accept={`image/*,${RAW_ACCEPT}`} aria-label="Import photos" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
     <input className="hidden" ref={folderInput} type="file" {...{ webkitdirectory: '' }} accept={`image/*,${RAW_ACCEPT}`} aria-label="Import folder as album" onChange={(event) => { if (event.target.files?.length) void importFiles(event.target.files, (file) => file.webkitRelativePath || ''); event.target.value = ''; }} />
-    <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : (viewPhoto ?? photo)} edit={editor.edit} inpaintRepair={canvasRepairBinding} superres={superresBinding} initialSuperres={export2xArmed} onClose={() => { setDialog(null); setRemoveTargetId(null); setRemoveAlbumTargetId(null); setExport2xArmed(false); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} removeAlbum={removeAlbumTarget} onRemoveAlbum={confirmRemoveAlbum} onAddLabel={(photoId, label) => { void library.updateLabels(photoId, { add: [label] }).then(() => notify(`Labeled “${label}”.`), (reason: unknown) => notifyError(reason, 'Could not add the label.')); }} onRemoveLabel={(photoId, label) => { void library.updateLabels(photoId, { remove: [label] }).catch((reason: unknown) => notifyError(reason, 'Could not remove the label.')); }} onSearchLabel={(label) => { setDialog(null); setCollection('all'); clearFilters(); updateSearch(label); setView('library'); }} />
+    <EditorDialogs dialog={dialog} photo={dialog === 'remove' ? (photos.find((item) => item.id === removeTargetId) ?? photo) : (viewPhoto ?? photo)} edit={editor.edit} inpaintRepair={canvasRepairBinding} superres={superresBinding} initialSuperres={export2xArmed} onClose={() => { setDialog(null); setRemoveTargetId(null); setRemoveAlbumTargetId(null); setExport2xArmed(false); }} onToast={notify} onCreateAlbum={createAlbum} onSavePreset={savePreset} onRemovePhoto={confirmRemovePhoto} removeAlbum={removeAlbumTarget} onRemoveAlbum={confirmRemoveAlbum} onAddLabel={(photoId, label) => { void library.updateLabels(photoId, { add: [label] }).then(() => notify(`Labeled “${label}”.`), (reason: unknown) => notifyError(reason, 'Could not add the label.')); }} onRemoveLabel={(photoId, label) => { void library.updateLabels(photoId, { remove: [label] }).catch((reason: unknown) => notifyError(reason, 'Could not remove the label.')); }} onSearchLabel={(label) => { setDialog(null); setCollection('all'); clearFilters(); updateSearch(label); setView('library'); }} exportAlbum={{ title: collectionName, count: filteredPhotos.length, onConfirm: (format, quality) => { void exportAlbumView(format, quality); } }} />
     {folderDialog && <FsBrowser
       title={folderDialog.mode === 'locate' ? 'Locate original' : 'Import from folder'}
       subtitle={folderDialog.mode === 'locate' ? 'Find the file in its new home.' : 'Referenced in place — nothing is copied.'}
@@ -1443,7 +1507,8 @@ export default function App() {
       onSelect={(paths) => void importFromPaths(paths)}
     />}
     {toast && <div className="toast" role="status"><span className="toast-check"><Check size={13} /></span><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={13} /></button></div>}
-    {importProgress && <ImportProgressToast status={importProgress} />}
+    {importProgress && <ProgressToast status={importProgress} />}
+    {exportProgress && <ProgressToast status={exportProgress} format={formatAlbumExportProgress} />}
     {dragging && <DropOverlay />}
   </div>;
 }

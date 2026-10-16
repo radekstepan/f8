@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { Camera, Check, Folder, FolderPlus, Info, Keyboard, MapPin, Save, Share, Tag, Trash2, X } from 'lucide-react';
-import { ABOUT_DISCLAIMER, APP_DESCRIPTION, APP_NAME, APP_TAGLINE, APP_VERSION, CULL_LABELS, EXTENSION_POINTS, SEMANTIC_CONCEPT_VOCAB, SEMANTIC_SEARCH_EMPTY_LABELS_NOTE, SEMANTIC_SEARCH_ML_BADGE_HINT, SUPERRES_MAX_INPUT_DIM, SUPERRES_SCALE, createLibraryClient, downloadBlob, encodeExportCanvas, exportPhoto, formatByteSize, getPhotoFilter, isDefaultEdit, isLossyExportFormat, loadStoredHealOverlays, renderExportCanvas, renderExportPreview, superresEngineNote } from '@f8/core';
+import { ABOUT_DISCLAIMER, ALBUM_EXPORT_FORMATS, APP_DESCRIPTION, APP_NAME, APP_TAGLINE, APP_VERSION, CULL_LABELS, EXTENSION_POINTS, SEMANTIC_CONCEPT_VOCAB, SEMANTIC_SEARCH_EMPTY_LABELS_NOTE, SEMANTIC_SEARCH_ML_BADGE_HINT, SUPERRES_MAX_INPUT_DIM, SUPERRES_SCALE, createLibraryClient, downloadBlob, encodeExportCanvas, exportPhoto, formatByteSize, getPhotoFilter, isDefaultEdit, isLossyExportFormat, loadStoredHealOverlays, renderExportCanvas, renderExportPreview, superresEngineNote } from '@f8/core';
 import type { DialogType, EditState, Photo, RepairInpaintBinding, SuperresExportBinding, SuperresHealthSnapshot } from '@f8/core';
 
 export interface RemoveAlbumTarget {
@@ -36,6 +36,8 @@ interface EditorDialogsProps {
   onRemoveLabel?: (photoId: string, label: string) => void;
   /** Search the library for a label (label chips double as smart albums). */
   onSearchLabel?: (label: string) => void;
+  /** Album-view batch export; the dialog only renders when set. */
+  exportAlbum?: { title: string; count: number; onConfirm: (format: string, quality: number) => void } | null;
 }
 
 function PhotoLabelsSection({ photo, onAddLabel, onRemoveLabel, onSearchLabel }: Pick<EditorDialogsProps, 'photo' | 'onAddLabel' | 'onRemoveLabel' | 'onSearchLabel'>) {
@@ -272,6 +274,29 @@ function ExportDialog({ photo, edit, inpaintRepair, superres, initialSuperres, o
   return <Modal title="Export Photo" subtitle="The finishing touch. Ready to share." onClose={onClose} className="export-modal"><div className="export-preview"><img src={photo.src} alt={photo.title} style={{ filter: getPhotoFilter(edit) }} /><div><span>{photo.name}</span><small>{isDefaultEdit(edit) ? 'Original photo' : 'All adjustments applied'}</small></div><Check size={16} /></div><form onSubmit={(event) => { event.preventDefault(); void handleExport(); }}><label className="text-field"><span>Save As</span><div className="filename-field"><input value={filename} onChange={(event) => setFilename(event.target.value)} aria-label="Export filename" /><span>.{format === 'jpeg' ? 'jpg' : format}</span></div></label><SelectField label="Format" value={format} options={[{ value: 'jpeg', label: 'JPEG - Best for sharing' }, { value: 'png', label: 'PNG - Lossless quality' }, { value: 'webp', label: 'WebP - Smaller file size' }]} onChange={setFormat} /><SelectField label="Image Size" value={size} options={[{ value: '10000', label: 'Original source size' }, { value: '2048', label: 'Large - Up to 2048 px' }, { value: '1200', label: 'Medium - Up to 1200 px' }, { value: '800', label: 'Small - Up to 800 px' }]} onChange={setSize} />{format !== 'png' && <RangeControl label="Quality" value={quality} min={10} max={100} suffix="%" disableReset onChange={setQuality} />}{!upscale2x && estimating && <p className="inspector-note" data-testid="export-size-estimate">Estimating file size…</p>}{!upscale2x && !estimating && estimate && <p className="inspector-note" data-testid="export-size-estimate">Estimated file size ≈ {formatByteSize(estimate.bytes)} ({estimate.width} × {estimate.height})</p>}{upscale2x && <p className="inspector-note" data-testid="export-size-estimate">File size estimate unavailable for 2x upscales.</p>}{!upscale2x && <ExportQualityPreview format={format} quality={quality} previewUrl={previewUrl} estimating={estimating} focus={focus} onFocus={setFocus} />}{superres && <div className="superres-field" data-testid="export-superres"><CheckField checked={upscale2x} disabled={exporting} onChange={(event) => setUpscale2x(event.target.checked)} label="Super-resolution 2x">Super-resolution 2x <MlBadge hint="Doubled by a machine-learning model on the photo server" /></CheckField>{upscale2x && <p className="inspector-note" data-testid="export-superres-hint">Doubles export dimensions — about {expectedLongEdge * SUPERRES_SCALE}px on the long edge. Large frames take a minute or two.</p>}{upscale2x && !engineNote && <p className="inspector-note">Checking the ML upscale…</p>}{upscale2x && engineNote && engineNote.tone !== 'error' && <p className="inspector-note">{engineNote.text}</p>}{upscale2x && engineNote && engineNote.tone === 'error' && <p className="form-error" role="alert">{engineNote.text}</p>}{upscaleProgress && <div className="ml-progress" role="status"><div className="ml-progress-bar"><span style={{ width: `${Math.round(upscaleProgress.fraction * 100)}%` }} /></div><p className="inspector-note">{upscaleProgress.stage}</p></div>}</div>}{overUpscaleCap && <p className="form-error" role="alert">2x upscales cap at {SUPERRES_MAX_INPUT_DIM}px input — pick Large or smaller.</p>}<p className="dialog-note"><Info size={14} /><span>Your original stays untouched. Sample photos export at their available web resolution.</span></p>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-footer"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button>{upscaleProgress && <button type="button" className="secondary-button" onClick={cancelUpscale}>Cancel upscale</button>}<button className="primary-button" type="submit" disabled={exporting || overUpscaleCap}>{exporting ? <span className="loading-spinner small" /> : <Share size={14} />}{exporting ? (upscale2x ? 'Upscaling...' : 'Exporting...') : 'Export Photo'}</button></div></form></Modal>;
 }
 
+export interface AlbumExportDialogProps {
+  collectionTitle: string;
+  /** Photos in the current view; the confirm button disables at zero. */
+  count: number;
+  /** Seeds the format select (a test seam for the lossless markup). */
+  initialFormat?: string;
+  onClose: () => void;
+  onConfirm: (format: string, quality: number) => void;
+}
+
+/**
+ * Album-view batch export confirmation: format + quality only. Deliberately
+ * no size picker (batches render at full resolution), no super-resolution,
+ * and no quality preview — one dialog per photo would be absurd, so the
+ * whole view shares one format and one quality, then downloads as a zip.
+ */
+export function AlbumExportDialog({ collectionTitle, count, initialFormat = 'jpeg', onClose, onConfirm }: AlbumExportDialogProps) {
+  const [format, setFormat] = useState(initialFormat);
+  const [quality, setQuality] = useState(90);
+  const photos = count === 1 ? '1 photo' : `${count} photos`;
+  return <Modal title="Export Album View" subtitle="The whole view, zipped and ready to share." onClose={onClose} className="export-modal"><p className="dialog-note"><Info size={14} /><span>Exports {photos} from {collectionTitle} — exactly what&apos;s in the grid, filters and search included — as one zip file at full resolution.</span></p><form onSubmit={(event) => { event.preventDefault(); onConfirm(format, quality); }}><SelectField label="Format" value={format} options={[...ALBUM_EXPORT_FORMATS]} onChange={setFormat} />{isLossyExportFormat(format) && <RangeControl label="Quality" value={quality} min={10} max={100} suffix="%" disableReset onChange={setQuality} />}<p className="dialog-note"><Info size={14} /><span>Your originals stay untouched. Each photo exports with its current adjustments.</span></p><div className="modal-footer"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit" disabled={count === 0}><Share size={14} />Export {photos}</button></div></form></Modal>;
+}
+
 function AlbumDialog({ onClose, onCreateAlbum }: Pick<EditorDialogsProps, 'onClose' | 'onCreateAlbum'>) {
   const [name, setName] = useState('');
   return <Modal title="New Album" subtitle="A home for the moments that belong together." onClose={onClose} className="small-modal"><div className="dialog-feature-icon"><FolderPlus size={30} strokeWidth={1.3} /></div><form onSubmit={(event) => { event.preventDefault(); if (name.trim()) onCreateAlbum(name.trim()); }}><label className="text-field"><span>Album Name</span><input autoFocus placeholder="e.g. A summer in Italy" value={name} maxLength={60} onChange={(event) => setName(event.target.value)} required /></label><div className="modal-footer"><button className="secondary-button" type="button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={!name.trim()} type="submit">Create Album</button></div></form></Modal>;
@@ -306,6 +331,11 @@ export function EditorDialogs(props: EditorDialogsProps) {
   if (dialog === 'remove') return <RemoveDialog {...props} />;
   if (dialog === 'remove-album') return <RemoveAlbumDialog {...props} />;
   if (dialog === 'export') return <ExportDialog {...props} />;
+  if (dialog === 'export-album') {
+    const target = props.exportAlbum;
+    if (!target) return null;
+    return <AlbumExportDialog collectionTitle={target.title} count={target.count} onClose={props.onClose} onConfirm={target.onConfirm} />;
+  }
   if (dialog === 'album') return <AlbumDialog {...props} />;
   if (dialog === 'preset') return <PresetDialog {...props} />;
   if (dialog === 'info') return <Modal title="Photo Information" subtitle={photo.title} onClose={onClose} className="info-modal"><div className="info-filename"><h3>{photo.name}</h3><span className="file-type">{photo.raw ? 'RAW' : 'IMAGE'}</span></div><div className="photo-info-section"><h4><Camera size={14} />Camera</h4><strong>{photo.camera}</strong><p>{photo.lens}</p><div className="photo-info-grid"><div><small>ISO</small><span>{photo.iso || 'Not available'}</span></div><div><small>Aperture</small><span>{photo.aperture}</span></div><div><small>Shutter Speed</small><span>{photo.shutter}</span></div><div><small>Focal Length</small><span>{photo.focalLength}</span></div><div><small>Dimensions</small><span>{photo.width.toLocaleString()} x {photo.height.toLocaleString()}</span></div><div><small>Date Taken</small><span>{new Date(photo.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></div></div></div><PhotoLabelsSection photo={photo} onAddLabel={props.onAddLabel} onRemoveLabel={props.onRemoveLabel} onSearchLabel={props.onSearchLabel} />{photo.location && <div className="photo-info-location"><MapPin size={15} />{photo.location}</div>}{photo.path && <div className="photo-info-location" data-tooltip={photo.path}><Folder size={15} /><span className="photo-info-path">{photo.path}</span></div>}{photo.missing && <p className="form-error" role="alert">The original file is missing. Reimport it from its new location to relink your edits.</p>}{photo.photographer && <p className="photo-credit">Photo by {photo.photographer} / Pexels<br /><span>Camera details are illustrative sample data.</span></p>}</Modal>;
