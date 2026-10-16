@@ -33,12 +33,15 @@ function writeTasteProfile(store: TasteStorage | null, profile: TasteProfile): v
  * edited photos, written through to localStorage on every recording.
  *
  * Learning is on the fly with no train step: the app calls `record` from
- * its debounced edit persist (settled recipes, not keystrokes), and the
+ * its debounced edit persist (settled recipes, not keystrokes — passing
+ * the photo's subject tag so the sample joins its subject scope), and the
  * first load backfills from the library seed so existing edits count
  * without re-editing them. Pure auto output never records (see
  * isPureAutoStack), so the profile only ever holds human-shaped recipes.
- * `patch` is the ML Auto Enhance patch, null until the profile has
- * evidence (see tasteEnhancePatch).
+ * `patch` is the global ML Auto Enhance patch, null until the profile has
+ * evidence (see tasteEnhancePatch); `patchFor`/`summaryFor` take the
+ * current photo's subject tag for the conditional patch (subject scope
+ * with global fallback).
  */
 export function useTasteProfile(seed: TasteSeed | null | undefined, storage?: TasteStorage | null) {
   const store = storage === undefined ? browserTasteStorage() : storage;
@@ -58,10 +61,10 @@ export function useTasteProfile(seed: TasteSeed | null | undefined, storage?: Ta
     });
   }, [seed, store]);
 
-  const record = useCallback((photoId: string, present: EditState, actions: ActionStack) => {
+  const record = useCallback((photoId: string, present: EditState, actions: ActionStack, label?: string | null) => {
     if (isPureAutoStack(actions)) return;
     setProfile((current) => {
-      const next = recordTasteSample(current, photoId, sampleTasteFromEdit(present), new Date().toISOString());
+      const next = recordTasteSample(current, photoId, sampleTasteFromEdit(present, label), new Date().toISOString());
       // recordTasteSample returns the input untouched when the sample is
       // unchanged — skip the write-through (and the re-render) with it.
       if (next === current) return current;
@@ -81,5 +84,7 @@ export function useTasteProfile(seed: TasteSeed | null | undefined, storage?: Ta
 
   const summary: TasteSummary = useMemo(() => summarizeTaste(profile), [profile]);
   const patch = useMemo(() => tasteEnhancePatch(profile), [profile]);
-  return { profile, summary, patch, ready: patch !== null, record, forget };
+  const summaryFor = useCallback((label: string | null) => summarizeTaste(profile, label), [profile]);
+  const patchFor = useCallback((label: string | null) => tasteEnhancePatch(profile, label), [profile]);
+  return { profile, summary, patch, ready: patch !== null, summaryFor, patchFor, record, forget };
 }

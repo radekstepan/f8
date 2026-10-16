@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { useRef } from 'react';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_EDIT, pushEnhanceAction, serializeTasteProfile } from '@f8/core';
+import { DEFAULT_EDIT, TASTE_PROFILE_VERSION, pushEnhanceAction, serializeTasteProfile } from '@f8/core';
 import type { ActionStack, EditState, TasteProfile, TasteSeed } from '@f8/core';
 import { TASTE_PROFILE_KEY, useTasteProfile, type TasteStorage } from './useTasteProfile.js';
 
@@ -33,30 +33,36 @@ function memoryStorage(seed?: Record<string, string>): TasteStorage & { data: Re
 
 const edit = (patch: Partial<EditState>): EditState => ({ ...DEFAULT_EDIT, ...patch });
 
-function storedProfile(edits: Array<Partial<EditState>>): TasteProfile {
+function storedProfile(edits: Array<Partial<EditState>>, labels?: Array<string | null>, version: number = TASTE_PROFILE_VERSION): TasteProfile {
   const samples: TasteProfile['samples'] = {};
   edits.forEach((patch, index) => {
-    samples[`p${index}`] = { values: patch as TasteProfile['samples'][string]['values'] };
+    const label = labels?.[index] ?? null;
+    samples[`p${index}`] = label
+      ? { values: patch as TasteProfile['samples'][string]['values'], label }
+      : { values: patch as TasteProfile['samples'][string]['values'] };
   });
-  return { version: 1, samples, updatedAt: AT };
+  // The version field is a literal type; legacy versions need the cast.
+  return { version, samples, updatedAt: AT } as TasteProfile;
 }
 
 type TasteCall =
-  | { kind: 'record'; photoId: string; present: EditState; actions: ActionStack }
+  | { kind: 'record'; photoId: string; present: EditState; actions: ActionStack; label?: string | null }
   | { kind: 'forget'; photoId: string };
 
 /** Probe: runs the hook, applies scripted calls as render-phase updates, and prints the summary. */
-function Probe({ seed, storage, calls }: { seed: TasteSeed | null; storage: TasteStorage | null; calls?: TasteCall[] }) {
+function Probe({ seed, storage, calls, forLabel }: { seed: TasteSeed | null; storage: TasteStorage | null; calls?: TasteCall[]; forLabel?: string | null }) {
   const taste = useTasteProfile(seed, storage);
   const done = useRef(false);
   if (!done.current && calls) {
     done.current = true;
     for (const call of calls) {
-      if (call.kind === 'record') taste.record(call.photoId, call.present, call.actions);
+      if (call.kind === 'record') taste.record(call.photoId, call.present, call.actions, call.label ?? null);
       else taste.forget(call.photoId);
     }
   }
-  return <div data-testid="taste-summary" data-ready={taste.ready} data-photos={taste.summary.photos} data-keys={Object.keys(taste.summary.keys).join(',')} />;
+  const scoped = forLabel === undefined ? null : taste.summaryFor(forLabel);
+  const scopedPatch = forLabel === undefined ? null : taste.patchFor(forLabel);
+  return <div data-testid="taste-summary" data-ready={taste.ready} data-photos={taste.summary.photos} data-keys={Object.keys(taste.summary.keys).join(',')} {...(scoped ? { 'data-scope': scoped.scope, 'data-scope-photos': scoped.photos, 'data-scope-keys': Object.keys(scoped.keys).join(','), 'data-scope-ready': scopedPatch !== null } : {})} />;
 }
 
 describe('useTasteProfile', () => {
@@ -132,6 +138,47 @@ describe('useTasteProfile', () => {
     expect(Object.keys(stored.samples)).toEqual(['p1']);
   });
 
+  it('loads a version 1 profile: untagged samples keep working globally', () => {
+    const storage = memoryStorage({
+      [TASTE_PROFILE_KEY]: serializeTasteProfile(storedProfile([{ contrast: 20 }, { contrast: 20 }, { contrast: 20 }], undefined, 1)),
+    });
+    const html = renderToStaticMarkup(<Probe seed={null} storage={storage} forLabel="grapes" />);
+    expect(html).toContain('data-ready="true"');
+    expect(html).toContain('data-scope="global"');
+    expect(html).toContain('data-scope-ready="true"');
+  });
+
+  it('record() tags the sample with the subject label', () => {
+    const storage = memoryStorage();
+    renderToStaticMarkup(
+      <Probe seed={null} storage={storage} calls={[
+        { kind: 'record', photoId: 'p1', present: edit({ contrast: 20 }), actions: [], label: 'Grapes' },
+      ]} />,
+    );
+    const stored = JSON.parse(storage.data[TASTE_PROFILE_KEY] ?? '{}') as TasteProfile;
+    expect(stored.samples.p1).toEqual({ values: { contrast: 20 }, label: 'grapes' });
+  });
+
+  it('summaryFor()/patchFor() scope to the subject with global fallback', () => {
+    const storage = memoryStorage({
+      [TASTE_PROFILE_KEY]: serializeTasteProfile(storedProfile(
+        [{ contrast: 30 }, { contrast: 30 }, { contrast: 30 }, { contrast: -10 }, { contrast: -10 }],
+        ['grapes', 'grapes', 'grapes', 'portrait', 'portrait'],
+      )),
+    });
+    const subject = renderToStaticMarkup(<Probe seed={null} storage={storage} forLabel="grapes" />);
+    expect(subject).toContain('data-scope="label"');
+    expect(subject).toContain('data-scope-photos="3"');
+    expect(subject).toContain('data-scope-keys="contrast"');
+    expect(subject).toContain('data-scope-ready="true"');
+    // Two portraits: below the subject minimum, so the global fallback serves.
+    const fallback = renderToStaticMarkup(<Probe seed={null} storage={storage} forLabel="portrait" />);
+    expect(fallback).toContain('data-scope="global"');
+    expect(fallback).toContain('data-scope-photos="5"');
+    const unlabeled = renderToStaticMarkup(<Probe seed={null} storage={storage} forLabel={null} />);
+    expect(unlabeled).toContain('data-scope="global"');
+  });
+
   it('backfills once from the library seed when nothing is stored', () => {
     // Effects never run in static markup, so the backfill path is pinned
     // from the hook source: seed-driven, once-only, stored-first.
@@ -144,8 +191,9 @@ describe('useTasteProfile', () => {
   it('the app records every settled persist and forgets removed photos', () => {
     const source = appSource();
     expect(source).toContain('useTasteProfile(');
-    // The persist wrapper saves to the server AND records the taste sample.
-    expect(source).toContain('taste.record(photoId, present, actions)');
+    // The persist wrapper saves to the server AND records the taste sample,
+    // tagged with the photo's subject tag for conditional learning.
+    expect(source).toContain('taste.record(photoId, present, actions, tasteLabels.get(photoId) ?? null)');
     expect(source).toContain('onPersist: persistEdit');
     expect(source).toContain('taste.forget(');
   });

@@ -14,12 +14,12 @@ import type {
   ActionStack,
   Album,
   EditState,
-  HistoryState,
   ImportProgress,
   ImportReport,
   LibraryPhoto,
   PhotoPatch,
   Preset,
+  TasteSeed,
 } from "@f8/core";
 
 export type LibraryStatus = "loading" | "ready" | "offline";
@@ -52,7 +52,7 @@ export function useLibrary() {
   const [photos, setPhotos] = useState<LibraryPhoto[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [customPresets, setCustomPresets] = useState<Preset[]>([]);
-  const [editsSeed, setEditsSeed] = useState<{ histories: Record<string, HistoryState>; actions: Record<string, ActionStack> } | null>(null);
+  const [editsSeed, setEditsSeed] = useState<TasteSeed | null>(null);
   const [error, setError] = useState("");
   const generation = useRef(0);
   // Optimistic star/rating state: meta patches apply locally at click time
@@ -127,6 +127,9 @@ export function useLibrary() {
         actions: Object.fromEntries(
           snapshot.photos.map((photo) => [photo.id, sanitizeActionStack(photo.actions)]),
         ),
+        // Photo labels seed the taste backfill's subject tags, so the
+        // first run already learns conditionally (see tasteProfileFromSeed).
+        labels: Object.fromEntries(snapshot.photos.map((photo) => [photo.id, photo.labels])),
       });
       setStatus("ready");
     } catch (reason) {

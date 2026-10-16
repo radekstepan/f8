@@ -7,9 +7,11 @@ import {
   MIN_TASTE_KEY_PHOTOS,
   MIN_TASTE_PHOTOS,
   TASTE_KEYS,
+  TASTE_PROFILE_VERSION,
   createTasteProfile,
   forgetTasteSample,
   isPureAutoStack,
+  normalizeTasteLabel,
   parseTasteProfile,
   parseTasteProfileJson,
   recordTasteSample,
@@ -20,6 +22,7 @@ import {
   tasteEnhancePatch,
   tasteKeyThreshold,
   tasteProfileFromSeed,
+  topTasteLabel,
 } from "./tasteProfile.js";
 
 const edit = (patch: Partial<EditState>): EditState => ({ ...DEFAULT_EDIT, ...patch });
@@ -62,6 +65,51 @@ describe("sampleTasteFromEdit", () => {
       const sample = sampleTasteFromEdit(edit({ [key]: value } as Partial<EditState>));
       expect(sample?.values[key], key).toBe(value);
     }
+  });
+
+  it("tags the sample with the subject label, normalized", () => {
+    expect(sampleTasteFromEdit(edit({ contrast: 20 }), "Grapes")?.label).toBe("grapes");
+    expect(sampleTasteFromEdit(edit({ contrast: 20 }), "  GRAPES  ")?.label).toBe("grapes");
+  });
+
+  it("leaves the sample untagged for a blank or missing label", () => {
+    expect(sampleTasteFromEdit(edit({ contrast: 20 }), null)).toEqual({ values: { contrast: 20 } });
+    expect(sampleTasteFromEdit(edit({ contrast: 20 }), "   ")).toEqual({ values: { contrast: 20 } });
+  });
+});
+
+describe("topTasteLabel", () => {
+  it("picks the highest-scoring ML label", () => {
+    expect(
+      topTasteLabel([
+        { label: "fruit", score: 0.2, source: "ml" },
+        { label: "grapes", score: 0.31, source: "ml" },
+      ]),
+    ).toBe("grapes");
+  });
+
+  it("ignores hand-added labels even though they score 1", () => {
+    expect(
+      topTasteLabel([
+        { label: "wedding", score: 1, source: "user" },
+        { label: "portrait", score: 0.28, source: "ml" },
+      ]),
+    ).toBe("portrait");
+    expect(topTasteLabel([{ label: "wedding", score: 1, source: "user" }])).toBeNull();
+  });
+
+  it("returns null without usable ML labels", () => {
+    expect(topTasteLabel(null)).toBeNull();
+    expect(topTasteLabel(undefined)).toBeNull();
+    expect(topTasteLabel([])).toBeNull();
+    expect(topTasteLabel([{ label: "   ", score: 0.5, source: "ml" }])).toBeNull();
+  });
+
+  it("normalizes the winning tag", () => {
+    expect(normalizeTasteLabel("  Grapes ")).toBe("grapes");
+    expect(normalizeTasteLabel("")).toBeNull();
+    expect(normalizeTasteLabel(42)).toBeNull();
+    expect(topTasteLabel([{ label: "Grapes", score: 0.3, source: "ml" }])).toBe("grapes");
   });
 });
 
@@ -108,6 +156,19 @@ describe("recordTasteSample", () => {
     expect(recordTasteSample(profile, "missing", null, "later")).toBe(profile);
   });
 
+  it("canonicalizes the stored subject tag", () => {
+    const profile = recordTasteSample(createTasteProfile(), "p1", { values: { contrast: 20 }, label: "  Grapes " }, AT);
+    expect(profile.samples.p1).toEqual({ values: { contrast: 20 }, label: "grapes" });
+  });
+
+  it("treats a subject retag as a real change", () => {
+    const profile = recordTasteSample(createTasteProfile(), "p1", { values: { contrast: 20 }, label: "grapes" }, AT);
+    expect(recordTasteSample(profile, "p1", { values: { contrast: 20 }, label: "Grapes" }, "later")).toBe(profile);
+    const relabeled = recordTasteSample(profile, "p1", { values: { contrast: 20 }, label: "fruit" }, "later");
+    expect(relabeled).not.toBe(profile);
+    expect(relabeled.samples.p1?.label).toBe("fruit");
+  });
+
   it("caps stored samples, oldest-inserted first", () => {
     let profile = createTasteProfile();
     for (let i = 0; i < MAX_TASTE_SAMPLES + 5; i += 1) {
@@ -150,17 +211,20 @@ describe("snapTasteValue", () => {
   });
 });
 
-function profileFromPhotos(edits: Array<Partial<EditState>>): ReturnType<typeof createTasteProfile> {
+function profileFromPhotos(
+  edits: Array<Partial<EditState>>,
+  labels?: Array<string | null>,
+): ReturnType<typeof createTasteProfile> {
   let profile = createTasteProfile();
   edits.forEach((patch, index) => {
-    profile = recordTasteSample(profile, `p${index}`, sampleTasteFromEdit(edit(patch)), AT);
+    profile = recordTasteSample(profile, `p${index}`, sampleTasteFromEdit(edit(patch), labels?.[index] ?? null), AT);
   });
   return profile;
 }
 
 describe("summarizeTaste", () => {
   it("is empty for an empty profile", () => {
-    expect(summarizeTaste(createTasteProfile())).toEqual({ photos: 0, keys: {} });
+    expect(summarizeTaste(createTasteProfile())).toEqual({ photos: 0, keys: {}, scope: "global", label: null });
   });
 
   it("takes the median over touching photos and counts them", () => {
@@ -197,6 +261,107 @@ describe("summarizeTaste", () => {
   });
 });
 
+describe("summarizeTaste conditional scope", () => {
+  // Three grape photos warmed and lifted, three portraits cooled: two
+  // subjects, two styles, one profile.
+  const GRAPES = [{ temperature: 6200 }, { temperature: 6300 }, { temperature: 6250 }];
+  const PORTRAITS = [{ temperature: 5000 }, { temperature: 5100 }, { temperature: 5050 }];
+
+  function twoSubjectProfile() {
+    return profileFromPhotos(
+      [...GRAPES, ...PORTRAITS],
+      ["grapes", "grapes", "grapes", "portrait", "portrait", "portrait"],
+    );
+  }
+
+  it("summarizes the matching subject alone once it has three photos", () => {
+    const summary = summarizeTaste(twoSubjectProfile(), "grapes");
+    expect(summary.scope).toBe("label");
+    expect(summary.label).toBe("grapes");
+    expect(summary.photos).toBe(3);
+    expect(summary.keys.temperature).toEqual({ median: 6250, count: 3 });
+  });
+
+  it("gives each subject its own medians", () => {
+    const profile = twoSubjectProfile();
+    expect(summarizeTaste(profile, "portrait").keys.temperature?.median).toBe(5050);
+    expect(summarizeTaste(profile, "grapes").keys.temperature?.median).toBe(6250);
+    // The global medians sit between the two subjects — neither's style.
+    expect(summarizeTaste(profile).keys.temperature?.median).toBe(5650);
+  });
+
+  it("normalizes the requested tag before matching", () => {
+    const summary = summarizeTaste(twoSubjectProfile(), "  GRAPES ");
+    expect(summary.scope).toBe("label");
+    expect(summary.label).toBe("grapes");
+    expect(summary.photos).toBe(3);
+  });
+
+  it("falls back to global while the subject has fewer than three photos", () => {
+    const profile = profileFromPhotos([{ contrast: 20 }, { contrast: 20 }, { contrast: 20 }], [
+      "grapes",
+      "grapes",
+      "portrait",
+    ]);
+    const summary = summarizeTaste(profile, "grapes");
+    expect(summary.scope).toBe("global");
+    expect(summary.photos).toBe(3);
+    expect(summary.keys.contrast).toEqual({ median: 20, count: 3 });
+  });
+
+  it("falls back to global for an unknown subject or no tag", () => {
+    const profile = twoSubjectProfile();
+    for (const label of ["mountain", "", "   ", null, undefined]) {
+      const summary = summarizeTaste(profile, label);
+      expect(summary.scope, String(label)).toBe("global");
+      expect(summary.photos, String(label)).toBe(6);
+    }
+  });
+
+  it("excludes untagged samples from the subject scope, keeps them global", () => {
+    const profile = profileFromPhotos(
+      [{ contrast: 10 }, { contrast: 20 }, { contrast: 30 }, { contrast: 100 }],
+      ["grapes", "grapes", "grapes", null],
+    );
+    const subject = summarizeTaste(profile, "grapes");
+    expect(subject.scope).toBe("label");
+    expect(subject.photos).toBe(3);
+    expect(subject.keys.contrast).toEqual({ median: 20, count: 3 });
+    expect(summarizeTaste(profile).keys.contrast?.median).toBe(25);
+  });
+
+  it("stays keyless in subject scope instead of borrowing the global style", () => {
+    // Three grape photos with no shared habit, three portraits with one:
+    // the grape summary must not borrow the portrait contrast.
+    const profile = profileFromPhotos(
+      [{ saturation: 10 }, { vibrance: 10 }, { clarity: 10 }, { contrast: 40 }, { contrast: 40 }, { contrast: 40 }],
+      ["grapes", "grapes", "grapes", "portrait", "portrait", "portrait"],
+    );
+    const subject = summarizeTaste(profile, "grapes");
+    expect(subject.scope).toBe("label");
+    expect(subject.photos).toBe(3);
+    expect(subject.keys).toEqual({});
+  });
+
+  it("applies the majority rule within the subject, not the library", () => {
+    // Saturation touched on 2 of 3 grape photos but only 2 of 6 overall:
+    // a subject habit even though it is a global minority.
+    const profile = profileFromPhotos(
+      [
+        { saturation: 30 },
+        { saturation: 40 },
+        { contrast: 10 },
+        { contrast: 10 },
+        { contrast: 10 },
+        { contrast: 10 },
+      ],
+      ["grapes", "grapes", "grapes", "portrait", "portrait", "portrait"],
+    );
+    expect(summarizeTaste(profile, "grapes").keys.saturation).toEqual({ median: 35, count: 2 });
+    expect(summarizeTaste(profile).keys.saturation).toBeUndefined();
+  });
+});
+
 describe("tasteEnhancePatch", () => {
   it("needs at least three edited photos", () => {
     expect(MIN_TASTE_PHOTOS).toBe(3);
@@ -222,6 +387,42 @@ describe("tasteEnhancePatch", () => {
     );
     expect(patch).toEqual({ temperature: 5850, exposure: 0.25, contrast: 20 });
   });
+
+  it("generalizes one style across similar photos, another across the rest", () => {
+    const profile = profileFromPhotos(
+      [
+        { temperature: 6200, contrast: 30 },
+        { temperature: 6300, contrast: 30 },
+        { temperature: 6250, contrast: 30 },
+        { temperature: 5000, contrast: -10 },
+        { temperature: 5100, contrast: -10 },
+        { temperature: 5050, contrast: -10 },
+      ],
+      ["grapes", "grapes", "grapes", "portrait", "portrait", "portrait"],
+    );
+    expect(tasteEnhancePatch(profile, "grapes")).toEqual({ temperature: 6250, contrast: 30 });
+    expect(tasteEnhancePatch(profile, "portrait")).toEqual({ temperature: 5050, contrast: -10 });
+  });
+
+  it("falls back to the global patch for a subject with too little evidence", () => {
+    const profile = profileFromPhotos([{ contrast: 20 }, { contrast: 20 }, { contrast: 20 }], [
+      "grapes",
+      "grapes",
+      "portrait",
+    ]);
+    expect(tasteEnhancePatch(profile, "grapes")).toEqual({ contrast: 20 });
+    expect(tasteEnhancePatch(profile, "mountain")).toEqual({ contrast: 20 });
+  });
+
+  it("stays null in a keyless subject scope instead of borrowing globally", () => {
+    const profile = profileFromPhotos(
+      [{ saturation: 10 }, { vibrance: 10 }, { clarity: 10 }, { contrast: 40 }, { contrast: 40 }, { contrast: 40 }],
+      ["grapes", "grapes", "grapes", "portrait", "portrait", "portrait"],
+    );
+    expect(tasteEnhancePatch(profile, "grapes")).toBeNull();
+    expect(tasteEnhancePatch(profile, "portrait")).toEqual({ contrast: 40 });
+    expect(tasteEnhancePatch(profile)).toEqual({ contrast: 40 });
+  });
 });
 
 describe("taste profile persistence", () => {
@@ -230,13 +431,47 @@ describe("taste profile persistence", () => {
     expect(parseTasteProfileJson(serializeTasteProfile(profile))).toEqual(profile);
   });
 
+  it("round-trips subject tags through JSON", () => {
+    const profile = profileFromPhotos([{ contrast: 20 }, { contrast: 30 }], ["grapes", null]);
+    const parsed = parseTasteProfileJson(serializeTasteProfile(profile));
+    expect(parsed).toEqual(profile);
+    expect(parsed.version).toBe(TASTE_PROFILE_VERSION);
+    expect(parsed.samples.p0?.label).toBe("grapes");
+    expect(parsed.samples.p1?.label).toBeUndefined();
+  });
+
   it("never throws: garbage in, empty profile out", () => {
     for (const raw of [null, undefined, "", "not json", "[]", '"x"', "42"]) {
       expect(parseTasteProfileJson(raw)).toEqual(createTasteProfile());
     }
-    for (const value of [null, 42, "x", [], { version: 2, samples: {} }, { version: 1 }, { version: 1, samples: [] }]) {
+    for (const value of [
+      null,
+      42,
+      "x",
+      [],
+      { version: 3, samples: {} },
+      { version: 1 },
+      { version: 1, samples: [] },
+      { version: 2, samples: [] },
+    ]) {
       expect(parseTasteProfile(value)).toEqual(createTasteProfile());
     }
+  });
+
+  it("migrates version 1 profiles in place: untagged samples keep working", () => {
+    const profile = parseTasteProfile({
+      version: 1,
+      updatedAt: AT,
+      samples: {
+        p1: { values: { contrast: 20 } },
+        p2: { values: { contrast: 20 } },
+        p3: { values: { contrast: 20 } },
+      },
+    });
+    expect(profile.version).toBe(TASTE_PROFILE_VERSION);
+    expect(profile.updatedAt).toBe(AT);
+    expect(profile.samples.p1).toEqual({ values: { contrast: 20 } });
+    expect(tasteEnhancePatch(profile)).toEqual({ contrast: 20 });
   });
 
   it("drops unknown keys, non-numeric values, and empty samples", () => {
@@ -252,6 +487,20 @@ describe("taste profile persistence", () => {
     });
     expect(profile.samples).toEqual({ p1: { values: { contrast: 20 } } });
     expect(profile.updatedAt).toBe(AT);
+  });
+
+  it("normalizes subject tags and drops bad ones, keeping the values", () => {
+    const profile = parseTasteProfile({
+      version: 2,
+      samples: {
+        p1: { values: { contrast: 20 }, label: "  Grapes " },
+        p2: { values: { contrast: 20 }, label: "   " },
+        p3: { values: { contrast: 20 }, label: 42 },
+      },
+    });
+    expect(profile.samples.p1).toEqual({ values: { contrast: 20 }, label: "grapes" });
+    expect(profile.samples.p2).toEqual({ values: { contrast: 20 } });
+    expect(profile.samples.p3).toEqual({ values: { contrast: 20 } });
   });
 
   it("clamps out-of-range stored values to the slider range", () => {
@@ -279,5 +528,22 @@ describe("tasteProfileFromSeed", () => {
       actions: {},
     };
     expect(tasteProfileFromSeed(seed as never, AT).samples).toEqual({});
+  });
+
+  it("tags backfilled samples from the seed labels", () => {
+    const human = { past: [], present: edit({ contrast: 20 }), future: [] };
+    const seed = {
+      histories: { p1: human, p2: human, p3: human },
+      actions: {},
+      labels: {
+        p1: [{ label: "grapes", score: 0.3, source: "ml" as const }],
+        p2: [{ label: "party", score: 1, source: "user" as const }],
+      },
+    };
+    const profile = tasteProfileFromSeed(seed, AT);
+    expect(profile.samples.p1).toEqual({ values: { contrast: 20 }, label: "grapes" });
+    // User-only labels tag nothing (see topTasteLabel); missing labels tag nothing.
+    expect(profile.samples.p2).toEqual({ values: { contrast: 20 } });
+    expect(profile.samples.p3).toEqual({ values: { contrast: 20 } });
   });
 });

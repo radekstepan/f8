@@ -55,7 +55,7 @@ const noop = () => {};
 function renderInspector(
   tool: Tool,
   enhance?: { mode: EnhanceMode | null; pure?: boolean; canRevert?: boolean },
-  taste?: { ready?: boolean; photos?: number; offered?: boolean },
+  taste?: { ready?: boolean; photos?: number; offered?: boolean; scope?: 'label' | 'global'; label?: string | null },
   edit: EditState = { ...DEFAULT_EDIT },
 ): string {
   return renderToStaticMarkup(
@@ -78,6 +78,8 @@ function renderInspector(
       {...(taste?.offered === false ? {} : { onAutoTaste: noop })}
       {...(taste?.ready === undefined ? {} : { tasteReady: taste.ready })}
       {...(taste?.photos === undefined ? {} : { tastePhotos: taste.photos })}
+      {...(taste?.scope === undefined ? {} : { tasteScope: taste.scope })}
+      {...(taste?.label === undefined ? {} : { tasteLabel: taste.label })}
       onAutoWhiteBalance={noop}
       onAutoLightness={noop}
       onAutoColor={noop}
@@ -132,6 +134,22 @@ describe('ml auto enhance menu item', () => {
     expect(html).not.toContain('aria-label="Reset auto enhance"');
   });
 
+  it('names the subject in the disabled hint when the summary is subject-scoped', () => {
+    // The ... menu renders only while open (never in SSR), so the
+    // conditional hints are pinned from the source like the menu item.
+    const inspector = source();
+    expect(inspector).toContain('No consistent habit across your ${tasteLabel} photos yet — ML Auto Enhance unlocks when one emerges');
+    expect(inspector).toContain("tasteScope === 'label' && tasteLabel");
+  });
+
+  it('tooltips a ready subject-scoped enhance with whose style it applies', () => {
+    const inspector = source();
+    expect(inspector).toContain('Learned from ${tastePhotos} photos like this (${tasteLabel})');
+    expect(inspector).toContain('<span className="menu-tip" data-tooltip={tasteReadyHint}><MenuItem onClick={() => closeAction(onAutoTaste)}>ML Auto Enhance</MenuItem></span>');
+    // The wrapper is a layout-neutral block: same box as the bare item.
+    expect(cssRule('.menu-tip')).toMatch(/display\s*:\s*block/);
+  });
+
   it('keeps taste enhance adjust-only: repair and crop headers carry no trace', () => {
     for (const tool of ['repair', 'crop'] as const) {
       const html = renderInspector(tool, { mode: 'taste', pure: true });
@@ -158,7 +176,9 @@ describe('ml auto enhance editor wiring', () => {
 
   it('the app feeds the learned patch and profile state to the inspector', () => {
     const app = appSource();
-    expect(app).toContain('const applyTasteEnhance = () => { const patch = taste.patch; if (patch) editor.autoEnhanceTaste(patch); };');
-    expect(app).toContain('onAutoTaste={applyTasteEnhance} tasteReady={taste.ready} tastePhotos={taste.summary.photos}');
+    expect(app).toContain('const tasteLabel = topTasteLabel(photo?.labels);');
+    expect(app).toContain('const tasteSummary = taste.summaryFor(tasteLabel);');
+    expect(app).toContain('const applyTasteEnhance = () => { const patch = taste.patchFor(tasteLabel); if (patch) editor.autoEnhanceTaste(patch); };');
+    expect(app).toContain('onAutoTaste={applyTasteEnhance} tasteReady={taste.patchFor(tasteLabel) !== null} tastePhotos={tasteSummary.photos} tasteScope={tasteSummary.scope} tasteLabel={tasteLabel}');
   });
 });
