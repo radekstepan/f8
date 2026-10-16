@@ -1,6 +1,6 @@
 # Learnings
 
-Distilled from per-task writeups and subagent learnings across seventeen
+Distilled from per-task writeups and subagent learnings across eighteen
 `tasks.md` runs. Read this before touching the inspector, repair,
 toolbar, export, menus, zoom, navigation, or library UI so we don't
 repeat the same mistakes.
@@ -44,6 +44,8 @@ repeat the same mistakes.
   the running log in `docs/tasks/55-*.md`–`62-*.md`.
 - **R17** = seventeenth run, 2026-10-15 (4 tasks). Writeups continue
   the running log in `docs/tasks/63-*.md`–`66-*.md`.
+- **R18** = eighteenth run, 2026-10-15 (2 tasks). Writeups continue
+  the running log in `docs/tasks/67-*.md`–`68-*.md`.
 
 ## 1. Honest labels and naming
 
@@ -186,6 +188,16 @@ repeat the same mistakes.
   accessible name is unchanged — the R16-4
   hint-not-name rule for a second gesture on one
   control. (R17-2)
+- **A scored fallback speaks; an unscored one stays
+  silent** (qualifies the R17-4 global-silence
+  rule). The alignment % rides both tooltips —
+  subject scope cites its evidence ("Learned from
+  3 photos like this (grapes) — 94% match with
+  your edits"), the global fallback without the
+  scope clause — while unscored states keep the
+  item bare exactly as before: silence means "no
+  measurement", never "a scope we chose not to
+  show". (R18-2)
 
 ## 2. Header and component contracts
 
@@ -550,6 +562,17 @@ repeat the same mistakes.
   `.menu-tip` wrapper — reusing the disabled
   wrapper's class name would lie on an enabled
   item. (R17-4; cf. R16-7)
+- **A submenu arrow points where the flyout
+  opens, reusing the check slot.** The
+  left-opening Saved Presets flyout (R17-3)
+  gets a leading `ChevronLeft` in the check
+  slot — not a new flex item, which would push
+  the label ~33px off its siblings — and the
+  check wins the slot while a saved preset is
+  the active look, so an active parent reads
+  exactly like any other checked item. No
+  trailing chevron, no new CSS: one-icon slot,
+  direction honest. (R18-1)
 
 ## 3. Spacing, layout, and motion
 
@@ -1454,6 +1477,20 @@ repeat the same mistakes.
   readers fail safe (garbage in, empty out),
   and the seed backfill tags samples from the
   new per-photo labels map. (R17-4)
+- **Score a suggestion against its own
+  evidence, not a held-out trial.** The
+  alignment % is the mean absolute deviation
+  of the learned samples from their own
+  (snapped, applied) median, range-normalized
+  per key (exposure spans 6, temperature
+  spans 8000 — raw units would let one wide
+  slider dominate) and flipped to a match
+  score. It needs no per-apply tracking,
+  scores every ready state incl. the seed
+  backfill, stays scope-aware like the
+  medians, and provably trends up as edits
+  converge — the requested behavior, from
+  data already in the profile. (R18-2)
 
 ## 5. Testing practices (repo-specific)
 
@@ -1859,6 +1896,24 @@ repeat the same mistakes.
   and the UI pins the subject hint, the ready
   tooltip + `.menu-tip` rule, and App wiring.
   (R17-4)
+- **A shared slot pins its one-icon contract.**
+  The saved-presets parent test asserts a
+  leading `lucide-chevron-left` with no right
+  chevron and nothing after the label — plus
+  the check-wins-while-active branch
+  (check for saved-active, arrow for
+  Original/built-ins) — so either icon
+  doubling up fails. (R18-1)
+- **Scores pin hand-computed values and the
+  trend, not just the shape.** The alignment
+  suite asserts unanimous edits score 100,
+  scatter lowers it, multi-key averages
+  against hand-computed 97/94, a 93 → 96
+  convergence pair, subject-vs-global
+  scoping, and null with no qualifying key;
+  the UI pins the alignment clause in both
+  tooltips plus the unscored-stays-bare
+  rule. (R18-2)
 
 ## 6. Tooling gotchas
 
@@ -1932,14 +1987,14 @@ repeat the same mistakes.
   in its exact format.** Headless subagents write the
   `.changeset/*.md` file by hand (front-matter package
   bumps + summary); reviewers check the format matches
-  what the CLI would emit. (R16-7, R16-8, R17-4)
+  what the CLI would emit. (R16-7, R16-8, R17-4, R18)
 - **Rebuild `dist/` before tests/typecheck, then leave it
   untracked.** `dist/` is gitignored but is what `@f8/*`
   imports (and the UI typecheck's `@f8/core` types)
   resolve to locally — stale dist reads as phantom
   failures ("your new API does not exist"); rebuilt
   output stays out of the commit. (R16-6, R16-8,
-  R17-4)
+  R17-4, R18-2)
 
 ## 7. Scope and ambiguity discipline
 
@@ -2326,6 +2381,13 @@ repeat the same mistakes.
   tags still group, because trusting stored
   tags keeps grouping identical to the
   visible chips. (R17-4)
+- **Restyles skip the README; tooltips land in
+  `features.md` / `architecture.md`.** A
+  one-row menu restyle needs no doc change at
+  all, while a one-clause tooltip addition
+  goes to the per-feature docs — the R11-5
+  one-question-per-file rule deciding the
+  target in both cases. (R18-1, R18-2)
 
 ## Per-task index, R1 (writeups removed; commits reachable via git)
 
@@ -2528,3 +2590,10 @@ repeat the same mistakes.
 | 2 | `6515202` | `64-compare-original.md` | Immediate hold-to-compare + Shift+click/Shift+B whole-original pin |
 | 3 | `f044997` | `65-saved-presets-submenu.md` | Saved presets surface in the ... menu's Saved Presets submenu |
 | 4 | `44ae534` | `66-ml-enhance-conditional.md` | ML Auto Enhance learns per subject tag, not one global style |
+
+## Per-task index, R18 (writeups in `docs/tasks/`)
+
+| # | Commit | Writeup | One-line summary |
+|---|--------|---------|------------------|
+| 1 | `c039700` | `67-saved-presets-left-arrow.md` | Saved Presets parent left-aligned with a leading left arrow |
+| 2 | `3572aa4` | `68-ml-alignment-tooltip.md` | ML Auto Enhance tooltips report the alignment % with user edits |
