@@ -11,16 +11,18 @@ import { MenuBar, Toolbar } from './Topbar.js';
 // Press-and-hold Compare, rendered on the server (no jsdom): pins the
 // disabled-without-edits markup + prop wiring, not live pointer behavior
 // (the hold state machine itself is unit-tested in
-// packages/core/src/compareHold.test.ts). A quick click still toggles the
-// side-by-side split; holding either Compare button previews the full
-// original until release; both buttons (plus the menu item and the B
-// shortcut) stay disabled while the photo has no edits.
+// packages/core/src/compareHold.test.ts). Pressing either Compare button
+// shows the full original immediately until release; a quick click toggles
+// the side-by-side split; Shift+click (or Shift+B) pins the full original
+// until toggled off. Both buttons (plus the menu item and the B shortcut)
+// stay disabled while the photo has no edits.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(here, '../../../../apps/web/src');
 const appSource = () => readFileSync(resolve(webRoot, 'App.tsx'), 'utf8');
 const topbarSource = () => readFileSync(resolve(here, 'Topbar.tsx'), 'utf8');
 const canvasSource = () => readFileSync(resolve(here, 'PhotoCanvas.tsx'), 'utf8');
+const hookSource = () => readFileSync(resolve(here, '../hooks/useCompareHold.ts'), 'utf8');
 
 const noop = () => {};
 
@@ -137,15 +139,15 @@ describe('compare hold', () => {
     expect(tag).toContain('disabled');
   });
 
-  it('advertises hold-to-peek in the toolbar tooltip without renaming the button', () => {
+  it('advertises immediate hold plus Shift+click in the toolbar tooltip without renaming the button', () => {
     const html = renderToolbar({ canCompare: true });
-    expect(html).toContain('data-tooltip="Compare with original (B) — hold to peek at the original"');
+    expect(html).toContain('data-tooltip="Compare with original (B) — hold to peek, Shift+click for full original"');
     expect(html).toContain('aria-label="Compare with original (B)"');
   });
 
   it('routes the toolbar compare click through the hold filter with hold handlers attached', () => {
     const source = topbarSource();
-    expect(source).toContain('useCompareHold(onHoldOriginal)');
+    expect(source).toContain('useCompareHold(onHoldOriginal, onToggleWholeOriginal)');
     expect(source).toContain("compareHold.filterClick(() => onAction('compare'))");
     expect(source).toContain('{...compareHold.holdProps}');
   });
@@ -161,14 +163,29 @@ describe('compare hold', () => {
     const html = renderCanvas();
     const tag = buttonTag(html, 'compare-button');
     expect(tag).not.toContain('disabled');
-    expect(tag).toContain('hold to peek at the original');
+    expect(tag).toContain('hold to peek, Shift+click for full original');
   });
 
   it('routes the canvas compare click through the hold filter with hold handlers attached', () => {
     const source = canvasSource();
-    expect(source).toContain('useCompareHold(onHoldOriginal)');
+    expect(source).toContain('useCompareHold(onHoldOriginal, onToggleWholeOriginal)');
     expect(source).toContain('compareHold.filterClick(onCompare)');
     expect(source).toContain('{...compareHold.holdProps}');
+  });
+
+  it('routes Shift+click to the whole-original toggle instead of the split toggle', () => {
+    const source = hookSource();
+    expect(source).toContain('if (event?.shiftKey) {');
+    expect(source).toContain('shiftRef.current?.();');
+  });
+
+  it('skips the hold press for Shift+click and non-primary buttons', () => {
+    const source = hookSource();
+    expect(source).toContain('if (event.shiftKey || (event.button ?? 0) !== 0) return;');
+  });
+
+  it('declares the whole-original toggle action alongside compare', () => {
+    expect(topbarSource()).toContain("'compare' | 'compare-whole' | 'grid'");
   });
 
   it('holds the full original while held, not the side-by-side split', () => {
@@ -190,12 +207,38 @@ describe('compare hold', () => {
     const block = appBlock('<Toolbar', '/>}');
     expect(block).toContain('canCompare={hasEdits}');
     expect(block).toContain('onHoldOriginal={setShowOriginal}');
+    expect(block).toContain("onToggleWholeOriginal={() => handleAction('compare-whole')}");
   });
 
   it('wires hold + edits into the canvas in App', () => {
     const block = appBlock('<PhotoCanvas', '/>');
     expect(block).toContain('canCompare={hasEdits}');
     expect(block).toContain('onHoldOriginal={setShowOriginal}');
+    expect(block).toContain("onToggleWholeOriginal={() => handleAction('compare-whole')}");
+  });
+
+  it('layers the pinned whole-original over the transient hold peek in App', () => {
+    const block = appBlock('<PhotoCanvas', '/>');
+    expect(block).toContain('showOriginal={showOriginal || compareWhole}');
+  });
+
+  it('unpins the whole-original before toggling the split on a plain click in App', () => {
+    expect(appSource()).toContain('if (compareWhole) setCompareWhole(false); else setCompare((current) => !current);');
+    const block = appBlock('<PhotoCanvas', '/>');
+    expect(block).toContain('onCompare={() => { if (compareWhole) setCompareWhole(false); else setCompare(!compare); }}');
+  });
+
+  it('toggles the pinned whole-original behind the same edits guard in App', () => {
+    expect(appSource()).toContain("case 'compare-whole': if (tool === 'crop' || isDefaultEdit(editor.edit)) break; setCompareWhole((current) => !current);");
+  });
+
+  it('toggles the pinned whole-original on Shift+B without touching the split in App', () => {
+    expect(appSource()).toContain("if (key === 'b' && event.shiftKey) { event.preventDefault(); actionRef.current('compare-whole'); return; }");
+  });
+
+  it('exits the pinned whole-original on escape and on entering crop in App', () => {
+    expect(appSource()).toContain("setCompare(false); setCompareWhole(false); setTool('adjust');");
+    expect(appSource()).toContain("if (next === 'crop') { setCompare(false); setShowOriginal(false); setCompareWhole(false); }");
   });
 
   it('disables the Image-menu compare item with no edits in App', () => {
@@ -219,5 +262,6 @@ describe('compare hold', () => {
   it('exits the split on reset, when there is nothing left to compare', () => {
     const resetCase = appBlock("case 'reset':", "case 'copy':");
     expect(resetCase).toContain('setCompare(false);');
+    expect(resetCase).toContain('setCompareWhole(false);');
   });
 });

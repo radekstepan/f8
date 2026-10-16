@@ -35,7 +35,7 @@ The full function catalogue of f/8. The README lists the same functions in short
 ## History and compare
 
 - Per-photo undo/redo with up to fifty history entries. Consecutive slider changes are grouped into a single edit.
-- Draggable before/after comparison and hold-to-preview-original behavior: holding `\` or either Compare button shows the full original until release, while a click toggles the split. Compare (buttons, Image menu, B) stays disabled until the photo has edits, and Reset exits the split.
+- Draggable before/after comparison and hold-to-preview-original behavior: pressing either Compare button (or holding `\`) shows the full original immediately until release, while a quick click toggles the split; Shift+click (or Shift+B) pins the full original until toggled off, and a plain click unpins it. Compare (buttons, Image menu, B) stays disabled until the photo has edits, and Reset exits the split.
 - Zoom-in-view magnifier: a View-menu submenu under the Show items (4x/8x/16x, 8x default on Z) that previews the cursor region in a fixed corner pane in photo view, matching the Compare split and showing the repair brush circle when the magnified brush fits the pane.
 
 ## Crop and repair
@@ -60,7 +60,8 @@ The full function catalogue of f/8. The README lists the same functions in short
 | `F` | Favorite |
 | `R` | Rotate left |
 | `B` | Toggle draggable comparison |
-| Hold `\` | Preview the original (or hold a Compare button) |
+| `Shift B` | Pin the full original (or Shift+click a Compare button) |
+| Hold `\` | Preview the original immediately (or press and hold a Compare button) |
 | `+`, `-`, `0` | Zoom in, out, fit |
 | `Shift F` | Focus mode |
 | `Ctrl/Cmd Z` | Undo |

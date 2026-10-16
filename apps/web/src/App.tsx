@@ -134,6 +134,10 @@ export default function App() {
   const [focusMode, setFocusMode] = useState(false);
   const [compare, setCompare] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
+  // Shift+click (either Compare button) or Shift+B pins the full original
+  // until toggled off — a persistent mode like the split, not per-photo
+  // state. The canvas receives it OR-ed with the transient hold peek.
+  const [compareWhole, setCompareWhole] = useState(false);
   const [zoom, setZoom] = useState(1);
   // View-menu "Zoom in View" submenu (shortcut Z on the 8x default): a
   // fixed square in the photo's bottom-right corner shows the region under
@@ -577,7 +581,7 @@ export default function App() {
     setView('editor');
     setInspectorOpen((current) => window.innerWidth < 760 && next === tool ? !current : true);
     if (window.innerWidth < 760) setSidebarOpen(false);
-    if (next === 'crop') { setCompare(false); setShowOriginal(false); }
+    if (next === 'crop') { setCompare(false); setShowOriginal(false); setCompareWhole(false); }
   };
 
   // Records the last-used crop ratio as a tool preference (per-photo crop
@@ -1058,9 +1062,11 @@ export default function App() {
         const groups = groupRetouchStrokes(editor.edit.retouches);
         const changed = editor.reset();
         denoise.clearApplied();
-        // A reset leaves nothing to compare: exit the split instead of
-        // showing two identical halves behind a disabled button.
+        // A reset leaves nothing to compare: exit the split (and the
+        // pinned whole-original) instead of showing two identical halves
+        // behind a disabled button.
         setCompare(false);
+        setCompareWhole(false);
         // Deterministic overlay purge: the canvas orphan-sweep only runs on
         // the next paint, so a reset-then-close would leak server files.
         for (const group of groups) {
@@ -1082,7 +1088,8 @@ export default function App() {
       case 'inspector': setInspectorOpen((current) => !current); break;
       case 'presets': setPresetsOpen((current) => !current); break;
       case 'filmstrip': setFilmstripOpen((current) => !current); break;
-      case 'compare': if (tool === 'crop' || isDefaultEdit(editor.edit)) break; setCompare((current) => !current); setView('editor'); break;
+      case 'compare': if (tool === 'crop' || isDefaultEdit(editor.edit)) break; if (compareWhole) setCompareWhole(false); else setCompare((current) => !current); setView('editor'); break;
+      case 'compare-whole': if (tool === 'crop' || isDefaultEdit(editor.edit)) break; setCompareWhole((current) => !current); setView('editor'); break;
       case 'grid': setFocusMode(false); setView((current) => current === 'editor' ? 'library' : 'editor'); break;
       case 'back': setView('library'); break;
       case 'fit': setZoom(1); break;
@@ -1147,11 +1154,12 @@ export default function App() {
       }
       if (key === 'a' && event.shiftKey) { event.preventDefault(); actionRef.current('enhance-scene'); return; }
       if (key === 'e' && event.shiftKey) { event.preventDefault(); actionRef.current('enhance-faces'); return; }
+      if (key === 'b' && event.shiftKey) { event.preventDefault(); actionRef.current('compare-whole'); return; }
       const actions: Record<string, MenuAction> = { a: 'enhance', f: 'favorite', b: 'compare', g: 'grid', r: 'rotate', z: 'zoom-lens-8' };
       const tools: Record<string, Tool> = { v: 'adjust', c: 'crop', j: 'repair' };
       if (actions[key]) actionRef.current(actions[key]);
       if (tools[key]) toolRef.current(tools[key]);
-      if (key === 'escape') { if (focusMode) { setFocusMode(false); return; } setCompare(false); setTool('adjust'); if (shouldEscapeToLibrary(view)) setView('library'); return; }
+      if (key === 'escape') { if (focusMode) { setFocusMode(false); return; } setCompare(false); setCompareWhole(false); setTool('adjust'); if (shouldEscapeToLibrary(view)) setView('library'); return; }
     };
     const onKeyUp = (event: KeyboardEvent) => { if (event.key === '\\') setShowOriginal(false); };
     const onBlur = () => setShowOriginal(false);
@@ -1336,7 +1344,7 @@ export default function App() {
   return <div className={`app-shell ${sidebarOpen ? 'has-sidebar' : ''} ${showInspector ? 'has-inspector' : ''} ${focusMode ? 'is-focus' : ''}`} onDragEnter={(event) => handleDrag(event, true)} onDragLeave={(event) => handleDrag(event, false)} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dragCount.current = 0; setDragging(false); void importDrop(event.dataTransfer); }}>
     <TooltipHost />
     {!focusMode && <MenuBar onAction={handleAction} canUndo={editor.canUndo} canRedo={editor.canRedo} canPaste={Boolean(clipboard)} compareDisabled={tool === 'crop' || !hasEdits} sidebar={sidebarOpen} inspector={inspectorOpen} presets={presetsOpen} filmstrip={filmstripOpen} zoomLens={zoomLens} zoomLensMagnification={zoomLensMag} presetList={availablePresets} selectedPreset={editor.edit.preset} onSelectPreset={selectPreset} />}
-    {!focusMode && <Toolbar collectionName={backlinkName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} canCompare={hasEdits} onHoldOriginal={setShowOriginal} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />}
+    {!focusMode && <Toolbar collectionName={backlinkName} count={filteredPhotos.length} tool={tool} compare={compare} canUndo={editor.canUndo} canRedo={editor.canRedo} showBacklink={showBacklink} showPhotoTools={showPhotoTools} presetsOpen={presetsOpen} canReset={!isDefaultEdit(editor.edit)} canCompare={hasEdits} onHoldOriginal={setShowOriginal} onToggleWholeOriginal={() => handleAction('compare-whole')} onTool={selectTool} onAction={handleAction} onDialog={setDialog} onTogglePresets={() => { setPresetsOpen((current) => !current); setView('editor'); }} />}
     {focusMode && <div className="focus-exit"><IconButton label="Exit focus mode (Shift F)" onClick={() => handleAction('fullscreen')}><Minimize2 size={17} /></IconButton></div>}
     <div className="workspace">
       {!focusMode && sidebarOpen && <Sidebar photos={photos} albums={albums} collection={collection} search={search} onSearch={(value) => { updateSearch(value); setView('library'); }} onSelect={selectCollection} onImport={() => fileInput.current?.click()} onNewAlbum={() => setDialog('album')} onRemoveAlbum={requestRemoveAlbum} onGenerateAlbumThumbnail={generateAlbumThumbnail} onRemoveAlbumThumbnail={removeAlbumThumbnail} onMoveToAlbum={movePhotosToAlbum} />}
@@ -1358,11 +1366,11 @@ export default function App() {
             ) : (
               <PhotoCanvas
                 photo={viewPhoto ?? photo} edit={editor.edit} tool={tool} zoom={zoom}
-                compare={compare} showOriginal={showOriginal} originalSrc={photo.src} canCompare={hasEdits} onHoldOriginal={setShowOriginal} zoomLens={shouldShowZoomLens(view, zoomLens)} zoomLensMagnification={zoomLensMag}
+                compare={compare} showOriginal={showOriginal || compareWhole} originalSrc={photo.src} canCompare={hasEdits} onHoldOriginal={setShowOriginal} onToggleWholeOriginal={() => handleAction('compare-whole')} zoomLens={shouldShowZoomLens(view, zoomLens)} zoomLensMagnification={zoomLensMag}
                 brushSize={brushSize} brushStrength={brushStrength} fineGrid={straightenDragging} straightenFlash={straightenFlash}
                 inpaintRepair={canvasRepairBinding}
                 highlightStroke={highlightStroke} onHighlightStroke={setHighlightStroke} highlightRegion={removalPreview}
-                onZoom={setZoom} onCompare={() => setCompare(!compare)}
+                onZoom={setZoom} onCompare={() => { if (compareWhole) setCompareWhole(false); else setCompare(!compare); }}
                 onFavorite={() => toggleFavorite()} onRating={setRating}
                 onInfo={() => setDialog('info')} onChange={editor.change} onEndMerge={editor.endMerge} onHistogram={setHistogram}
               />

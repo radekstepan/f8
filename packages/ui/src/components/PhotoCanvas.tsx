@@ -60,6 +60,8 @@ interface PhotoCanvasProps {
   canCompare?: boolean;
   /** Fires while the Compare button is held down: App shows the full original until release. */
   onHoldOriginal?: (holding: boolean) => void;
+  /** Fires on Shift+click: App pins the full original until toggled off. */
+  onToggleWholeOriginal?: () => void;
   onHighlightStroke?: (stroke: number | null) => void;
   onZoom: (zoom: number) => void;
   onCompare: () => void;
@@ -71,8 +73,8 @@ interface PhotoCanvasProps {
   onHistogram: (data: HistogramData) => void;
 }
 
-export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, originalSrc, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, straightenFlash = null, zoomLens = false, zoomLensMagnification = ZOOM_LENS_MAGNIFICATION, canCompare = true, onHoldOriginal, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
-  const compareHold = useCompareHold(onHoldOriginal);
+export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, originalSrc, brushSize, brushStrength, inpaintRepair, highlightStroke = null, highlightRegion = null, fineGrid = false, straightenFlash = null, zoomLens = false, zoomLensMagnification = ZOOM_LENS_MAGNIFICATION, canCompare = true, onHoldOriginal, onToggleWholeOriginal, onHighlightStroke, onZoom, onCompare, onFavorite, onRating, onInfo, onChange, onEndMerge, onHistogram }: PhotoCanvasProps) {
+  const compareHold = useCompareHold(onHoldOriginal, onToggleWholeOriginal);
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1520,7 +1522,7 @@ export function PhotoCanvas({ photo, edit, tool, zoom, compare, showOriginal, or
         <span>{photo.width.toLocaleString()} <span className="dimension-x">x</span> {photo.height.toLocaleString()} px</span>
         <span className="dimension-separator" />{Math.round(photo.width * photo.height / 1000000)} MP
       </button>
-      <button className={`compare-button ${compare ? 'is-active' : ''}`} onClick={compareHold.filterClick(onCompare)} {...compareHold.holdProps} disabled={tool === 'crop' || !canCompare} data-tooltip={tool === 'crop' ? 'Compare is unavailable while cropping' : !canCompare ? 'Compare is unavailable until you edit the photo' : 'Compare with original (B) — hold to peek at the original'}>
+      <button className={`compare-button ${compare ? 'is-active' : ''}`} onClick={compareHold.filterClick(onCompare)} {...compareHold.holdProps} disabled={tool === 'crop' || !canCompare} data-tooltip={tool === 'crop' ? 'Compare is unavailable while cropping' : !canCompare ? 'Compare is unavailable until you edit the photo' : 'Compare with original (B) — hold to peek, Shift+click for full original'}>
         <Columns2 size={14} /><span>Compare</span><kbd>B</kbd>
       </button>
       <div className="zoom-controls">

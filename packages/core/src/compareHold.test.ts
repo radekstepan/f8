@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { COMPARE_HOLD_DELAY_MS, createCompareHold } from "./compareHold.js";
+import { COMPARE_CLICK_WINDOW_MS, createCompareHold } from "./compareHold.js";
 
-/** Controllable scheduler: tests fire the hold delay exactly when wanted. */
+/** Controllable scheduler: tests close the click window exactly when wanted. */
 function manualScheduler() {
   let pending: (() => void) | null = null;
   let lastDelay = -1;
@@ -40,14 +40,15 @@ function setup() {
 }
 
 describe("compare hold", () => {
-  it("waits the documented delay before entering the hold", () => {
-    const { scheduler, hold } = setup();
+  it("shows the original synchronously on press — no delay, no timer wait", () => {
+    const { scheduler, holds, hold } = setup();
     hold.press();
+    expect(holds).toEqual([true]);
     expect(scheduler.armed).toBe(true);
-    expect(scheduler.delay).toBe(COMPARE_HOLD_DELAY_MS);
+    expect(scheduler.delay).toBe(COMPARE_CLICK_WINDOW_MS);
   });
 
-  it("shows the original while held and hides it on release", () => {
+  it("hides the original on release after the click window closes", () => {
     const { scheduler, holds, hold } = setup();
     hold.press();
     scheduler.fire();
@@ -68,7 +69,7 @@ describe("compare hold", () => {
     const { holds, hold } = setup();
     hold.press();
     hold.release();
-    expect(holds).toEqual([]);
+    expect(holds).toEqual([true, false]);
     expect(hold.click()).toBe(true);
   });
 
@@ -81,12 +82,12 @@ describe("compare hold", () => {
     expect(hold.click()).toBe(true);
   });
 
-  it("cancels the pending hold on release so the original never flashes", () => {
+  it("cancels the pending window on release so a quick press never becomes a hold", () => {
     const { scheduler, holds, hold } = setup();
     hold.press();
     hold.release();
     scheduler.fire();
-    expect(holds).toEqual([]);
+    expect(holds).toEqual([true, false]);
     expect(hold.click()).toBe(true);
   });
 
@@ -97,22 +98,25 @@ describe("compare hold", () => {
     expect(hold.click()).toBe(true);
   });
 
-  it("ignores a second press while armed — the first press wins", () => {
+  it("ignores a second press while showing — the first press wins", () => {
     const { scheduler, holds, hold } = setup();
     hold.press();
     hold.press();
-    scheduler.fire();
+    expect(holds).toEqual([true]);
     hold.release();
+    scheduler.fire();
     expect(holds).toEqual([true, false]);
+    expect(hold.click()).toBe(true);
   });
 
-  it("ignores a second press while holding (multi-touch)", () => {
+  it("ignores a second press past the window (multi-touch)", () => {
     const { scheduler, holds, hold } = setup();
     hold.press();
     scheduler.fire();
     hold.press();
     hold.release();
     expect(holds).toEqual([true, false]);
+    expect(hold.click()).toBe(false);
   });
 
   it("arms fresh after a full hold cycle", () => {

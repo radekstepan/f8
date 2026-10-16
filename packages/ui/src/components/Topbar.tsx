@@ -6,7 +6,7 @@ import { BrandMark, IconButton, MenuItem, MenuSeparator, MlBadge } from './Edito
 import { useCompareHold } from '../hooks/useCompareHold.js';
 import { useMenuDismiss } from '../hooks/useMenuDismiss.js';
 
-export type MenuAction = 'import' | 'import-local-folder' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'enhance-scene' | 'enhance-faces' | 'save-preset' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'grid' | 'back' | 'fit' | 'zoom-lens-4' | 'zoom-lens-8' | 'zoom-lens-16' | 'fullscreen' | 'shortcuts' | 'about';
+export type MenuAction = 'import' | 'import-local-folder' | 'import-folder' | 'export' | 'album' | 'undo' | 'redo' | 'reset' | 'copy' | 'paste' | 'enhance' | 'enhance-scene' | 'enhance-faces' | 'save-preset' | 'rotate' | 'favorite' | 'remove' | 'sidebar' | 'inspector' | 'presets' | 'filmstrip' | 'compare' | 'compare-whole' | 'grid' | 'back' | 'fit' | 'zoom-lens-4' | 'zoom-lens-8' | 'zoom-lens-16' | 'fullscreen' | 'shortcuts' | 'about';
 
 const zoomLensActions: Record<ZoomLensMagnification, MenuAction> = { 4: 'zoom-lens-4', 8: 'zoom-lens-8', 16: 'zoom-lens-16' };
 
@@ -160,14 +160,16 @@ interface ToolbarProps {
   canCompare?: boolean;
   /** Fires while the Compare button is held down: App shows the full original until release. */
   onHoldOriginal?: (holding: boolean) => void;
+  /** Fires on Shift+click: App pins the full original until toggled off. */
+  onToggleWholeOriginal?: () => void;
   onTool: (tool: Tool) => void;
   onAction: (action: MenuAction) => void;
   onDialog: (dialog: DialogType) => void;
   onTogglePresets?: () => void;
 }
 
-export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo, showBacklink, showPhotoTools = true, presetsOpen, canReset = true, canCompare = true, onHoldOriginal, onTool, onAction, onDialog, onTogglePresets }: ToolbarProps) {
-  const compareHold = useCompareHold(onHoldOriginal);
+export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo, showBacklink, showPhotoTools = true, presetsOpen, canReset = true, canCompare = true, onHoldOriginal, onToggleWholeOriginal, onTool, onAction, onDialog, onTogglePresets }: ToolbarProps) {
+  const compareHold = useCompareHold(onHoldOriginal, onToggleWholeOriginal);
   // Tools only: the one-shot Auto Enhance lives in the Adjust sidebar
   // (Image menu + A shortcut still reach it from anywhere).
   const tools = [
@@ -209,7 +211,7 @@ export function Toolbar({ collectionName, count, tool, compare, canUndo, canRedo
       </div>
       <div className="toolbar-actions">
         {showPhotoTools && <IconButton label="Reset to original" className="toolbar-reset" active={canReset} disabled={!canReset} onClick={() => onAction('reset')}><RotateCcw size={18} strokeWidth={1.6} /></IconButton>}
-        {showPhotoTools && <IconButton label={tool === 'crop' ? 'Compare with original (unavailable while cropping)' : !canCompare ? 'Compare with original (no edits yet)' : 'Compare with original (B)'} data-tooltip={tool === 'crop' ? 'Compare with original (unavailable while cropping)' : !canCompare ? 'Compare with original (no edits yet)' : 'Compare with original (B) — hold to peek at the original'} active={compare} disabled={tool === 'crop' || !canCompare} onClick={compareHold.filterClick(() => onAction('compare'))} {...compareHold.holdProps}><Columns2 size={18} strokeWidth={1.6} /></IconButton>}
+        {showPhotoTools && <IconButton label={tool === 'crop' ? 'Compare with original (unavailable while cropping)' : !canCompare ? 'Compare with original (no edits yet)' : 'Compare with original (B)'} data-tooltip={tool === 'crop' ? 'Compare with original (unavailable while cropping)' : !canCompare ? 'Compare with original (no edits yet)' : 'Compare with original (B) — hold to peek, Shift+click for full original'} active={compare} disabled={tool === 'crop' || !canCompare} onClick={compareHold.filterClick(() => onAction('compare'))} {...compareHold.holdProps}><Columns2 size={18} strokeWidth={1.6} /></IconButton>}
         {showPhotoTools && onTogglePresets && <IconButton label={presetsOpen ? 'Hide presets' : 'Show presets'} active={presetsOpen} onClick={onTogglePresets}><SwatchBook size={18} strokeWidth={1.6} /></IconButton>}
         {showPhotoTools && <IconButton label="Remove from library (Del)" className="toolbar-remove" onClick={() => onAction('remove')}><Trash2 size={18} strokeWidth={1.6} /></IconButton>}
         {showPhotoTools && <IconButton label="Photo information (I)" onClick={() => onDialog('info')}><Info size={18} strokeWidth={1.6} /></IconButton>}
