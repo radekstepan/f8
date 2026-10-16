@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Bandage, Brush, Check, ChevronRight, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, Pipette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, SunMoon, Thermometer, Trash2, Waves, X } from 'lucide-react';
+import { Bandage, Brush, Check, ChevronLeft, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, Pipette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, SunMoon, Thermometer, Trash2, Waves, X } from 'lucide-react';
 import { CROP_RATIOS, MIN_TASTE_PHOTOS, SCENE_DISPLAY_NAMES, SELECTIVE_CLARITY_RANGES, SELECTIVE_COLOR_RANGES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, isSelectiveClarityActive, isSelectiveClarityParamsNeutral, isSelectiveColorActive, isSelectiveColorParamsNeutral, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, selectiveClarityParams, selectiveColorParams, setSelectiveClarityRange, setSelectiveColorRange, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
 import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, EnhanceMode, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, Preset, SelectiveAdjustParams, SelectiveAdjustState, SelectiveClarityParams, SelectiveClarityRange, SelectiveColorParams, SelectiveColorRange, SelectiveMaskSource, SelectiveTarget, TasteScope, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
@@ -1109,8 +1109,11 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   const title = tool === 'crop' ? 'Crop & Straighten' : tool === 'repair' ? 'Repair' : 'Color Adjustments';
   const TitleIcon = tool === 'crop' ? Crop : tool === 'repair' ? Bandage : SlidersHorizontal;
   const closeAction = (callback: () => void) => { callback(); setMenu(false); };
-  // The Saved Presets parent checks while a user-saved preset is the
-  // active look (built-ins and Original leave it unchecked).
+  // The Saved Presets parent leads with a left arrow — its flyout opens
+  // left of the menu (unlike the right-opening top-bar submenus), so the
+  // row stays left-aligned with no right-flushed chevron. While a
+  // user-saved preset is the active look the slot swaps to a check
+  // (built-ins and Original leave the arrow in place).
   const savedActive = savedPresets.some((preset) => preset.name === selectedPreset);
   const selectSavedPreset = (preset: Preset) => { onSelectPreset?.(preset); closeMenu(); };
   // Whole-photo enhance UI: the header pill highlights only the pure
@@ -1194,7 +1197,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
           <MenuItem onClick={() => closeAction(onCopy)} shortcut="Ctrl Shift C">Copy Adjustments</MenuItem>
           <MenuItem onClick={() => closeAction(onPaste)} disabled={!canPaste} shortcut="Ctrl Shift V">Paste Adjustments</MenuItem>
           <div className="menu-submenu-anchor" onMouseEnter={() => setSubmenu('saved-presets')} onMouseLeave={() => setSubmenu(null)}>
-            <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={submenu === 'saved-presets'} data-submenu="saved-presets" className="menu-item has-submenu" onClick={() => setSubmenu(submenu === 'saved-presets' ? null : 'saved-presets')}><span className="menu-check">{savedActive && <Check size={13} />}</span><span>Saved Presets</span><ChevronRight size={13} className="menu-chevron" /></button>
+            <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={submenu === 'saved-presets'} data-submenu="saved-presets" className="menu-item has-submenu" onClick={() => setSubmenu(submenu === 'saved-presets' ? null : 'saved-presets')}><span className="menu-check">{savedActive ? <Check size={13} /> : <ChevronLeft size={13} className="menu-chevron" />}</span><span>Saved Presets</span></button>
             {submenu === 'saved-presets' && <div className="dropdown-menu dropdown-submenu saved-presets-submenu" role="menu" aria-label="Saved presets">{savedPresets.length === 0 ? <MenuItem disabled onClick={() => {}}>No saved presets yet</MenuItem> : savedPresets.map((preset) => <MenuItem key={preset.id} onClick={() => selectSavedPreset(preset)} checked={selectedPreset === preset.name}>{preset.name}</MenuItem>)}</div>}
           </div>
           <MenuItem onClick={() => closeAction(onSavePreset)}>Save as Preset...</MenuItem>

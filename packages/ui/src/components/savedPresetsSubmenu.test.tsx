@@ -98,13 +98,26 @@ function buttonFor(html: string, name: string): string {
 }
 
 describe('saved presets parent in the ... menu', () => {
-  it('shows a Saved Presets parent with a submenu chevron once the menu opens', () => {
+  it('shows a Saved Presets parent with a left arrow once the menu opens', () => {
     const html = renderInspector({ menuOpen: true, savedPresets: [makePreset('c1', 'My Look')] });
     expect(html).toContain('data-submenu="saved-presets"');
     expect(html).toContain('<span>Saved Presets</span>');
     expect(html).toContain('class="menu-item has-submenu"');
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).toContain('menu-chevron');
+    // The flyout opens left of the menu, so the arrow points left and
+    // leads the row — never a right chevron, trailing or otherwise.
+    // (Scoped to the parent button: collapsed sections below disclose
+    // with their own right chevrons.)
+    const rowStart = html.indexOf('data-submenu="saved-presets"');
+    const row = html.slice(rowStart, html.indexOf('</button>', rowStart));
+    expect(row).toContain('lucide-chevron-left');
+    expect(row).not.toContain('lucide-chevron-right');
+    expect(row.indexOf('menu-chevron')).toBeLessThan(row.indexOf('<span>Saved Presets</span>'));
+    const parent = source('Inspector.tsx').split('\n').find((line) => line.includes('data-submenu="saved-presets"')) ?? '';
+    expect(parent).toContain('<ChevronLeft size={13} className="menu-chevron" />');
+    // Nothing trails the label: the row stays left-aligned like its siblings.
+    expect(parent).toContain('<span>Saved Presets</span></button>');
     // Closed by default: the parent renders, the flyout does not.
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain('saved-presets-submenu');
@@ -117,17 +130,22 @@ describe('saved presets parent in the ... menu', () => {
     expect(source('Inspector.tsx')).toContain('<MenuItem onClick={() => closeAction(onSavePreset)}>Save as Preset...</MenuItem>');
   });
 
-  it('checks the parent only while a saved preset is the active look', () => {
+  it('swaps the left arrow for a check only while a saved preset is the active look', () => {
     const saved = [makePreset('c1', 'My Look'), makePreset('c2', 'Grapes Mood')];
-    const active = renderInspector({ menuOpen: true, savedPresets: saved, selectedPreset: 'My Look' });
-    const parentActive = active.slice(active.indexOf('data-submenu="saved-presets"'), active.indexOf('<span>Saved Presets</span>'));
-    expect(parentActive).toContain('<svg');
-    const original = renderInspector({ menuOpen: true, savedPresets: saved, selectedPreset: 'Original' });
-    const parentOriginal = original.slice(original.indexOf('data-submenu="saved-presets"'), original.indexOf('<span>Saved Presets</span>'));
-    expect(parentOriginal).not.toContain('<svg');
-    const builtIn = renderInspector({ menuOpen: true, savedPresets: saved, selectedPreset: 'Vivid' });
-    const parentBuiltIn = builtIn.slice(builtIn.indexOf('data-submenu="saved-presets"'), builtIn.indexOf('<span>Saved Presets</span>'));
-    expect(parentBuiltIn).not.toContain('<svg');
+    // The leading slot carries exactly one icon: the submenu arrow by
+    // default, a check while a saved preset is the active look.
+    const slot = (html: string) => {
+      const start = html.indexOf('data-submenu="saved-presets"');
+      return html.slice(start, html.indexOf('<span>Saved Presets</span>', start));
+    };
+    const active = slot(renderInspector({ menuOpen: true, savedPresets: saved, selectedPreset: 'My Look' }));
+    expect(active).toContain('lucide-check');
+    expect(active).not.toContain('menu-chevron');
+    for (const selectedPreset of ['Original', 'Vivid']) {
+      const idle = slot(renderInspector({ menuOpen: true, savedPresets: saved, selectedPreset }));
+      expect(idle).toContain('lucide-chevron-left');
+      expect(idle).not.toContain('lucide-check');
+    }
   });
 
   it('opens on hover and toggles on click like the Image > Presets parent', () => {
