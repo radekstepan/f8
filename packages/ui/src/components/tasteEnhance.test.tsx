@@ -142,12 +142,19 @@ describe('ml auto enhance menu item', () => {
     expect(inspector).toContain("tasteScope === 'label' && tasteLabel");
   });
 
-  it('tooltips a ready subject-scoped enhance with whose style it applies', () => {
+  it('tooltips a ready subject-scoped enhance with whose style it applies, plus its alignment', () => {
     const inspector = source();
-    expect(inspector).toContain('Learned from ${tastePhotos} photos like this (${tasteLabel})');
+    expect(inspector).toContain('Learned from ${tastePhotos} photos like this (${tasteLabel})${tasteMatch ? ` — ${tasteMatch}` :');
+    expect(inspector).toContain('`${tasteAlignment}% match with your edits`');
     expect(inspector).toContain('<span className="menu-tip" data-tooltip={tasteReadyHint}><MenuItem onClick={() => closeAction(onAutoTaste)}>ML Auto Enhance</MenuItem></span>');
     // The wrapper is a layout-neutral block: same box as the bare item.
     expect(cssRule('.menu-tip')).toMatch(/display\s*:\s*block/);
+  });
+
+  it('tooltips a ready global enhance with its alignment, and stays bare while unscored', () => {
+    const inspector = source();
+    expect(inspector).toContain('Learned from ${tastePhotos} photos — ${tasteMatch}` : null');
+    expect(inspector).toContain('tasteAlignment == null ? null');
   });
 
   it('keeps taste enhance adjust-only: repair and crop headers carry no trace', () => {
@@ -179,6 +186,6 @@ describe('ml auto enhance editor wiring', () => {
     expect(app).toContain('const tasteLabel = topTasteLabel(photo?.labels);');
     expect(app).toContain('const tasteSummary = taste.summaryFor(tasteLabel);');
     expect(app).toContain('const applyTasteEnhance = () => { const patch = taste.patchFor(tasteLabel); if (patch) editor.autoEnhanceTaste(patch); };');
-    expect(app).toContain('onAutoTaste={applyTasteEnhance} tasteReady={taste.patchFor(tasteLabel) !== null} tastePhotos={tasteSummary.photos} tasteScope={tasteSummary.scope} tasteLabel={tasteLabel}');
+    expect(app).toContain('onAutoTaste={applyTasteEnhance} tasteReady={taste.patchFor(tasteLabel) !== null} tastePhotos={tasteSummary.photos} tasteScope={tasteSummary.scope} tasteLabel={tasteLabel} tasteAlignment={tasteSummary.alignment}');
   });
 });

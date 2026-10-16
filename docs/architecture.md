@@ -28,7 +28,7 @@ How f/8 is built. This file holds the deep technical notes that used to live in 
 | `packages/core/src/library.ts` | Library API contract and framework-free HTTP client. |
 | `packages/core/src/libraryUrl.ts` | Shareable URL scheme: path parsing/building for album and photo deep-links. |
 | `packages/core/src/actionStack.ts` | Persisted enhance-action stack: the applied whole-photo enhance with its revert snapshot, plus stack transitions and sanitizing. |
-| `packages/core/src/tasteProfile.ts` | Learned taste profile: per-photo samples tagged by subject (top ML label), per-subject/global per-adjustment medians, the ML Auto Enhance patch, and the library-seed backfill. |
+| `packages/core/src/tasteProfile.ts` | Learned taste profile: per-photo samples tagged by subject (top ML label), per-subject/global per-adjustment medians, the ML Auto Enhance patch, the suggestion-vs-edits alignment score, and the library-seed backfill. |
 | `packages/ui/src/hooks/useEditor.ts` | Non-destructive per-photo edits, grouped history, server persistence, and preset application. |
 | `packages/ui/src/hooks/useLibrary.ts` | Server library state: loading, uploads, folder import, and metadata. |
 | `packages/ui/src/components/EditorUI.tsx` | Reusable buttons, sliders, switches, selects, menus, and accessible dialogs. |

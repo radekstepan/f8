@@ -19,6 +19,7 @@ import {
   serializeTasteProfile,
   snapTasteValue,
   summarizeTaste,
+  tasteAlignment,
   tasteEnhancePatch,
   tasteKeyThreshold,
   tasteProfileFromSeed,
@@ -224,7 +225,7 @@ function profileFromPhotos(
 
 describe("summarizeTaste", () => {
   it("is empty for an empty profile", () => {
-    expect(summarizeTaste(createTasteProfile())).toEqual({ photos: 0, keys: {}, scope: "global", label: null });
+    expect(summarizeTaste(createTasteProfile())).toEqual({ photos: 0, keys: {}, scope: "global", label: null, alignment: null });
   });
 
   it("takes the median over touching photos and counts them", () => {
@@ -422,6 +423,78 @@ describe("tasteEnhancePatch", () => {
     expect(tasteEnhancePatch(profile, "grapes")).toBeNull();
     expect(tasteEnhancePatch(profile, "portrait")).toEqual({ contrast: 40 });
     expect(tasteEnhancePatch(profile)).toEqual({ contrast: 40 });
+  });
+});
+
+describe("tasteAlignment", () => {
+  it("scores 100 when every touched value equals the suggestion", () => {
+    const summary = summarizeTaste(profileFromPhotos([{ contrast: 20 }, { contrast: 20 }, { contrast: 20 }]));
+    expect(summary.keys.contrast?.median).toBe(20);
+    expect(summary.alignment).toBe(100);
+  });
+
+  it("scores lower as edits scatter around the median", () => {
+    // Median 20, mean deviation 20/3 over the 200-wide contrast range.
+    const summary = summarizeTaste(profileFromPhotos([{ contrast: 10 }, { contrast: 20 }, { contrast: 30 }]));
+    expect(summary.alignment).toBe(97);
+    const tight = summarizeTaste(profileFromPhotos([{ contrast: 19 }, { contrast: 20 }, { contrast: 21 }]));
+    const loose = summarizeTaste(profileFromPhotos([{ contrast: -50 }, { contrast: 20 }, { contrast: 90 }]));
+    expect(tight.alignment).toBeGreaterThan(summary.alignment as number);
+    expect(loose.alignment).toBeLessThan(summary.alignment as number);
+  });
+
+  it("averages the normalized deviation across qualifying keys", () => {
+    // Contrast is exact (0 deviation); exposure deviates 1/3 over its
+    // 6-wide range — the mean deviation is half the exposure-only one.
+    const summary = summarizeTaste(
+      profileFromPhotos([
+        { contrast: 10, exposure: 0.5 },
+        { contrast: 10, exposure: 1.0 },
+        { contrast: 10, exposure: 1.5 },
+      ]),
+    );
+    expect(summary.alignment).toBe(97);
+    const exposureOnly = summarizeTaste(profileFromPhotos([{ exposure: 0.5 }, { exposure: 1.0 }, { exposure: 1.5 }]));
+    expect(exposureOnly.alignment).toBe(94);
+  });
+
+  it("trends up as new edits converge on the suggestion", () => {
+    const before = summarizeTaste(profileFromPhotos([{ contrast: 10 }, { contrast: 30 }, { contrast: 50 }]));
+    const after = summarizeTaste(
+      profileFromPhotos([{ contrast: 10 }, { contrast: 30 }, { contrast: 50 }, { contrast: 30 }, { contrast: 30 }]),
+    );
+    expect(before.alignment).toBe(93);
+    expect(after.alignment).toBe(96);
+  });
+
+  it("scores the subject scope, not the global spread, for conditional summaries", () => {
+    const profile = profileFromPhotos(
+      [
+        { contrast: 30 },
+        { contrast: 30 },
+        { contrast: 30 },
+        { contrast: -80 },
+        { contrast: -80 },
+        { contrast: -80 },
+      ],
+      ["grapes", "grapes", "grapes", "portrait", "portrait", "portrait"],
+    );
+    // Each subject is internally unanimous; the global mix is not.
+    expect(summarizeTaste(profile, "grapes").alignment).toBe(100);
+    expect(summarizeTaste(profile, "portrait").alignment).toBe(100);
+    expect(summarizeTaste(profile).alignment).toBeLessThan(100);
+  });
+
+  it("is null when the summary holds no qualifying key", () => {
+    expect(summarizeTaste(createTasteProfile()).alignment).toBeNull();
+    // Three photos, three different single-key edits: nothing suggested, nothing to score.
+    const summary = summarizeTaste(profileFromPhotos([{ contrast: 20 }, { saturation: 20 }, { exposure: 0.5 }]));
+    expect(summary.keys).toEqual({});
+    expect(summary.alignment).toBeNull();
+  });
+
+  it("tasteAlignment returns null for an empty key set", () => {
+    expect(tasteAlignment([], {})).toBeNull();
   });
 });
 

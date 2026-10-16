@@ -302,6 +302,13 @@ export interface TasteSummary {
   scope: TasteScope;
   /** The subject tag the summary was requested for (null: global). */
   label: string | null;
+  /**
+   * How closely the in-scope samples cluster around the applied medians,
+   * 0..100 — 100 when every touched value equals the suggestion. Null
+   * while the summary holds no qualifying key. Surfaced in the ML Auto
+   * Enhance tooltip; it trends up as the user's edits converge.
+   */
+  alignment: number | null;
 }
 
 /**
@@ -325,7 +332,13 @@ export function summarizeTaste(profile: TasteProfile, label?: string | null): Ta
   const matching = tag ? all.filter((sample) => normalizeSampleLabel(sample.label) === tag) : [];
   const scoped = tag !== null && matching.length >= MIN_TASTE_PHOTOS;
   const samples = scoped ? matching : all;
-  const summary: TasteSummary = { photos: samples.length, keys: {}, scope: scoped ? "label" : "global", label: tag };
+  const summary: TasteSummary = {
+    photos: samples.length,
+    keys: {},
+    scope: scoped ? "label" : "global",
+    label: tag,
+    alignment: null,
+  };
   if (samples.length === 0) return summary;
   const threshold = tasteKeyThreshold(samples.length);
   for (const key of TASTE_KEYS) {
@@ -337,7 +350,38 @@ export function summarizeTaste(profile: TasteProfile, label?: string | null): Ta
     if (medianValue === DEFAULT_EDIT[key]) continue;
     summary.keys[key] = { median: medianValue, count: touched.length };
   }
+  summary.alignment = tasteAlignment(samples, summary.keys);
   return summary;
+}
+
+/**
+ * Alignment between the ML suggestion and the user's final edits: per
+ * qualifying key, the mean absolute deviation of the touched values from
+ * the applied (snapped) median, normalized by that slider's range, then
+ * averaged across keys and flipped to a 0..100 match score. Identical
+ * edits score 100; scattered edits score lower — so the number trends up
+ * as the user's taste converges and the suggestion lands closer. Null
+ * when there is no qualifying key (nothing suggested, nothing to score).
+ */
+export function tasteAlignment(
+  samples: readonly TasteSample[],
+  keys: Partial<Record<TasteKey, TasteKeySummary>>,
+): number | null {
+  const qualified = (Object.keys(keys) as TasteKey[]).filter((key) => keys[key] !== undefined);
+  if (qualified.length === 0) return null;
+  let total = 0;
+  for (const key of qualified) {
+    const medianValue = (keys[key] as TasteKeySummary).median;
+    const touched = samples
+      .map((sample) => sample.values[key])
+      .filter((value): value is number => typeof value === "number");
+    if (touched.length === 0) continue;
+    const spec = TASTE_KEY_SPEC[key];
+    const range = spec.max - spec.min;
+    const deviation = touched.reduce((sum, value) => sum + Math.abs(value - medianValue), 0) / touched.length;
+    total += range <= 0 ? 0 : deviation / range;
+  }
+  return Math.max(0, Math.min(100, Math.round(100 * (1 - total / qualified.length))));
 }
 
 /**
