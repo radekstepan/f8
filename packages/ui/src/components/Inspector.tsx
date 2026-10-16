@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Bandage, Brush, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, Pipette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, SunMoon, Thermometer, Trash2, Waves, X } from 'lucide-react';
+import { Bandage, Brush, Check, ChevronRight, Circle, CircleDashed, CircleUserRound, Contrast, Crop, Eraser, FlipHorizontal2, FlipVertical2, Focus, Image, Layers, MoreHorizontal, Palette, Pipette, RotateCcw, RotateCw, ScanFace, SlidersHorizontal, Sparkles, Spline, Sun, SunMoon, Thermometer, Trash2, Waves, X } from 'lucide-react';
 import { CROP_RATIOS, MIN_TASTE_PHOTOS, SCENE_DISPLAY_NAMES, SELECTIVE_CLARITY_RANGES, SELECTIVE_COLOR_RANGES, TONE_CURVE_HEIGHT, TONE_CURVE_WIDTH, addCurvePoint, denoiseStrengthForIso, groupRetouchStrokes, hasStraightenHorizon, isSelectiveClarityActive, isSelectiveClarityParamsNeutral, isSelectiveColorActive, isSelectiveColorParamsNeutral, moveCurvePoint, normalizeCurvePoints, removeCurvePoint, selectiveClarityParams, selectiveColorParams, setSelectiveClarityRange, setSelectiveColorRange, shouldAutoDenoise, strokeIdForPoint, toneCurveDisplayPath } from '@f8/core';
-import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, EnhanceMode, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, SelectiveAdjustParams, SelectiveAdjustState, SelectiveClarityParams, SelectiveClarityRange, SelectiveColorParams, SelectiveColorRange, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
+import type { ChangeEdit, CurvePoint, DenoiseSource, DenoiseState, DetectedObject, DustSpot, DustSpotsSource, EditState, EnhanceMode, FaceDetectSource, HealQuality, InpaintMethod, NumericAdjustment, ObjectDetectSource, Photo, Preset, SelectiveAdjustParams, SelectiveAdjustState, SelectiveClarityParams, SelectiveClarityRange, SelectiveColorParams, SelectiveColorRange, SelectiveMaskSource, SelectiveTarget, Tool, VisionWorkerStatus } from '@f8/core';
 import type { HistogramData } from './PhotoCanvas.js';
 import { AdjustmentSection } from './AdjustmentSection.js';
 import { CheckField, IconButton, MenuItem, MenuSeparator, MlBadge, RangeControl, RevertButton, SegmentedControl, SelectField, Toggle } from './EditorUI.js';
@@ -1074,16 +1074,28 @@ interface InspectorProps {
   onCopy: () => void;
   onPaste: () => void;
   onSavePreset: () => void;
+  /** User-saved presets listed in the ... menu's Saved Presets flyout. Defaults to []. */
+  savedPresets?: Preset[];
+  /** Active preset name; the flyout checks it. Defaults to 'Original'. */
+  selectedPreset?: string;
+  /** Fires when a saved preset is picked from the flyout; omit to leave the flyout unselectable. */
+  onSelectPreset?: (preset: Preset) => void;
   onBrushSize: (value: number) => void;
   onBrushStrength: (value: number) => void;
   onClose: () => void;
+  /** Seeds an open options menu (a test seam for the open markup). */
+  initialMenuOpen?: boolean;
+  /** Seeds an open submenu flyout (a test seam for the open markup). */
+  initialSubmenu?: 'saved-presets' | null;
 }
 
-export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, enhanceMode = null, enhancePure = false, enhanceCanRevert, onRevertEnhance, onAutoTaste, tasteReady = false, tastePhotos = 0, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, onResetWhiteBalance, onResetLightness, onResetColor, onCopy, onPaste, onSavePreset, onBrushSize, onBrushStrength, onClose }: InspectorProps) {
-  const [menu, setMenu] = useState(false);
+export function Inspector({ photo, edit, tool, histogram, brushSize, brushStrength, canPaste, straightenAssist, repairAssist, onStraightenDragging, highlightStroke = null, onHighlightStroke, onChange, onRotate, onStraighten, onReset, onAuto, onAutoScene, enhanceMode = null, enhancePure = false, enhanceCanRevert, onRevertEnhance, onAutoTaste, tasteReady = false, tastePhotos = 0, faceAssist, selectiveAssist, denoiseAssist, onAutoWhiteBalance, onAutoLightness, onAutoColor, onResetWhiteBalance, onResetLightness, onResetColor, onCopy, onPaste, onSavePreset, savedPresets = [], selectedPreset = 'Original', onSelectPreset, onBrushSize, onBrushStrength, onClose, initialMenuOpen = false, initialSubmenu = null }: InspectorProps) {
+  const [menu, setMenu] = useState(initialMenuOpen);
+  const [submenu, setSubmenu] = useState<'saved-presets' | null>(initialSubmenu);
   const ref = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  useMenuDismiss(menuRef, () => setMenu(false));
+  const closeMenu = () => { setMenu(false); setSubmenu(null); };
+  useMenuDismiss(menuRef, closeMenu);
 
   const range = (key: NumericAdjustment, label: string, options: Partial<React.ComponentProps<typeof RangeControl>> = {}) => <RangeControl key={key} label={label} value={edit[key]} signed onChange={(value) => onChange({ [key]: value }, key)} {...options} />;
   // Legacy recipes can carry a disabled category (the header toggle used to
@@ -1093,6 +1105,10 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
   const title = tool === 'crop' ? 'Crop & Straighten' : tool === 'repair' ? 'Repair' : 'Color Adjustments';
   const TitleIcon = tool === 'crop' ? Crop : tool === 'repair' ? Bandage : SlidersHorizontal;
   const closeAction = (callback: () => void) => { callback(); setMenu(false); };
+  // The Saved Presets parent checks while a user-saved preset is the
+  // active look (built-ins and Original leave it unchecked).
+  const savedActive = savedPresets.some((preset) => preset.name === selectedPreset);
+  const selectSavedPreset = (preset: Preset) => { onSelectPreset?.(preset); closeMenu(); };
   // Whole-photo enhance UI: the header pill highlights only the pure
   // classic state, and the last-used mode carries the shared revert icon —
   // manual look edits clear the highlight but keep the revert. The revert
@@ -1153,7 +1169,7 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
       <TitleIcon size={15} strokeWidth={1.7} /><h2>{title}</h2>
       {tool === 'adjust' && <div className="inspector-auto-wrap">{(classicRevert || tasteRevert) && <IconButton className="section-reset is-dirty" label="Reset auto enhance" onClick={onRevertEnhance}><RotateCcw size={11} /></IconButton>}<button className={`auto-small inspector-auto${classicActive ? ' is-active' : ''}`} data-testid="auto-enhance-auto" aria-pressed={classicActive} data-tooltip={autoHint} onClick={onAuto}><Sparkles size={10} />Auto</button></div>}
       <div className="inspector-menu-anchor" ref={menuRef}>
-        <IconButton label="Adjustment options" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><MoreHorizontal size={18} /></IconButton>
+        <IconButton label="Adjustment options" aria-haspopup="menu" aria-expanded={menu} onClick={() => { setMenu(!menu); setSubmenu(null); }}><MoreHorizontal size={18} /></IconButton>
         {menu && <div className="dropdown-menu inspector-options" role="menu">
           {tool === 'adjust' && <MenuItem onClick={() => closeAction(onAuto)} shortcut="A">Auto Enhance</MenuItem>}
           {tool === 'adjust' && onAutoTaste && (tasteReady
@@ -1161,6 +1177,10 @@ export function Inspector({ photo, edit, tool, histogram, brushSize, brushStreng
             : <span className="menu-disabled-tip" data-tooltip={tasteHint}><MenuItem disabled onClick={() => closeAction(onAutoTaste)}>ML Auto Enhance</MenuItem></span>)}
           <MenuItem onClick={() => closeAction(onCopy)} shortcut="Ctrl Shift C">Copy Adjustments</MenuItem>
           <MenuItem onClick={() => closeAction(onPaste)} disabled={!canPaste} shortcut="Ctrl Shift V">Paste Adjustments</MenuItem>
+          <div className="menu-submenu-anchor" onMouseEnter={() => setSubmenu('saved-presets')} onMouseLeave={() => setSubmenu(null)}>
+            <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={submenu === 'saved-presets'} data-submenu="saved-presets" className="menu-item has-submenu" onClick={() => setSubmenu(submenu === 'saved-presets' ? null : 'saved-presets')}><span className="menu-check">{savedActive && <Check size={13} />}</span><span>Saved Presets</span><ChevronRight size={13} className="menu-chevron" /></button>
+            {submenu === 'saved-presets' && <div className="dropdown-menu dropdown-submenu saved-presets-submenu" role="menu" aria-label="Saved presets">{savedPresets.length === 0 ? <MenuItem disabled onClick={() => {}}>No saved presets yet</MenuItem> : savedPresets.map((preset) => <MenuItem key={preset.id} onClick={() => selectSavedPreset(preset)} checked={selectedPreset === preset.name}>{preset.name}</MenuItem>)}</div>}
+          </div>
           <MenuItem onClick={() => closeAction(onSavePreset)}>Save as Preset...</MenuItem>
           <MenuSeparator />
           <MenuItem onClick={() => closeAction(onReset)}>Reset All Adjustments</MenuItem>
