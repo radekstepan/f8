@@ -13,8 +13,4 @@ System instruction: Work through every item in ## List below, top to bottom, exe
 
 ## List
 
-DSC06320.ARW, I applied a preset and the preview in album view still shows the old image.
-
-Make it easier to import photos. Drag and drop photos onto album page. Have an import button there if thre isn't one already.
-
-Make it easier to export photos. Have an export album view button on the album page. It'll take the current view (album plus any filters, including smart albums etc.), ask you to confirm export filetype and % quality (as appropriate), no superresolution, no preview, and then show a progress dialog like during import exporting the photos, then zipping them finally giving us one zipped download file.
+...
